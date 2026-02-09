@@ -446,7 +446,7 @@ class EmailArchive:
     # Search
     # -------------------------------------------------------------------------
 
-    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance") -> List:
+    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance", tz=None) -> List:
         """Search emails.
 
         Args:
@@ -455,11 +455,12 @@ class EmailArchive:
             limit: Maximum results
             offset: Number of results to skip (for pagination)
             sort: Sort order - 'relevance', 'date_desc', or 'date_asc'
+            tz: Optional ZoneInfo timezone for date filter interpretation
 
         Returns:
             List of search results
         """
-        return self.db.search(query, account=account, limit=limit, offset=offset, sort=sort)
+        return self.db.search(query, account=account, limit=limit, offset=offset, sort=sort, tz=tz)
 
     # -------------------------------------------------------------------------
     # Helpers

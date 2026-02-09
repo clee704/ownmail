@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum, auto
 
 
@@ -345,11 +346,43 @@ def _normalize_date(date_str: str) -> str | None:
     return f"{year}-{month}-{day}"
 
 
-def parse_query(query: str) -> ParsedQuery:
+def _date_to_utc_iso(date_str: str, tz=None) -> str | None:
+    """Convert a YYYY-MM-DD date to a UTC ISO datetime string.
+
+    When tz is set, the date is interpreted as midnight in that timezone
+    and converted to UTC. Without tz, returns the date as-is (for string
+    comparison against email_date which starts with the date portion).
+
+    Args:
+        date_str: Normalized YYYY-MM-DD date string
+        tz: Optional ZoneInfo timezone
+
+    Returns:
+        UTC ISO string like '2016-03-08T15:00:00+00:00' if tz is set,
+        or the original YYYY-MM-DD string if tz is None.
+        Returns None on error.
+    """
+    if not tz:
+        return date_str
+    try:
+        year, month, day = date_str.split('-')
+        local_midnight = datetime(
+            int(year), int(month), int(day), tzinfo=tz
+        )
+        utc_dt = local_midnight.astimezone(timezone.utc)
+        return utc_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    except Exception:
+        return date_str
+
+
+def parse_query(query: str, tz=None) -> ParsedQuery:
     """Parse a user search query into FTS5 query and SQL WHERE clauses.
 
     Args:
         query: User's search query string
+        tz: Optional ZoneInfo timezone for date filter interpretation.
+            When set, before:/after: dates are treated as local dates
+            in this timezone and converted to UTC for comparison.
 
     Returns:
         ParsedQuery with fts_query, where_clauses, params, and optional error
@@ -452,21 +485,23 @@ def parse_query(query: str) -> ParsedQuery:
                 normalized = _normalize_date(value)
                 if normalized is None:
                     return ParsedQuery(error=f"Invalid date format for 'before:': {value}")
+                utc_date = _date_to_utc_iso(normalized, tz)
                 if negated:
                     where_clauses.append("e.email_date >= ?")
                 else:
                     where_clauses.append("e.email_date < ?")
-                params.append(normalized)
+                params.append(utc_date)
 
             elif field == 'after':
                 normalized = _normalize_date(value)
                 if normalized is None:
                     return ParsedQuery(error=f"Invalid date format for 'after:': {value}")
+                utc_date = _date_to_utc_iso(normalized, tz)
                 if negated:
                     where_clauses.append("e.email_date < ?")
                 else:
                     where_clauses.append("e.email_date >= ?")
-                params.append(normalized)
+                params.append(utc_date)
 
             elif field == 'has' and value in ('attachment', 'attachments'):
                 # Emails with attachments - use has_attachments column in emails table

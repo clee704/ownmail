@@ -564,6 +564,8 @@ def _clean_snippet_text(text: str) -> str:
     text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r'<[^>]+>', ' ', text)
+    # Strip partial/truncated HTML tags at end of string (e.g. "<meta name=\"view")
+    text = re.sub(r'<[^>]*$', '', text)
 
     # Remove zero-width and invisible characters
     # U+200B Zero Width Space
@@ -1219,7 +1221,7 @@ def create_app(
 
             # Fetch per_page + 1 to know if there are more results
             try:
-                raw_results = archive.search(query, limit=per_page + 1, offset=offset, sort=sort)
+                raw_results = archive.search(query, limit=per_page + 1, offset=offset, sort=sort, tz=app.config.get("timezone"))
                 search_error = None
             except Exception as e:
                 raw_results = []

@@ -1303,3 +1303,37 @@ class TestTimezoneSettings:
             # Tokyo time: Jan 2 00:00 UTC = Jan 2 09:00 JST → still 2020
             assert b"2020" in response.data
 
+    def test_search_passes_timezone_to_archive(self, tmp_path):
+        """Search passes configured timezone to archive.search."""
+        from zoneinfo import ZoneInfo
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 100
+        mock_archive.search.return_value = []
+        app = create_app(mock_archive, display_timezone="Asia/Tokyo")
+        with app.test_client() as client:
+            client.get("/search?q=before:2024-01-01")
+            mock_archive.search.assert_called_once()
+            call_kwargs = mock_archive.search.call_args
+            assert call_kwargs.kwargs.get("tz") == ZoneInfo("Asia/Tokyo")
+
+
+class TestCleanSnippetPartialHtml:
+    """Tests for partial HTML tag stripping in _clean_snippet_text."""
+
+    def test_strips_truncated_tag_at_end(self):
+        """Truncated HTML tag at end of string is removed."""
+        from ownmail.web import _clean_snippet_text
+        text = 'Hello world <meta name="view'
+        assert '<' not in _clean_snippet_text(text)
+
+    def test_strips_complete_and_partial_tags(self):
+        """Both complete and partial HTML tags are stripped."""
+        from ownmail.web import _clean_snippet_text
+        text = '<p>Hello</p> world <div class="foo'
+        result = _clean_snippet_text(text)
+        assert '<' not in result
+        assert 'Hello' in result
+        assert 'world' in result
+

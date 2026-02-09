@@ -678,6 +678,7 @@ class ArchiveDatabase:
         offset: int = 0,
         sort: str = "relevance",
         include_unknown: bool = False,
+        tz=None,
     ) -> List[Tuple]:
         """Search emails.
 
@@ -688,6 +689,7 @@ class ArchiveDatabase:
             offset: Number of results to skip (for pagination)
             sort: Sort order - 'relevance', 'date_desc', or 'date_asc'
             include_unknown: Include emails without parsed dates (default: False)
+            tz: Optional ZoneInfo timezone for date filter interpretation
 
         Returns:
             List of tuples: (message_id, filename, subject, sender, date_str, snippet)
@@ -697,7 +699,7 @@ class ArchiveDatabase:
         with sqlite3.connect(self.db_path) as conn:
             _t1 = time.time()
             # Parse query using the new query parser
-            parsed = parse_query(query)
+            parsed = parse_query(query, tz=tz)
             print(f"[db.search] connect: {_t1-_t0:.3f}s, parse_query: {time.time()-_t1:.3f}s", flush=True)
             print(f"[db.search] fts_query={repr(parsed.fts_query)}, where={parsed.where_clauses}, error={parsed.error}", flush=True)
 
