@@ -1,6 +1,7 @@
 """Email parser for extracting searchable content from .eml files."""
 
 import email
+import email.utils
 import re
 from email.policy import default as email_policy
 from pathlib import Path
@@ -271,6 +272,12 @@ class EmailParser:
         recipients_str = ", ".join(recipients)
 
         date_str = EmailParser._safe_get_header(msg, "Date")
+        # Try to parse and normalize the date to avoid garbled weekday names
+        try:
+            parsed_date = email.utils.parsedate_to_datetime(date_str)
+            date_str = parsed_date.strftime("%a, %d %b %Y %H:%M:%S %z")
+        except Exception:
+            pass  # Keep original if parsing fails
 
         # Extract body text
         body_parts = []
