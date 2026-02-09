@@ -381,6 +381,56 @@ Examples:
         help="Show archive statistics",
     )
 
+    # reindex command
+    reindex_parser = subparsers.add_parser(
+        "reindex",
+        help="Rebuild the search index",
+        description="Rebuild the full-text search index from email files.",
+    )
+    reindex_parser.add_argument("--file", type=Path, help="Index only this specific .eml file")
+    reindex_parser.add_argument("--pattern", type=str, help="Index only files matching pattern")
+    reindex_parser.add_argument("--force", "-f", action="store_true", help="Reindex all, even if indexed")
+    reindex_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
+
+    # verify command
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify integrity of downloaded emails",
+        description="Verify that downloaded emails haven't been corrupted.",
+    )
+    verify_parser.add_argument("--verbose", "-v", action="store_true", help="Show full list of issues")
+
+    # rehash command
+    subparsers.add_parser(
+        "rehash",
+        help="Compute hashes for emails without them",
+        description="Compute SHA256 content hashes for emails that don't have them.",
+    )
+
+    # sync-check command
+    sync_check_parser = subparsers.add_parser(
+        "sync-check",
+        help="Compare local archive with server",
+        description="Compare your local archive with what's on the server.",
+    )
+    sync_check_parser.add_argument("--verbose", "-v", action="store_true", help="Show full differences")
+
+    # db-check command
+    db_check_parser = subparsers.add_parser(
+        "db-check",
+        help="Check database integrity",
+        description="Check the database for integrity issues and optionally fix them.",
+    )
+    db_check_parser.add_argument("--fix", action="store_true", help="Fix fixable issues")
+    db_check_parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed issues")
+
+    # add-labels command
+    subparsers.add_parser(
+        "add-labels",
+        help="Add Gmail labels to existing emails",
+        description="Fetch Gmail labels and add them to existing downloaded emails.",
+    )
+
     # sources command
     sources_parser = subparsers.add_parser(
         "sources",
@@ -432,6 +482,41 @@ Examples:
                 cmd_search(archive, args.query, args.source, args.limit)
             elif args.command == "stats":
                 cmd_stats(archive, config, args.source)
+            elif args.command in ("reindex", "verify", "rehash", "sync-check", "db-check", "add-labels"):
+                # These commands use the legacy ownmail.py until fully migrated
+                # Import the old GmailArchive from the root ownmail.py
+                import importlib.util
+
+                # Load the old ownmail.py as a module
+                old_ownmail_path = SCRIPT_DIR.parent / "ownmail.py"
+                if not old_ownmail_path.exists():
+                    print(f"❌ Error: Legacy commands require {old_ownmail_path}")
+                    print("  These commands are being migrated to the new architecture.")
+                    sys.exit(1)
+
+                spec = importlib.util.spec_from_file_location("ownmail_legacy", old_ownmail_path)
+                ownmail_legacy = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(ownmail_legacy)
+
+                legacy_archive = ownmail_legacy.GmailArchive(archive_root, config)
+
+                if args.command == "reindex":
+                    legacy_archive.cmd_reindex(
+                        file_path=args.file,
+                        pattern=args.pattern,
+                        force=args.force,
+                        debug=args.debug,
+                    )
+                elif args.command == "verify":
+                    legacy_archive.cmd_verify(verbose=args.verbose)
+                elif args.command == "rehash":
+                    legacy_archive.cmd_rehash()
+                elif args.command == "sync-check":
+                    legacy_archive.cmd_sync_check(verbose=args.verbose)
+                elif args.command == "db-check":
+                    legacy_archive.cmd_db_check(fix=args.fix, verbose=args.verbose)
+                elif args.command == "add-labels":
+                    legacy_archive.cmd_add_labels()
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
