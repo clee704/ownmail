@@ -414,6 +414,16 @@ class ArchiveDatabase:
                 where_clauses.append("e.labels LIKE ?")
                 params.append(f"%{filters['label']}%")
 
+            # Sender filter - use LIKE on sender column (faster than FTS for simple lookups)
+            if filters.get("sender"):
+                where_clauses.append("e.sender LIKE ?")
+                params.append(f"%{filters['sender']}%")
+
+            # Recipients filter - use LIKE on recipients column (faster than FTS for simple lookups)
+            if filters.get("recipients"):
+                where_clauses.append("e.recipients LIKE ?")
+                params.append(f"%{filters['recipients']}%")
+
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
             # Determine sort order
@@ -502,6 +512,18 @@ class ArchiveDatabase:
         if label_match:
             filters["label"] = label_match.group(1)
             query = query[:label_match.start()] + query[label_match.end():]
+
+        # Extract from:xxx or sender:xxx - use LIKE filter instead of FTS for much faster date-sorted queries
+        from_match = re.search(r'\b(?:from|sender):(\S+)\b', query)
+        if from_match:
+            filters["sender"] = from_match.group(1)
+            query = query[:from_match.start()] + query[from_match.end():]
+
+        # Extract to:xxx or recipients:xxx - use LIKE filter instead of FTS for much faster date-sorted queries
+        to_match = re.search(r'\b(?:to|recipients):(\S+)\b', query)
+        if to_match:
+            filters["recipients"] = to_match.group(1)
+            query = query[:to_match.start()] + query[to_match.end():]
 
         # Clean up the remaining query
         query = query.strip()
