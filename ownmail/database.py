@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from ownmail.query import parse_query
+
 
 class ArchiveDatabase:
     """SQLite database for tracking emails and full-text search.
@@ -472,10 +474,16 @@ class ArchiveDatabase:
         _t0 = time.time()
         with sqlite3.connect(self.db_path) as conn:
             _t1 = time.time()
-            # Extract special filters from query
-            fts_query, filters = self._parse_query(query)
+            # Parse query using the new query parser
+            parsed = parse_query(query)
             print(f"[db.search] connect: {_t1-_t0:.3f}s, parse_query: {time.time()-_t1:.3f}s", flush=True)
-            print(f"[db.search] fts_query={repr(fts_query)}, filters={filters}", flush=True)
+            print(f"[db.search] fts_query={repr(parsed.fts_query)}, where={parsed.where_clauses}, error={parsed.error}", flush=True)
+
+            # If there's a parse error, return empty results
+            # The caller (web.py or cli) should display parsed.error to the user
+            if parsed.has_error():
+                print(f"[db.search] Parse error: {parsed.error}", flush=True)
+                return []
 
             # Build WHERE clause for emails table
             where_clauses = []
@@ -489,55 +497,21 @@ class ArchiveDatabase:
                 where_clauses.append("e.account = ?")
                 params.append(account)
 
-            # Date filters - use indexed email_date column
-            if filters.get("after"):
-                where_clauses.append("e.email_date >= ?")
-                params.append(filters["after"])
-            if filters.get("before"):
-                where_clauses.append("e.email_date < ?")
-                params.append(filters["before"])
-
-            # Label filter - use indexed labels column
-            if filters.get("label"):
-                where_clauses.append("e.labels LIKE ?")
-                params.append(f"%{filters['label']}%")
-
-            # Sender filter - use exact match on sender_email if it's an email address
-            if filters.get("sender"):
-                sender_val = filters["sender"]
-                if '@' in sender_val:
-                    # Email address - exact match on indexed sender_email column (fast)
-                    where_clauses.append("e.sender_email = ?")
-                    params.append(sender_val.lower())
-                else:
-                    # Name search - will be handled by FTS below
-                    # Re-add to fts_query
-                    filters["sender_fts"] = sender_val
-
-            # Recipients filter - use normalized email_recipients table for fast indexed lookup
+            # Add WHERE clauses from parsed query
+            # Handle the special __RECIPIENT_EMAIL__ marker
             recipient_email_filter = None
-            if filters.get("recipients"):
-                recipients_val = filters["recipients"]
-                if '@' in recipients_val:
-                    # Email address - use normalized table with indexed lookup
-                    recipient_email_filter = recipients_val.lower()
+            for i, clause in enumerate(parsed.where_clauses):
+                if clause == "__RECIPIENT_EMAIL__":
+                    # This is a recipient email filter - needs JOIN
+                    recipient_email_filter = parsed.params[i]
                 else:
-                    # Name search - will be handled by FTS below
-                    filters["recipients_fts"] = recipients_val
+                    where_clauses.append(clause)
+                    params.append(parsed.params[i])
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-            # Add name-based sender/recipients searches back to FTS query
-            fts_parts = []
-            if fts_query.strip():
-                fts_parts.append(fts_query.strip())
-            if filters.get("sender_fts"):
-                # Name search on sender field via FTS
-                fts_parts.append(f'sender:{filters["sender_fts"]}')
-            if filters.get("recipients_fts"):
-                # Name search on recipients field via FTS
-                fts_parts.append(f'recipients:{filters["recipients_fts"]}')
-            fts_query = ' '.join(fts_parts)
+            # Get FTS query
+            fts_query = parsed.fts_query
 
             # Determine sort order
             if sort == "date_desc":
@@ -556,24 +530,32 @@ class ArchiveDatabase:
                 # JOIN with FTS using rowid
                 fts_params = [fts_query] + params + [limit, offset]
                 _t2 = time.time()
-                results = conn.execute(
-                    f"""
-                    SELECT
-                        e.message_id,
-                        e.filename,
-                        e.subject,
-                        e.sender,
-                        e.date_str,
-                        e.snippet
-                    FROM emails e
-                    JOIN emails_fts f ON f.rowid = e.rowid
-                    WHERE f.emails_fts MATCH ?
-                      AND {where_sql}
-                    ORDER BY {order_by}
-                    LIMIT ? OFFSET ?
-                    """,
-                    fts_params
-                ).fetchall()
+                try:
+                    results = conn.execute(
+                        f"""
+                        SELECT
+                            e.message_id,
+                            e.filename,
+                            e.subject,
+                            e.sender,
+                            e.date_str,
+                            e.snippet
+                        FROM emails e
+                        JOIN emails_fts f ON f.rowid = e.rowid
+                        WHERE f.emails_fts MATCH ?
+                          AND {where_sql}
+                        ORDER BY {order_by}
+                        LIMIT ? OFFSET ?
+                        """,
+                        fts_params
+                    ).fetchall()
+                except sqlite3.OperationalError as e:
+                    error_str = str(e).lower()
+                    if "fts5" in error_str or "match" in error_str or "syntax" in error_str:
+                        print(f"[db.search] FTS5 error: {e}", flush=True)
+                        # Return empty results - caller should check for FTS errors
+                        return []
+                    raise
                 print(f"[db.search] FTS query took {time.time()-_t2:.3f}s, {len(results)} results", flush=True)
             else:
                 print("[db.search] Using table-only path", flush=True)
