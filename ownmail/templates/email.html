@@ -10,6 +10,15 @@
                 <div class="email-menu">
                     <button class="email-menu-btn" onclick="toggleEmailMenu(event)"><span></span><span></span><span></span></button>
                     <div class="email-menu-dropdown" id="email-menu-dropdown">
+                        {% if has_external_images %}
+                        <a href="#" id="menu-load-images" {% if not images_blocked %}style="display: none;"{% endif %} onclick="loadImages(); return false;">Load images</a>
+                        <a href="#" id="menu-block-images" {% if images_blocked %}style="display: none;"{% endif %} onclick="blockImages(); return false;">Block images</a>
+                        {% if sender_email %}
+                        <a href="#" id="menu-trust-sender" {% if sender_is_trusted %}style="display: none;"{% endif %} onclick="trustSender(); return false;">Always trust this sender</a>
+                        <a href="#" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} onclick="untrustSender(); return false;">Untrust this sender</a>
+                        {% endif %}
+                        <hr class="email-menu-divider">
+                        {% endif %}
                         <a href="/raw/{{ message_id }}">Show original</a>
                         <a href="/download/{{ message_id }}">Download message</a>
                     </div>
@@ -54,7 +63,7 @@
 
         <div class="email-content-area">
         {% if images_blocked and has_external_images %}
-        <div class="image-banner" id="image-banner">
+        <div class="image-banner" id="image-banner" data-has-banner="true">
             <span class="image-banner-text" id="image-banner-text">🖼️ External images are blocked for security.</span>
             <div class="image-banner-buttons">
                 <button id="load-images-btn" onclick="loadImages()">Load Images</button>
@@ -68,10 +77,17 @@
                 {% endif %}
             </div>
         </div>
+        {% endif %}
+        {% if has_external_images %}
         <script>
         var senderEmail = "{{ sender_email }}";
 
-        function loadImages(skipTextUpdate) {
+        function hideBanner() {
+            var banner = document.getElementById('image-banner');
+            if (banner) banner.style.display = 'none';
+        }
+
+        function loadImages() {
             var container = document.getElementById('email-content');
             if (!container) return;
 
@@ -81,11 +97,24 @@
                 img.removeAttribute('data-src');
             });
 
-            // Hide the load button and update text, but keep trust option visible
-            document.getElementById('load-images-btn').style.display = 'none';
-            if (!skipTextUpdate) {
-                document.getElementById('image-banner-text').textContent = '✓ Images loaded.';
-            }
+            hideBanner();
+            updateDropdownImageState(true);
+        }
+
+        function blockImages() {
+            var container = document.getElementById('email-content');
+            if (!container) return;
+
+            var imgs = Array.from(container.querySelectorAll('img[src]'));
+            imgs.forEach(function(img) {
+                var src = img.getAttribute('src');
+                if (src && !src.startsWith('data:')) {
+                    img.setAttribute('data-src', src);
+                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                }
+            });
+
+            updateDropdownImageState(false);
         }
 
         function trustSender() {
@@ -95,11 +124,8 @@
                 body: 'email=' + encodeURIComponent(senderEmail)
             }).then(function(response) {
                 if (response.ok) {
-                    document.getElementById('trust-container').style.display = 'none';
-                    document.getElementById('trusted-container').style.display = 'inline';
-                    document.getElementById('image-banner-text').textContent = '✓ Images from this sender will always be loaded.';
-                    document.getElementById('load-images-btn').style.display = 'none';
-                    loadImages(true);
+                    loadImages();
+                    updateDropdownTrustState(true);
                 }
             });
         }
@@ -111,11 +137,23 @@
                 body: 'email=' + encodeURIComponent(senderEmail)
             }).then(function(response) {
                 if (response.ok) {
-                    document.getElementById('trusted-container').style.display = 'none';
-                    document.getElementById('trust-container').style.display = 'inline';
-                    document.getElementById('image-banner-text').textContent = '✓ Images loaded.';
+                    updateDropdownTrustState(false);
                 }
             });
+        }
+
+        function updateDropdownImageState(loaded) {
+            var loadItem = document.getElementById('menu-load-images');
+            var blockItem = document.getElementById('menu-block-images');
+            if (loadItem) loadItem.style.display = loaded ? 'none' : '';
+            if (blockItem) blockItem.style.display = loaded ? '' : 'none';
+        }
+
+        function updateDropdownTrustState(trusted) {
+            var trustItem = document.getElementById('menu-trust-sender');
+            var untrustItem = document.getElementById('menu-untrust-sender');
+            if (trustItem) trustItem.style.display = trusted ? 'none' : '';
+            if (untrustItem) untrustItem.style.display = trusted ? '' : 'none';
         }
         </script>
         {% endif %}
