@@ -1,6 +1,5 @@
 """Tests using email fixture files for realistic edge cases."""
 
-import pytest
 from pathlib import Path
 
 from ownmail.parser import EmailParser
@@ -218,7 +217,7 @@ Subject: Test with émojis
 Date: Mon, 1 Jan 2024 12:00:00 +0000
 
 Message with unicode: café
-""".encode("utf-8")
+""".encode()
         result = EmailParser.parse_file(content=content)
         assert "mojis" in result["subject"]
 
@@ -256,21 +255,21 @@ class TestWebDecodeHelpers:
     def test_decode_text_body_utf8(self):
         """Test _decode_text_body with UTF-8."""
         from ownmail.web import _decode_text_body
-        payload = "Hello world café".encode("utf-8")
+        payload = "Hello world café".encode()
         result = _decode_text_body(payload, "utf-8")
         assert "café" in result
 
     def test_decode_text_body_no_charset(self):
         """Test _decode_text_body without charset (auto-detect)."""
         from ownmail.web import _decode_text_body
-        payload = "Hello world".encode("utf-8")
+        payload = b"Hello world"
         result = _decode_text_body(payload, None)
         assert "Hello" in result
 
     def test_decode_text_body_invalid_charset(self):
         """Test _decode_text_body with invalid charset."""
         from ownmail.web import _decode_text_body
-        payload = "Hello world".encode("utf-8")
+        payload = b"Hello world"
         result = _decode_text_body(payload, "not-a-real-charset")
         # Should fall back to working encoding
         assert "Hello" in result
@@ -278,7 +277,7 @@ class TestWebDecodeHelpers:
     def test_try_decode_valid(self):
         """Test _try_decode with valid encoding."""
         from ownmail.web import _try_decode
-        payload = "Test".encode("utf-8")
+        payload = b"Test"
         result = _try_decode(payload, "utf-8")
         assert result == "Test"
 
@@ -415,6 +414,7 @@ class TestParserExtractDateFromReceived:
         """Test extracting date from Received header."""
         import email
         from email.policy import default as email_policy
+
         from ownmail.parser import EmailParser
 
         raw = b"""Received: from mail.example.com by server.com; Mon, 1 Jan 2024 12:00:00 +0000
@@ -430,6 +430,7 @@ Body
         """Test extracting date when no Received header."""
         import email
         from email.policy import default as email_policy
+
         from ownmail.parser import EmailParser
 
         raw = b"""From: test@example.com
@@ -472,6 +473,7 @@ class TestParserSafeGetContent:
         """Test getting content from plain text part."""
         import email
         from email.policy import default as email_policy
+
         from ownmail.parser import EmailParser
 
         raw = b"""Content-Type: text/plain; charset=utf-8
@@ -486,6 +488,7 @@ Hello World
         """Test getting content when payload is bytes."""
         import email
         from email.policy import default as email_policy
+
         from ownmail.parser import EmailParser
 
         raw = b"""Content-Type: text/plain; charset=utf-8
@@ -673,6 +676,7 @@ class TestExtractSnippet:
         """Test _extract_snippet with a plain text email."""
         import email
         from email.policy import default as email_policy
+
         from ownmail.web import _extract_snippet
 
         raw = b"""Content-Type: text/plain; charset=utf-8
@@ -687,6 +691,7 @@ This is a test email body for snippet extraction.
         """Test _extract_snippet with multipart email."""
         import email
         from email.policy import default as email_policy
+
         from ownmail.web import _extract_snippet
 
         raw = b"""Content-Type: multipart/alternative; boundary="boundary"
@@ -709,13 +714,14 @@ Content-Type: text/html; charset=utf-8
         """Test _extract_snippet truncates long text."""
         import email
         from email.policy import default as email_policy
+
         from ownmail.web import _extract_snippet
 
         long_text = "x" * 200
         raw = f"""Content-Type: text/plain; charset=utf-8
 
 {long_text}
-""".encode('utf-8')
+""".encode()
         msg = email.message_from_bytes(raw, policy=email_policy)
         snippet = _extract_snippet(msg, max_len=50)
         assert len(snippet) <= 54  # max_len + "..."
@@ -849,7 +855,7 @@ class TestDecodeTextBody:
     def test_decode_text_body_utf8_korean(self):
         """Test _decode_text_body with Korean UTF-8."""
         from ownmail.web import _decode_text_body
-        korean = "안녕하세요".encode('utf-8')
+        korean = "안녕하세요".encode()
         result = _decode_text_body(korean, "utf-8")
         assert "안녕" in result
 
@@ -870,7 +876,7 @@ class TestDecodeTextBody:
         """Test _decode_text_body auto-detects CJK."""
         from ownmail.web import _decode_text_body
         # Korean text with no charset hint
-        korean = "안녕하세요 테스트입니다".encode('utf-8')
+        korean = "안녕하세요 테스트입니다".encode()
         result = _decode_text_body(korean, None)
         assert "안녕" in result
 
@@ -1066,7 +1072,7 @@ class TestDecodeHtmlBodyFunction:
     def test_decode_html_body_korean(self):
         """Test _decode_html_body with Korean content."""
         from ownmail.web import _decode_html_body
-        korean = "<html><body>안녕하세요</body></html>".encode('utf-8')
+        korean = "<html><body>안녕하세요</body></html>".encode()
         result = _decode_html_body(korean, "utf-8")
         assert "안녕" in result
 
@@ -1530,9 +1536,10 @@ class TestCommandsReindexSingle:
 
     def test_reindex_nonexistent_file(self, tmp_path, capsys):
         """Test cmd_reindex with nonexistent file."""
+        from pathlib import Path
+
         from ownmail.archive import EmailArchive
         from ownmail.commands import cmd_reindex
-        from pathlib import Path
 
         archive = EmailArchive(tmp_path)
         # Try to reindex a non-existent file
@@ -1561,8 +1568,9 @@ class TestConfigHelpers:
 
     def test_get_archive_root_default(self):
         """Test get_archive_root with default."""
-        from ownmail.config import get_archive_root
         from pathlib import Path
+
+        from ownmail.config import get_archive_root
         result = get_archive_root({})
         assert isinstance(result, Path)
 

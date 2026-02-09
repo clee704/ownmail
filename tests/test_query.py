@@ -1,15 +1,13 @@
 """Tests for the search query parser."""
 
-import pytest
 
 from ownmail.query import (
     Token,
     TokenType,
-    ParsedQuery,
-    _tokenize,
-    _validate_tokens,
     _escape_fts5_value,
     _normalize_date,
+    _tokenize,
+    _validate_tokens,
     parse_query,
 )
 
