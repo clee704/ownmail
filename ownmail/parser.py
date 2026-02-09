@@ -152,7 +152,7 @@ class EmailParser:
         # Try to decode with various charsets
         charsets = ['utf-8', 'cp949', 'euc-kr', 'iso-8859-1']
         if charset:
-            # Map charset aliases and prioritize
+            # Map well-known charset aliases
             charset_map = {
                 'ks_c_5601-1987': 'cp949',
                 'ks_c_5601': 'cp949',
@@ -189,6 +189,48 @@ class EmailParser:
         if not raw_value:
             return ""
 
+        # Check for RFC 2047 encoded strings first - they always need decoding
+        if isinstance(raw_value, str) and ('=?' in raw_value and '?=' in raw_value):
+            try:
+                parts = decode_header(raw_value)
+                decoded_parts = []
+                for content, charset in parts:
+                    if isinstance(content, bytes):
+                        # Map well-known charset aliases
+                        charset_map = {
+                            'ks_c_5601-1987': 'cp949',
+                            'ks_c_5601': 'cp949',
+                            'euc-kr': 'cp949',
+                        }
+                        declared_enc = charset_map.get(charset.lower(), charset) if charset else None
+
+                        # Try declared charset first, then common fallbacks
+                        encodings_to_try = []
+                        if declared_enc:
+                            encodings_to_try.append(declared_enc)
+                        # Always try common CJK encodings as fallback
+                        encodings_to_try.extend(['cp949', 'utf-8', 'euc-kr', 'gb2312', 'shift_jis'])
+
+                        decoded = None
+                        for enc in encodings_to_try:
+                            try:
+                                decoded = content.decode(enc)
+                                # Validate: no replacement chars and mostly printable
+                                if '\ufffd' not in decoded:
+                                    break
+                                decoded = None
+                            except (LookupError, UnicodeDecodeError):
+                                continue
+
+                        if decoded is None:
+                            decoded = content.decode('utf-8', errors='replace')
+                        decoded_parts.append(decoded)
+                    else:
+                        decoded_parts.append(str(content))
+                return ''.join(decoded_parts)
+            except Exception:
+                pass
+
         # If already a clean string without encoding issues, return it
         if isinstance(raw_value, str):
             # Check if it looks like it has encoding issues (replacement chars)
@@ -201,30 +243,6 @@ class EmailParser:
                 readable = sum(1 for c in raw_value if c.isprintable() or c.isspace())
                 if readable / len(raw_value) > 0.9:
                     return raw_value
-
-        try:
-            # Try RFC 2047 decoding first
-            if isinstance(raw_value, str) and ('=?' in raw_value and '?=' in raw_value):
-                parts = decode_header(raw_value)
-                decoded_parts = []
-                for content, charset in parts:
-                    if isinstance(content, bytes):
-                        # Map charset aliases
-                        charset_map = {
-                            'ks_c_5601-1987': 'cp949',
-                            'ks_c_5601': 'cp949',
-                            'euc-kr': 'cp949',
-                        }
-                        enc = charset_map.get(charset.lower(), charset) if charset else 'utf-8'
-                        try:
-                            decoded_parts.append(content.decode(enc, errors='replace'))
-                        except (LookupError, UnicodeDecodeError):
-                            decoded_parts.append(content.decode('utf-8', errors='replace'))
-                    else:
-                        decoded_parts.append(str(content))
-                return ''.join(decoded_parts)
-        except Exception:
-            pass
 
         # Try direct decoding with common charsets
         if isinstance(raw_value, bytes):
@@ -290,6 +308,9 @@ class EmailParser:
                     raw_content, header_name, fallback_charset
                 )
                 if raw_decoded and '\ufffd' not in raw_decoded:
+                    # If raw extraction returned RFC 2047 encoded string, decode it
+                    if '=?' in raw_decoded and '?=' in raw_decoded:
+                        raw_decoded = EmailParser._decode_header_value(raw_decoded, fallback_charset)
                     return EmailParser._sanitize_header(raw_decoded)
 
             decoded = EmailParser._decode_header_value(val, fallback_charset)
