@@ -17,12 +17,21 @@
 - [x] Resumable backups (Ctrl-C safe)
 - [x] Resumable reindex (hash-based change detection)
 - [x] Config file support
+- [x] Database integrity check and repair (db-check)
 
 ---
 
-## v0.2.0 — Multiple Accounts
+## v0.2.0 — Multiple Accounts & Providers
 
-**Goal**: Support backing up multiple email accounts to the same archive.
+**Goal**: Support multiple email accounts from different providers in the same archive.
+
+### Providers (Priority Order)
+
+| Provider | Protocol | Status | Notes |
+|----------|----------|--------|-------|
+| Gmail | OAuth2 + REST API | ✅ v0.1 | |
+| Generic IMAP | IMAP + App Password | 🎯 v0.2 | Covers most providers |
+| Outlook/M365 | OAuth2 + MS Graph | 📋 v0.3 | |
 
 ### Directory Structure
 
@@ -33,7 +42,7 @@
 │   ├── alice@gmail.com/
 │   │   └── emails/
 │   │       └── 2024/...
-│   ├── bob@gmail.com/
+│   ├── me@fastmail.com/
 │   │   └── emails/
 │   │       └── 2024/...
 │   └── work@company.com/
@@ -41,27 +50,44 @@
 │           └── 2024/...
 ```
 
-### Config Structure (v0.2)
+### Config Structure
 
 ```yaml
-# Global settings
 archive_dir: /Volumes/Secure/ownmail
 
 # Provider defaults
 providers:
   gmail:
     include_labels: true
+  imap:
+    # Common IMAP defaults
 
 # Accounts
 accounts:
   - provider: gmail
     address: alice@gmail.com
-    # inherits include_labels: true from provider defaults
 
-  - provider: gmail
+  - provider: imap
+    address: me@fastmail.com
+    imap_server: imap.fastmail.com
+    imap_port: 993
+    # Password stored in keychain
+
+  - provider: imap
     address: work@company.com
-    include_labels: false  # override provider default
+    imap_server: imap.company.com
+    imap_port: 993
 ```
+
+### Keychain Structure
+
+All credentials under service `ownmail`:
+
+| Account Key | Description |
+|-------------|-------------|
+| `client-credentials/gmail` | OAuth client ID (shared for all Gmail accounts) |
+| `oauth-token/alice@gmail.com` | OAuth refresh token (per account) |
+| `imap-password/me@fastmail.com` | IMAP password or app-specific password |
 
 ### CLI Changes
 
@@ -78,11 +104,10 @@ ownmail search "invoice"
 # Search specific account
 ownmail search "invoice" --account alice@gmail.com
 
-# List configured accounts
+# Account management
 ownmail accounts list
-
-# Add new account
 ownmail accounts add
+ownmail accounts remove alice@gmail.com
 ```
 
 ### Database Schema
@@ -91,82 +116,80 @@ ownmail accounts add
 -- Add account column to emails table
 ALTER TABLE emails ADD COLUMN account TEXT;
 
--- Index for per-account queries
-CREATE INDEX idx_emails_account ON emails(account);
+-- Update sync_state for per-account tracking
+-- Key format: "<account>/<key>" e.g. "alice@gmail.com/history_id"
 ```
 
----
-
-## v0.3.0 — Additional Email Providers
-
-**Goal**: Support email services beyond Gmail.
-
-### Providers to Support
-
-| Provider | Protocol | Priority | Notes |
-|----------|----------|----------|-------|
-| Gmail | OAuth2 + REST API | ✅ Done | |
-| Outlook/M365 | OAuth2 + MS Graph | High | Large user base |
-| Generic IMAP | IMAP + App Password | High | Covers most providers |
-| iCloud Mail | IMAP + App Password | Medium | Requires app-specific password |
-| Fastmail | JMAP | Medium | Modern protocol |
-| ProtonMail | Proton Bridge | Low | Requires local bridge |
-| Tutanota | — | Low | No IMAP, would need their API |
-
-### Architecture
+### Provider Architecture
 
 ```python
 # providers/base.py
 class EmailProvider(ABC):
+    account: str  # e.g. "alice@gmail.com"
+
     @abstractmethod
     def authenticate(self) -> None: ...
 
     @abstractmethod
-    def get_message_ids(self) -> List[str]: ...
+    def get_new_message_ids(self) -> List[str]: ...
 
     @abstractmethod
-    def download_message(self, msg_id: str) -> bytes: ...
-
-    @abstractmethod
-    def get_labels(self, msg_id: str) -> List[str]: ...
+    def download_message(self, msg_id: str) -> Tuple[bytes, List[str]]:
+        """Returns (raw_email, labels)"""
+        ...
 
 # providers/gmail.py
 class GmailProvider(EmailProvider): ...
-
-# providers/outlook.py
-class OutlookProvider(EmailProvider): ...
 
 # providers/imap.py
 class IMAPProvider(EmailProvider): ...
 ```
 
-### Config with Multiple Providers
+### Implementation Plan
+
+1. **Refactor**: Extract provider interface from current Gmail code
+2. **IMAP Provider**: Implement generic IMAP support
+3. **Multi-account**: Add account column, update CLI
+4. **Config**: New config format with accounts list
+5. **Migration**: Script to move existing emails to new structure
+
+---
+
+## v0.3.0 — Outlook/Microsoft 365 Support
+
+**Goal**: Add Outlook support via Microsoft Graph API.
+
+### Microsoft Graph API
+
+- Uses OAuth2 (similar to Gmail)
+- Requires Azure AD app registration
+- Folders instead of labels (Inbox, Sent, custom folders)
+
+### Config
 
 ```yaml
-archive_dir: /Volumes/Secure/ownmail
-
-providers:
-  gmail:
-    include_labels: true
-  outlook:
-    include_categories: true
-  imap:
-    # IMAP-specific defaults
-
 accounts:
-  - provider: gmail
-    address: alice@gmail.com
-
   - provider: outlook
     address: bob@outlook.com
-    include_labels: false  # override provider default
+    include_folders: true  # Store folder info like labels
 
-  - provider: imap
-    address: me@example.com
-    imap_server: imap.example.com
-    imap_port: 993
-    # Credentials stored in keychain under "ownmail/me@example.com"
+providers:
+  outlook:
+    include_folders: true
 ```
+
+### Keychain
+
+| Account Key | Description |
+|-------------|-------------|
+| `client-credentials/outlook` | Azure AD app client ID/secret |
+| `oauth-token/bob@outlook.com` | OAuth refresh token |
+
+### Implementation
+
+1. Create `providers/outlook.py` using `msal` library
+2. Add folder → X-Outlook-Folders header mapping
+3. Handle Outlook-specific quirks (conversation threading, etc.)
 
 ---
 
