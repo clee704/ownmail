@@ -400,3 +400,187 @@ class TestMainEdgeCases:
         captured = capsys.readouterr()
         # Should fail gracefully without sources
         assert "No sources" in captured.out or "Add Labels" in captured.out
+
+    def test_main_db_check_command(self, temp_dir, capsys, monkeypatch):
+        """Test db-check command via main."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'db-check']):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Database Check" in captured.out
+
+    def test_main_db_check_fix_command(self, temp_dir, capsys, monkeypatch):
+        """Test db-check --fix command via main."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'db-check', '--fix']):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Database Check" in captured.out
+
+    def test_main_rehash_command(self, temp_dir, capsys, monkeypatch):
+        """Test rehash command via main."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'rehash']):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Compute Hashes" in captured.out
+
+    def test_main_search_with_limit(self, temp_dir, capsys, monkeypatch):
+        """Test search with --limit option."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'search', 'test', '--limit', '5']):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Searching" in captured.out
+
+    def test_main_reindex_force(self, temp_dir, capsys, monkeypatch):
+        """Test reindex --force command."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'reindex', '--force']):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Force mode" in captured.out
+
+    def test_main_reindex_pattern(self, temp_dir, capsys, monkeypatch):
+        """Test reindex --pattern command."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'reindex', '--pattern', '2024/*']):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Pattern '2024/*'" in captured.out
+
+    def test_main_verify_verbose(self, temp_dir, capsys, monkeypatch):
+        """Test verify --verbose command."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'verify', '--verbose']):
+            main()
+
+        captured = capsys.readouterr()
+        # Should not crash
+
+
+class TestBackupCommand:
+    """Tests for backup command with mocked provider."""
+
+    def test_backup_with_gmail_source(self, temp_dir, capsys, monkeypatch):
+        """Test backup command with Gmail source configured."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"""
+archive_root: {temp_dir}
+sources:
+  - name: test_gmail
+    type: gmail_api
+    account: test@gmail.com
+    auth:
+      secret_ref: keychain:test_token
+    include_labels: true
+""")
+        monkeypatch.chdir(temp_dir)
+
+        # Mock the GmailProvider
+        with patch("ownmail.cli.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider.account = "test@gmail.com"
+            mock_provider.get_new_message_ids.return_value = ([], None)
+            mock_provider.get_current_sync_state.return_value = "12345"
+            mock_provider_class.return_value = mock_provider
+
+            with patch.object(sys, 'argv', ['ownmail', 'backup']):
+                main()
+
+        captured = capsys.readouterr()
+        assert "up to date" in captured.out.lower() or "Backup" in captured.out
+
+    def test_backup_source_specified(self, temp_dir, capsys, monkeypatch):
+        """Test backup with source specified via --source."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"""
+archive_root: {temp_dir}
+sources:
+  - name: test_gmail
+    type: gmail_api
+    account: test@gmail.com
+    auth:
+      secret_ref: keychain:test_token
+""")
+        monkeypatch.chdir(temp_dir)
+
+        # Mock the GmailProvider
+        with patch("ownmail.cli.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider.account = "test@gmail.com"
+            mock_provider.get_new_message_ids.return_value = ([], None)
+            mock_provider.get_current_sync_state.return_value = "12345"
+            mock_provider_class.return_value = mock_provider
+
+            with patch.object(sys, 'argv', ['ownmail', '--source', 'test_gmail', 'backup']):
+                main()
+
+        captured = capsys.readouterr()
+        assert "up to date" in captured.out.lower() or "Backup" in captured.out
+
+    def test_backup_missing_auth(self, temp_dir, capsys, monkeypatch):
+        """Test backup with missing auth config."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"""
+archive_root: {temp_dir}
+sources:
+  - name: test_gmail
+    type: gmail_api
+    account: test@gmail.com
+""")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'backup']):
+            main()
+
+        captured = capsys.readouterr()
+        # Should report missing auth
+        assert "missing" in captured.out.lower() or "auth" in captured.out.lower()

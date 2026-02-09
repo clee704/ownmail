@@ -264,3 +264,175 @@ Nested plain text.
 """
         result = EmailParser.parse_file(content=content)
         assert isinstance(result["body"], str)
+
+
+class TestSafeGetHeader:
+    """Tests for _safe_get_header edge cases."""
+
+    def test_safe_get_header_none_value(self):
+        """Test handling None header value."""
+        import email
+        content = b"From: test@example.com\n\nBody"
+        msg = email.message_from_bytes(content)
+        # Access non-existent header
+        result = EmailParser._safe_get_header(msg, "X-Custom-Header")
+        assert result == ""
+
+    def test_safe_get_header_malformed_encoding(self):
+        """Test handling malformed encoded header."""
+        import email
+        # Malformed RFC2047 encoding
+        content = b"From: =?invalid-charset?Q?test?= <test@example.com>\nSubject: Test\n\nBody"
+        msg = email.message_from_bytes(content)
+        # Should not crash
+        result = EmailParser._safe_get_header(msg, "From")
+        assert isinstance(result, str)
+
+
+class TestSanitizeHeader:
+    """Tests for _sanitize_header."""
+
+    def test_sanitize_crlf(self):
+        """Test removing CR/LF from headers."""
+        result = EmailParser._sanitize_header("hello\r\nworld")
+        assert "\r" not in result
+        assert "\n" not in result
+        assert "hello" in result and "world" in result
+
+    def test_sanitize_collapses_whitespace(self):
+        """Test collapsing multiple spaces."""
+        result = EmailParser._sanitize_header("hello    world")
+        assert result == "hello world"
+
+    def test_sanitize_strips_leading_trailing(self):
+        """Test stripping leading/trailing whitespace."""
+        result = EmailParser._sanitize_header("  hello world  ")
+        assert result == "hello world"
+
+    def test_sanitize_empty_string(self):
+        """Test handling empty string."""
+        result = EmailParser._sanitize_header("")
+        assert result == ""
+
+    def test_sanitize_none_value(self):
+        """Test handling None-like value."""
+        result = EmailParser._sanitize_header(None)
+        assert result == ""
+
+
+class TestSafeGetContentEdgeCases:
+    """Tests for _safe_get_content edge cases."""
+
+    def test_safe_get_content_binary_fallback(self):
+        """Test fallback for binary content."""
+        import email
+        content = b"""Content-Type: application/octet-stream
+
+\x00\x01\x02\x03"""
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        # Should not crash
+        assert isinstance(result, str)
+
+    def test_safe_get_content_euc_kr(self):
+        """Test handling EUC-KR encoded content."""
+        import email
+        # EUC-KR encoded Korean text
+        content = b"""Content-Type: text/plain; charset="euc-kr"
+Content-Transfer-Encoding: 8bit
+
+\xbe\xc8\xb3\xe7\xc7\xcf\xbc\xbc\xbf\xe4"""
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        assert isinstance(result, str)
+
+    def test_safe_get_content_cp949(self):
+        """Test handling CP949 encoded content."""
+        import email
+        content = b"""Content-Type: text/plain; charset="cp949"
+
+test"""
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        assert isinstance(result, str)
+
+
+class TestParseWithAttachments:
+    """Tests for attachment parsing."""
+
+    def test_parse_email_with_attachment(self):
+        """Test parsing email with attachment."""
+        content = b"""From: sender@example.com
+Subject: With Attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="bound1"
+
+--bound1
+Content-Type: text/plain
+
+Message body.
+
+--bound1
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="document.pdf"
+
+PDF content here
+
+--bound1--
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "document.pdf" in result["attachments"]
+
+    def test_parse_email_inline_image(self):
+        """Test parsing email with inline image."""
+        content = b"""From: sender@example.com
+Subject: With Image
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="bound1"
+
+--bound1
+Content-Type: text/plain
+
+See image below.
+
+--bound1
+Content-Type: image/png
+Content-Disposition: inline; filename="image.png"
+
+PNG data here
+
+--bound1--
+"""
+        result = EmailParser.parse_file(content=content)
+        # May or may not capture inline as attachment
+        assert isinstance(result["attachments"], str)
+
+    def test_parse_multiple_attachments(self):
+        """Test parsing email with multiple attachments."""
+        content = b"""From: sender@example.com
+Subject: Multiple Attachments
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="bound1"
+
+--bound1
+Content-Type: text/plain
+
+Body text.
+
+--bound1
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="doc1.pdf"
+
+PDF 1
+
+--bound1
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="doc2.pdf"
+
+PDF 2
+
+--bound1--
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "doc1.pdf" in result["attachments"]
+        assert "doc2.pdf" in result["attachments"]

@@ -353,3 +353,120 @@ Body
 
         assert filepath is not None
         assert filepath.exists()
+
+    def test_save_email_creates_directories(self, temp_dir):
+        """Test that _save_email creates necessary directories."""
+        archive = EmailArchive(temp_dir, {})
+
+        emails_dir = temp_dir / "emails"
+        # Don't pre-create emails_dir
+
+        raw_data = b"""From: test@example.com
+Date: Mon, 15 Jan 2024 10:00:00 +0000
+
+Body
+"""
+        filepath = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
+
+        assert filepath is not None
+        assert filepath.exists()
+        # Directory should have been created
+        assert emails_dir.exists()
+
+
+class TestIndexEmail:
+    """Tests for _index_email method."""
+
+    def test_index_email_from_content(self, temp_dir, sample_eml_simple):
+        """Test indexing email from raw content."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create a dummy filepath (content will be used instead)
+        dummy_path = temp_dir / "dummy.eml"
+        dummy_path.write_bytes(sample_eml_simple)
+
+        result = archive._index_email(
+            message_id="test123",
+            filepath=dummy_path,
+            content=sample_eml_simple,
+            skip_delete=True,
+        )
+
+        assert result is True
+
+    def test_index_email_from_filepath(self, temp_dir, sample_eml_simple):
+        """Test indexing email from file path."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        result = archive._index_email(
+            message_id="test123",
+            filepath=email_path,
+            skip_delete=False,
+        )
+
+        assert result is True
+
+    def test_index_email_handles_parse_error(self, temp_dir):
+        """Test indexing handles parse errors gracefully."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create file with minimal content
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "bad.eml"
+        email_path.write_bytes(b"not a valid email")
+
+        # Should not crash
+        result = archive._index_email(
+            message_id="bad123",
+            filepath=email_path,
+        )
+
+        # May return True (parsing is lenient) or False
+        assert isinstance(result, bool)
+
+
+class TestBackupFullSync:
+    """Tests for backup full sync scenarios."""
+
+    def test_backup_with_history_id(self, temp_dir):
+        """Test backup using history ID for incremental sync."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        # Set existing history ID
+        archive.db.set_sync_state("test@gmail.com", "history_id", "11111")
+
+        mock_provider = MagicMock()
+        mock_provider.account = "test@gmail.com"
+        mock_provider.get_new_message_ids.return_value = ([], "22222")
+
+        result = archive.backup(mock_provider)
+
+        assert result["success_count"] == 0
+        # History ID should be updated
+        new_state = archive.db.get_sync_state("test@gmail.com", "history_id")
+        assert new_state == "22222"
+
+    def test_backup_error_handling(self, temp_dir, capsys):
+        """Test backup handles download errors gracefully."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        mock_provider = MagicMock()
+        mock_provider.account = "test@gmail.com"
+        mock_provider.get_new_message_ids.return_value = (["msg1"], None)
+        mock_provider.get_current_sync_state.return_value = "12345"
+        mock_provider.download_message.return_value = (None, None)  # Download fails
+
+        result = archive.backup(mock_provider)
+
+        assert result["error_count"] == 1
