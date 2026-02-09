@@ -266,10 +266,13 @@ class GmailProvider(EmailProvider):
                     raw_data = base64.urlsafe_b64decode(response["raw"])
                     labels = []
 
-                    # Resolve labels from the response (stored in DB, not injected into .eml)
-                    if self._include_labels and "labelIds" in response:
+                    if self._include_labels:
                         label_ids = response.get("labelIds", [])
-                        labels = self._resolve_label_names(label_ids)
+                        if label_ids:
+                            labels = self._resolve_label_names(label_ids)
+                        else:
+                            # Fallback: fetch labels individually if not in batch response
+                            labels = self._get_labels_for_message(request_id)
 
                     results[request_id] = (raw_data, labels, None)
                 except Exception as e:
@@ -284,11 +287,16 @@ class GmailProvider(EmailProvider):
             batch = self._service.new_batch_http_request(callback=callback)
 
             for msg_id in msg_ids[:BATCH_SIZE]:
-                # Request raw format with labelIds included
+                # Request raw format with labelIds explicitly included
                 batch.add(
                     self._service.users()
                     .messages()
-                    .get(userId="me", id=msg_id, format="raw"),
+                    .get(
+                        userId="me",
+                        id=msg_id,
+                        format="raw",
+                        fields="id,labelIds,raw",
+                    ),
                     request_id=msg_id,
                 )
 

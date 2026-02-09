@@ -533,3 +533,135 @@ class TestGmailProviderErrors:
             assert "msg1" in ids
             assert "msg2" in ids
             assert "msg3" in ids
+
+
+class TestDownloadMessagesBatch:
+    """Tests for batch message download."""
+
+    def test_batch_download_with_labels(self):
+        """Test batch download includes labels from response."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            import base64
+
+            from ownmail.providers.gmail import GmailProvider
+
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            raw_email = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
+            encoded = base64.urlsafe_b64encode(raw_email).decode()
+
+            # Labels list
+            mock_service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
+                "labels": [
+                    {"id": "INBOX", "name": "INBOX"},
+                    {"id": "Label_1", "name": "Work"},
+                ]
+            }
+
+            def fake_batch_execute(batch_obj):
+                for request_id, (_request, callback, _) in batch_obj._requests.items():
+                    callback(request_id, {
+                        "raw": encoded,
+                        "labelIds": ["INBOX", "Label_1"],
+                    }, None)
+
+            mock_batch = MagicMock()
+
+            def patched_new_batch(callback):
+                mock_batch._requests = {}
+                def patched_add(request, request_id):
+                    mock_batch._requests[request_id] = (request, callback, None)
+                mock_batch.add = patched_add
+                mock_batch.execute = lambda: fake_batch_execute(mock_batch)
+                return mock_batch
+
+            mock_service.new_batch_http_request = patched_new_batch
+
+            mock_keychain = MagicMock()
+            mock_creds = MagicMock()
+            mock_creds.valid = True
+            mock_keychain.load_gmail_token.return_value = mock_creds
+
+            provider = GmailProvider(
+                account="alice@gmail.com",
+                keychain=mock_keychain,
+                include_labels=True,
+            )
+            provider.authenticate()
+
+            results = provider.download_messages_batch(["msg1", "msg2"])
+
+            assert "msg1" in results
+            raw_data, labels, error = results["msg1"]
+            assert raw_data == raw_email
+            assert "INBOX" in labels
+            assert "Work" in labels
+            assert error is None
+
+    def test_batch_download_falls_back_when_no_label_ids(self):
+        """Test batch download falls back to individual label fetch when labelIds missing."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            import base64
+
+            from ownmail.providers.gmail import GmailProvider
+
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            raw_email = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
+            encoded = base64.urlsafe_b64encode(raw_email).decode()
+
+            # Labels list for cache
+            mock_service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
+                "labels": [
+                    {"id": "INBOX", "name": "INBOX"},
+                    {"id": "Label_1", "name": "Work"},
+                ]
+            }
+
+            # Batch response WITHOUT labelIds
+            def fake_batch_execute(batch_obj):
+                for request_id, (_request, callback, _) in batch_obj._requests.items():
+                    callback(request_id, {
+                        "raw": encoded,
+                        # No labelIds!
+                    }, None)
+
+            mock_batch = MagicMock()
+
+            def patched_new_batch(callback):
+                mock_batch._requests = {}
+                def patched_add(request, request_id):
+                    mock_batch._requests[request_id] = (request, callback, None)
+                mock_batch.add = patched_add
+                mock_batch.execute = lambda: fake_batch_execute(mock_batch)
+                return mock_batch
+
+            mock_service.new_batch_http_request = patched_new_batch
+
+            # Fallback individual label fetch
+            mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+                "labelIds": ["INBOX", "Label_1"],
+            }
+
+            mock_keychain = MagicMock()
+            mock_creds = MagicMock()
+            mock_creds.valid = True
+            mock_keychain.load_gmail_token.return_value = mock_creds
+
+            provider = GmailProvider(
+                account="alice@gmail.com",
+                keychain=mock_keychain,
+                include_labels=True,
+            )
+            provider.authenticate()
+
+            results = provider.download_messages_batch(["msg1"])
+
+            assert "msg1" in results
+            raw_data, labels, error = results["msg1"]
+            assert raw_data == raw_email
+            assert "INBOX" in labels
+            assert "Work" in labels
+            assert error is None
