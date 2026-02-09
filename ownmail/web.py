@@ -1126,17 +1126,21 @@ def create_app(
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raw Email - {escape(filename)}</title>
     <style>
         body {{ font-family: monospace; margin: 0; padding: 20px; background: #f5f5f5; }}
         .filepath {{ background: #fff; padding: 10px 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; word-break: break-all; font-size: 13px; }}
         .filepath-label {{ color: #666; font-size: 11px; margin-bottom: 5px; }}
-        .content {{ background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; font-size: 12px; line-height: 1.4; overflow-x: auto; }}
-        a {{ color: #0066cc; }}
+        .content {{ background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; font-size: 12px; line-height: 1.4; overflow-x: auto; word-break: break-all; }}
+        @media (max-width: 600px) {{
+            body {{ padding: 10px; }}
+            .filepath {{ padding: 8px 10px; font-size: 11px; }}
+            .content {{ padding: 10px; font-size: 11px; }}
+        }}
     </style>
 </head>
 <body>
-    <div style="margin-bottom: 15px;"><a href="/email/{escape(message_id)}">&larr; Back to email</a></div>
     <div class="filepath">
         <div class="filepath-label">File path:</div>
         {escape(str(filepath))}
@@ -1144,6 +1148,23 @@ def create_app(
     <div class="content">{escape(content)}</div>
 </body>
 </html>'''
+
+    @app.route("/download/<message_id>")
+    def download_eml(message_id: str):
+        """Download the original .eml file."""
+        email_info = archive.db.get_email_by_id(message_id)
+        if not email_info:
+            abort(404)
+
+        filename = email_info[1]
+        filepath = archive.archive_dir / filename
+
+        if not filepath.exists():
+            abort(404)
+
+        # Use the original filename or generate one from message_id
+        download_name = filepath.name
+        return send_file(filepath, as_attachment=True, download_name=download_name)
 
     @app.route("/attachment/<message_id>/<int:index>")
     def download_attachment(message_id: str, index: int):

@@ -86,15 +86,18 @@ header h1 a { color: inherit; text-decoration: none; }
 .email-content {
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
     max-width: 0;
     width: 100%;
+    color: #999;
 }
 .email-subject {
+    color: #333;
 }
 .email-snippet {
     color: #999;
 }
-.email-snippet::before { content: ' – '; }
+.email-snippet::before { content: ' – '; color: #999; }
 .email-date {
     width: 1%;
     text-align: right;
@@ -253,6 +256,7 @@ header h1 a { color: inherit; text-decoration: none; }
     }
     body {
         padding: 8px;
+        padding-bottom: 15px;
         font-size: 14px;
     }
     .sticky-header {
@@ -284,39 +288,45 @@ header h1 a { color: inherit; text-decoration: none; }
         display: block;
         width: 100%;
     }
+    .email-table tbody {
+        display: block;
+    }
     .email-table tr {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            "sender date"
+            "content content";
         padding: 8px 10px;
+        gap: 3px 10px;
     }
     .email-table td {
-        display: block;
         padding: 0;
         border: none;
-        white-space: nowrap;
+        width: auto !important;
+        max-width: none !important;
+    }
+    .email-table td.email-sender {
+        grid-area: sender;
+        font-size: 1em;
         overflow: hidden;
         text-overflow: ellipsis;
+        white-space: nowrap;
     }
-    .email-sender {
-        flex: 1;
-        width: auto;
-        max-width: none;
-        font-size: 1em;
-        order: 1;
-    }
-    .email-date {
-        width: auto;
-        padding-left: 8px;
+    .email-table td.email-date {
+        grid-area: date;
         font-size: 0.9em;
-        order: 2;
+        color: #666;
+        white-space: nowrap;
+        text-align: right;
     }
-    .email-content {
-        width: 100%;
-        flex-basis: 100%;
-        max-width: 100%;
-        margin-top: 3px;
+    .email-table td.email-content {
+        grid-area: content;
         font-size: 0.95em;
-        order: 3;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #999;
     }
     .help {
         font-size: 0.85em;
