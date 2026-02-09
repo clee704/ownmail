@@ -57,7 +57,7 @@ accounts:
   - provider: gmail
     address: alice@gmail.com
     # inherits include_labels: true from provider defaults
-    
+
   - provider: gmail
     address: work@company.com
     include_labels: false  # override provider default
@@ -120,13 +120,13 @@ CREATE INDEX idx_emails_account ON emails(account);
 class EmailProvider(ABC):
     @abstractmethod
     def authenticate(self) -> None: ...
-    
+
     @abstractmethod
     def get_message_ids(self) -> List[str]: ...
-    
+
     @abstractmethod
     def download_message(self, msg_id: str) -> bytes: ...
-    
+
     @abstractmethod
     def get_labels(self, msg_id: str) -> List[str]: ...
 
