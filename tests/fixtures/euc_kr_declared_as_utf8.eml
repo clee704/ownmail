@@ -1,0 +1,8 @@
+From: sender@daum.net
+To: recipient@example.com
+Subject: =?euc-kr?B?yMrH2LvzwO4=?=
+Date: Tue, 15 Mar 2005 14:30:00 +0900
+Message-ID: <charset-mismatch@example.com>
+Content-Type: text/plain; charset=utf-8
+
+이 이메일은 EUC-KR로 인코딩되어 있지만 UTF-8이라고 선언되어 있습니다.

@@ -1,0 +1,24 @@
+From: forwarder@example.com
+To: recipient@example.com
+Subject: Fwd: Original Subject
+Date: Tue, 23 Jan 2024 11:00:00 +0000
+Message-ID: <nested-outer@example.com>
+Content-Type: multipart/mixed; boundary="OUTER"
+
+--OUTER
+Content-Type: text/plain
+
+See the forwarded email attached.
+--OUTER
+Content-Type: message/rfc822
+Content-Disposition: attachment; filename="forwarded.eml"
+
+From: original@example.com
+To: forwarder@example.com
+Subject: Original Subject
+Date: Mon, 22 Jan 2024 10:00:00 +0000
+Message-ID: <nested-inner@example.com>
+Content-Type: text/plain
+
+This is the original email that was forwarded.
+--OUTER--

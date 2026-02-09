@@ -1,0 +1,13 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Mostly Readable
+Date: Thu, 25 Jan 2024 13:00:00 +0000
+Message-ID: <mostly-readable@example.com>
+Content-Type: text/plain; charset=utf-8
+
+This email is mostly readable with valid UTF-8 content.
+Here is some normal text that should decode fine.
+But here are some bad bytes: ÿþ that don't decode.
+Back to normal readable text again.
+More readable content here to ensure we hit 90%+ readable ratio.
+The parser should accept this despite the few corrupted bytes.

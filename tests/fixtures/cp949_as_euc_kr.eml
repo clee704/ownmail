@@ -1,0 +1,8 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: CP949 Test
+Date: Wed, 5 Jun 2008 09:00:00 +0900
+Message-ID: <cp949-as-euc-kr@example.com>
+Content-Type: text/plain; charset=euc-kr
+
+CP949 전용 문자: ㉮㉯㉰㉱㉲㉳ (원 안에 가나다라...)

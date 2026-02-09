@@ -1,0 +1,8 @@
+From: =?euc-kr?B?yMrH2LvzwO4=?= <sender@example.com>
+To: recipient@example.com
+Subject: =?euc-kr?B?x9G4rrq4IMfRt/K9xQ==?=
+Date: Mon, 1 Jan 2024 12:00:00 +0900
+Message-ID: <euc-kr-correct@example.com>
+Content-Type: text/plain; charset=euc-kr
+
+테스트 이메일입니다. 한글이 정상적으로 표시됩니다.
