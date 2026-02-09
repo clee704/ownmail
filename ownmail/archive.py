@@ -63,7 +63,7 @@ class EmailArchive:
             Path to emails directory
         """
         if account:
-            return self.archive_dir / "accounts" / account / "emails"
+            return self.archive_dir / "accounts" / account
         else:
             # Legacy single-account structure
             return self.archive_dir / "emails"

@@ -36,7 +36,7 @@ class TestGetEmailsDir:
         """Test getting emails dir for specific account."""
         archive = EmailArchive(temp_dir, {})
         emails_dir = archive.get_emails_dir("alice@gmail.com")
-        assert emails_dir == temp_dir / "accounts" / "alice@gmail.com" / "emails"
+        assert emails_dir == temp_dir / "accounts" / "alice@gmail.com"
 
     def test_returns_legacy_path_when_no_account(self, temp_dir):
         """Test getting legacy emails dir when no account specified."""
