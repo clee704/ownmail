@@ -6,242 +6,139 @@
 
 ---
 
-## v0.1.0 (Current)
+## Next Up — Import & Scan
 
-- [x] Gmail backup via OAuth2
-- [x] Incremental sync (Gmail History API)
-- [x] Full-text search (SQLite FTS5)
-- [x] Gmail labels as X-Gmail-Labels header
-- [x] Integrity verification (SHA256 hashes)
-- [x] Secure credential storage (macOS/Windows/Linux via keyring)
-- [x] Resumable backups (Ctrl-C safe)
-- [x] Resumable reindex (hash-based change detection)
-- [x] Config file support
-- [x] Database integrity check and repair (db-check)
+**Goal**: Support importing externally-sourced `.eml` files into the archive.
 
----
+Currently, only emails downloaded by the `backup` command are recognized. This means exports from Tuta, Thunderbird, or any other client can't be added to the archive. Since ownmail's philosophy is "files as source of truth," any `.eml` file should be a first-class citizen.
 
-## v0.2.0 — Multiple Accounts & Providers
+### Commands
 
-**Goal**: Support multiple email accounts from different providers in the same archive.
+#### `ownmail import <path> [--account EMAIL] [--move] [--dry-run]`
 
-### Providers (Priority Order)
+Import `.eml` files (or directories of them) into the archive. Files are copied into the standard directory structure, registered in the database, and indexed for search.
 
-| Provider | Protocol | Status | Notes |
-|----------|----------|--------|-------|
-| Gmail | OAuth2 + REST API | ✅ v0.1 | |
-| Generic IMAP | IMAP + App Password | 🎯 v0.2 | Covers most providers |
-| Outlook/M365 | OAuth2 + MS Graph | 📋 v0.3 | |
+- `<path>` — File or directory (recursive).
+- `--account EMAIL` — Associate with this account. Defaults to the `From` header address.
+- `--move` — Move files instead of copying (delete originals after successful import).
+- `--dry-run` — Show what would be imported without doing it.
 
-### Directory Structure
+**Behavior:**
+1. Scan path for `.eml` files.
+2. For each file: parse, generate message ID (`local:{Message-ID}` or `local:sha256:{hash}`), check for duplicates, copy/move to archive, register + index in database.
+3. Batch-commit every 10 emails. Support Ctrl-C with graceful resume.
 
-```
-/Volumes/Secure/ownmail/
-├── ownmail.db                    # Global index (all accounts)
-├── accounts/
-│   ├── alice@gmail.com/
-│   │   └── emails/
-│   │       └── 2024/...
-│   ├── me@fastmail.com/
-│   │   └── emails/
-│   │       └── 2024/...
-│   └── work@company.com/
-│       └── emails/
-│           └── 2024/...
-```
+#### `ownmail scan [--account EMAIL] [--dry-run]`
 
-### Config Structure
+Detect `.eml` files already present in the archive directory that aren't tracked in the database (e.g., manually placed there). Register and index them in-place — no file moving.
 
-```yaml
-archive_dir: /Volumes/Secure/ownmail
+### Message ID strategy
 
-# Provider defaults
-providers:
-  gmail:
-    include_labels: true
-  imap:
-    # Common IMAP defaults
+- Use `Message-ID` header: `local:<Message-ID>`.
+- If missing, fall back to SHA256: `local:sha256:{hash}`.
+- Prefix avoids collisions with provider-native IDs.
 
-# Accounts
-accounts:
-  - provider: gmail
-    address: alice@gmail.com
+### Code changes
 
-  - provider: imap
-    address: me@fastmail.com
-    imap_server: imap.fastmail.com
-    imap_port: 993
-    # Password stored in keychain
-
-  - provider: imap
-    address: work@company.com
-    imap_server: imap.company.com
-    imap_port: 993
-```
-
-### Keychain Structure
-
-All credentials under service `ownmail`:
-
-| Account Key | Description |
-|-------------|-------------|
-| `client-credentials/gmail` | OAuth client ID (shared for all Gmail accounts) |
-| `oauth-token/alice@gmail.com` | OAuth refresh token (per account) |
-| `imap-password/me@fastmail.com` | IMAP password or app-specific password |
-
-### CLI Changes
-
-```bash
-# Backup all accounts
-ownmail backup
-
-# Backup specific account
-ownmail backup --account alice@gmail.com
-
-# Search across all accounts
-ownmail search "invoice"
-
-# Search specific account
-ownmail search "invoice" --account alice@gmail.com
-
-# Account management
-ownmail accounts list
-ownmail accounts add
-ownmail accounts remove alice@gmail.com
-```
-
-### Database Schema
-
-```sql
--- Add account column to emails table
-ALTER TABLE emails ADD COLUMN account TEXT;
-
--- Update sync_state for per-account tracking
--- Key format: "<account>/<key>" e.g. "alice@gmail.com/history_id"
-```
-
-### Provider Architecture
-
-```python
-# providers/base.py
-class EmailProvider(ABC):
-    account: str  # e.g. "alice@gmail.com"
-
-    @abstractmethod
-    def authenticate(self) -> None: ...
-
-    @abstractmethod
-    def get_new_message_ids(self) -> List[str]: ...
-
-    @abstractmethod
-    def download_message(self, msg_id: str) -> Tuple[bytes, List[str]]:
-        """Returns (raw_email, labels)"""
-        ...
-
-# providers/gmail.py
-class GmailProvider(EmailProvider): ...
-
-# providers/imap.py
-class IMAPProvider(EmailProvider): ...
-```
-
-### Implementation Plan
-
-1. **Refactor**: Extract provider interface from current Gmail code
-2. **IMAP Provider**: Implement generic IMAP support
-3. **Multi-account**: Add account column, update CLI
-4. **Config**: New config format with accounts list
-5. **Migration**: Script to move existing emails to new structure
+- `database.py`: Add `get_tracked_filenames(account=None) -> set[str]`. No schema changes needed.
+- `archive.py`: Extract file-saving logic into reusable helper. Add `import_email()` and `scan_archive()` methods.
+- `cli.py`: Add `import` and `scan` subcommands.
+- `commands.py`: Add `cmd_import()` and `cmd_scan()` with progress display and Ctrl-C handling.
 
 ---
 
-## v0.3.0 — Outlook/Microsoft 365 Support
+## Next Up — IMAP Provider
 
-**Goal**: Add Outlook support via Microsoft Graph API.
+**Goal**: Support generic IMAP email backup. Covers Fastmail, company mail servers, self-hosted, etc.
 
-### Microsoft Graph API
+The config system already validates `type: imap` sources, and `keychain.py` has `save_imap_password()`/`load_imap_password()` ready.
 
-- Uses OAuth2 (similar to Gmail)
-- Requires Azure AD app registration
-- Folders instead of labels (Inbox, Sent, custom folders)
+### Design
+
+- Connect via `IMAP4_SSL`, credentials from keychain (`imap-password/{email}`).
+- **Folder scanning with deduplication**: List all folders, scan each for UIDs + `Message-ID` headers. Same `Message-ID` across multiple folders → download once, store all folder names as labels.
+- **Labels**: Store IMAP folder names in the `labels` column, unified with Gmail labels. Searchable via `label:`.
+- **Incremental sync**: UID-based. Store highest UID per folder in `sync_state`. Detect `UIDVALIDITY` changes for full resync.
+- **Folder filtering**: Optional `exclude_folders` config (Trash, Spam, Drafts).
 
 ### Config
 
 ```yaml
-accounts:
-  - provider: outlook
-    address: bob@outlook.com
-    include_folders: true  # Store folder info like labels
-
-providers:
-  outlook:
-    include_folders: true
+sources:
+  - name: work_imap
+    type: imap
+    host: imap.company.com
+    account: user@company.com
+    auth:
+      secret_ref: keychain:imap-password/user@company.com
+    exclude_folders:  # optional
+      - Trash
+      - Spam
 ```
-
-### Keychain
-
-| Account Key | Description |
-|-------------|-------------|
-| `client-credentials/outlook` | Azure AD app client ID/secret |
-| `oauth-token/bob@outlook.com` | OAuth refresh token |
-
-### Implementation
-
-1. Create `providers/outlook.py` using `msal` library
-2. Add folder → X-Outlook-Folders header mapping
-3. Handle Outlook-specific quirks (conversation threading, etc.)
 
 ---
 
-## v0.4.0 — Web UI
+## Next Up — Retry Logic for Transient Failures
 
-**Goal**: Self-hosted web interface to browse and search your email archive.
+**Goal**: Make backup resilient to transient API errors instead of crashing.
+
+### Current gaps
+
+- HTTP 503 (service unavailable) propagates as an unhandled crash.
+- Individual message failures within a batch are skipped but not retried.
+- No `try/except` around `download_messages_batch()` in `archive.py` — a single bad batch aborts the entire backup.
+- Failed message IDs are not tracked (only an aggregate `error_count`).
+
+### Plan
+
+1. **Retry individual failures in `gmail.py`**: After a batch completes, retry failed messages individually with exponential backoff. Add `_is_retriable()` helper for 429, 503, timeout, connection reset.
+2. **Wrap batch calls in `archive.py`**: Catch exceptions from `download_messages_batch()` so one bad batch doesn't abort everything.
+3. **Track failed IDs**: Return `failed_ids` list from `backup()` with error reasons. Print summary at the end.
+4. **Add 503 to batch-level retry**: Currently only 429 triggers batch retry.
+
+---
+
+## Next Up — Web UI Polish
+
+**Goal**: Finish and harden the web interface.
+
+The web UI is functional (Flask + Jinja, search, email detail, attachment download, dark mode, image blocking, pagination). Remaining work:
+
+### Improvements
+
+- [ ] Replace iframe with inline HTML rendering (sanitized) — iframe has sizing issues (infinite growth, incorrect height), waits for load before resizing (clunky scroll), and makes styling difficult
+- [ ] Color nested quote text to match quote bar color at each nesting level (like Gmail)
+- [ ] Rework image/content blocking UX: show a dismissible prompt for untrusted senders; move "load/block content" and "trust/untrust sender" actions into `...` overflow menu; fix prompt styling for dark mode
 
 ### Features
 
-- [ ] Email list view with search
-- [ ] Email detail view (HTML rendering)
-- [ ] Attachment download
-- [ ] Label/folder filtering
-- [ ] Mobile-responsive design
-- [ ] Dark mode
+- [ ] Label sidebar: show all labels in a left sidebar with email counts; support lexicographic or custom sort order (via config)
+- [ ] Simple password-based authentication for LAN/tunnel access (single shared password, session cookie after login)
+- [ ] Verify CJK attachment filename encoding (RFC 5987) — check if this is still an issue
 
-### Tech Stack Options
+---
 
-| Option | Pros | Cons |
-|--------|------|------|
-| **Flask + Jinja** | Simple, Python-only | Basic UI |
-| **FastAPI + Vue/React** | Modern, API-first | More complex |
-| **Textual (TUI)** | Terminal-based, no browser | Limited formatting |
+## Later — Outlook / Microsoft 365
 
-### Architecture
+**Goal**: Add Outlook support via Microsoft Graph API.
 
-```
-ownmail/
-├── cli.py           # CLI commands
-├── core/            # Shared logic
-├── providers/       # Email providers
-└── web/
-    ├── app.py       # FastAPI/Flask app
-    ├── templates/   # HTML templates
-    └── static/      # CSS/JS
-```
+- OAuth2 via Azure AD app registration.
+- Folders instead of labels (mapped to `X-Outlook-Folders` header).
+- Create `providers/outlook.py` using `msal` library.
+- Handle Outlook-specific quirks (conversation threading, etc.).
 
-### Running
+---
 
-```bash
-# Start web server
-ownmail web --port 8080
+## Later — Parser Refactoring
 
-# Access at http://localhost:8080
-```
+**Goal**: Improve readability of `parser.py` (~670 LOC) without changing behavior.
 
-### Security Considerations
+The parser works correctly but has deep nesting and long function bodies. Every fallback path exists for a real-world encoding edge case (especially Korean EUC-KR/CP949).
 
-- Local-only by default (bind to 127.0.0.1)
-- Optional authentication for LAN access
-- Read-only (no email sending/deletion)
-- HTTPS support for remote access
+- Extract charset detection into `_detect_charset(raw_bytes, declared_charset=None) -> str`.
+- Extract RFC 2047 grouped-part decoding into `_decode_grouped_rfc2047_parts()`.
+- Compile regex patterns at module level (some are compiled inline on every call).
+- Keep the public API (`parse_file()`, `parse_raw()`) unchanged.
 
 ---
 
@@ -249,80 +146,42 @@ ownmail web --port 8080
 
 Items not yet scheduled:
 
-### Headless Server Support
+### Test Coverage — Synthetic Email Fixtures
 
-Encrypted file fallback for servers without a desktop keyring.
+Create `tests/fixtures/` with realistic `.eml` files that reproduce specific encoding edge cases: EUC-KR declared as UTF-8, split multi-byte RFC 2047, raw 8-bit headers, Korean weekday date prefixes, numeric month formats, no Date header, truncated multipart, nested RFC 822, mixed charset parts. Sanitize from real archive or construct synthetically.
 
 ### Email Export
 
 ```bash
-# Export to mbox format
 ownmail export --format mbox --output backup.mbox
-
-# Export to PDF
 ownmail export --format pdf --query "from:important@example.com"
 ```
 
 ### Deduplication
 
-Detect and handle duplicate emails (same Message-ID across accounts).
+Detect duplicate emails (same `Message-ID` across accounts/imports). `ownmail dedup` command comparing `content_hash`.
 
 ### Scheduled Backups
 
 ```bash
-# Generate launchd/cron config
-ownmail schedule --interval daily
+ownmail schedule --interval daily  # Generate launchd/cron config
 ```
+
+### Headless Server Support
+
+Encrypted file fallback for servers without a desktop keyring.
 
 ### Encryption at Rest
 
-For users who can't use an encrypted volume, encrypt both emails and database.
-
-**Config:**
-
-```yaml
-encrypt_at_rest: true  # Default: false
-# Encryption key stored in system keychain under "ownmail/encryption-key"
-```
-
-Note: This setting only applies to **future downloads** and new database files. Use `ownmail encrypt` to convert an existing archive. The program handles mixed encrypted/unencrypted emails transparently (detects per-file).
-
-**Scope:**
-
-| Component | Encryption Method |
-|-----------|------------------|
-| `.eml` files | AES-256-GCM per file |
-| `ownmail.db` | Decrypt on startup → temp file → re-encrypt on exit |
-
-**Commands:**
-
-```bash
-# Convert existing archive to encrypted
-ownmail encrypt
-
-# Convert back to unencrypted
-ownmail decrypt
-```
-
-**Considerations:**
-
-- ~200-600ms startup/shutdown overhead for database (acceptable for <200MB)
-- Existing commands (verify, rehash, reindex, search) work transparently
-- Crash recovery: cleanup decrypted temp files on next startup
-- Key rotation: future enhancement
-
-**Alternative:** Use an encrypted volume (macOS APFS, Linux LUKS, Windows BitLocker) — simpler and already recommended.
+Encrypt `.eml` files (AES-256-GCM per file) and database. `ownmail encrypt` / `ownmail decrypt` commands. Key in system keychain. Mixed encrypted/unencrypted handled transparently. Alternative: use OS-level encrypted volumes (APFS, LUKS, BitLocker).
 
 ### Statistics & Analytics
 
 ```bash
-ownmail stats --detailed
-# Top senders, emails per month, attachment sizes, etc.
+ownmail stats --detailed  # Top senders, emails per month, attachment sizes
 ```
 
 ### Optional Attachment Download
-
-Config option to skip downloading attachments for smaller backups:
 
 ```yaml
 include_attachments: false  # Default: true
