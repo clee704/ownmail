@@ -9,7 +9,10 @@ from ownmail.web import (
     LRUCache,
     _extract_body_content,
     _extract_snippet,
+    _format_date_long,
+    _format_date_short,
     _format_size,
+    _to_local_datetime,
     block_external_images,
     create_app,
     decode_header,
@@ -1144,4 +1147,71 @@ class TestExtractBodyContent:
         result = _extract_body_content(html)
         assert "<p>Content</p>" in result
         assert "<html>" not in result
+
+
+class TestToLocalDatetime:
+    """Tests for _to_local_datetime."""
+
+    def test_converts_utc_to_local(self):
+        """UTC date string is parsed and converted to local timezone."""
+        result = _to_local_datetime("Mon, 15 Jan 2024 10:30:00 +0000")
+        assert result is not None
+        # Should be aware datetime in local timezone
+        assert result.tzinfo is not None
+        # The underlying instant should be the same
+        from datetime import timezone
+        assert result.astimezone(timezone.utc).strftime("%H:%M") == "10:30"
+
+    def test_converts_different_timezone(self):
+        """Date with explicit timezone is converted to local."""
+        result = _to_local_datetime("Mon, 15 Jan 2024 19:30:00 +0900")
+        assert result is not None
+        from datetime import timezone
+        assert result.astimezone(timezone.utc).strftime("%H:%M") == "10:30"
+
+    def test_empty_string_returns_none(self):
+        assert _to_local_datetime("") is None
+
+    def test_none_returns_none(self):
+        assert _to_local_datetime(None) is None
+
+    def test_invalid_date_returns_none(self):
+        assert _to_local_datetime("not a date") is None
+
+
+class TestFormatDateShort:
+    """Tests for _format_date_short."""
+
+    def test_same_year_shows_month_day(self):
+        """Dates in current year show 'Mon DD' format."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        dt = now.replace(month=3, day=15)
+        result = _format_date_short(dt)
+        assert result == "Mar 15"
+
+    def test_different_year_shows_full_date(self):
+        """Dates in other years show 'YYYY/MM/DD' format."""
+        from datetime import datetime, timezone
+        dt = datetime(2020, 6, 5, tzinfo=timezone.utc)
+        result = _format_date_short(dt)
+        assert result == "2020/06/05"
+
+    def test_custom_format(self):
+        """Custom format string is used when provided."""
+        from datetime import datetime, timezone
+        dt = datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc)
+        result = _format_date_short(dt, "%Y-%m-%d")
+        assert result == "2024-01-15"
+
+
+class TestFormatDateLong:
+    """Tests for _format_date_long."""
+
+    def test_formats_full_date(self):
+        """Formats datetime as RFC 2822 style string."""
+        from datetime import datetime, timezone
+        dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        result = _format_date_long(dt)
+        assert result == "Mon, 15 Jan 2024 10:30:00 +0000"
 

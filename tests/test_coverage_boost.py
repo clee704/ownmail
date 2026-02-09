@@ -5938,7 +5938,7 @@ class TestWebSearchResultFormatting:
         mock_archive.db.get_email_count.return_value = 100
         # Date from 2020
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Old Email", "sender@test.com", "Mon, 01 Jan 2020 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Old Email", "sender@test.com", "Thu, 02 Jan 2020 12:00:00 +0000", "snippet")
         ]
 
         app = create_app(mock_archive)
