@@ -684,6 +684,13 @@ def create_app(
             labels_str = parsed.get("labels", "")
             labels = [lbl.strip() for lbl in labels_str.split(",") if lbl.strip()]
 
+            # Ensure MIME-encoded headers are fully decoded
+            # Parser may return partially decoded or raw MIME strings
+            if subject and '=?' in subject:
+                subject = decode_header(subject)
+            if sender and '=?' in sender:
+                sender = decode_header(sender)
+
             # For body and attachments, we still need to parse the message
             with open(filepath, "rb") as f:
                 msg = email.message_from_binary_file(f, policy=email_policy)
