@@ -1045,10 +1045,23 @@ def create_app(
         # Make all links in email open in new tab (prevents X-Frame-Options issues)
         # Also inject base styles for consistent rendering
         if body_html:
-            # Base styles to inject - sans-serif font, ensure light background
-            # (emails are designed for light mode; dark mode only applies to our UI)
-            base_styles = '''<style>
+            # Detect if email has its own styling (inline styles or <style> tags)
+            has_own_styles = ('<style' in body_html.lower() or
+                             'style=' in body_html.lower())
+
+            if has_own_styles:
+                # Email has CSS - keep it light mode (emails assume light background)
+                base_styles = '''<style>
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: #333; }
+</style>'''
+            else:
+                # Plain email without CSS - can apply dark mode safely
+                base_styles = '''<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+@media (prefers-color-scheme: dark) {
+  body { background: #242424; color: #e0e0e0; }
+  a { color: #6cb6ff; }
+}
 </style>'''
             # Inject <base target="_blank"> to make all links open in new tab
             if '<head>' in body_html.lower():

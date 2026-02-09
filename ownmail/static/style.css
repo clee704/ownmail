@@ -231,6 +231,14 @@ header h1 a { color: inherit; text-decoration: none; }
 }
 .label:hover { background: #d2e3fc; }
 .clickable-label { cursor: pointer; }
+.email-content-area {
+    background: white;
+    margin: -15px;
+    margin-top: 0;
+    padding: 15px;
+    padding-top: 0;
+    border-radius: 0 0 5px 5px;
+}
 .email-body { white-space: pre-wrap; font-family: inherit; margin: 0; line-height: 1.6; }
 .email-body-html { width: 100%; border: none; min-height: 300px; }
 .attachments { margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; }
@@ -435,6 +443,10 @@ header h1 a { color: inherit; text-decoration: none; }
     .email-date { color: #888; }
     .email-header { border-bottom-color: #333; }
     .email-header-label { color: #999; }
+    .email-content-area {
+        background: white;
+        color: #333;
+    }
     .clickable-header { color: #6cb6ff; }
     .label {
         background: #1e3a5f;
@@ -457,10 +469,6 @@ header h1 a { color: inherit; text-decoration: none; }
     }
     .search-error code { background: #4d2525; }
     .no-results { color: #999; }
-    .image-banner {
-        background: #3d3520;
-        border-color: #665c3d;
-    }
     .pagination { border-top-color: #333; }
     .pagination a { color: #6cb6ff; }
     .pagination .current { color: #999; }
