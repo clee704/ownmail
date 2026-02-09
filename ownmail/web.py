@@ -1372,7 +1372,7 @@ def create_app(
         body_html = email_data.get("body_html")
         cid_images = email_data.get("cid_images", {})
         has_external_images = False
-        images_blocked = block_images
+        images_blocked = app.config["block_images"]
 
         # Replace cid: references with inline data URIs
         if body_html and cid_images:

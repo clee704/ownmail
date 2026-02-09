@@ -1039,6 +1039,41 @@ Content-Type: text/html
             # Should NOT show blocking banner
             assert b"Images are blocked" not in response.data or b"trusted" in response.data.lower()
 
+    def test_block_images_respects_runtime_config_change(self, tmp_path):
+        """Changing block_images via app.config should take effect immediately."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+Subject: Runtime Test
+Content-Type: text/html
+
+<html><body><img src="http://example.com/track.gif"></body></html>
+"""
+        eml_path = tmp_path / "emails" / "rt.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/rt.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        # Start with block_images=True
+        app = create_app(mock_archive, block_images=True)
+        with app.test_client() as client:
+            resp1 = client.get("/email/msg1")
+            assert b"data-src" in resp1.data or b"blocked" in resp1.data.lower()
+
+            # Simulate settings page toggling block_images off
+            app.config["block_images"] = False
+
+            resp2 = client.get("/email/msg1")
+            # The original src should be intact (not replaced with data-src)
+            assert b'src="http://example.com/track.gif"' in resp2.data
+
 
 class TestExtractBodyContent:
     """Tests for _extract_body_content function."""
