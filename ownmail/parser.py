@@ -12,12 +12,94 @@ HTML_CHARSET_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Charset aliases for Korean encodings
+# Charset aliases for various encodings
 CHARSET_ALIASES = {
     "ks_c_5601-1987": "cp949",
+    "ks_c_5601": "cp949",
     "euc-kr": "euc-kr",
     "euc_kr": "euc-kr",
+    "gb2312": "gb2312",
+    "gbk": "gbk",
+    "big5": "big5",
+    "shift_jis": "shift_jis",
+    "euc-jp": "euc-jp",
 }
+
+# Encoding groups for smart detection
+# Maps byte range patterns to likely encodings
+ENCODING_FAMILIES = [
+    # (name, encodings_to_try, validation_func)
+    ("cjk", ["utf-8", "cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"], None),
+]
+
+
+def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
+    """Check if decoded text looks like valid readable content.
+
+    Args:
+        text: Decoded text to validate
+        min_readable_ratio: Minimum ratio of readable characters
+
+    Returns:
+        True if text appears to be valid readable content
+    """
+    if not text:
+        return False
+
+    # Check for replacement characters (decoding failed)
+    if '\ufffd' in text:
+        return False
+
+    # Count readable vs unreadable characters
+    readable = 0
+    total = 0
+
+    for char in text[:1000]:  # Sample first 1000 chars
+        code = ord(char)
+        total += 1
+
+        # Consider readable:
+        # - ASCII printable (0x20-0x7E)
+        # - Common whitespace (tab, newline, carriage return)
+        # - Latin extended (0x80-0xFF) - accented chars
+        # - CJK characters (Chinese, Japanese, Korean)
+        #   - CJK Unified Ideographs: U+4E00-U+9FFF
+        #   - Hangul Syllables: U+AC00-U+D7AF
+        #   - Hangul Jamo: U+1100-U+11FF
+        #   - Hiragana: U+3040-U+309F
+        #   - Katakana: U+30A0-U+30FF
+        # - Common punctuation and symbols
+
+        if (0x20 <= code <= 0x7E or  # ASCII printable
+            code in (0x09, 0x0A, 0x0D) or  # tab, newline, CR
+            0x80 <= code <= 0xFF or  # Latin extended
+            0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
+            0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
+            0x1100 <= code <= 0x11FF or  # Hangul Jamo
+            0x3040 <= code <= 0x309F or  # Hiragana
+            0x30A0 <= code <= 0x30FF or  # Katakana
+            0x3000 <= code <= 0x303F or  # CJK Punctuation
+            0xFF00 <= code <= 0xFFEF):   # Fullwidth forms
+            readable += 1
+
+    if total == 0:
+        return True  # Empty is fine
+
+    return (readable / total) >= min_readable_ratio
+
+
+def _try_decode(payload: bytes, encoding: str) -> str | None:
+    """Try to decode payload with given encoding and validate result.
+
+    Returns decoded text if successful and valid, None otherwise.
+    """
+    try:
+        decoded = payload.decode(encoding)
+        if _validate_decoded_text(decoded):
+            return decoded
+    except (UnicodeDecodeError, LookupError):
+        pass
+    return None
 
 
 class EmailParser:
@@ -336,12 +418,26 @@ class EmailParser:
                     except Exception:
                         pass
 
-                # Try common encodings
-                for encoding in ['utf-8', 'euc-kr', 'cp949', 'iso-8859-1']:
-                    try:
-                        return payload.decode(encoding)
-                    except (UnicodeDecodeError, LookupError):
-                        continue
+                # No charset specified - try smart detection
+                # Check if payload has high bytes (non-ASCII) suggesting CJK encoding
+                high_bytes = sum(1 for b in payload[:500] if b >= 0x80)
+
+                if high_bytes > 10:
+                    # Has significant non-ASCII content - try various encodings
+                    # and validate the result makes sense
+                    for encoding in ['utf-8', 'cp949', 'euc-kr', 'gb2312', 'gbk',
+                                     'big5', 'shift_jis', 'euc-jp']:
+                        result = _try_decode(payload, encoding)
+                        if result is not None:
+                            return result
+
+                # Try common encodings with validation
+                for encoding in ['utf-8', 'iso-8859-1', 'cp1252']:
+                    result = _try_decode(payload, encoding)
+                    if result is not None:
+                        return result
+
+                # Last resort - decode with replacement
                 return payload.decode('utf-8', errors='replace')
 
             # Fallback to get_content() for non-bytes
