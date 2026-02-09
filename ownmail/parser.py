@@ -193,8 +193,25 @@ class EmailParser:
         if isinstance(raw_value, str) and ('=?' in raw_value and '?=' in raw_value):
             try:
                 parts = decode_header(raw_value)
-                decoded_parts = []
+
+                # Group adjacent same-charset encoded-words to handle split multi-byte chars
+                # Some malformed emails split multi-byte characters across encoded-words
+                grouped_parts = []
                 for content, charset in parts:
+                    # Normalize charset for comparison
+                    norm_charset = charset.lower() if charset else None
+
+                    if (grouped_parts and
+                        isinstance(content, bytes) and
+                        isinstance(grouped_parts[-1][0], bytes) and
+                        grouped_parts[-1][1] == norm_charset):
+                        # Same charset as previous, concatenate bytes
+                        grouped_parts[-1] = (grouped_parts[-1][0] + content, norm_charset)
+                    else:
+                        grouped_parts.append((content, norm_charset))
+
+                decoded_parts = []
+                for content, charset in grouped_parts:
                     if isinstance(content, bytes):
                         # Map well-known charset aliases
                         charset_map = {
@@ -202,7 +219,7 @@ class EmailParser:
                             'ks_c_5601': 'cp949',
                             'euc-kr': 'cp949',
                         }
-                        declared_enc = charset_map.get(charset.lower(), charset) if charset else None
+                        declared_enc = charset_map.get(charset, charset) if charset else None
 
                         # Try declared charset first, then common fallbacks
                         encodings_to_try = []
@@ -294,15 +311,8 @@ class EmailParser:
             # Check for replacement characters
             has_issues = '\ufffd' in val_str
 
-            # If the value is mostly readable (90%+), accept it even with minor issues
-            # This prevents corrupting mostly-good decoded headers
-            # Exclude replacement characters from the "readable" count
-            if has_issues and len(val_str) > 0:
-                readable = sum(1 for c in val_str if (c.isprintable() or c.isspace()) and c != '\ufffd')
-                if readable / len(val_str) > 0.9:
-                    return EmailParser._sanitize_header(val_str)
-
-            # If the raw value has encoding corruption, extract directly from bytes
+            # If the raw value has encoding corruption, try extracting directly from bytes first
+            # This handles cases where the email library corrupts split multi-byte chars
             if raw_content and has_issues:
                 raw_decoded = EmailParser._extract_raw_header(
                     raw_content, header_name, fallback_charset
@@ -311,7 +321,15 @@ class EmailParser:
                     # If raw extraction returned RFC 2047 encoded string, decode it
                     if '=?' in raw_decoded and '?=' in raw_decoded:
                         raw_decoded = EmailParser._decode_header_value(raw_decoded, fallback_charset)
-                    return EmailParser._sanitize_header(raw_decoded)
+                    if '\ufffd' not in raw_decoded:
+                        return EmailParser._sanitize_header(raw_decoded)
+
+            # If raw extraction didn't work but value is mostly readable (90%+),
+            # accept it even with minor issues to avoid corrupting mostly-good headers
+            if has_issues and len(val_str) > 0:
+                readable = sum(1 for c in val_str if (c.isprintable() or c.isspace()) and c != '\ufffd')
+                if readable / len(val_str) > 0.9:
+                    return EmailParser._sanitize_header(val_str)
 
             decoded = EmailParser._decode_header_value(val, fallback_charset)
             result = EmailParser._sanitize_header(decoded)
