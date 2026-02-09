@@ -65,7 +65,7 @@ except ImportError as e:
 SCRIPT_DIR = Path(__file__).parent.absolute()
 DEFAULT_ARCHIVE_DIR = SCRIPT_DIR / "archive"
 DEFAULT_CONFIG_FILENAME = "config.yaml"
-KEYCHAIN_SERVICE = "ownmail"
+KEYCHAIN_SERVICE = "gmail-archive"  # Keep original name for backward compatibility
 KEYCHAIN_ACCOUNT_TOKEN = "oauth-token"
 KEYCHAIN_ACCOUNT_CREDENTIALS = "client-credentials"
 
