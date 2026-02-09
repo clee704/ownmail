@@ -529,11 +529,12 @@ class ImapProvider(EmailProvider):
                         results[mid] = (None, [], f"FETCH failed in {folder}")
                     continue
 
-                # Parse response
+                # Parse response — extract UID from inside parens
+                # IMAP response: b'SEQ (UID NNNN RFC822 {size}'
                 fetched_uids: set = set()
                 for item in data:
                     if isinstance(item, tuple) and len(item) == 2:
-                        uid_match = re.search(rb"(\d+) \(", item[0])
+                        uid_match = re.search(rb"UID (\d+)", item[0])
                         if uid_match:
                             uid = int(uid_match.group(1))
                             mid = uid_map.get(uid)
