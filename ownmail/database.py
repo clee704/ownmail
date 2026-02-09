@@ -590,7 +590,7 @@ class ArchiveDatabase:
                     NOT EXISTS (
                         SELECT 1 FROM email_labels el2
                         WHERE el2.email_rowid = e.rowid
-                          AND el2.label = ?
+                          AND el2.label = ? COLLATE NOCASE
                     )
                 """)
                 params.append(not_label_filter)
@@ -621,7 +621,7 @@ class ArchiveDatabase:
 
                 if label_filter:
                     extra_joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
-                    extra_where.append("el.label = ?")
+                    extra_where.append("el.label = ? COLLATE NOCASE")
                     extra_params.append(label_filter)
                     # Use el.email_date for sorting to leverage covering index
                     if order_by == "e.email_date DESC":
@@ -688,7 +688,7 @@ class ArchiveDatabase:
 
                 if label_filter:
                     joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
-                    where_clauses.insert(0, "el.label = ?")
+                    where_clauses.insert(0, "el.label = ? COLLATE NOCASE")
                     filter_params.append(label_filter)
                     # Use el.email_date for sorting to leverage covering index
                     if "email_date DESC" in order_by:

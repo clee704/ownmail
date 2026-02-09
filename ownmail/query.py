@@ -423,7 +423,7 @@ def parse_query(query: str) -> ParsedQuery:
                     where_clauses.append("__NOT_LABEL__")
                 else:
                     where_clauses.append("__LABEL__")
-                params.append(value.upper())  # Labels are typically uppercase
+                params.append(value)  # Preserve original case for labels like Z20240622/user@example.com
 
             elif field == 'before':
                 normalized = _normalize_date(value)
