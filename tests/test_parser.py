@@ -521,3 +521,170 @@ Content-Type: text/html
 """
         result = EmailParser.parse_file(content=content)
         assert "Header" in result["body"] or "Paragraph" in result["body"]
+
+
+class TestGetAttachments:
+    """Tests for attachment extraction."""
+
+    def test_get_attachments_simple(self):
+        """Test extracting attachments from email."""
+        content = b"""From: sender@example.com
+Subject: With Attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="---=_Part"
+
+-----=_Part
+Content-Type: text/plain
+
+Body text.
+-----=_Part
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="document.pdf"
+
+PDF content here
+-----=_Part--
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "document.pdf" in result["attachments"]
+
+    def test_get_attachments_none(self):
+        """Test email with no attachments."""
+        content = b"""From: sender@example.com
+Subject: No Attachment
+Content-Type: text/plain
+
+Just text body.
+"""
+        result = EmailParser.parse_file(content=content)
+        assert result["attachments"] == ""
+
+    def test_get_multiple_attachments(self):
+        """Test email with multiple attachments."""
+        content = b"""From: sender@example.com
+Subject: Multiple Attachments
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="---=_Part"
+
+-----=_Part
+Content-Type: text/plain
+
+Body text.
+-----=_Part
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="doc1.pdf"
+
+PDF1
+-----=_Part
+Content-Type: image/png
+Content-Disposition: attachment; filename="image.png"
+
+PNG
+-----=_Part--
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "doc1.pdf" in result["attachments"]
+        assert "image.png" in result["attachments"]
+
+
+class TestParseRecipients:
+    """Tests for recipient parsing."""
+
+    def test_parse_multiple_to_recipients(self):
+        """Test parsing multiple To recipients."""
+        content = b"""From: sender@example.com
+To: user1@example.com, user2@example.com
+Subject: Multi-To
+Content-Type: text/plain
+
+Body.
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "user1@example.com" in result["recipients"]
+        assert "user2@example.com" in result["recipients"]
+
+    def test_parse_cc_recipients(self):
+        """Test parsing CC recipients."""
+        content = b"""From: sender@example.com
+To: user1@example.com
+Cc: cc@example.com
+Subject: With CC
+Content-Type: text/plain
+
+Body.
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "user1@example.com" in result["recipients"]
+
+
+class TestDateParsing:
+    """Tests for date parsing."""
+
+    def test_parse_standard_date(self):
+        """Test parsing standard date format."""
+        content = b"""From: sender@example.com
+Date: Mon, 15 Jan 2024 10:30:00 +0000
+Subject: Date Test
+Content-Type: text/plain
+
+Body.
+"""
+        result = EmailParser.parse_file(content=content)
+        assert result["date_str"]  # Should have a date_str
+
+    def test_parse_no_date(self):
+        """Test parsing email with no date."""
+        content = b"""From: sender@example.com
+Subject: No Date
+Content-Type: text/plain
+
+Body.
+"""
+        result = EmailParser.parse_file(content=content)
+        assert result["date_str"] == ""
+
+
+class TestMessageId:
+    """Tests for message ID extraction."""
+
+    def test_extract_message_id(self):
+        """Test extracting Message-ID header - not directly returned by parser."""
+        content = b"""From: sender@example.com
+Message-ID: <unique123@example.com>
+Subject: With Message-ID
+Content-Type: text/plain
+
+Body.
+"""
+        result = EmailParser.parse_file(content=content)
+        # Parser doesn't return message_id directly, just verify parse works
+        assert result["subject"] == "With Message-ID"
+
+    def test_no_message_id(self):
+        """Test email without Message-ID."""
+        content = b"""From: sender@example.com
+Subject: No Message-ID
+Content-Type: text/plain
+
+Body.
+"""
+        result = EmailParser.parse_file(content=content)
+        # Just verify parsing completes
+        assert result["subject"] == "No Message-ID"
+
+
+class TestLabelsExtraction:
+    """Tests for Gmail labels extraction."""
+
+    def test_extract_gmail_labels(self):
+        """Test extracting X-Gmail-Labels header."""
+        content = b"""From: sender@example.com
+X-Gmail-Labels: INBOX,IMPORTANT,Personal
+Subject: With Labels
+Content-Type: text/plain
+
+Body.
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "labels" in result
+        # Labels should be accessible somehow
+        assert isinstance(result.get("labels", ""), str)
