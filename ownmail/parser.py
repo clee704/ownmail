@@ -62,6 +62,7 @@ def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
         # - ASCII printable (0x20-0x7E)
         # - Common whitespace (tab, newline, carriage return)
         # - Latin extended (0x80-0xFF) - accented chars
+        # - Zero-width characters (U+200B-U+200D, U+FEFF) - used in emails
         # - CJK characters (Chinese, Japanese, Korean)
         #   - CJK Unified Ideographs: U+4E00-U+9FFF
         #   - Hangul Syllables: U+AC00-U+D7AF
@@ -73,6 +74,10 @@ def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
         if (0x20 <= code <= 0x7E or  # ASCII printable
             code in (0x09, 0x0A, 0x0D) or  # tab, newline, CR
             0x80 <= code <= 0xFF or  # Latin extended
+            0x200B <= code <= 0x200D or  # Zero-width space/non-joiner/joiner
+            code == 0xFEFF or  # BOM / zero-width no-break space
+            code == 0x00AD or  # Soft hyphen
+            code == 0x2060 or  # Word joiner
             0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
             0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
             0x1100 <= code <= 0x11FF or  # Hangul Jamo
