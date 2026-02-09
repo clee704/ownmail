@@ -198,6 +198,23 @@ class ArchiveDatabase:
                 ).fetchall()
             return {row[0] for row in results}
 
+    def get_email_by_id(self, message_id: str) -> Optional[tuple]:
+        """Get email info by message ID.
+
+        Args:
+            message_id: Message ID
+
+        Returns:
+            Tuple of (message_id, filename, downloaded_at, content_hash, account)
+            or None if not found
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            result = conn.execute(
+                "SELECT message_id, filename, downloaded_at, content_hash, account FROM emails WHERE message_id = ?",
+                (message_id,)
+            ).fetchone()
+            return result
+
     def mark_downloaded(
         self,
         message_id: str,
