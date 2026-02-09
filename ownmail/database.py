@@ -498,15 +498,30 @@ class ArchiveDatabase:
                 params.append(account)
 
             # Add WHERE clauses from parsed query
-            # Handle the special __RECIPIENT_EMAIL__ marker
+            # Handle the special __RECIPIENT_EMAIL__ and __NOT_RECIPIENT_EMAIL__ markers
             recipient_email_filter = None
+            not_recipient_email_filter = None
             for i, clause in enumerate(parsed.where_clauses):
                 if clause == "__RECIPIENT_EMAIL__":
                     # This is a recipient email filter - needs JOIN
                     recipient_email_filter = parsed.params[i]
+                elif clause == "__NOT_RECIPIENT_EMAIL__":
+                    # This is a negated recipient email filter - needs NOT EXISTS
+                    not_recipient_email_filter = parsed.params[i]
                 else:
                     where_clauses.append(clause)
                     params.append(parsed.params[i])
+
+            # Add negated recipient email filter as a WHERE clause
+            if not_recipient_email_filter:
+                where_clauses.append("""
+                    NOT EXISTS (
+                        SELECT 1 FROM email_recipients er2
+                        WHERE er2.email_rowid = e.rowid
+                          AND er2.recipient_email = ?
+                    )
+                """)
+                params.append(not_recipient_email_filter)
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 

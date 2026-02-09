@@ -44,6 +44,7 @@ class Token:
     type: TokenType
     value: str
     field: str = ""  # For FILTER tokens: from, to, subject, etc.
+    negated: bool = False  # For negated filters: -from:alice
 
 
 @dataclass
@@ -128,6 +129,38 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                 j += 1
             word = query[i+1:j]
             if word:
+                # Check if it's a negated filter (-from:alice@example.com)
+                colon_pos = word.find(':')
+                if colon_pos > 0:
+                    field_name = word[:colon_pos].lower()
+                    field_value = word[colon_pos+1:]
+
+                    # Check if it's a known filter field
+                    known_filters = {
+                        'from', 'sender', 'to', 'recipients', 'subject',
+                        'label', 'tag', 'before', 'after', 'has', 'attachment', 'attachments'
+                    }
+
+                    if field_name in known_filters:
+                        if not field_value:
+                            i = j
+                            continue
+                        # Normalize field names
+                        if field_name == 'sender':
+                            field_name = 'from'
+                        elif field_name == 'recipients':
+                            field_name = 'to'
+                        elif field_name == 'tag':
+                            field_name = 'label'
+                        elif field_name in ('attachment', 'attachments'):
+                            field_name = 'has'
+                            field_value = 'attachment'
+
+                        tokens.append(Token(TokenType.FILTER, field_value, field=field_name, negated=True))
+                        i = j
+                        continue
+
+                # Regular negation (not a filter)
                 tokens.append(Token(TokenType.NEGATION, word))
             i = j
             continue
@@ -315,52 +348,83 @@ def parse_query(query: str) -> ParsedQuery:
         elif token.type == TokenType.FILTER:
             field = token.field
             value = token.value
+            negated = token.negated
 
             if field == 'from':
                 if '@' in value:
                     # Email address - exact match on sender_email column
-                    where_clauses.append("e.sender_email = ?")
+                    if negated:
+                        where_clauses.append("e.sender_email != ?")
+                    else:
+                        where_clauses.append("e.sender_email = ?")
                     params.append(value.lower())
                 else:
                     # Name search - use FTS on sender field
-                    fts_parts.append(f'sender:{_escape_fts5_value(value)}')
+                    escaped = _escape_fts5_value(value)
+                    if negated:
+                        fts_parts.append(f'NOT sender:{escaped}')
+                    else:
+                        fts_parts.append(f'sender:{escaped}')
 
             elif field == 'to':
                 if '@' in value:
                     # Email address - use normalized table
                     # This is handled specially in search() - we set a flag
-                    where_clauses.append("__RECIPIENT_EMAIL__")
+                    if negated:
+                        where_clauses.append("__NOT_RECIPIENT_EMAIL__")
+                    else:
+                        where_clauses.append("__RECIPIENT_EMAIL__")
                     params.append(value.lower())
                 else:
                     # Name search - use FTS on recipients field
-                    fts_parts.append(f'recipients:{_escape_fts5_value(value)}')
+                    escaped = _escape_fts5_value(value)
+                    if negated:
+                        fts_parts.append(f'NOT recipients:{escaped}')
+                    else:
+                        fts_parts.append(f'recipients:{escaped}')
 
             elif field == 'subject':
                 # Subject search via FTS
-                fts_parts.append(f'subject:{_escape_fts5_value(value)}')
+                escaped = _escape_fts5_value(value)
+                if negated:
+                    fts_parts.append(f'NOT subject:{escaped}')
+                else:
+                    fts_parts.append(f'subject:{escaped}')
 
             elif field == 'label':
                 # Label filter on labels column
-                where_clauses.append("e.labels LIKE ?")
+                if negated:
+                    where_clauses.append("(e.labels IS NULL OR e.labels NOT LIKE ?)")
+                else:
+                    where_clauses.append("e.labels LIKE ?")
                 params.append(f"%{value}%")
 
             elif field == 'before':
                 normalized = _normalize_date(value)
                 if normalized is None:
                     return ParsedQuery(error=f"Invalid date format for 'before:': {value}")
-                where_clauses.append("e.email_date < ?")
+                if negated:
+                    where_clauses.append("e.email_date >= ?")
+                else:
+                    where_clauses.append("e.email_date < ?")
                 params.append(normalized)
 
             elif field == 'after':
                 normalized = _normalize_date(value)
                 if normalized is None:
                     return ParsedQuery(error=f"Invalid date format for 'after:': {value}")
-                where_clauses.append("e.email_date >= ?")
+                if negated:
+                    where_clauses.append("e.email_date < ?")
+                else:
+                    where_clauses.append("e.email_date >= ?")
                 params.append(normalized)
 
             elif field == 'has' and value == 'attachment':
                 # Emails with attachments - use FTS or check attachments column
-                where_clauses.append("e.attachments IS NOT NULL AND e.attachments != ''")
+                if negated:
+                    where_clauses.append("(e.attachments IS NULL OR e.attachments = '')")
+                else:
+                    where_clauses.append("e.attachments IS NOT NULL AND e.attachments != ''")
 
     # Build final FTS query
     fts_query = ' '.join(fts_parts)
