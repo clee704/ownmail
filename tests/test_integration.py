@@ -104,10 +104,10 @@ class TestCmdDbCheck:
         """Test that db-check finds duplicate FTS entries."""
         archive = GmailArchive(temp_dir)
 
-        # Manually create duplicates (with 6 columns including account)
+        # Manually create duplicates (with 7 columns including account and labels)
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("INSERT INTO emails VALUES (?, ?, ?, ?, ?, ?)",
-                        ("msg1", "file1.eml", "2024-01-01", "hash1", "hash1", None))
+            conn.execute("INSERT INTO emails VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        ("msg1", "file1.eml", "2024-01-01", "hash1", "hash1", None, None))
             conn.execute(
                 "INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 ("msg1", "Subj1", "from", "to", "date", "body", "")
@@ -129,10 +129,10 @@ class TestCmdDbCheck:
         """Test that duplicate detection works."""
         archive = GmailArchive(temp_dir)
 
-        # Create duplicates (with 6 columns including account)
+        # Create duplicates (with 7 columns including account and labels)
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("INSERT INTO emails VALUES (?, ?, ?, ?, ?, ?)",
-                        ("msg1", "file1.eml", "2024-01-01", "hash1", "hash1", None))
+            conn.execute("INSERT INTO emails VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        ("msg1", "file1.eml", "2024-01-01", "hash1", "hash1", None, None))
             conn.execute(
                 "INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 ("msg1", "Old", "from", "to", "date", "body", "")

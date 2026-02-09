@@ -43,13 +43,20 @@ class ArchiveDatabase:
                     downloaded_at TEXT,
                     content_hash TEXT,
                     indexed_hash TEXT,
-                    account TEXT
+                    account TEXT,
+                    labels TEXT
                 )
             """)
 
             # Add account column if missing (migration from v0.1)
             try:
                 conn.execute("ALTER TABLE emails ADD COLUMN account TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+            # Add labels column if missing (migration for label search optimization)
+            try:
+                conn.execute("ALTER TABLE emails ADD COLUMN labels TEXT")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
@@ -86,6 +93,18 @@ class ArchiveDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_emails_indexed_hash
                 ON emails(indexed_hash)
+            """)
+
+            # Index for date-based sorting (filename starts with YYYYMMDD_HHMMSS)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_emails_filename
+                ON emails(filename)
+            """)
+
+            # Index for label queries
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_emails_labels
+                ON emails(labels)
             """)
 
             conn.commit()
@@ -265,6 +284,7 @@ class ArchiveDatabase:
         body: str,
         attachments: str,
         conn: sqlite3.Connection = None,
+        labels: str = "",
         skip_delete: bool = False,
     ) -> None:
         """Add email to full-text search index.
@@ -272,6 +292,7 @@ class ArchiveDatabase:
         Args:
             message_id: Message ID
             subject, sender, recipients, date_str, body, attachments: Parsed email fields
+            labels: Gmail labels (stored in emails table for fast filtering)
             conn: Optional existing connection (for batching)
             skip_delete: If True, skip DELETE (for new emails not yet in FTS)
         """
@@ -290,6 +311,12 @@ class ArchiveDatabase:
                 """,
                 (message_id, subject, sender, recipients, date_str, body, attachments)
             )
+            # Update labels in main emails table for fast label filtering
+            if labels:
+                conn.execute(
+                    "UPDATE emails SET labels = ? WHERE message_id = ?",
+                    (labels, message_id)
+                )
             if should_close:
                 conn.commit()
         finally:
@@ -305,41 +332,179 @@ class ArchiveDatabase:
             ).fetchone()
             return result is not None
 
-    def search(self, query: str, account: str = None, limit: int = 50) -> List[Tuple]:
+    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance") -> List[Tuple]:
         """Search emails using FTS5.
 
         Args:
-            query: Search query (supports from:, subject:, etc.)
+            query: Search query (supports from:, subject:, before:, after:, label:, etc.)
             account: Filter to specific account (optional)
             limit: Maximum results
+            offset: Number of results to skip (for pagination)
+            sort: Sort order - 'relevance', 'date_desc', or 'date_asc'
 
         Returns:
             List of tuples: (message_id, filename, subject, sender, date_str, snippet)
         """
         with sqlite3.connect(self.db_path) as conn:
-            fts_query = self._convert_query(query)
+            # Extract special filters from query
+            fts_query, filters = self._parse_query(query)
+
+            # Determine ORDER BY clause
+            if sort == "date_desc":
+                order_by = "e.filename DESC"  # Filename starts with YYYYMMDD_HHMMSS
+            elif sort == "date_asc":
+                order_by = "e.filename ASC"
+            else:
+                order_by = "rank"  # FTS5 relevance
+
+            # Build WHERE clause for special filters
+            where_clauses = []
+            params = []
+
+            if fts_query.strip():
+                where_clauses.append("emails_fts MATCH ?")
+                params.append(fts_query)
 
             if account:
+                where_clauses.append("e.account = ?")
+                params.append(account)
+
+            # Date filters use filename (YYYYMMDD_HHMMSS format)
+            if filters.get("after"):
+                where_clauses.append("e.filename >= ?")
+                params.append(filters["after"])
+            if filters.get("before"):
+                where_clauses.append("e.filename < ?")
+                params.append(filters["before"])
+
+            # Label filter uses indexed labels column on emails table
+            has_label_filter = filters.get("label")
+
+            params.extend([limit, offset])
+
+            # If no FTS query and no label filter, we can skip FTS entirely
+            if not fts_query.strip() and not has_label_filter:
+                # No text search, just date/account filter - use emails table only
+                # For non-FTS queries, "relevance" doesn't make sense, default to date desc
+                no_fts_order = order_by if sort != "relevance" else "e.filename DESC"
+
+                email_clauses = []
+                email_params = []
+                if account:
+                    email_clauses.append("account = ?")
+                    email_params.append(account)
+                if filters.get("after"):
+                    email_clauses.append("filename >= ?")
+                    email_params.append(filters["after"])
+                if filters.get("before"):
+                    email_clauses.append("filename < ?")
+                    email_params.append(filters["before"])
+
+                email_where = " AND ".join(email_clauses) if email_clauses else "1=1"
+                email_params.extend([limit, offset])
+
+                # Just get from emails table - skip FTS entirely for speed
+                # Web UI will get subject/sender from the email file itself
                 results = conn.execute(
-                    """
+                    f"""
+                    SELECT
+                        message_id,
+                        filename,
+                        '' as subject,
+                        '' as sender,
+                        '' as date_str,
+                        '' as snippet
+                    FROM emails
+                    WHERE {email_where}
+                    ORDER BY filename {"DESC" if "DESC" in no_fts_order else "ASC"}
+                    LIMIT ? OFFSET ?
+                    """,
+                    email_params
+                ).fetchall()
+            elif not fts_query.strip():
+                # Label filter only - need to go through FTS but no MATCH
+                # "relevance" doesn't apply here either, default to date desc
+                no_fts_order = order_by if sort != "relevance" else "e.filename DESC"
+                where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+                results = conn.execute(
+                    f"""
                     SELECT
                         e.message_id,
                         e.filename,
                         f.subject,
                         f.sender,
                         f.date_str,
-                        snippet(emails_fts, 5, '>>>', '<<<', '...', 32) as snippet
-                    FROM emails_fts f
-                    JOIN emails e ON e.message_id = f.message_id
-                    WHERE emails_fts MATCH ? AND e.account = ?
-                    ORDER BY rank
-                    LIMIT ?
+                        '' as snippet
+                    FROM emails e
+                    JOIN emails_fts f ON f.message_id = e.message_id
+                    WHERE {where_sql}
+                    ORDER BY {no_fts_order}
+                    LIMIT ? OFFSET ?
                     """,
-                    (fts_query, account, limit)
+                    params
+                ).fetchall()
+            elif sort in ("date_desc", "date_asc"):
+                # For date-sorted FTS queries: use ORDER BY on filename (which has index)
+                # and filter with FTS EXISTS check. This allows LIMIT/OFFSET to work
+                # incrementally without fetching all matches.
+                fts_clauses = ["emails_fts MATCH ?"]
+                fts_params: list = [fts_query]
+                fts_where = " AND ".join(fts_clauses)
+
+                # Build emails table WHERE clause
+                email_clauses = []
+                email_params: list = []
+                if account:
+                    email_clauses.append("e.account = ?")
+                    email_params.append(account)
+                if filters.get("after"):
+                    email_clauses.append("e.filename >= ?")
+                    email_params.append(filters["after"])
+                if filters.get("before"):
+                    email_clauses.append("e.filename < ?")
+                    email_params.append(filters["before"])
+                # Use indexed labels column instead of FTS body LIKE
+                if filters.get("label"):
+                    email_clauses.append("e.labels LIKE ?")
+                    email_params.append(f"%{filters['label']}%")
+                email_where = " AND ".join(email_clauses) if email_clauses else "1=1"
+
+                # Combine params: email filters, then FTS filters, then limit/offset
+                all_params = email_params + fts_params + [limit, offset]
+
+                # Use subquery with ORDER BY on indexed column, filter via EXISTS
+                # SQLite can use idx_emails_filename for the ORDER BY, making pagination fast
+                results = conn.execute(
+                    f"""
+                    SELECT
+                        e.message_id,
+                        e.filename,
+                        '' as subject,
+                        '' as sender,
+                        '' as date_str,
+                        '' as snippet
+                    FROM emails e
+                    WHERE {email_where}
+                      AND EXISTS (
+                          SELECT 1 FROM emails_fts f
+                          WHERE f.message_id = e.message_id AND {fts_where}
+                      )
+                    ORDER BY e.filename {"DESC" if sort == "date_desc" else "ASC"}
+                    LIMIT ? OFFSET ?
+                    """,
+                    all_params
                 ).fetchall()
             else:
+                # Relevance sort - let FTS5 drive
+                where_sql = " AND ".join(where_clauses)
+                # Add label filter using indexed column
+                label_filter = ""
+                if has_label_filter:
+                    label_filter = "AND e.labels LIKE ?"
+                    # Insert before limit/offset
+                    params.insert(-2, f"%{filters['label']}%")
                 results = conn.execute(
-                    """
+                    f"""
                     SELECT
                         e.message_id,
                         e.filename,
@@ -349,19 +514,67 @@ class ArchiveDatabase:
                         snippet(emails_fts, 5, '>>>', '<<<', '...', 32) as snippet
                     FROM emails_fts f
                     JOIN emails e ON e.message_id = f.message_id
-                    WHERE emails_fts MATCH ?
-                    ORDER BY rank
-                    LIMIT ?
+                    WHERE {where_sql} {label_filter}
+                    ORDER BY {order_by}
+                    LIMIT ? OFFSET ?
                     """,
-                    (fts_query, limit)
+                    params
                 ).fetchall()
             return results
 
+    def _parse_query(self, query: str) -> tuple:
+        """Parse query and extract special filters.
+
+        Returns:
+            Tuple of (fts_query, filters_dict)
+        """
+        filters = {}
+
+        # Extract before:YYYY-MM-DD or before:YYYYMMDD
+        before_match = re.search(r'\bbefore:(\d{4}-?\d{2}-?\d{2})\b', query)
+        if before_match:
+            date_str = before_match.group(1).replace("-", "")
+            filters["before"] = date_str
+            query = query[:before_match.start()] + query[before_match.end():]
+
+        # Extract after:YYYY-MM-DD or after:YYYYMMDD
+        after_match = re.search(r'\bafter:(\d{4}-?\d{2}-?\d{2})\b', query)
+        if after_match:
+            date_str = after_match.group(1).replace("-", "")
+            filters["after"] = date_str
+            query = query[:after_match.start()] + query[after_match.end():]
+
+        # Extract label:xxx or tag:xxx
+        label_match = re.search(r'\b(?:label|tag):(\S+)\b', query)
+        if label_match:
+            filters["label"] = label_match.group(1)
+            query = query[:label_match.start()] + query[label_match.end():]
+
+        # Convert remaining query to FTS5 syntax
+        fts_query = self._convert_query(query.strip())
+
+        return fts_query, filters
+
     def _convert_query(self, query: str) -> str:
         """Convert user query to FTS5 syntax."""
+        # Convert field prefixes
         query = re.sub(r'\bfrom:', 'sender:', query)
         query = re.sub(r'\bto:', 'recipients:', query)
         query = re.sub(r'\battachment:', 'attachments:', query)
+
+        # Quote values after field: prefixes that contain special characters
+        # FTS5 special chars: . @ - + * " ( ) : ^
+        def quote_field_value(match):
+            field = match.group(1)
+            value = match.group(2)
+            # If value contains special chars, quote it
+            if re.search(r'[.@\-+*"():^]', value):
+                # Escape any existing quotes and wrap in quotes
+                value = '"' + value.replace('"', '""') + '"'
+            return field + ':' + value
+
+        query = re.sub(r'\b(sender|recipients|subject|attachments):(\S+)', quote_field_value, query)
+
         return query
 
     # -------------------------------------------------------------------------
