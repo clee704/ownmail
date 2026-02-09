@@ -49,6 +49,11 @@ def decode_header(value) -> str:
         value = str(value)
     if not isinstance(value, str):
         return ""
+
+    # Check if it looks like MIME-encoded
+    if '=?' not in value or '?=' not in value:
+        return value
+
     try:
         decoded_parts = email.header.decode_header(value)
         result = []
@@ -72,7 +77,42 @@ def decode_header(value) -> str:
                 result.append(data)
         return "".join(result)
     except Exception:
-        return str(value) if value else ""
+        # If standard decoding fails (malformed base64, etc.), try manual approach
+        # Some emails have split multi-byte chars across encoded-words
+        try:
+            import base64
+            import re
+            # Find all encoded-words and try to decode them together
+            pattern = r'=\?([^?]+)\?([BbQq])\?([^?]*)\?='
+            matches = list(re.finditer(pattern, value))
+
+            if not matches:
+                return value
+
+            # Collect all base64 parts for same charset
+            base64_parts = []
+            charset_used = None
+            for m in matches:
+                charset, encoding, encoded_text = m.groups()
+                if encoding.upper() == 'B':
+                    base64_parts.append(encoded_text)
+                    charset_used = charset
+
+            if base64_parts and charset_used:
+                # Combine and decode
+                combined = ''.join(base64_parts)
+                # Add padding if needed
+                padding = 4 - (len(combined) % 4) if len(combined) % 4 else 0
+                combined += '=' * padding
+                try:
+                    decoded_bytes = base64.b64decode(combined)
+                    return decoded_bytes.decode(charset_used, errors='replace')
+                except Exception:
+                    pass
+
+            return value  # Return original if all else fails
+        except Exception:
+            return str(value) if value else ""
 
 
 def _extract_snippet(msg: email.message.Message, max_len: int = 150) -> str:
@@ -541,6 +581,13 @@ def create_app(
                         sender = parsed.get("sender", "")
                         date_str = parsed.get("date_str", "")
 
+                        # Ensure MIME-encoded headers are fully decoded
+                        # Parser may return partially decoded or raw MIME strings
+                        if subject and '=?' in subject:
+                            subject = decode_header(subject)
+                        if sender and '=?' in sender:
+                            sender = decode_header(sender)
+
                         # Always extract snippet from parsed body for correct encoding
                         # FTS snippet may have garbled Korean text
                         body = parsed.get("body", "")
@@ -548,8 +595,29 @@ def create_app(
                             snippet = body[:150] + "..." if len(body) > 150 else body
                     except Exception:
                         # Fall back to FTS values if file parsing fails
+                        # But still try to decode MIME-encoded headers
+                        if subject:
+                            subject = decode_header(subject)
+                        if sender:
+                            sender = decode_header(sender)
                         if not subject:
                             subject = "(Error reading email)"
+                else:
+                    # File doesn't exist - decode headers from database values
+                    if subject:
+                        subject = decode_header(subject)
+                    if sender:
+                        sender = decode_header(sender)
+                    if not subject:
+                        subject = "(No subject)"
+            else:
+                # No filename - decode headers from database values
+                if subject:
+                    subject = decode_header(subject)
+                if sender:
+                    sender = decode_header(sender)
+                if not subject:
+                    subject = "(No subject)"
 
             results.append({
                 "message_id": msg_id,
