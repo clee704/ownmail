@@ -570,7 +570,7 @@ class GmailArchive:
             client_credentials = self.keychain.load_client_credentials()
             if not client_credentials:
                 print("\n❌ Error: No OAuth credentials found in Keychain")
-                print("\nRun 'gmail_archive.py setup' first to configure credentials.")
+                print("\nRun 'ownmail setup' first to configure credentials.")
                 sys.exit(1)
 
             print("\nStarting OAuth authentication flow...")
@@ -1073,7 +1073,7 @@ class GmailArchive:
         try:
             self.keychain.save_client_credentials(credentials_json)
             print("\n✓ OAuth credentials saved to macOS Keychain")
-            print("\nYou can now run: gmail_archive.py backup")
+            print("\nYou can now run: ownmail backup")
             
             # Remind user to delete the source file if imported from file
             if credentials_file:
