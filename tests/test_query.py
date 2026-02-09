@@ -155,6 +155,21 @@ class TestTokenize:
         assert tokens[0].value == "spam"
         assert tokens[0].negated is True
 
+    def test_negated_phrase(self):
+        """Test tokenizing negated phrase."""
+        tokens, error = _tokenize('-"exact phrase"')
+        assert error is None
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.NEGATION
+        assert tokens[0].value == "exact phrase"
+
+    def test_negated_empty_filter_error(self):
+        """Test that empty negated filter values return an error."""
+        tokens, error = _tokenize("-from:")
+        assert error is not None
+        assert "Empty value" in error
+        assert "-from:" in error
+
     def test_or_operator(self):
         """Test tokenizing OR operator."""
         tokens, error = _tokenize("invoice OR receipt")
@@ -265,6 +280,11 @@ class TestEscapeFTS5Value:
         """Test internal quotes are escaped."""
         result = _escape_fts5_value('o"brien')
         assert result == '"o""brien"'
+
+    def test_whitespace_quoted(self):
+        """Test value with whitespace is quoted."""
+        result = _escape_fts5_value("exact phrase")
+        assert result == '"exact phrase"'
 
 
 class TestNormalizeDate:
@@ -412,6 +432,18 @@ class TestParseQuery:
         result = parse_query("-has:attachment")
         assert result.error is None
         assert "(e.attachments IS NULL OR e.attachments = '')" in result.where_clauses
+
+    def test_negated_phrase(self):
+        """Test -"phrase" generates FTS NOT with quotes."""
+        result = parse_query('-"meeting notes"')
+        assert result.error is None
+        assert 'NOT "meeting notes"' in result.fts_query
+
+    def test_negated_empty_filter_error(self):
+        """Test empty negated filter returns error."""
+        result = parse_query("-from:")
+        assert result.error is not None
+        assert "Empty value" in result.error
 
     def test_or_operator(self):
         """Test OR operator."""
