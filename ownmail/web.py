@@ -509,6 +509,11 @@ def _clean_snippet_text(text: str) -> str:
         '', text, flags=re.IGNORECASE
     )
 
+    # Strip HTML tags — some snippets come from HTML-only emails
+    text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', ' ', text)
+
     # Remove zero-width and invisible characters
     # U+200B Zero Width Space
     # U+200C Zero Width Non-Joiner (ZWNJ) - common in marketing emails
