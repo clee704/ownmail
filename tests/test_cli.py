@@ -217,27 +217,27 @@ sources:
         assert "Verify" in captured.out
 
 
-class TestCmdBackup:
-    """Tests for backup command."""
+class TestCmdDownload:
+    """Tests for download command."""
 
-    def test_backup_no_sources_exits(self, temp_dir, capsys, monkeypatch):
-        """Test backup exits when no sources configured."""
+    def test_download_no_sources_exits(self, temp_dir, capsys, monkeypatch):
+        """Test download exits when no sources configured."""
         from ownmail.archive import EmailArchive
-        from ownmail.cli import cmd_backup
+        from ownmail.cli import cmd_download
 
         archive = EmailArchive(temp_dir, {})
         config = {}
 
         with pytest.raises(SystemExit):
-            cmd_backup(archive, config)
+            cmd_download(archive, config)
 
         captured = capsys.readouterr()
         assert "No sources configured" in captured.out
 
-    def test_backup_source_not_found(self, temp_dir, capsys):
-        """Test backup with nonexistent source name."""
+    def test_download_source_not_found(self, temp_dir, capsys):
+        """Test download with nonexistent source name."""
         from ownmail.archive import EmailArchive
-        from ownmail.cli import cmd_backup
+        from ownmail.cli import cmd_download
 
         config = {
             "sources": [
@@ -247,15 +247,15 @@ class TestCmdBackup:
         archive = EmailArchive(temp_dir, config)
 
         with pytest.raises(SystemExit):
-            cmd_backup(archive, config, source_name="nonexistent")
+            cmd_download(archive, config, source_name="nonexistent")
 
         captured = capsys.readouterr()
         assert "not found" in captured.out
 
-    def test_backup_unknown_source_type(self, temp_dir, capsys):
-        """Test backup with unknown source type."""
+    def test_download_unknown_source_type(self, temp_dir, capsys):
+        """Test download with unknown source type."""
         from ownmail.archive import EmailArchive
-        from ownmail.cli import cmd_backup
+        from ownmail.cli import cmd_download
 
         config = {
             "sources": [
@@ -264,15 +264,15 @@ class TestCmdBackup:
         }
         archive = EmailArchive(temp_dir, config)
 
-        cmd_backup(archive, config)
+        cmd_download(archive, config)
 
         captured = capsys.readouterr()
         assert "Unknown source type" in captured.out
 
-    def test_backup_imap_not_implemented(self, temp_dir, capsys):
-        """Test backup with IMAP source shows coming soon."""
+    def test_download_imap(self, temp_dir, capsys):
+        """Test download with IMAP source."""
         from ownmail.archive import EmailArchive
-        from ownmail.cli import cmd_backup
+        from ownmail.cli import cmd_download
 
         config = {
             "sources": [
@@ -290,10 +290,10 @@ class TestCmdBackup:
             mock_provider.get_current_sync_state.return_value = None
             mock_provider_cls.return_value = mock_provider
 
-            cmd_backup(archive, config)
+            cmd_download(archive, config)
 
         captured = capsys.readouterr()
-        assert "Backup" in captured.out or "Connected" in captured.out or "up to date" in captured.out.lower()
+        assert "Download" in captured.out or "Connected" in captured.out or "up to date" in captured.out.lower()
 
 
 class TestCmdSetup:
@@ -910,7 +910,7 @@ class TestMainEdgeCases:
         )
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'backup']):
+        with patch.object(sys, 'argv', ['ownmail', 'download']):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -947,11 +947,11 @@ class TestMainEdgeCases:
                 mock_setup.assert_called_once()
 
 
-class TestBackupCommand:
-    """Tests for backup command with mocked provider."""
+class TestDownloadCommand:
+    """Tests for download command with mocked provider."""
 
-    def test_backup_with_gmail_source(self, temp_dir, capsys, monkeypatch):
-        """Test backup command with Gmail source configured."""
+    def test_download_with_gmail_source(self, temp_dir, capsys, monkeypatch):
+        """Test download command with Gmail source configured."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
@@ -975,14 +975,14 @@ sources:
             mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', 'backup']):
+            with patch.object(sys, 'argv', ['ownmail', 'download']):
                 main()
 
         captured = capsys.readouterr()
-        assert "up to date" in captured.out.lower() or "Backup" in captured.out
+        assert "up to date" in captured.out.lower() or "Download" in captured.out
 
-    def test_backup_source_specified(self, temp_dir, capsys, monkeypatch):
-        """Test backup with source specified via --source."""
+    def test_download_source_specified(self, temp_dir, capsys, monkeypatch):
+        """Test download with source specified via --source."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
@@ -1005,14 +1005,14 @@ sources:
             mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', '--source', 'test_gmail', 'backup']):
+            with patch.object(sys, 'argv', ['ownmail', '--source', 'test_gmail', 'download']):
                 main()
 
         captured = capsys.readouterr()
-        assert "up to date" in captured.out.lower() or "Backup" in captured.out
+        assert "up to date" in captured.out.lower() or "Download" in captured.out
 
-    def test_backup_missing_auth(self, temp_dir, capsys, monkeypatch):
-        """Test backup with missing auth config."""
+    def test_download_missing_auth(self, temp_dir, capsys, monkeypatch):
+        """Test download with missing auth config."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
@@ -1025,7 +1025,7 @@ sources:
 """)
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'backup']):
+        with patch.object(sys, 'argv', ['ownmail', 'download']):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -1034,8 +1034,8 @@ sources:
         # Should report missing auth
         assert "missing" in captured.out.lower() or "auth" in captured.out.lower()
 
-    def test_backup_with_new_emails(self, temp_dir, capsys, monkeypatch):
-        """Test backup downloads new emails."""
+    def test_download_with_new_emails(self, temp_dir, capsys, monkeypatch):
+        """Test download fetches new emails."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
@@ -1062,14 +1062,14 @@ sources:
             )
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', 'backup']):
+            with patch.object(sys, 'argv', ['ownmail', 'download']):
                 main()
 
         captured = capsys.readouterr()
-        assert "Downloaded" in captured.out or "Backup" in captured.out
+        assert "Downloaded" in captured.out or "Download" in captured.out
 
-    def test_backup_with_errors(self, temp_dir, capsys, monkeypatch):
-        """Test backup handles download errors."""
+    def test_download_with_errors(self, temp_dir, capsys, monkeypatch):
+        """Test download handles errors."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
@@ -1093,14 +1093,14 @@ sources:
             mock_provider.download_message.return_value = (None, None)  # Download fails
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', 'backup']):
+            with patch.object(sys, 'argv', ['ownmail', 'download']):
                 main()
 
         captured = capsys.readouterr()
-        assert "Error" in captured.out or "Backup" in captured.out
+        assert "Error" in captured.out or "Download" in captured.out
 
-    def test_backup_invalid_secret_ref(self, temp_dir, capsys, monkeypatch):
-        """Test backup with invalid secret_ref format."""
+    def test_download_invalid_secret_ref(self, temp_dir, capsys, monkeypatch):
+        """Test download with invalid secret_ref format."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
@@ -1115,7 +1115,7 @@ sources:
 """)
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'backup']):
+        with patch.object(sys, 'argv', ['ownmail', 'download']):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1

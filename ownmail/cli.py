@@ -237,7 +237,7 @@ def _setup_imap(
     _update_or_create_config(config, config_path, source_name, source_snippet)
 
     print("\n✓ Setup complete!")
-    print(f"  Run 'ownmail backup --source {source_name}' to start backing up.")
+    print(f"  Run 'ownmail download --source {source_name}' to start downloading.")
 
 
 def _setup_oauth(
@@ -317,7 +317,7 @@ def _setup_oauth(
         print()
 
     # Now set up an account
-    print("Add a Gmail account to backup:\n")
+    print("Add a Gmail account to download:\n")
 
     account_email = input("Gmail address: ").strip()
     if not account_email:
@@ -354,10 +354,10 @@ def _setup_oauth(
     _update_or_create_config(config, config_path, source_name, source_snippet)
 
     print("\n✓ Setup complete!")
-    print(f"  Run 'ownmail backup --source {source_name}' to start backing up.")
+    print(f"  Run 'ownmail download --source {source_name}' to start downloading.")
 
 
-def cmd_backup(
+def cmd_download(
     archive: EmailArchive,
     config: dict,
     source_name: Optional[str] = None,
@@ -365,18 +365,18 @@ def cmd_backup(
     until: Optional[str] = None,
     verbose: bool = False,
 ) -> None:
-    """Run backup for one or all sources.
+    """Run download for one or all sources.
 
     Args:
         archive: EmailArchive instance
         config: Configuration dictionary
-        source_name: Specific source to backup (None = all)
-        since: Only backup emails after this date (YYYY-MM-DD)
-        until: Only backup emails before this date (YYYY-MM-DD)
+        source_name: Specific source to download (None = all)
+        since: Only download emails after this date (YYYY-MM-DD)
+        until: Only download emails before this date (YYYY-MM-DD)
         verbose: Show detailed progress output
     """
     print("\n" + "=" * 50)
-    print("ownmail - Backup")
+    print("ownmail - Download")
     print("=" * 50 + "\n")
 
     sources = get_sources(config)
@@ -395,6 +395,7 @@ def cmd_backup(
             print(f"❌ Error: Source '{source_name}' not found in config")
             sys.exit(1)
         sources = [source]
+
 
     for source in sources:
         name = source["name"]
@@ -438,7 +439,7 @@ def cmd_backup(
                 print("[verbose] Getting email count...", flush=True)
             email_count = archive.db.get_email_count(account)
             print(f"Archive location: {archive.archive_dir}", flush=True)
-            print(f"Previously backed up: {email_count:,} emails", flush=True)
+            print(f"Previously downloaded: {email_count:,} emails", flush=True)
 
             # Show date filter if specified
             if since or until:
@@ -449,20 +450,20 @@ def cmd_backup(
                     date_range.append(f"until {until}")
                 print(f"Date filter: {' '.join(date_range)}", flush=True)
 
-            # Run backup
+            # Run download
             if verbose:
-                print("[verbose] Starting backup...", flush=True)
+                print("[verbose] Starting download...", flush=True)
             result = archive.backup(provider, since=since, until=until, verbose=verbose)
 
             # Print summary
             total = email_count + result["success_count"]
             print("\n" + "-" * 50)
             if result["interrupted"]:
-                print("Backup Paused!")
+                print("Download Paused!")
                 print(f"  Downloaded: {result['success_count']} emails")
-                print("\n  Run 'backup' again to resume.")
+                print("\n  Run 'download' again to resume.")
             else:
-                print("Backup Complete!")
+                print("Download Complete!")
                 print(f"  Downloaded: {result['success_count']} emails")
             if result["error_count"] > 0:
                 print(f"  Errors: {result['error_count']}")
@@ -489,7 +490,7 @@ def cmd_backup(
 
             email_count = archive.db.get_email_count(account)
             print(f"Archive location: {archive.archive_dir}", flush=True)
-            print(f"Previously backed up: {email_count:,} emails", flush=True)
+            print(f"Previously downloaded: {email_count:,} emails", flush=True)
 
             if since or until:
                 date_range = []
@@ -504,11 +505,11 @@ def cmd_backup(
             total = email_count + result["success_count"]
             print("\n" + "-" * 50)
             if result["interrupted"]:
-                print("Backup Paused!")
+                print("Download Paused!")
                 print(f"  Downloaded: {result['success_count']} emails")
-                print("\n  Run 'backup' again to resume.")
+                print("\n  Run 'download' again to resume.")
             else:
-                print("Backup Complete!")
+                print("Download Complete!")
                 print(f"  Downloaded: {result['success_count']} emails")
             if result["error_count"] > 0:
                 print(f"  Errors: {result['error_count']}")
@@ -628,7 +629,7 @@ def cmd_reset_sync(
         archive.db.delete_sync_state(account, sync_key)
         print(f"✓ Reset sync state for {account}")
 
-    print("\nNext backup will do a full sync (checking all messages).")
+    print("Next download will do a full sync (checking all messages).")
     print("Already downloaded emails will be skipped.")
 
 
@@ -636,15 +637,15 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
         prog="ownmail",
-        description="ownmail - Own your mail. Backup and search your emails locally.",
+        description="ownmail - Own your mail. Download and search your emails locally.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Version: {__version__}
 
 Examples:
   %(prog)s setup                           First-time credential setup
-  %(prog)s backup                          Download new emails
-  %(prog)s backup --source gmail_personal  Backup specific source
+  %(prog)s download                        Download new emails
+  %(prog)s download --source gmail_personal  Download specific source
   %(prog)s search "invoice from:amazon"   Search emails
   %(prog)s stats                           Show statistics
   %(prog)s sources list                    List configured sources
@@ -688,7 +689,7 @@ Examples:
     setup_parser = subparsers.add_parser(
         "setup",
         help="Set up email source credentials",
-        description="Set up credentials for backing up emails. Supports IMAP with App Passwords (recommended) or Gmail API with OAuth.",
+        description="Set up credentials for downloading emails. Supports IMAP with App Passwords (recommended) or Gmail API with OAuth.",
     )
     setup_parser.add_argument(
         "--method",
@@ -701,21 +702,21 @@ Examples:
         help="Path to OAuth credentials JSON file (implies --method oauth)",
     )
 
-    # backup command
-    backup_parser = subparsers.add_parser(
-        "backup",
+    # download command
+    download_parser = subparsers.add_parser(
+        "download",
         help="Download new emails",
         description="Download new emails and index them for search.",
     )
-    backup_parser.add_argument(
+    download_parser.add_argument(
         "--since",
         type=str,
-        help="Only backup emails after this date (YYYY-MM-DD)",
+        help="Only download emails after this date (YYYY-MM-DD)",
     )
-    backup_parser.add_argument(
+    download_parser.add_argument(
         "--until",
         type=str,
-        help="Only backup emails before this date (YYYY-MM-DD)",
+        help="Only download emails before this date (YYYY-MM-DD)",
     )
 
     # search command
@@ -758,7 +759,7 @@ Examples:
     sync_check_parser = subparsers.add_parser(
         "sync-check",
         help="Compare local archive with server to find missing emails",
-        description="Compare your local archive with what's on the server. Shows emails that exist on the server but haven't been backed up yet, and local emails that were deleted from the server.",
+        description="Compare your local archive with what's on the server. Shows emails that exist on the server but haven't been downloaded yet, and local emails that were deleted from the server.",
     )
     sync_check_parser.add_argument("--verbose", "-v", action="store_true", help="Show full differences")
 
@@ -766,7 +767,7 @@ Examples:
     subparsers.add_parser(
         "reset-sync",
         help="Reset sync state to force full re-download",
-        description="Clear the sync state for all sources, forcing the next backup to do a full sync.",
+        description="Clear the sync state for all sources, forcing the next download to do a full sync.",
     )
 
     # update-labels command
@@ -850,8 +851,8 @@ Examples:
         else:
             archive = EmailArchive(archive_root, config)
 
-            if args.command == "backup":
-                cmd_backup(archive, config, args.source, args.since, args.until, args.verbose)
+            if args.command == "download":
+                cmd_download(archive, config, args.source, args.since, args.until, args.verbose)
             elif args.command == "search":
                 cmd_search(archive, args.query, args.source, args.limit)
             elif args.command == "stats":
