@@ -3,11 +3,11 @@
 {% block title %}Search Help - ownmail{% endblock %}
 
 {% block content %}
-    <div class="help-page">
+    <div class="ownmail-help-page">
         <h2>Search Syntax</h2>
 
         <h3>Field Filters</h3>
-        <table class="help-table">
+        <table class="ownmail-help-table">
             <tr><td><code>from:user@example.com</code></td><td>Emails from this address</td></tr>
             <tr><td><code>from:alice</code></td><td>Emails from sender named "alice"</td></tr>
             <tr><td><code>to:user@example.com</code></td><td>Emails to this address</td></tr>
@@ -18,14 +18,14 @@
         </table>
 
         <h3>Date Filters</h3>
-        <table class="help-table">
+        <table class="ownmail-help-table">
             <tr><td><code>after:2024-01-15</code></td><td>Emails on or after this date</td></tr>
             <tr><td><code>before:2024-06-01</code></td><td>Emails before this date</td></tr>
             <tr><td><code>after:2024-01-01 before:2024-02-01</code></td><td>Emails in January 2024</td></tr>
         </table>
 
         <h3>Boolean Operators</h3>
-        <table class="help-table">
+        <table class="ownmail-help-table">
             <tr><td><code>apple orange</code></td><td>Both words (implicit AND)</td></tr>
             <tr><td><code>apple OR orange</code></td><td>Either word</td></tr>
             <tr><td><code>-orange</code></td><td>Exclude emails containing "orange"</td></tr>
@@ -33,7 +33,7 @@
         </table>
 
         <h3>Negated Filters</h3>
-        <table class="help-table">
+        <table class="ownmail-help-table">
             <tr><td><code>-from:user@example.com</code></td><td>Exclude emails from this sender</td></tr>
             <tr><td><code>-label:promotions</code></td><td>Exclude emails with this label</td></tr>
             <tr><td><code>-attachment:exe</code></td><td>Exclude emails with .exe attachments</td></tr>
@@ -41,18 +41,18 @@
         </table>
 
         <h3>Phrases &amp; Grouping</h3>
-        <table class="help-table">
+        <table class="ownmail-help-table">
             <tr><td><code>"hello world"</code></td><td>Exact phrase</td></tr>
             <tr><td><code>(apple OR orange) juice</code></td><td>Grouping with parentheses</td></tr>
         </table>
 
         <h3>Prefix Matching</h3>
-        <table class="help-table">
+        <table class="ownmail-help-table">
             <tr><td><code>meet*</code></td><td>Words starting with "meet" (meeting, meets, etc.)</td></tr>
         </table>
 
         <h3>Examples</h3>
-        <table class="help-table">
+        <table class="ownmail-help-table">
             <tr><td><code>from:amazon invoice</code></td><td>Invoices from Amazon</td></tr>
             <tr><td><code>subject:urgent after:2024-01-01</code></td><td>Urgent emails this year</td></tr>
             <tr><td><code>attachment:pdf report OR invoice</code></td><td>PDFs with report or invoice</td></tr>

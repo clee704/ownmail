@@ -253,18 +253,18 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "Hello" in result
 
     def test_scopes_css_selectors(self):
-        """Test that CSS selectors are scoped under #email-content."""
+        """Test that CSS selectors are scoped under #ownmail-email-content."""
         html = '<style>.header { color: red; } p { margin: 0; }</style><p>Text</p>'
         result, _ = self.sanitizer.sanitize(html)
-        assert "#email-content .header" in result
-        assert "#email-content p" in result
+        assert "#ownmail-email-content .header" in result
+        assert "#ownmail-email-content p" in result
         assert "Text" in result
 
     def test_scopes_body_selector_to_email_content(self):
-        """Test that body {} becomes #email-content {}."""
+        """Test that body {} becomes #ownmail-email-content {}."""
         html = '<html><head><style>body { font-size: 14px; }</style></head><body><p>Hi</p></body></html>'
         result, _ = self.sanitizer.sanitize(html)
-        assert "#email-content" in result
+        assert "#ownmail-email-content" in result
         assert "font-size" in result
 
     def test_scopes_css_in_media_query(self):
@@ -272,15 +272,15 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         html = '<style>@media (max-width: 600px) { .col { width: 100%; } }</style><div class="col">X</div>'
         result, _ = self.sanitizer.sanitize(html)
         assert "@media" in result
-        assert "#email-content .col" in result
+        assert "#ownmail-email-content .col" in result
 
     def test_preserves_font_face(self):
         """Test that @font-face blocks are not scoped."""
         html = '<style>@font-face { font-family: MyFont; src: local("MyFont"); } p { color: red; }</style><p>Hi</p>'
         result, _ = self.sanitizer.sanitize(html)
         assert "@font-face" in result
-        assert "@#email-content" not in result
-        assert "#email-content p" in result
+        assert "@#ownmail-email-content" not in result
+        assert "#ownmail-email-content p" in result
 
     def test_strips_dark_mode_media(self):
         """Test that @media (prefers-color-scheme: dark) blocks are removed."""

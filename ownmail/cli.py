@@ -648,6 +648,7 @@ Examples:
                 page_size = web_config.get("page_size", 20)
                 trusted_senders = web_config.get("trusted_senders", [])
                 date_format = web_config.get("date_format")  # e.g., "%Y-%m-%d" or "%m/%d"
+                auto_scale = web_config.get("auto_scale", True)
                 run_server(
                     serve_archive,
                     args.host,
@@ -659,6 +660,7 @@ Examples:
                     trusted_senders,
                     config_path,
                     date_format,
+                    auto_scale,
                 )
 
     except KeyboardInterrupt:
