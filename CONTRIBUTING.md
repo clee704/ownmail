@@ -108,6 +108,8 @@ perf: batch FTS deletes at end of reindex for 10x speedup
 - Use imperative mood: "add feature" not "added feature"
 - Keep first line under 72 characters
 - Add body for complex changes explaining why, not just what
+- **Keep commits self-contained** — each commit should be logically independent
+- **Don't mix unrelated changes** — separate bug fixes, features, and refactors into different commits
 
 ## Database Migrations
 
