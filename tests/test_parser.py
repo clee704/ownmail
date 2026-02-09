@@ -166,7 +166,7 @@ Hello world UTF-8!
         content = """Content-Type: text/plain; charset="utf-8"
 
 안녕하세요
-""".encode('utf-8')
+""".encode()
         msg = email.message_from_bytes(content)
         result = EmailParser._safe_get_content(msg)
         # Should handle Korean or return something reasonable
@@ -266,7 +266,7 @@ Nested plain text.
         assert isinstance(result["body"], str)
 
 
-class TestSafeGetHeader:
+class TestSafeGetHeaderEdgeCases:
     """Tests for _safe_get_header edge cases."""
 
     def test_safe_get_header_none_value(self):
@@ -289,8 +289,8 @@ class TestSafeGetHeader:
         assert isinstance(result, str)
 
 
-class TestSanitizeHeader:
-    """Tests for _sanitize_header."""
+class TestSanitizeHeaderEdgeCases:
+    """Additional tests for _sanitize_header."""
 
     def test_sanitize_crlf(self):
         """Test removing CR/LF from headers."""
@@ -436,3 +436,88 @@ PDF 2
         result = EmailParser.parse_file(content=content)
         assert "doc1.pdf" in result["attachments"]
         assert "doc2.pdf" in result["attachments"]
+
+
+class TestSafeGetHeaderFallback:
+    """Tests for _safe_get_header fallback paths."""
+
+    def test_safe_get_header_with_defects(self):
+        """Test header access with defects fallback."""
+        import email
+        # Create a malformed email
+        content = b"From: =?unknown?Q?test?= <test@example.com>\nSubject: Test\n\nBody"
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_header(msg, "From")
+        assert isinstance(result, str)
+
+    def test_safe_get_header_complete_failure(self):
+        """Test header access when everything fails."""
+        from unittest.mock import MagicMock
+        msg = MagicMock()
+        msg.get.side_effect = Exception("Header parsing failed")
+        result = EmailParser._safe_get_header(msg, "Subject")
+        assert result == ""
+
+
+class TestSafeGetContentFallback:
+    """Tests for _safe_get_content fallback paths."""
+
+    def test_safe_get_content_get_payload_fallback(self):
+        """Test fallback to get_payload when get_content fails."""
+        from unittest.mock import MagicMock
+        part = MagicMock()
+        part.get_content.side_effect = Exception("get_content failed")
+        part.get_payload.return_value = b"Fallback content"
+
+        result = EmailParser._safe_get_content(part)
+        assert isinstance(result, str)
+
+    def test_safe_get_content_complete_failure(self):
+        """Test when both get_content and get_payload fail."""
+        from unittest.mock import MagicMock
+        part = MagicMock()
+        part.get_content.side_effect = Exception("get_content failed")
+        part.get_payload.side_effect = Exception("get_payload failed")
+
+        result = EmailParser._safe_get_content(part)
+        assert result == ""
+
+    def test_safe_get_content_bytes_fallback_encoding(self):
+        """Test decoding bytes with fallback encodings."""
+        import email
+        # ISO-8859-1 encoded content
+        content = b"""Content-Type: text/plain; charset="iso-8859-1"
+
+Caf\xe9"""
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        assert isinstance(result, str)
+
+
+class TestParseFileExceptionHandling:
+    """Tests for parse_file exception handling."""
+
+    def test_parse_file_with_exception_in_walk(self):
+        """Test parse_file handles exceptions during multipart walk."""
+
+        # This should not crash
+        content = b"""From: test@example.com
+Subject: Test
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="broken
+
+This has a broken boundary
+"""
+        result = EmailParser.parse_file(content=content)
+        assert isinstance(result["body"], str)
+
+    def test_parse_non_multipart_html(self):
+        """Test parsing non-multipart HTML email."""
+        content = b"""From: sender@example.com
+Subject: HTML Email
+Content-Type: text/html
+
+<html><body><h1>Header</h1><p>Paragraph</p></body></html>
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "Header" in result["body"] or "Paragraph" in result["body"]

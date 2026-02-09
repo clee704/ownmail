@@ -56,7 +56,7 @@ We enforce a coverage barrier to prevent regressions. Run tests with coverage:
 pytest --cov=ownmail --cov-report=term-missing
 ```
 
-Current minimum coverage: **80%** (configured in `pyproject.toml`).
+Current minimum coverage: **85%** (configured in `pyproject.toml`).
 
 When adding new code, write tests to maintain or improve coverage. The build will fail if coverage drops below the barrier.
 

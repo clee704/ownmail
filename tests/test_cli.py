@@ -1,7 +1,6 @@
 """Tests for CLI module."""
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -316,9 +315,10 @@ class TestCmdSetup:
 
     def test_setup_first_time_prompts_for_paste(self, temp_dir, capsys, monkeypatch):
         """Test setup prompts for credentials when none exist."""
+        from unittest.mock import MagicMock
+
         from ownmail.cli import cmd_setup
         from ownmail.keychain import KeychainStorage
-        from unittest.mock import MagicMock
 
         mock_keychain = MagicMock(spec=KeychainStorage)
         mock_keychain.has_client_credentials.return_value = False
@@ -496,7 +496,7 @@ class TestMainEdgeCases:
         with patch.object(sys, 'argv', ['ownmail', 'verify', '--verbose']):
             main()
 
-        captured = capsys.readouterr()
+        capsys.readouterr()
         # Should not crash
 
 
@@ -584,3 +584,91 @@ sources:
         captured = capsys.readouterr()
         # Should report missing auth
         assert "missing" in captured.out.lower() or "auth" in captured.out.lower()
+
+    def test_backup_with_new_emails(self, temp_dir, capsys, monkeypatch):
+        """Test backup downloads new emails."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"""
+archive_root: {temp_dir}
+sources:
+  - name: test_gmail
+    type: gmail_api
+    account: test@gmail.com
+    auth:
+      secret_ref: keychain:test_token
+""")
+        monkeypatch.chdir(temp_dir)
+
+        # Mock the GmailProvider
+        with patch("ownmail.cli.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider.account = "test@gmail.com"
+            mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
+            mock_provider.get_current_sync_state.return_value = "12345"
+            mock_provider.download_message.return_value = (
+                b"From: test@example.com\nDate: Mon, 15 Jan 2024 10:00:00 +0000\n\nBody",
+                ["INBOX"]
+            )
+            mock_provider_class.return_value = mock_provider
+
+            with patch.object(sys, 'argv', ['ownmail', 'backup']):
+                main()
+
+        captured = capsys.readouterr()
+        assert "Downloaded" in captured.out or "Backup" in captured.out
+
+    def test_backup_with_errors(self, temp_dir, capsys, monkeypatch):
+        """Test backup handles download errors."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"""
+archive_root: {temp_dir}
+sources:
+  - name: test_gmail
+    type: gmail_api
+    account: test@gmail.com
+    auth:
+      secret_ref: keychain:test_token
+""")
+        monkeypatch.chdir(temp_dir)
+
+        # Mock the GmailProvider with download failures
+        with patch("ownmail.cli.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider.account = "test@gmail.com"
+            mock_provider.get_new_message_ids.return_value = (["msg1"], None)
+            mock_provider.get_current_sync_state.return_value = "12345"
+            mock_provider.download_message.return_value = (None, None)  # Download fails
+            mock_provider_class.return_value = mock_provider
+
+            with patch.object(sys, 'argv', ['ownmail', 'backup']):
+                main()
+
+        captured = capsys.readouterr()
+        assert "Error" in captured.out or "Backup" in captured.out
+
+    def test_backup_invalid_secret_ref(self, temp_dir, capsys, monkeypatch):
+        """Test backup with invalid secret_ref format."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"""
+archive_root: {temp_dir}
+sources:
+  - name: test_gmail
+    type: gmail_api
+    account: test@gmail.com
+    auth:
+      secret_ref: invalid_format
+""")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'backup']):
+            main()
+
+        captured = capsys.readouterr()
+        # Should report error about secret_ref format
+        assert "error" in captured.out.lower() or "invalid" in captured.out.lower() or "keychain:" in captured.out.lower()
