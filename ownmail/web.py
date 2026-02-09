@@ -120,6 +120,36 @@ COMMON_TIMEZONES = [
 ]
 
 
+def _get_timezone_offset(tz_name: str) -> str:
+    """Return the current UTC offset string for a timezone (e.g. '-05:00').
+
+    Returns empty string if the timezone cannot be resolved.
+    """
+    try:
+        tz = ZoneInfo(tz_name)
+        now = datetime.now(tz)
+        offset = now.strftime("%z")  # e.g. "-0500"
+        return f"{offset[:3]}:{offset[3:]}"  # e.g. "-05:00"
+    except Exception:
+        return ""
+
+
+def _get_timezone_groups_with_offsets() -> list:
+    """Return COMMON_TIMEZONES with UTC offset labels for the dropdown.
+
+    Each zone becomes a dict with 'value' (IANA name) and 'label' (display text).
+    """
+    groups = []
+    for group_name, zones in COMMON_TIMEZONES:
+        items = []
+        for tz_name in zones:
+            offset = _get_timezone_offset(tz_name)
+            label = f"{tz_name} (UTC{offset})" if offset else tz_name
+            items.append({"value": tz_name, "label": label})
+        groups.append((group_name, items))
+    return groups
+
+
 def _resolve_timezone(tz_name: str | None) -> ZoneInfo | None:
     """Resolve a timezone name to a ZoneInfo object.
 
@@ -153,26 +183,26 @@ def _to_local_datetime(date_str: str, tz: ZoneInfo | None = None) -> datetime | 
         return None
 
 
+# Default date formats
+SEARCH_DATE_FORMAT = "%b %d, %Y"  # e.g. "Jan 27, 2026"
+DETAIL_DATE_FORMAT = "%a, %d %b %Y %H:%M:%S"  # e.g. "Tue, 27 Jan 2026 07:16:05"
+
+
 def _format_date_short(dt: datetime, date_fmt: str | None = None) -> str:
     """Format a datetime as a short date string for search results.
 
-    Uses the configured format if set, otherwise auto-formats as
-    "Jan 26" for this year or "2025/12/15" for other years.
+    Uses the configured format if set, otherwise defaults to 'Jan 27, 2026'.
     """
-    if date_fmt:
-        return dt.strftime(date_fmt)
-    now = datetime.now(dt.tzinfo)
-    if dt.year == now.year:
-        return dt.strftime("%b %d")
-    return dt.strftime("%Y/%m/%d")
+    return dt.strftime(date_fmt or SEARCH_DATE_FORMAT)
 
 
-def _format_date_long(dt: datetime) -> str:
+def _format_date_long(dt: datetime, date_fmt: str | None = None) -> str:
     """Format a datetime as a full date string for email detail view.
 
-    Example: "Sat, 08 Feb 2026 14:30:00 +0900"
+    Uses the configured format if set, otherwise defaults to
+    'Tue, 27 Jan 2026 07:16:05' (no timezone).
     """
-    return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
+    return dt.strftime(date_fmt or DETAIL_DATE_FORMAT)
 
 
 def _extract_attachment_filename(part) -> str:
@@ -549,6 +579,8 @@ def _clean_snippet_text(text: str) -> str:
     as preheader padding (ZWNJ, ZWJ, ZWSP, etc.), CSS code that leaked
     through, MIME headers embedded in body text, and repetitive padding
     characters.
+
+    Uses lxml for HTML stripping (handles malformed/truncated tags properly).
     """
     if not text:
         return text
@@ -560,12 +592,32 @@ def _clean_snippet_text(text: str) -> str:
         '', text, flags=re.IGNORECASE
     )
 
-    # Strip HTML tags — some snippets come from HTML-only emails
-    text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<[^>]+>', ' ', text)
-    # Strip partial/truncated HTML tags at end of string (e.g. "<meta name=\"view")
-    text = re.sub(r'<[^>]*$', '', text)
+    # Strip HTML tags using lxml (handles malformed/truncated tags properly)
+    if '<' in text:
+        try:
+            from lxml import html as lxml_html
+
+            tree = lxml_html.fromstring(text)
+            # Remove elements that shouldn't contribute text,
+            # preserving tail text (text after the closing tag)
+            for element in tree.xpath('//style | //script | //head | //noscript'):
+                tail = element.tail
+                parent = element.getparent()
+                if parent is not None:
+                    if tail:
+                        prev = element.getprevious()
+                        if prev is not None:
+                            prev.tail = (prev.tail or "") + tail
+                        else:
+                            parent.text = (parent.text or "") + tail
+                    parent.remove(element)
+            text = tree.text_content()
+        except Exception:
+            # Fallback: simple regex if lxml fails
+            text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<[^>]+>', ' ', text)
+            text = re.sub(r'<[^>]*$', '', text)
 
     # Remove zero-width and invisible characters
     # U+200B Zero Width Space
@@ -1042,6 +1094,7 @@ def create_app(
     brand_name: str = "ownmail",
     sanitizer=None,
     display_timezone: str = None,
+    detail_date_format: str = None,
 ) -> Flask:
     """Create the Flask application.
 
@@ -1052,11 +1105,12 @@ def create_app(
         page_size: Number of results per page
         trusted_senders: List of email addresses to always show images from
         config_path: Path to config.yaml for updating trusted senders
-        date_format: strftime format for dates (default: auto - "Jan 26" or "2025/12/15")
+        date_format: strftime format for search result dates (default: "%b %d, %Y")
         auto_scale: Scale down wide emails to fit viewport
         brand_name: Custom branding name shown in header
         sanitizer: HTML sanitizer instance (default: passthrough for tests)
         display_timezone: IANA timezone name (default: server local)
+        detail_date_format: strftime format for message view dates (default: "%a, %d %b %Y %H:%M:%S")
 
     Returns:
         Flask application
@@ -1071,7 +1125,8 @@ def create_app(
     app.config["page_size"] = page_size
     app.config["trusted_senders"] = {s.lower() for s in (trusted_senders or [])}
     app.config["config_path"] = config_path
-    app.config["date_format"] = date_format  # None = auto
+    app.config["date_format"] = date_format  # None = default
+    app.config["detail_date_format"] = detail_date_format  # None = default
     app.config["timezone"] = _resolve_timezone(display_timezone)
     app.config["timezone_name"] = display_timezone or ""
     app.config["auto_scale"] = auto_scale
@@ -1345,7 +1400,7 @@ def create_app(
             recipients = parsed.get("recipients", "")
             raw_date = parsed.get("date_str", "")
             local_dt = _to_local_datetime(raw_date, app.config.get("timezone"))
-            date = _format_date_long(local_dt) if local_dt else raw_date
+            date = _format_date_long(local_dt, app.config.get("detail_date_format")) if local_dt else raw_date
 
             # Ensure MIME-encoded headers are fully decoded
             # Parser may return partially decoded or raw MIME strings
@@ -1711,19 +1766,22 @@ def create_app(
             "block_images": web_config.get("block_images", True),
             "auto_scale": web_config.get("auto_scale", True),
             "date_format": web_config.get("date_format", ""),
+            "detail_date_format": web_config.get("detail_date_format", ""),
             "timezone": web_config.get("timezone", ""),
             "brand_name": web_config.get("brand_name", "ownmail"),
             "trusted_senders": web_config.get("trusted_senders", []),
         }
         server_timezone = _get_server_timezone_name()
+        server_offset = _get_timezone_offset(server_timezone)
+        server_tz_label = f"{server_timezone} (UTC{server_offset})" if server_offset else server_timezone
         return render_template(
             "settings.html",
             settings=current,
             stats=get_cached_stats(),
             config_path=config_path or "(not set)",
             saved=request.args.get("saved") == "1",
-            server_timezone=server_timezone,
-            timezone_groups=COMMON_TIMEZONES,
+            server_timezone=server_tz_label,
+            timezone_groups=_get_timezone_groups_with_offsets(),
         )
 
     @app.route("/settings", methods=["POST"])
@@ -1768,6 +1826,13 @@ def create_app(
             app.config["date_format"] = date_format
         else:
             app.config["date_format"] = None
+
+        detail_date_format = request.form.get("detail_date_format", "").strip()
+        web_config["detail_date_format"] = detail_date_format if detail_date_format else None
+        if detail_date_format:
+            app.config["detail_date_format"] = detail_date_format
+        else:
+            app.config["detail_date_format"] = None
 
         tz_name = request.form.get("timezone", "").strip()
         web_config["timezone"] = tz_name if tz_name else None
@@ -1905,6 +1970,7 @@ def run_server(
     auto_scale: bool = True,
     brand_name: str = "ownmail",
     display_timezone: str = None,
+    detail_date_format: str = None,
 ) -> None:
     """Run the web server.
 
@@ -1918,10 +1984,11 @@ def run_server(
         page_size: Number of results per page
         trusted_senders: List of email addresses to always show images from
         config_path: Path to config.yaml for updating trusted senders
-        date_format: strftime format for dates (default: auto)
+        date_format: strftime format for search result dates (default: "%b %d, %Y")
         auto_scale: Scale down wide emails to fit viewport
         brand_name: Custom branding name shown in header
         display_timezone: IANA timezone name (default: server local)
+        detail_date_format: strftime format for message view dates (default: "%a, %d %b %Y %H:%M:%S")
     """
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
     from ownmail.sanitizer import HtmlSanitizer
@@ -1941,6 +2008,7 @@ def run_server(
         brand_name=brand_name,
         sanitizer=sanitizer,
         display_timezone=display_timezone,
+        detail_date_format=detail_date_format,
     )
 
     print(f"\n🌐 {brand_name} web interface")

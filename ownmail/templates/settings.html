@@ -42,11 +42,19 @@
                 </div>
 
                 <div class="ownmail-settings-field">
-                    <label for="date_format">Date format</label>
+                    <label for="date_format">Search date format</label>
                     <input type="text" name="date_format" id="date_format"
                            value="{{ settings.date_format or '' }}"
-                           placeholder="e.g. %b %d, %Y (leave blank for auto)">
-                    <p class="ownmail-settings-hint">Python strftime format. Leave blank for automatic (e.g. "Jan 26" for current year, "2023/12/15" for older).</p>
+                           placeholder="%b %d, %Y">
+                    <p class="ownmail-settings-hint">Python strftime format for search results. Default: %b %d, %Y (e.g. "Jan 27, 2026").</p>
+                </div>
+
+                <div class="ownmail-settings-field">
+                    <label for="detail_date_format">Message date format</label>
+                    <input type="text" name="detail_date_format" id="detail_date_format"
+                           value="{{ settings.detail_date_format or '' }}"
+                           placeholder="%a, %d %b %Y %H:%M:%S">
+                    <p class="ownmail-settings-hint">Python strftime format for message view. Default: %a, %d %b %Y %H:%M:%S (e.g. "Tue, 27 Jan 2026 07:16:05").</p>
                 </div>
 
                 <div class="ownmail-settings-field">
@@ -56,7 +64,7 @@
                         {% for group_name, zones in timezone_groups %}
                         <optgroup label="{{ group_name }}">
                             {% for tz in zones %}
-                            <option value="{{ tz }}" {{ 'selected' if settings.timezone == tz else '' }}>{{ tz }}</option>
+                            <option value="{{ tz.value }}" {{ 'selected' if settings.timezone == tz.value else '' }}>{{ tz.label }}</option>
                             {% endfor %}
                         </optgroup>
                         {% endfor %}

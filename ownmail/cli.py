@@ -888,6 +888,7 @@ Examples:
                 page_size = web_config.get("page_size", 20)
                 trusted_senders = web_config.get("trusted_senders", [])
                 date_format = web_config.get("date_format")  # e.g., "%Y-%m-%d" or "%m/%d"
+                detail_date_format = web_config.get("detail_date_format")
                 auto_scale = web_config.get("auto_scale", True)
                 brand_name = web_config.get("brand_name", "ownmail")
                 display_timezone = web_config.get("timezone")
@@ -905,6 +906,7 @@ Examples:
                     auto_scale,
                     brand_name,
                     display_timezone,
+                    detail_date_format,
                 )
 
     except KeyboardInterrupt:
