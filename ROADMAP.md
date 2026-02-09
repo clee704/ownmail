@@ -6,17 +6,6 @@
 
 ---
 
-## ✅ Done — Primary Key Refactoring
-
-**Completed**: Replaced `message_id TEXT PRIMARY KEY` with `email_id TEXT PRIMARY KEY` (24-char SHA-256 hex of `"{account}/{provider_id}"`) plus a `provider_id` column for the raw provider ID.
-
-- `email_id` = `sha256(f"{account}/{provider_id}").hexdigest()[:24]` — 96 bits, collision at ~79 billion emails
-- `provider_id` = raw Gmail API hex ID (or IMAP UID, import hash, etc. in future)
-- Migration preserves rowids so FTS5 and junction tables stay valid
-- All queries, routes, templates, and tests updated
-
----
-
 ## Next Up — Import & Scan
 
 **Goal**: Support importing externally-sourced `.eml` files into the archive.
@@ -58,37 +47,6 @@ Detect `.eml` files already present in the archive directory that aren't tracked
 
 ---
 
-## Next Up — IMAP Provider
-
-**Goal**: Support generic IMAP email backup. Covers Fastmail, company mail servers, self-hosted, etc.
-
-The config system already validates `type: imap` sources, and `keychain.py` has `save_imap_password()`/`load_imap_password()` ready.
-
-### Design
-
-- Connect via `IMAP4_SSL`, credentials from keychain (`imap-password/{email}`).
-- **Folder scanning with deduplication**: List all folders, scan each for UIDs + `Message-ID` headers. Same `Message-ID` across multiple folders → download once, store all folder names as labels.
-- **Labels**: Store IMAP folder names in the `labels` column, unified with Gmail labels. Searchable via `label:`.
-- **Incremental sync**: UID-based. Store highest UID per folder in `sync_state`. Detect `UIDVALIDITY` changes for full resync.
-- **Folder filtering**: Optional `exclude_folders` config (Trash, Spam, Drafts).
-
-### Config
-
-```yaml
-sources:
-  - name: work_imap
-    type: imap
-    host: imap.company.com
-    account: user@company.com
-    auth:
-      secret_ref: keychain:imap-password/user@company.com
-    exclude_folders:  # optional
-      - Trash
-      - Spam
-```
-
----
-
 ## Next Up — Retry Logic for Transient Failures
 
 **Goal**: Make backup resilient to transient API errors instead of crashing.
@@ -114,12 +72,6 @@ sources:
 **Goal**: Finish and harden the web interface.
 
 The web UI is functional (Flask + Jinja, search, email detail, attachment download, dark mode, image blocking, pagination). Remaining work:
-
-### Improvements
-
-- [x] Replace iframe with inline HTML rendering (sanitized) — iframe has sizing issues (infinite growth, incorrect height), waits for load before resizing (clunky scroll), and makes styling difficult
-- [x] Color nested quote text to match quote bar color at each nesting level (like Gmail)
-- [x] Rework image/content blocking UX: show a dismissible prompt for untrusted senders; move "load/block content" and "trust/untrust sender" actions into `...` overflow menu; fix prompt styling for dark mode
 
 ### Features
 
@@ -166,7 +118,7 @@ ownmail export --format pdf --query "from:important@example.com"
 
 ### Deduplication
 
-Detect duplicate emails (same `Message-ID` across accounts/imports). `ownmail dedup` command comparing `content_hash`.
+Detect duplicate emails across accounts/imports (same `content_hash`). `ownmail dedup` command. Cross-folder dedup within IMAP is already handled by the IMAP provider.
 
 ### Scheduled Backups
 
