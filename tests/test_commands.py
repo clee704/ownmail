@@ -226,6 +226,58 @@ class TestCmdVerify:
         captured = capsys.readouterr()
         assert "not indexed" in captured.out or "orphan" in captured.out.lower()
 
+    def test_verify_detects_moved_files(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify detects moved/renamed files by matching hashes."""
+        import hashlib
+        archive = EmailArchive(temp_dir, {})
+
+        # Register email at old path (file doesn't exist there)
+        content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
+        archive.db.mark_downloaded(
+            _eid("moved123"), "moved123",
+            "emails/2024/01/old_name.eml", content_hash=content_hash,
+        )
+
+        # Place the same file at a new path (orphaned from DB's perspective)
+        new_dir = temp_dir / "emails" / "2024" / "02"
+        new_dir.mkdir(parents=True)
+        new_path = new_dir / "new_name.eml"
+        new_path.write_bytes(sample_eml_simple)
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        assert "moved" in captured.out.lower() or "renamed" in captured.out.lower()
+        # Should NOT report as missing or orphaned files
+        assert "Missing from disk" not in captured.out
+        assert "On disk but not indexed" not in captured.out
+
+    def test_verify_fix_updates_moved_paths(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify --fix updates DB paths for moved files."""
+        import hashlib
+        archive = EmailArchive(temp_dir, {})
+
+        content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
+        archive.db.mark_downloaded(
+            _eid("moved123"), "moved123",
+            "emails/2024/01/old_name.eml", content_hash=content_hash,
+        )
+
+        new_dir = temp_dir / "emails" / "2024" / "02"
+        new_dir.mkdir(parents=True)
+        (new_dir / "new_name.eml").write_bytes(sample_eml_simple)
+
+        cmd_verify(archive, fix=True)
+        captured = capsys.readouterr()
+        assert "Updated" in captured.out
+
+        # Verify DB was updated
+        with sqlite3.connect(archive.db.db_path) as conn:
+            row = conn.execute(
+                "SELECT filename FROM emails WHERE email_id = ?",
+                (_eid("moved123"),),
+            ).fetchone()
+        assert row[0] == "emails/2024/02/new_name.eml"
+
 
 class TestCmdRehash:
     """Tests for rehash command."""
