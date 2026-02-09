@@ -280,16 +280,16 @@ class TestCommandsVerify:
         assert "Verify" in captured.out or "0" in captured.out or "verify" in captured.out.lower()
 
 
-class TestCommandsDbCheck:
-    """Tests for cmd_db_check command."""
+class TestCommandsVerifyEmpty:
+    """Tests for cmd_verify command on empty archive."""
 
-    def test_db_check_empty_archive(self, tmp_path, capsys):
-        """Test db_check on empty archive."""
+    def test_verify_empty_archive(self, tmp_path, capsys):
+        """Test verify on empty archive."""
         from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_db_check
+        from ownmail.commands import cmd_verify
 
         archive = EmailArchive(tmp_path, {})
-        cmd_db_check(archive)
+        cmd_verify(archive)
         captured = capsys.readouterr()
         assert len(captured.out) > 0
 
@@ -2776,13 +2776,13 @@ class TestArchiveMoreCoverageV2:
 class TestCommandsMoreCoverage:
     """More commands coverage tests."""
 
-    def test_cmd_db_check(self, tmp_path, capsys):
-        """Test db-check command."""
+    def test_cmd_verify_database(self, tmp_path, capsys):
+        """Test verify command database checks."""
         from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_db_check
+        from ownmail.commands import cmd_verify
 
         archive = EmailArchive(tmp_path, {})
-        cmd_db_check(archive)
+        cmd_verify(archive)
 
         captured = capsys.readouterr()
         assert len(captured.out) >= 0

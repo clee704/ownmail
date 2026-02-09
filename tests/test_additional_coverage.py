@@ -433,8 +433,8 @@ class TestArchiveBackupProgress:
         assert "1/3" in captured.out or "2/3" in captured.out or "3/3" in captured.out or "Found 3" in captured.out
 
 
-class TestDbCheckMissingFTS:
-    """Tests for db-check missing FTS entries."""
+class TestVerifyMissingFTS:
+    """Tests for verify detecting missing FTS entries."""
 
     @pytest.fixture
     def temp_dir(self, tmp_path):
@@ -449,9 +449,9 @@ Date: Mon, 15 Jan 2024 14:30:00 +0000
 Body
 """
 
-    def test_db_check_finds_missing_fts(self, temp_dir, sample_eml_simple, capsys):
-        """Test db-check finds emails not in FTS index."""
-        from ownmail.commands import cmd_db_check
+    def test_verify_finds_missing_fts(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify finds emails not in FTS index."""
+        from ownmail.commands import cmd_verify
 
         archive = EmailArchive(temp_dir, {})
 
@@ -465,10 +465,10 @@ Body
         rel_path = str(email_path.relative_to(temp_dir))
         archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="abc")
 
-        cmd_db_check(archive)
+        cmd_verify(archive)
         captured = capsys.readouterr()
-        # Should find missing FTS entries
-        assert "not in search index" in captured.out or "missing" in captured.out.lower() or "Database Check" in captured.out
+        # Should find missing metadata/FTS entries
+        assert "missing" in captured.out.lower() or "Verify" in captured.out
 
 
 class TestVerifyDetailed:
@@ -604,16 +604,16 @@ Some content here.
         assert isinstance(result["body"], str)
 
 
-class TestDbCheckDuplicateFTS:
-    """Tests for db-check FTS sync detection."""
+class TestVerifyDuplicateFTS:
+    """Tests for verify FTS sync detection."""
 
     @pytest.fixture
     def temp_dir(self, tmp_path):
         return tmp_path
 
-    def test_db_check_finds_fts_sync_issues(self, temp_dir, capsys):
-        """Test db-check finds FTS sync issues."""
-        from ownmail.commands import cmd_db_check
+    def test_verify_finds_fts_sync_issues(self, temp_dir, capsys):
+        """Test verify finds FTS sync issues."""
+        from ownmail.commands import cmd_verify
 
         archive = EmailArchive(temp_dir, {})
 
@@ -623,12 +623,12 @@ class TestDbCheckDuplicateFTS:
                 INSERT INTO emails (email_id, provider_id, filename, subject, sender)
                 VALUES (?, 'sync123', 'emails/2024/01/sync.eml', 'Test Subject', 'test@example.com')
             """, (_eid("sync123"),))
-            # FTS entry should have been created, but we'll check db-check works
+            # FTS entry should have been created, but we'll check verify works
             conn.commit()
 
-        cmd_db_check(archive)
+        cmd_verify(archive)
         captured = capsys.readouterr()
-        assert "Database Check" in captured.out
+        assert "Verify" in captured.out
 
 
 class TestBackupWithLabels:
@@ -744,8 +744,8 @@ class TestSetupCommand:
 
         config = {"sources": []}
 
-        # Email first, then source name
-        inputs = iter(["user@gmail.com", "my_source"])
+        # Email first, then source name, then archive root
+        inputs = iter(["user@gmail.com", "my_source", ""])
 
         # Create a mock keychain that doesn't touch real keychain
         mock_keychain = MagicMock()
@@ -783,7 +783,7 @@ class TestSetupCommand:
         creds_file = temp_dir / "credentials.json"
         creds_file.write_text('{"installed": {"client_id": "test", "client_secret": "secret"}}')
 
-        inputs = iter(["user@gmail.com", "test_source"])
+        inputs = iter(["user@gmail.com", "test_source", ""])
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = False
@@ -802,13 +802,14 @@ class TestSetupCommand:
 
         config = {"sources": []}
 
-        # Simulate user pasting JSON then entering email and source name
+        # Simulate user pasting JSON then entering email, source name, archive root
         inputs = iter([
             '{"installed": {"client_id": "test", "client_secret": "secret"}}',
             "",  # First empty line
             "",  # Second empty line to finish JSON input
             "user@gmail.com",
             "my_source",
+            "",  # archive root (accept default)
         ])
 
         mock_keychain = MagicMock()
@@ -1250,19 +1251,19 @@ This is a test email body.
         captured = capsys.readouterr()
         assert "Sync Check" in captured.out or "sync" in captured.out.lower()
 
-    def test_db_check_verbose(self, temp_dir, capsys):
-        """Test db-check with verbose flag."""
-        from ownmail.commands import cmd_db_check
+    def test_verify_verbose(self, temp_dir, capsys):
+        """Test verify with verbose flag."""
+        from ownmail.commands import cmd_verify
 
         archive = EmailArchive(temp_dir, {})
 
         # Add some emails with various states
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
 
-        cmd_db_check(archive, verbose=True)
+        cmd_verify(archive, verbose=True)
 
         captured = capsys.readouterr()
-        assert "Database Check" in captured.out
+        assert "Verify" in captured.out
 
     def test_search_with_empty_results(self, temp_dir, capsys):
         """Test search with no results."""

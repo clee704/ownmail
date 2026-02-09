@@ -229,20 +229,6 @@ sources:
         captured = capsys.readouterr()
         assert "already have hashes" in captured.out or "Compute Hashes" in captured.out
 
-    def test_main_db_check_command(self, temp_dir, capsys, monkeypatch):
-        """Test db-check command via main."""
-        from ownmail.cli import main
-
-        config_path = temp_dir / "config.yaml"
-        config_path.write_text(f"archive_root: {temp_dir}\n")
-        monkeypatch.chdir(temp_dir)
-
-        with patch.object(sys, 'argv', ['ownmail', 'db-check']):
-            main()
-
-        captured = capsys.readouterr()
-        assert "Database Check" in captured.out
-
 
 class TestCmdBackup:
     """Tests for backup command."""
@@ -376,6 +362,7 @@ class TestCmdSetup:
             'user@gmail.com',  # email address
             'test-app-password',  # app password (via getpass)
             'my_source',  # source name
+            '',  # archive root (accept default)
         ])
 
         monkeypatch.setattr('builtins.input', lambda _: next(inputs))
@@ -407,6 +394,7 @@ class TestCmdSetup:
             'user@example.com',  # email address
             'imap.example.com',  # IMAP host (non-Gmail)
             'my_source',  # source name
+            '',  # archive root (accept default)
         ])
 
         monkeypatch.setattr('builtins.input', lambda _: next(inputs))
@@ -424,8 +412,10 @@ class TestCmdSetup:
         assert "my_source" in content
         assert "imap.example.com" in content
         assert "user@example.com" in content
+        # archive_root is set to absolute path
+        assert "archive_root:" in content
+        assert str((temp_dir / "archive").resolve()) in content
         # Commented options are present
-        assert "# archive_root:" in content
         assert "# db_dir:" in content
         assert "# web:" in content
         assert "port:" in content
@@ -542,33 +532,33 @@ class TestMainEdgeCases:
         # Should fail gracefully without sources
         assert "No sources" in captured.out or "Add Labels" in captured.out
 
-    def test_main_db_check_command(self, temp_dir, capsys, monkeypatch):
-        """Test db-check command via main."""
+    def test_main_verify_command_2(self, temp_dir, capsys, monkeypatch):
+        """Test verify command via main."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'db-check']):
+        with patch.object(sys, 'argv', ['ownmail', 'verify']):
             main()
 
         captured = capsys.readouterr()
-        assert "Database Check" in captured.out
+        assert "Verify" in captured.out
 
-    def test_main_db_check_fix_command(self, temp_dir, capsys, monkeypatch):
-        """Test db-check --fix command via main."""
+    def test_main_verify_fix_command(self, temp_dir, capsys, monkeypatch):
+        """Test verify --fix command via main."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'db-check', '--fix']):
+        with patch.object(sys, 'argv', ['ownmail', 'verify', '--fix']):
             main()
 
         captured = capsys.readouterr()
-        assert "Database Check" in captured.out
+        assert "Verify" in captured.out
 
     def test_main_rehash_command(self, temp_dir, capsys, monkeypatch):
         """Test rehash command via main."""

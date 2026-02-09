@@ -6,7 +6,6 @@ from pathlib import Path
 from ownmail.archive import EmailArchive
 from ownmail.commands import (
     _print_file_list,
-    cmd_db_check,
     cmd_rehash,
     cmd_reindex,
     cmd_verify,
@@ -155,7 +154,7 @@ class TestCmdVerify:
         archive = EmailArchive(temp_dir, {})
         cmd_verify(archive)
         captured = capsys.readouterr()
-        assert "No emails to verify" in captured.out
+        assert "No emails in database" in captured.out
 
     def test_verify_finds_missing_file(self, temp_dir, capsys):
         """Test verify detects missing files."""
@@ -166,7 +165,7 @@ class TestCmdVerify:
 
         cmd_verify(archive)
         captured = capsys.readouterr()
-        assert "missing from disk" in captured.out or "Missing" in captured.out.lower()
+        assert "missing from disk" in captured.out.lower()
 
     def test_verify_detects_corruption(self, temp_dir, capsys):
         """Test verify detects corrupted files."""
@@ -225,7 +224,7 @@ class TestCmdVerify:
 
         cmd_verify(archive)
         captured = capsys.readouterr()
-        assert "not in index" in captured.out or "orphan" in captured.out.lower()
+        assert "not indexed" in captured.out or "orphan" in captured.out.lower()
 
 
 class TestCmdRehash:
@@ -280,29 +279,29 @@ class TestCmdRehash:
         assert "Errors" in captured.out or "missing" in captured.out.lower()
 
 
-class TestCmdDbCheck:
-    """Tests for db-check command."""
+class TestCmdVerifyDatabase:
+    """Tests for verify command database checks (formerly db-check)."""
 
-    def test_db_check_clean_database(self, temp_dir, capsys):
-        """Test db-check on clean database."""
+    def test_verify_clean_database(self, temp_dir, capsys):
+        """Test verify on clean database."""
         archive = EmailArchive(temp_dir, {})
-        cmd_db_check(archive)
+        cmd_verify(archive)
         captured = capsys.readouterr()
-        assert "No issues found" in captured.out or "Database Check" in captured.out
+        assert "No emails in database" in captured.out or "Verify" in captured.out
 
-    def test_db_check_finds_missing_metadata(self, temp_dir, capsys):
-        """Test db-check finds emails missing metadata (not indexed)."""
+    def test_verify_finds_missing_metadata(self, temp_dir, capsys):
+        """Test verify finds emails missing metadata (not indexed)."""
         archive = EmailArchive(temp_dir, {})
 
         # Add email without indexing it (no subject set)
         archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
 
-        cmd_db_check(archive, verbose=True)
+        cmd_verify(archive, verbose=True)
         captured = capsys.readouterr()
-        assert "missing" in captured.out.lower() or "not yet indexed" in captured.out.lower()
+        assert "missing metadata" in captured.out.lower() or "missing" in captured.out.lower()
 
-    def test_db_check_finds_fts_sync_issues(self, temp_dir, capsys):
-        """Test db-check finds FTS sync issues."""
+    def test_verify_finds_fts_sync_issues(self, temp_dir, capsys):
+        """Test verify finds FTS sync issues."""
         archive = EmailArchive(temp_dir, {})
 
         # Add email and index it
@@ -323,14 +322,17 @@ class TestCmdDbCheck:
             """)
             conn.commit()
 
-        cmd_db_check(archive, verbose=True)
+        cmd_verify(archive, verbose=True)
         captured = capsys.readouterr()
-        # Should detect FTS count mismatch
-        assert "FTS has 0 entries" in captured.out or "FTS" in captured.out
+        assert "FTS" in captured.out
 
-    def test_db_check_fixes_fts_sync(self, temp_dir, capsys):
-        """Test db-check --fix rebuilds FTS when out of sync."""
+    def test_verify_fix_rebuilds_fts(self, temp_dir, capsys):
+        """Test verify --fix rebuilds FTS when out of sync."""
         archive = EmailArchive(temp_dir, {})
+
+        # Create actual email file on disk
+        email_path = temp_dir / "test.eml"
+        email_path.write_bytes(b"Subject: Test\n\nBody text")
 
         # Add email and index it
         archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
@@ -350,28 +352,28 @@ class TestCmdDbCheck:
             """)
             conn.commit()
 
-        cmd_db_check(archive, fix=True)
+        cmd_verify(archive, fix=True)
         captured = capsys.readouterr()
-        assert "rebuilt" in captured.out.lower() or "Fixed" in captured.out
+        assert "rebuilt" in captured.out.lower() or "Fixed" in captured.out or "FTS" in captured.out
 
         # Verify FTS has entry now
         with sqlite3.connect(archive.db.db_path) as conn:
             count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
         assert count == 1
 
-    def test_db_check_finds_missing_fts(self, temp_dir, capsys):
-        """Test db-check finds emails missing from FTS (not indexed)."""
+    def test_verify_finds_missing_fts(self, temp_dir, capsys):
+        """Test verify finds emails missing from FTS (not indexed)."""
         archive = EmailArchive(temp_dir, {})
 
         # Add email without FTS entry (not indexed)
         archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
 
-        cmd_db_check(archive)
+        cmd_verify(archive)
         captured = capsys.readouterr()
         assert "missing" in captured.out.lower() or "not yet indexed" in captured.out.lower()
 
-    def test_db_check_hash_mismatches(self, temp_dir, sample_eml_simple, capsys):
-        """Test db-check detects hash mismatches."""
+    def test_verify_hash_mismatches(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify detects hash mismatches."""
         import hashlib
         archive = EmailArchive(temp_dir, {})
 
@@ -392,12 +394,12 @@ class TestCmdDbCheck:
             """, (_eid("test123"), "test123", rel_path, content_hash))
             conn.commit()
 
-        cmd_db_check(archive)
+        cmd_verify(archive)
         captured = capsys.readouterr()
-        assert "out of date" in captured.out or "mismatch" in captured.out.lower()
+        assert "stale index" in captured.out or "out of date" in captured.out or "mismatch" in captured.out.lower()
 
-    def test_db_check_missing_content_hash(self, temp_dir, sample_eml_simple, capsys):
-        """Test db-check detects missing content hashes."""
+    def test_verify_missing_content_hash(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify detects missing content hashes."""
         archive = EmailArchive(temp_dir, {})
 
         # Create email file
@@ -415,7 +417,7 @@ class TestCmdDbCheck:
             """, (_eid("test456"), "test456", rel_path))
             conn.commit()
 
-        cmd_db_check(archive)
+        cmd_verify(archive)
         captured = capsys.readouterr()
         assert "missing" in captured.out.lower() or "hash" in captured.out.lower()
 
@@ -428,7 +430,7 @@ class TestCmdVerifyEdgeCases:
         archive = EmailArchive(temp_dir, {})
         cmd_verify(archive)
         captured = capsys.readouterr()
-        assert "No emails to verify" in captured.out
+        assert "No emails in database" in captured.out
 
     def test_verify_valid_email(self, temp_dir, sample_eml_simple, capsys):
         """Test verify with valid email."""
@@ -782,18 +784,18 @@ Body
         assert "Skipped" in captured.out or "Add Labels" in captured.out
 
 
-class TestCmdDbCheckVerbose:
-    """Additional tests for db-check verbose output."""
+class TestCmdVerifyDatabaseVerbose:
+    """Additional tests for verify database checks verbose output."""
 
-    def test_db_check_verbose_shows_all_info(self, temp_dir, capsys):
-        """Test db-check --verbose shows detailed info."""
+    def test_verify_verbose_shows_all_info(self, temp_dir, capsys):
+        """Test verify --verbose shows detailed database info."""
         archive = EmailArchive(temp_dir, {})
 
         # Create multiple emails without indexing
         for i in range(5):
             archive.db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", f"test{i}.eml")
 
-        cmd_db_check(archive, verbose=True)
+        cmd_verify(archive, verbose=True)
         captured = capsys.readouterr()
         # Should show count of emails missing metadata
         assert "5 emails missing" in captured.out or "missing" in captured.out.lower()

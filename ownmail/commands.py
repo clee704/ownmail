@@ -2,10 +2,9 @@
 
 This module contains commands for archive maintenance:
 - reindex: Rebuild the full-text search index
-- verify: Verify file integrity against stored hashes
+- verify: Verify archive integrity (files, hashes, database)
 - rehash: Compute hashes for emails without them
 - sync_check: Compare local archive with server
-- db_check: Check database integrity
 - add_labels: Add Gmail labels to existing emails
 """
 
@@ -406,30 +405,37 @@ def _verify_single_file(args: tuple) -> tuple:
         return ('corrupted', filename)
 
 
-def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
-    """Verify integrity of downloaded emails against stored hashes."""
+def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) -> None:
+    """Verify archive integrity: files, hashes, and database health.
+
+    Checks:
+    - File integrity (missing files, hash mismatches)
+    - Orphaned files (on disk but not indexed)
+    - Database health (missing metadata, FTS sync, stale hashes)
+
+    With --fix:
+    - Removes DB rows for files that no longer exist on disk
+    - Rebuilds FTS index when out of sync
+    """
     import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     print("\n" + "=" * 50)
-    print("ownmail - Verify Integrity")
+    print("ownmail - Verify")
     print("=" * 50 + "\n")
 
     total_start = time.time()
+    issues_found = 0
+    issues_fixed = 0
 
     db_path = archive.db.db_path
 
-    # Get all downloaded emails with hashes
-    step_start = time.time()
+    # ── Phase 1: File integrity ──────────────────────────────────────────
+
     with sqlite3.connect(db_path) as conn:
         emails = conn.execute(
             "SELECT email_id, filename, content_hash FROM emails"
         ).fetchall()
-    db_time = time.time() - step_start
-
-    if not emails:
-        print("No emails to verify.")
-        return
 
     total = len(emails)
     ok_count = 0
@@ -438,68 +444,194 @@ def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
     no_hash_count = 0
     corrupted_files = []
     missing_files = []
+    missing_email_ids = []
     indexed_files = set()
 
-    print(f"Verifying {total} indexed emails...\n")
+    if total == 0:
+        print("No emails in database.\n")
+    else:
+        print(f"1. Verifying {total} files...\n")
 
-    # Prepare work items
-    work_items = []
-    for _email_id, filename, stored_hash in emails:
-        indexed_files.add(filename)
-        work_items.append((archive.archive_dir, filename, stored_hash))
+        work_items = []
+        email_id_by_filename = {}
+        for email_id, filename, stored_hash in emails:
+            indexed_files.add(filename)
+            email_id_by_filename[filename] = email_id
+            work_items.append((archive.archive_dir, filename, stored_hash))
 
-    # Process with thread pool for parallel I/O
-    step_start = time.time()
-    completed = 0
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {executor.submit(_verify_single_file, item): item for item in work_items}
+        completed = 0
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {executor.submit(_verify_single_file, item): item for item in work_items}
 
-        for future in as_completed(futures):
-            completed += 1
-            print(f"  [{completed}/{total}] Verifying indexed...", end="\r")
+            for future in as_completed(futures):
+                completed += 1
+                print(f"  [{completed}/{total}] Verifying...\033[K", end="\r")
 
-            status, filename = future.result()
-            if status == 'ok':
-                ok_count += 1
-            elif status == 'missing':
-                missing_count += 1
-                missing_files.append(filename)
-            elif status == 'corrupted':
-                corrupted_count += 1
-                corrupted_files.append(filename)
-            elif status == 'no_hash':
-                no_hash_count += 1
-    verify_time = time.time() - step_start
+                status, filename = future.result()
+                if status == 'ok':
+                    ok_count += 1
+                elif status == 'missing':
+                    missing_count += 1
+                    missing_files.append(filename)
+                    missing_email_ids.append(email_id_by_filename[filename])
+                elif status == 'corrupted':
+                    corrupted_count += 1
+                    corrupted_files.append(filename)
+                elif status == 'no_hash':
+                    no_hash_count += 1
 
-    # Check for orphaned files (on disk but not in index)
-    step_start = time.time()
-    print("\n  Scanning for orphaned files...", end="\r")
-    orphaned_files = []
-    # Check both old 'emails/' and new 'accounts/' directory structures
-    for subdir in ["emails", "accounts"]:
-        check_dir = archive.archive_dir / subdir
-        if check_dir.exists():
-            for eml_file in check_dir.rglob("*.eml"):
-                rel_path = str(eml_file.relative_to(archive.archive_dir))
-                if rel_path not in indexed_files:
-                    orphaned_files.append(rel_path)
-    orphan_time = time.time() - step_start
+        # Orphaned files
+        print("\n  Scanning for orphaned files...\033[K", end="\r")
+        orphaned_files = []
+        for subdir in ["emails", "accounts"]:
+            check_dir = archive.archive_dir / subdir
+            if check_dir.exists():
+                for eml_file in check_dir.rglob("*.eml"):
+                    rel_path = str(eml_file.relative_to(archive.archive_dir))
+                    if rel_path not in indexed_files:
+                        orphaned_files.append(rel_path)
+
+        # Report file results
+        print(f"\n  ✓ OK: {ok_count}")
+        if no_hash_count > 0:
+            issues_found += 1
+            print(f"  ? No hash stored: {no_hash_count}")
+        if missing_count > 0:
+            issues_found += 1
+            _print_file_list(missing_files, "✗ Missing from disk", verbose)
+            if fix:
+                with sqlite3.connect(db_path) as conn:
+                    for eid in missing_email_ids:
+                        conn.execute("DELETE FROM emails WHERE email_id = ?", (eid,))
+                    conn.commit()
+                issues_fixed += 1
+                print(f"    → Removed {missing_count} stale DB entries")
+        if len(orphaned_files) > 0:
+            issues_found += 1
+            _print_file_list(orphaned_files, "? On disk but not indexed", verbose)
+        if corrupted_count > 0:
+            issues_found += 1
+            _print_file_list(corrupted_files, "✗ CORRUPTED (hash mismatch)", verbose)
+
+    # ── Phase 2: Database health ─────────────────────────────────────────
+
+    print("\n2. Checking database...\n")
+
+    with sqlite3.connect(db_path) as conn:
+        # Missing metadata
+        missing_metadata = conn.execute(
+            "SELECT COUNT(*) FROM emails WHERE subject IS NULL"
+        ).fetchone()[0]
+
+        if missing_metadata > 0:
+            issues_found += 1
+            print(f"  ✗ {missing_metadata} emails missing metadata (not indexed)")
+        else:
+            print("  ✓ All emails have metadata")
+
+        # FTS sync
+        fts_count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
+        emails_with_metadata = conn.execute(
+            "SELECT COUNT(*) FROM emails WHERE subject IS NOT NULL"
+        ).fetchone()[0]
+
+        if fts_count != emails_with_metadata:
+            issues_found += 1
+            print(f"  ✗ FTS out of sync ({fts_count} vs {emails_with_metadata} indexed)")
+            if fix:
+                conn.execute("DROP TABLE IF EXISTS emails_fts")
+                conn.execute("""
+                    CREATE VIRTUAL TABLE emails_fts USING fts5(
+                        subject, sender, recipients, body, attachments,
+                        content='', tokenize='porter unicode61'
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO emails_fts(rowid, subject, sender, recipients, body, attachments)
+                    SELECT rowid, COALESCE(subject, ''), COALESCE(sender, ''),
+                           COALESCE(recipients, ''), '', ''
+                    FROM emails WHERE subject IS NOT NULL
+                """)
+                conn.commit()
+                issues_fixed += 1
+                print("    → FTS rebuilt (run 'reindex --force' to restore body text)")
+        else:
+            print(f"  ✓ FTS in sync ({fts_count} entries)")
+
+        # Hash mismatches (indexed_hash vs content_hash)
+        hash_mismatches = conn.execute("""
+            SELECT COUNT(*) FROM emails
+            WHERE content_hash IS NOT NULL
+              AND indexed_hash IS NOT NULL
+              AND content_hash != indexed_hash
+        """).fetchone()[0]
+
+        if hash_mismatches > 0:
+            issues_found += 1
+            print(f"  ✗ {hash_mismatches} emails with stale index")
+        else:
+            print("  ✓ All indexed emails up to date")
+
+        # Missing hashes
+        null_content_hash = conn.execute(
+            "SELECT COUNT(*) FROM emails WHERE content_hash IS NULL"
+        ).fetchone()[0]
+
+        if null_content_hash > 0:
+            issues_found += 1
+            print(f"  ? {null_content_hash} emails without content hash")
+        else:
+            print("  ✓ All emails have hashes")
+
+    # ── Summary ──────────────────────────────────────────────────────────
 
     total_time = time.time() - total_start
 
     print("\n" + "-" * 50)
-    print("Verification Complete!")
-    print(f"  ✓ OK: {ok_count}")
-    if no_hash_count > 0:
-        print(f"  ? No hash stored: {no_hash_count} (run 'rehash' to compute)")
-    _print_file_list(missing_files, "✗ In index but missing from disk", verbose)
-    _print_file_list(orphaned_files, "? On disk but not in index", verbose)
-    _print_file_list(corrupted_files, "✗ CORRUPTED (hash mismatch)", verbose)
+    if issues_found == 0:
+        print("All checks passed!")
+        print(f"  ✓ {ok_count} files verified, database healthy")
+    else:
+        print(f"Verify complete — {issues_found} issue(s) found")
+        if fix:
+            fixed_remaining = issues_found - issues_fixed
+            if issues_fixed > 0:
+                print(f"  Fixed: {issues_fixed}")
+            if fixed_remaining > 0:
+                print(f"  Remaining: {fixed_remaining}")
+                # Actionable suggestions for unfixed issues
+                suggestions = []
+                if missing_metadata > 0 or hash_mismatches > 0:
+                    suggestions.append("  • 'ownmail reindex' to populate metadata / update stale index")
+                if len(orphaned_files) > 0:
+                    suggestions.append("  • 'ownmail reindex' to index orphaned files")
+                if corrupted_count > 0:
+                    suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
+                if no_hash_count > 0 or null_content_hash > 0:
+                    suggestions.append("  • 'ownmail rehash' to compute missing hashes")
+                for s in suggestions:
+                    print(s)
+        else:
+            # Suggestions for all issues
+            suggestions = []
+            if missing_count > 0:
+                suggestions.append("  • 'ownmail verify --fix' to remove stale DB entries for missing files")
+            if len(orphaned_files) > 0:
+                suggestions.append("  • 'ownmail reindex' to index orphaned files")
+            if corrupted_count > 0:
+                suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
+            if no_hash_count > 0 or null_content_hash > 0:
+                suggestions.append("  • 'ownmail rehash' to compute missing hashes")
+            if missing_metadata > 0 or hash_mismatches > 0:
+                suggestions.append("  • 'ownmail reindex' to populate metadata / update stale index")
+            if fts_count != emails_with_metadata:
+                suggestions.append("  • 'ownmail verify --fix' to rebuild FTS index")
+            if suggestions:
+                print("\n  To fix:")
+                for s in suggestions:
+                    print(s)
 
-    if missing_count == 0 and corrupted_count == 0 and len(orphaned_files) == 0 and no_hash_count == 0:
-        print("\n  ✓ All files verified successfully!")
-
-    print(f"\n  Time: {total_time:.1f}s (db: {db_time:.1f}s, verify: {verify_time:.1f}s, orphan scan: {orphan_time:.1f}s)")
+    print(f"\n  Time: {total_time:.1f}s")
     print("-" * 50 + "\n")
 
 
@@ -556,7 +688,7 @@ def cmd_rehash(archive: EmailArchive) -> None:
 
         for future in as_completed(futures):
             completed += 1
-            print(f"  [{completed}/{total}] Hashing...", end="\r")
+            print(f"  [{completed}/{total}] Hashing...\033[K", end="\r")
             results.append(future.result())
     hash_time = time.time() - step_start
 
@@ -691,138 +823,6 @@ def cmd_sync_check(
     print("-" * 50 + "\n")
 
 
-def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False) -> None:
-    """Check database integrity and optionally fix issues.
-
-    Checks for:
-    - Missing metadata (subject/sender not populated)
-    - indexed_hash mismatches
-    - FTS sync issues
-    """
-    import time
-
-    print("\n" + "=" * 50)
-    print("ownmail - Database Check")
-    print("=" * 50 + "\n")
-
-    issues_found = 0
-    issues_fixed = 0
-    db_path = archive.db.db_path
-
-    with sqlite3.connect(db_path) as conn:
-        # 1. Check for emails missing metadata (not indexed)
-        print("Checking for emails missing metadata...", end="", flush=True)
-        start = time.time()
-        missing_metadata = conn.execute("""
-            SELECT COUNT(*) FROM emails WHERE subject IS NULL
-        """).fetchone()[0]
-        print(f" ({time.time() - start:.1f}s)")
-
-        if missing_metadata > 0:
-            issues_found += 1
-            print(f"  ✗ {missing_metadata} emails missing subject/sender metadata")
-            print("  → Run 'ownmail reindex' to populate")
-        else:
-            print("  ✓ All emails have metadata")
-
-        # 2. Check for FTS sync issues (rowids should match)
-        print("\nChecking FTS sync...", end="", flush=True)
-        start = time.time()
-        # FTS should have same rowids as emails table for indexed entries
-        fts_count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
-        emails_with_metadata = conn.execute(
-            "SELECT COUNT(*) FROM emails WHERE subject IS NOT NULL"
-        ).fetchone()[0]
-        print(f" ({time.time() - start:.1f}s)")
-
-        if fts_count != emails_with_metadata:
-            issues_found += 1
-            print(f"  ✗ FTS has {fts_count} entries, but {emails_with_metadata} emails have metadata")
-            if fix:
-                print("  Fixing: rebuilding FTS index...", end="", flush=True)
-                start = time.time()
-                # Drop and recreate FTS table (can't DELETE from contentless FTS)
-                conn.execute("DROP TABLE IF EXISTS emails_fts")
-                conn.execute("""
-                    CREATE VIRTUAL TABLE emails_fts USING fts5(
-                        subject,
-                        sender,
-                        recipients,
-                        body,
-                        attachments,
-                        content='',
-                        tokenize='porter unicode61'
-                    )
-                """)
-                # Rebuild from emails table (without body/attachments - those require reparsing)
-                conn.execute("""
-                    INSERT INTO emails_fts(rowid, subject, sender, recipients, body, attachments)
-                    SELECT rowid, COALESCE(subject, ''), COALESCE(sender, ''), COALESCE(recipients, ''), '', ''
-                    FROM emails WHERE subject IS NOT NULL
-                """)
-                conn.commit()
-                issues_fixed += 1
-                print(f" ({time.time() - start:.1f}s)")
-                print("  ✓ FTS index rebuilt (run 'reindex --force' to restore body text)")
-        else:
-            print(f"  ✓ FTS in sync ({fts_count} entries)")
-
-        # 3. Check indexed_hash vs content_hash mismatches
-        print("\nChecking for index hash mismatches...", end="", flush=True)
-        start = time.time()
-        hash_mismatches = conn.execute("""
-            SELECT COUNT(*)
-            FROM emails
-            WHERE content_hash IS NOT NULL
-              AND indexed_hash IS NOT NULL
-              AND content_hash != indexed_hash
-        """).fetchone()[0]
-        print(f" ({time.time() - start:.1f}s)")
-
-        if hash_mismatches > 0:
-            issues_found += 1
-            print(f"  ✗ {hash_mismatches} emails where index is out of date")
-            print("  → Run 'ownmail reindex' to update")
-        else:
-            print("  ✓ All indexed emails are up to date")
-
-        # 4. Check for NULL hashes
-        print("\nChecking for missing hashes...", end="", flush=True)
-        start = time.time()
-        null_content_hash = conn.execute(
-            "SELECT COUNT(*) FROM emails WHERE content_hash IS NULL"
-        ).fetchone()[0]
-        null_indexed_hash = conn.execute(
-            "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NULL"
-        ).fetchone()[0]
-        print(f" ({time.time() - start:.1f}s)")
-
-        if null_content_hash > 0:
-            print(f"  ? {null_content_hash} emails without content_hash")
-            print("  → Run 'ownmail rehash' to compute")
-        elif null_indexed_hash > 0:
-            print(f"  ? {null_indexed_hash} emails not yet indexed")
-            print("  → Run 'ownmail reindex' to index")
-        else:
-            print("  ✓ All emails have hashes")
-
-    # Summary
-    print("\n" + "-" * 50)
-    if issues_found == 0:
-        print("Database Check Complete!")
-        print("  ✓ No issues found")
-    else:
-        print("Database Check Complete!")
-        print(f"  Issues found: {issues_found}")
-        if fix:
-            print(f"  Issues fixed: {issues_fixed}")
-            if issues_found > issues_fixed:
-                print(f"  Remaining: {issues_found - issues_fixed} (run 'reindex' or 'rehash')")
-        else:
-            print("\n  Run with --fix to automatically fix fixable issues")
-    print("-" * 50 + "\n")
-
-
 def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
     """Fetch Gmail labels and store them in the database.
 
@@ -900,7 +900,7 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
                 if interrupted:
                     break
 
-                print(f"  [{i}/{len(emails)}] Fetching labels...", end="\r")
+                print(f"  [{i}/{len(emails)}] Fetching labels...\033[K", end="\r")
 
                 try:
                     labels = provider.get_labels_for_message(provider_id)
