@@ -1193,20 +1193,19 @@ class TestToLocalDatetime:
 class TestFormatDateShort:
     """Tests for _format_date_short."""
 
-    def test_same_year_shows_month_day(self):
-        """Dates in current year show 'Mon DD' format."""
+    def test_default_format(self):
+        """Default format is '%b %d, %Y'."""
         from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
-        dt = now.replace(month=3, day=15)
+        dt = datetime(2026, 3, 15, tzinfo=timezone.utc)
         result = _format_date_short(dt)
-        assert result == "Mar 15"
+        assert result == "Mar 15, 2026"
 
-    def test_different_year_shows_full_date(self):
-        """Dates in other years show 'YYYY/MM/DD' format."""
+    def test_different_year_same_format(self):
+        """Dates in other years use same default format."""
         from datetime import datetime, timezone
         dt = datetime(2020, 6, 5, tzinfo=timezone.utc)
         result = _format_date_short(dt)
-        assert result == "2020/06/05"
+        assert result == "Jun 05, 2020"
 
     def test_custom_format(self):
         """Custom format string is used when provided."""
@@ -1219,12 +1218,19 @@ class TestFormatDateShort:
 class TestFormatDateLong:
     """Tests for _format_date_long."""
 
-    def test_formats_full_date(self):
-        """Formats datetime as RFC 2822 style string."""
+    def test_formats_without_timezone(self):
+        """Default format does not include timezone."""
         from datetime import datetime, timezone
         dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         result = _format_date_long(dt)
-        assert result == "Mon, 15 Jan 2024 10:30:00 +0000"
+        assert result == "Mon, 15 Jan 2024 10:30:00"
+
+    def test_custom_format(self):
+        """Custom format string is used when provided."""
+        from datetime import datetime, timezone
+        dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        result = _format_date_long(dt, "%Y-%m-%d %H:%M")
+        assert result == "2024-01-15 10:30"
 
 
 class TestResolveTimezone:
@@ -1319,14 +1325,16 @@ class TestTimezoneSettings:
             assert call_kwargs.kwargs.get("tz") == ZoneInfo("Asia/Tokyo")
 
 
-class TestCleanSnippetPartialHtml:
-    """Tests for partial HTML tag stripping in _clean_snippet_text."""
+class TestCleanSnippetLxml:
+    """Tests for lxml-based HTML stripping in _clean_snippet_text."""
 
     def test_strips_truncated_tag_at_end(self):
         """Truncated HTML tag at end of string is removed."""
         from ownmail.web import _clean_snippet_text
         text = 'Hello world <meta name="view'
-        assert '<' not in _clean_snippet_text(text)
+        result = _clean_snippet_text(text)
+        assert '<' not in result
+        assert 'Hello world' in result
 
     def test_strips_complete_and_partial_tags(self):
         """Both complete and partial HTML tags are stripped."""
@@ -1336,4 +1344,20 @@ class TestCleanSnippetPartialHtml:
         assert '<' not in result
         assert 'Hello' in result
         assert 'world' in result
+
+    def test_strips_style_and_script_blocks(self):
+        """Style and script blocks are fully removed by lxml."""
+        from ownmail.web import _clean_snippet_text
+        text = '<style>.foo{color:red}</style>Hello<script>alert(1)</script> world'
+        result = _clean_snippet_text(text)
+        assert 'color' not in result
+        assert 'alert' not in result
+        assert 'Hello' in result
+        assert 'world' in result
+
+    def test_plain_text_without_html_unchanged(self):
+        """Plain text without HTML tags passes through unchanged."""
+        from ownmail.web import _clean_snippet_text
+        text = 'Just plain text here'
+        assert _clean_snippet_text(text) == 'Just plain text here'
 
