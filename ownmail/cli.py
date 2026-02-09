@@ -20,7 +20,7 @@ _CONFIG_TEMPLATE = """\
 # ownmail configuration
 # See README.md for all options.
 
-# Where to store emails (default: ./archive)
+# Where to store emails (default: ./archive in working directory)
 # archive_root: /path/to/your/archive
 
 # Store the database separately from the archive (optional).

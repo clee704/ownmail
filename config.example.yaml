@@ -3,6 +3,7 @@
 # All fields below are optional unless marked as required.
 
 # Directory where email .eml files are stored.
+# Relative paths are resolved from the working directory.
 # Default: ./archive
 archive_root: /path/to/emails
 
