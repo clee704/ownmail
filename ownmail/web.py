@@ -1023,7 +1023,7 @@ def create_app(
         sort = request.args.get("sort", "relevance")
         if sort not in ("relevance", "date_desc", "date_asc"):
             sort = "relevance"
-        per_page = page_size  # Use configured page_size
+        per_page = app.config["page_size"]
         stats = get_cached_stats()
 
         # Check if query is filter-only (no FTS search terms)
