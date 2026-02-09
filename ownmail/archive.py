@@ -258,9 +258,12 @@ class EmailArchive:
             self._batch_conn = None
             signal.signal(signal.SIGINT, original_handler)
 
-        # Update sync state only for full syncs (no date filters)
-        # Date-filtered runs are partial syncs, don't update history_id
-        if not interrupted and not since and not until:
+        # Update sync state only when ALL conditions are met:
+        # 1. Not interrupted
+        # 2. No date filters (full sync)
+        # 3. No errors (all messages downloaded successfully)
+        # This ensures history_id marks a complete sync point
+        if not interrupted and not since and not until and error_count == 0:
             if new_state:
                 self.db.set_sync_state(account, "history_id", new_state)
             else:
