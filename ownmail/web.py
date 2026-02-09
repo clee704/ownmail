@@ -1494,7 +1494,7 @@ def create_app(
         return render_template(
             "settings.html",
             settings=current,
-            stats=get_stats(),
+            stats=get_cached_stats(),
             config_path=config_path or "(not set)",
         )
 
