@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Search - ownmail{% endblock %}
+
+{% block content %}
+    <div class="sticky-header">
+    <form class="search-form" action="/search" method="get">
+        <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search emails..." autofocus>
+        <select name="sort" class="sort-select" id="sort-select">
+            <option value="relevance" id="relevance-option" {{ 'selected' if sort == 'relevance' else '' }}{% if hide_relevance %} disabled{% endif %}>Relevance</option>
+            <option value="date_desc" {{ 'selected' if sort == 'date_desc' else '' }}>Newest first</option>
+            <option value="date_asc" {{ 'selected' if sort == 'date_asc' else '' }}>Oldest first</option>
+        </select>
+        <button type="submit">Search</button>
+    </form>
+    <script>
+    // Enable/disable Relevance option based on search input
+    (function() {
+        var input = document.getElementById('search-input');
+        var relevanceOpt = document.getElementById('relevance-option');
+        var sortSelect = document.getElementById('sort-select');
+
+        function updateRelevanceOption() {
+            var query = input.value.trim();
+            // Remove date/label filters to check for FTS terms
+            var withoutFilters = query
+                .replace(/\b(before|after):\d{4}-?\d{2}-?\d{2}\b/gi, '')
+                .replace(/\b(label|tag):\S+\b/gi, '')
+                .replace(/\bAND\b/gi, '')
+                .trim();
+            var hasFtsTerms = withoutFilters.length > 0;
+
+            relevanceOpt.disabled = !hasFtsTerms;
+
+            // If relevance is selected but disabled, switch to date_desc
+            if (!hasFtsTerms && sortSelect.value === 'relevance') {
+                sortSelect.value = 'date_desc';
+            }
+        }
+
+        input.addEventListener('input', updateRelevanceOption);
+        // Run on page load too
+        updateRelevanceOption();
+    })();
+    </script>
+    <div class="help">
+        Search: <code>from:</code> <code>subject:</code> <code>attachment:</code> <code>before:2024-01-01</code> <code>after:2023-06-15</code> <code>label:INBOX</code>
+        &bull; <a href="/help">Syntax help</a>
+    </div>
+    {% if results %}
+        <div class="results-header">
+            <p>{% if query %}Showing{% else %}Recent emails:{% endif %} {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %}{% if query %} (took {{ "%.2f"|format(search_time) }}s){% endif %}</p>
+            {% if has_prev or has_more %}
+            <div class="pagination">
+                {% if has_prev %}
+                    <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
+                {% endif %}
+                <span class="current">Page {{ page }}</span>
+                {% if has_more %}
+                        <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}">Next &raquo;</a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+    {% endif %}
+    </div>
+
+    {% if search_error %}
+        <div class="search-error">
+            <strong>Search error:</strong> {{ search_error }}
+            <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
+        </div>
+    {% elif results %}
+            <ul class="email-list">
+            {% for result in results %}
+                <li class="email-item">
+                    <a href="/email/{{ result.message_id }}">
+                        <div class="email-subject">{{ result.subject or '(No subject)' }}</div>
+                        <div class="email-meta">
+                            From: {{ result.sender }} &bull; {{ result.date_str }}
+                        </div>
+                        <div class="email-snippet">{{ result.snippet }}</div>
+                    </a>
+                </li>
+            {% endfor %}
+            </ul>
+            {% if has_prev or has_more %}
+            <div class="pagination pagination-bottom">
+                {% if has_prev %}
+                    <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
+                {% endif %}
+                <span class="current">Page {{ page }}</span>
+                {% if has_more %}
+                    <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}">Next &raquo;</a>
+                {% endif %}
+            </div>
+            {% endif %}
+    {% elif query %}
+        <div class="no-results">No results found for "{{ query }}"</div>
+    {% endif %}
+{% endblock %}
