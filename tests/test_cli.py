@@ -1009,7 +1009,7 @@ sources:
             mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', '--source', 'test_gmail', 'download']):
+            with patch.object(sys, 'argv', ['ownmail', 'download', '--source', 'test_gmail']):
                 main()
 
         captured = capsys.readouterr()
