@@ -106,6 +106,9 @@ ownmail setup
 
 That's it. Credentials are stored in your system keychain.
 
+> **"The setting you are looking for is not available for your account"?**
+> This means 2-Step Verification isn't enabled yet (step 1 above), or your Google Workspace admin has disabled App Passwords. For Workspace accounts where App Passwords are blocked, use [Option B (OAuth)](#option-b-gmail-api-with-oauth-advanced) instead.
+
 **For other IMAP servers** (Fastmail, company mail, etc.), the same flow works — you'll be prompted for the IMAP hostname.
 
 ### Option B: Gmail API with OAuth (advanced)
