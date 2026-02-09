@@ -378,6 +378,30 @@ Body
         # Directory should have been created
         assert emails_dir.exists()
 
+    def test_save_email_normalizes_to_utc(self, temp_dir):
+        """Test that email_date is stored as UTC regardless of original timezone."""
+        archive = EmailArchive(temp_dir, {})
+
+        emails_dir = temp_dir / "emails"
+        emails_dir.mkdir()
+
+        # KST (+0900): Feb 9, 01:00 KST = Feb 8, 16:00 UTC
+        raw_kst = b"From: a@test.com\nDate: Sun, 09 Feb 2026 01:00:00 +0900\n\nBody"
+        # EST (-0500): Feb 8, 23:00 EST = Feb 9, 04:00 UTC
+        raw_est = b"From: b@test.com\nDate: Sun, 08 Feb 2026 23:00:00 -0500\n\nBody"
+
+        _, date_kst = archive._save_email(raw_kst, "msg_kst", "a@test.com", emails_dir)
+        _, date_est = archive._save_email(raw_est, "msg_est", "b@test.com", emails_dir)
+
+        assert date_kst is not None
+        assert date_est is not None
+        # Both should be UTC (end with +00:00)
+        assert "+00:00" in date_kst
+        assert "+00:00" in date_est
+        # KST email -> Feb 8, 16:00 UTC; EST email -> Feb 9, 04:00 UTC
+        # EST email is actually newer in UTC
+        assert date_est > date_kst, f"EST ({date_est}) should sort after KST ({date_kst}) in UTC"
+
 
 class TestIndexEmailFromContent:
     """Tests for _index_email method with content."""
@@ -477,6 +501,37 @@ class TestBackupFullSync:
         result = archive.backup(mock_provider)
 
         assert result["error_count"] == 1
+
+    def test_backup_404_treated_as_soft_skip(self, temp_dir, capsys):
+        """Test that 404 (deleted/trashed message) is skipped without counting as error."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        mock_provider = MagicMock()
+        mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
+        mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
+        mock_provider.get_current_sync_state.return_value = "12345"
+
+        # msg1 returns 404 (trashed), msg2 succeeds
+        mock_provider.download_message.side_effect = [
+            (None, []),  # This won't be used, we mock batch_results below
+        ]
+        # Simulate sequential download: msg1 returns 404 error, msg2 succeeds
+        raw_email = b"From: test@test.com\nDate: Mon, 15 Jan 2024 10:00:00 +0000\n\nBody"
+        mock_provider.download_message.side_effect = [
+            Exception('<HttpError 404 when requesting returned "Requested entity was not found.">'),
+            (raw_email, ["INBOX"]),
+        ]
+
+        result = archive.backup(mock_provider)
+
+        # 404 should be skipped, not counted as error
+        assert result["error_count"] == 0
+        assert result["success_count"] == 1
+        captured = capsys.readouterr()
+        assert "deleted from server" in captured.out
 
 
 class TestBackupMultipleEmails:
