@@ -5,7 +5,7 @@ import email.header
 import re
 import time
 
-from flask import Flask, abort, g, render_template_string, request, send_file
+from flask import Flask, abort, g, redirect, render_template_string, request, send_file
 
 from ownmail.archive import EmailArchive
 
@@ -174,7 +174,14 @@ class LRUCache:
         self.order.append(key)
 
 
-def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool = False, page_size: int = 20) -> Flask:
+def create_app(
+    archive: EmailArchive,
+    verbose: bool = False,
+    block_images: bool = False,
+    page_size: int = 20,
+    trusted_senders: list = None,
+    config_path: str = None,
+) -> Flask:
     """Create the Flask application.
 
     Args:
@@ -182,6 +189,8 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
         verbose: Enable request timing logs
         block_images: Block external images by default
         page_size: Number of results per page
+        trusted_senders: List of email addresses to always show images from
+        config_path: Path to config.yaml for updating trusted senders
 
     Returns:
         Flask application
@@ -191,6 +200,8 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
     app.config["verbose"] = verbose
     app.config["block_images"] = block_images
     app.config["page_size"] = page_size
+    app.config["trusted_senders"] = {s.lower() for s in (trusted_senders or [])}
+    app.config["config_path"] = config_path
 
     # Cache for stats (refreshed every 60 seconds)
     stats_cache = {"value": None, "time": 0}
@@ -403,9 +414,11 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
             border-radius: 5px;
             margin-bottom: 15px;
             display: flex;
-            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
             align-items: center;
         }
+        .image-banner span { flex: 1; }
         .image-banner button {
             background: #0066cc;
             color: white;
@@ -415,6 +428,10 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
             cursor: pointer;
         }
         .image-banner button:hover { background: #0052a3; }
+        .image-banner .trust-btn {
+            background: #28a745;
+        }
+        .image-banner .trust-btn:hover { background: #1e7e34; }
         /* Loading overlay */
         .loading-overlay {
             display: none;
@@ -671,6 +688,13 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
         <div class="image-banner" id="image-banner">
             <span>🖼️ External images are blocked for security.</span>
             <button onclick="loadImages()">Load Images</button>
+            {% if sender_email %}
+            <form action="/trust-sender" method="post" style="display: inline;">
+                <input type="hidden" name="email" value="{{ sender_email }}">
+                <input type="hidden" name="redirect" value="/email/{{ message_id }}">
+                <button type="submit" class="trust-btn">Always trust {{ sender_email }}</button>
+            </form>
+            {% endif %}
         </div>
         <script>
         function loadImages() {
@@ -935,12 +959,19 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
         body_html = email_data.get("body_html")
         has_external_images = False
         images_blocked = block_images
-        if body_html and block_images:
-            body_html, has_external_images = block_external_images(body_html)
 
         # Parse sender and recipients for clickable links
         sender_name, sender_email = parse_email_address(email_data["sender"])
         recipients_parsed = parse_recipients(email_data["recipients"])
+
+        # Check if sender is trusted (skip image blocking for trusted senders)
+        trusted_senders = app.config.get("trusted_senders", set())
+        sender_is_trusted = sender_email and sender_email.lower() in trusted_senders
+        if sender_is_trusted:
+            images_blocked = False
+
+        if body_html and images_blocked:
+            body_html, has_external_images = block_external_images(body_html)
 
         return render_template_string(
             EMAIL_TEMPLATE,
@@ -959,6 +990,7 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
             attachments=email_data["attachments"],
             images_blocked=images_blocked,
             has_external_images=has_external_images,
+            sender_is_trusted=sender_is_trusted,
         )
 
     @app.route("/attachment/<message_id>/<int:index>")
@@ -1004,6 +1036,49 @@ def create_app(archive: EmailArchive, verbose: bool = False, block_images: bool 
 
         abort(404)
 
+    @app.route("/trust-sender", methods=["POST"])
+    def trust_sender():
+        """Add a sender to the trusted senders list in config.yaml."""
+        sender_email = request.form.get("email", "").strip().lower()
+        redirect_to = request.form.get("redirect", "/")
+
+        if not sender_email:
+            return redirect(redirect_to)
+
+        config_path = app.config.get("config_path")
+        if not config_path:
+            # No config path, just update in-memory
+            app.config["trusted_senders"].add(sender_email)
+            return redirect(redirect_to)
+
+        try:
+            # Read current config
+            with open(config_path) as f:
+                import yaml
+                config_content = f.read()
+                config_data = yaml.safe_load(config_content) or {}
+
+            # Add to trusted_senders
+            web_config = config_data.setdefault("web", {})
+            trusted_list = web_config.setdefault("trusted_senders", [])
+            if sender_email not in trusted_list:
+                trusted_list.append(sender_email)
+
+                # Write back
+                with open(config_path, "w") as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+                # Update in-memory set
+                app.config["trusted_senders"].add(sender_email)
+
+                if verbose:
+                    print(f"[verbose] Added trusted sender: {sender_email}", flush=True)
+        except Exception as e:
+            if verbose:
+                print(f"[verbose] Error updating config: {e}", flush=True)
+
+        return redirect(redirect_to)
+
     return app
 
 
@@ -1025,6 +1100,8 @@ def run_server(
     verbose: bool = False,
     block_images: bool = False,
     page_size: int = 20,
+    trusted_senders: list = None,
+    config_path: str = None,
 ) -> None:
     """Run the web server.
 
@@ -1036,8 +1113,17 @@ def run_server(
         verbose: Enable request timing logs
         block_images: Block external images by default
         page_size: Number of results per page
+        trusted_senders: List of email addresses to always show images from
+        config_path: Path to config.yaml for updating trusted senders
     """
-    app = create_app(archive, verbose=verbose, block_images=block_images, page_size=page_size)
+    app = create_app(
+        archive,
+        verbose=verbose,
+        block_images=block_images,
+        page_size=page_size,
+        trusted_senders=trusted_senders,
+        config_path=config_path,
+    )
 
     print("\n🌐 ownmail web interface")
     print(f"   Running at: http://{host}:{port}")
@@ -1046,6 +1132,8 @@ def run_server(
         print("   Verbose logging enabled")
     if block_images:
         print("   External images blocked by default")
+    if trusted_senders:
+        print(f"   Trusted senders: {len(trusted_senders)}")
     print("   Press Ctrl+C to stop\n")
 
     app.run(host=host, port=port, debug=debug)
