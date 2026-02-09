@@ -1,0 +1,21 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: HTML Only Email
+Date: Mon, 1 Jan 2024 12:00:00 +0000
+Message-ID: <html-only@example.com>
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { font-family: Arial, sans-serif; }
+.highlight { color: blue; }
+</style>
+</head>
+<body>
+<h1>Hello World</h1>
+<p class="highlight">This is HTML content with <strong>bold</strong> and <em>italic</em>.</p>
+<a href="https://example.com">Click here</a>
+</body>
+</html>

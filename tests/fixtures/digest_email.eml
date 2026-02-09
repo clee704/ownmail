@@ -1,0 +1,40 @@
+From: digest-list@example.com
+To: subscriber@example.com
+Subject: Test Digest, Vol 1, Issue 1
+Date: Mon, 1 Jan 2024 12:00:00 +0000
+Message-ID: <digest-test@example.com>
+Content-Type: multipart/mixed; boundary="outer-boundary"
+
+--outer-boundary
+Content-Type: text/plain; charset=utf-8
+
+Today's Topics:
+
+1. First message subject
+2. Second message subject
+
+--outer-boundary
+Content-Type: multipart/digest; boundary="digest-boundary"
+
+--digest-boundary
+Content-Type: message/rfc822
+
+From: author1@example.com
+Subject: First message subject
+Date: Sun, 31 Dec 2023 10:00:00 +0000
+
+This is the first embedded message body.
+It has multiple lines.
+
+--digest-boundary
+Content-Type: message/rfc822
+
+From: author2@example.com
+Subject: Second message subject
+Date: Sun, 31 Dec 2023 11:00:00 +0000
+
+This is the second embedded message body.
+
+--digest-boundary--
+
+--outer-boundary--

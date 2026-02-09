@@ -1,0 +1,24 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Email with inline image
+Date: Mon, 1 Jan 2024 12:00:00 +0000
+Message-ID: <inline-image@example.com>
+Content-Type: multipart/related; boundary="related-boundary"
+
+--related-boundary
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<p>Here is an inline image:</p>
+<img src="cid:image001" alt="Test Image">
+</body></html>
+
+--related-boundary
+Content-Type: image/gif; name="pixel.gif"
+Content-ID: <image001>
+Content-Transfer-Encoding: base64
+Content-Disposition: inline; filename="pixel.gif"
+
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+
+--related-boundary--
