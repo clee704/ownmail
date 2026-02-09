@@ -34,6 +34,12 @@ ownmail --help
 - Keep functions focused and small
 - Add docstrings for public methods
 
+### File Formatting
+
+- No trailing whitespace
+- Files must end with a newline (Linux style)
+- Use LF line endings only, no CRLF (Linux style)
+
 ## Testing
 
 ```bash
