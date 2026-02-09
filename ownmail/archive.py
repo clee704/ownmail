@@ -114,7 +114,7 @@ class EmailArchive:
             new_ids, new_state = provider.get_new_message_ids(sync_state, since=since, until=until)
         except KeyboardInterrupt:
             print("\nBackup cancelled.")
-            return {"success_count": 0, "error_count": 0, "interrupted": True}
+            return {"success_count": 0, "error_count": 0, "interrupted": True, "failed_ids": []}
         if verbose:
             print(f"[verbose] Provider returned {len(new_ids)} message IDs", flush=True)
 
@@ -133,7 +133,7 @@ class EmailArchive:
                     current_state = provider.get_current_sync_state()
                     if current_state:
                         self.db.set_sync_state(account, "history_id", current_state)
-            return {"success_count": 0, "error_count": 0, "interrupted": False}
+            return {"success_count": 0, "error_count": 0, "interrupted": False, "failed_ids": []}
 
         print(f"\nFound {len(new_ids)} new emails to download")
         print("(Press Ctrl-C to stop - progress is saved, you can resume anytime)\n")
@@ -169,6 +169,9 @@ class EmailArchive:
         has_batch = isinstance(provider, GmailProvider)
         batch_size = BATCH_SIZE if has_batch else 1
 
+        # Track failed message IDs for reporting
+        failed_ids: list[str] = []
+
         try:
             i = 0
             while i < len(new_ids) and not interrupted:
@@ -181,12 +184,23 @@ class EmailArchive:
                 else:
                     print(f"\r\033[K  [{i + 1}/{len(new_ids)}] downloading...", end="", flush=True)
 
-                # Download batch
+                # Download batch with error handling
+                batch_results = {}
                 if has_batch and len(batch_ids) > 1:
-                    batch_results = provider.download_messages_batch(batch_ids)
+                    try:
+                        batch_results = provider.download_messages_batch(batch_ids)
+                    except Exception as e:
+                        # Entire batch failed - mark all IDs as failed and continue
+                        error_msg = str(e)
+                        print(f"\n  Batch download failed: {error_msg}")
+                        for msg_id in batch_ids:
+                            batch_results[msg_id] = (None, [], error_msg)
+                            failed_ids.append(msg_id)
+                        error_count += len(batch_ids)
+                        i += len(batch_ids)
+                        continue
                 else:
                     # Fallback to sequential for single items or non-batch providers
-                    batch_results = {}
                     for msg_id in batch_ids:
                         try:
                             raw_data, labels = provider.download_message(msg_id)
@@ -205,6 +219,8 @@ class EmailArchive:
                     if result is None or result[0] is None:
                         error_msg = result[2] if result else "Unknown error"
                         print(f"\n  Error downloading {msg_id}: {error_msg}")
+                        if msg_id not in failed_ids:
+                            failed_ids.append(msg_id)
                         error_count += 1
                         continue
 
@@ -281,6 +297,7 @@ class EmailArchive:
             "success_count": success_count,
             "error_count": error_count,
             "interrupted": interrupted,
+            "failed_ids": failed_ids,
         }
 
     def _save_email(

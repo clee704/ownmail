@@ -35,6 +35,145 @@ ENCODING_FAMILIES = [
     ("cjk", ["utf-8", "cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"], None),
 ]
 
+# Pre-compiled regex patterns for performance
+WHITESPACE_RE = re.compile(r'\s+')
+NON_ASCII_DATE_PREFIX_RE = re.compile(r'^[^\x00-\x7F]+,?\s*')
+NUMERIC_DATE_RE = re.compile(
+    r'(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([+-]?\d{1,4})?'
+)
+STYLE_TAG_RE = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL | re.IGNORECASE)
+SCRIPT_TAG_RE = re.compile(r'<script[^>]*>.*?</script>', re.DOTALL | re.IGNORECASE)
+HTML_TAG_RE = re.compile(r'<[^>]+>')
+
+# Charset mapping for known aliases (used in charset detection)
+CHARSET_MAP = {
+    'ks_c_5601-1987': 'cp949',
+    'ks_c_5601': 'cp949',
+    'ks_c_5601_1987': 'cp949',
+    'euc-kr': 'cp949',  # Treat EUC-KR as CP949 (superset)
+}
+
+# Default encoding fallback chain for CJK and Cyrillic support
+DEFAULT_ENCODING_CHAIN = [
+    'utf-8', 'cp949', 'euc-kr', 'gb2312', 'shift_jis',
+    'cp1251', 'koi8-r',  # Russian/Cyrillic
+    'iso-8859-1',
+]
+
+
+def _detect_charset(raw_bytes: bytes, declared_charset: str = None) -> str:
+    """Detect the best charset to decode raw bytes.
+
+    Encapsulates the fallback chain logic for charset detection.
+
+    Args:
+        raw_bytes: Raw bytes to decode
+        declared_charset: Charset declared in headers (may be wrong)
+
+    Returns:
+        Best charset string to use for decoding
+    """
+    # Normalize and map declared charset
+    if declared_charset:
+        declared_lower = declared_charset.lower()
+        # Handle unknown/invalid charset declarations
+        if declared_lower in ('unknown', 'unknown-8bit'):
+            declared_charset = None
+        else:
+            declared_charset = CHARSET_MAP.get(declared_lower, declared_charset)
+
+    # Build encoding chain with declared charset first if provided
+    encodings_to_try = []
+    if declared_charset:
+        encodings_to_try.append(declared_charset)
+    encodings_to_try.extend(
+        enc for enc in DEFAULT_ENCODING_CHAIN if enc not in encodings_to_try
+    )
+
+    # Try each encoding, return first that decodes cleanly
+    for enc in encodings_to_try:
+        try:
+            decoded = raw_bytes.decode(enc)
+            # Check for replacement characters (decoding failed)
+            if '\ufffd' not in decoded:
+                return enc
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    # Fallback to UTF-8 with replacement
+    return 'utf-8'
+
+
+def _decode_grouped_rfc2047_parts(parts: list, fallback_charset: str = None) -> str:
+    """Decode RFC 2047 encoded-word parts, handling split multi-byte characters.
+
+    Groups adjacent same-charset encoded-words to handle malformed emails
+    that split multi-byte characters across encoded-words.
+
+    Args:
+        parts: List of (content, charset) tuples from email.header.decode_header()
+        fallback_charset: Charset to try if declared charset fails
+
+    Returns:
+        Decoded string
+    """
+    if not parts:
+        return ""
+
+    # Group adjacent same-charset encoded-words to handle split multi-byte chars
+    grouped_parts = []
+    for content, charset in parts:
+        # Normalize charset for comparison
+        norm_charset = charset.lower() if charset else None
+
+        if (grouped_parts and
+            isinstance(content, bytes) and
+            isinstance(grouped_parts[-1][0], bytes) and
+            grouped_parts[-1][1] == norm_charset):
+            # Same charset as previous, concatenate bytes
+            grouped_parts[-1] = (grouped_parts[-1][0] + content, norm_charset)
+        else:
+            grouped_parts.append((content, norm_charset))
+
+    # Decode each grouped part
+    decoded_parts = []
+    for content, charset in grouped_parts:
+        if isinstance(content, bytes):
+            # Determine best charset
+            declared_enc = CHARSET_MAP.get(charset, charset) if charset else None
+
+            # Handle 'unknown' charset
+            if declared_enc and declared_enc.lower() in ('unknown', 'unknown-8bit'):
+                declared_enc = None
+
+            # Build encoding chain
+            encodings_to_try = []
+            if declared_enc:
+                encodings_to_try.append(declared_enc)
+            if fallback_charset and fallback_charset not in encodings_to_try:
+                encodings_to_try.append(fallback_charset)
+            encodings_to_try.extend(
+                enc for enc in DEFAULT_ENCODING_CHAIN if enc not in encodings_to_try
+            )
+
+            decoded = None
+            for enc in encodings_to_try:
+                try:
+                    decoded = content.decode(enc)
+                    if '\ufffd' not in decoded:
+                        break
+                    decoded = None
+                except (LookupError, UnicodeDecodeError):
+                    continue
+
+            if decoded is None:
+                decoded = content.decode('utf-8', errors='replace')
+            decoded_parts.append(decoded)
+        else:
+            decoded_parts.append(str(content))
+
+    return ''.join(decoded_parts)
+
 
 def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
     """Check if decoded text looks like valid readable content.
@@ -120,7 +259,7 @@ class EmailParser:
             return ""
         # Replace CR/LF with space, collapse multiple spaces
         result = value.replace("\r", " ").replace("\n", " ")
-        result = re.sub(r'\s+', ' ', result)
+        result = WHITESPACE_RE.sub(' ', result)
         return result.strip()
 
     @staticmethod
@@ -201,65 +340,7 @@ class EmailParser:
         if isinstance(raw_value, str) and ('=?' in raw_value and '?=' in raw_value):
             try:
                 parts = decode_header(raw_value)
-
-                # Group adjacent same-charset encoded-words to handle split multi-byte chars
-                # Some malformed emails split multi-byte characters across encoded-words
-                grouped_parts = []
-                for content, charset in parts:
-                    # Normalize charset for comparison
-                    norm_charset = charset.lower() if charset else None
-
-                    if (grouped_parts and
-                        isinstance(content, bytes) and
-                        isinstance(grouped_parts[-1][0], bytes) and
-                        grouped_parts[-1][1] == norm_charset):
-                        # Same charset as previous, concatenate bytes
-                        grouped_parts[-1] = (grouped_parts[-1][0] + content, norm_charset)
-                    else:
-                        grouped_parts.append((content, norm_charset))
-
-                decoded_parts = []
-                for content, charset in grouped_parts:
-                    if isinstance(content, bytes):
-                        # Map well-known charset aliases
-                        charset_map = {
-                            'ks_c_5601-1987': 'cp949',
-                            'ks_c_5601': 'cp949',
-                            'euc-kr': 'cp949',
-                        }
-                        declared_enc = charset_map.get(charset, charset) if charset else None
-
-                        # Handle 'unknown' charset - try common encodings based on content
-                        if declared_enc and declared_enc.lower() in ('unknown', 'unknown-8bit'):
-                            declared_enc = None
-
-                        # Try declared charset first, then common fallbacks
-                        encodings_to_try = []
-                        if declared_enc:
-                            encodings_to_try.append(declared_enc)
-                        # Include CJK and Cyrillic encodings for broad language support
-                        encodings_to_try.extend([
-                            'cp949', 'utf-8', 'euc-kr', 'gb2312', 'shift_jis',
-                            'cp1251', 'koi8-r',  # Russian/Cyrillic
-                        ])
-
-                        decoded = None
-                        for enc in encodings_to_try:
-                            try:
-                                decoded = content.decode(enc)
-                                # Validate: no replacement chars and mostly printable
-                                if '\ufffd' not in decoded:
-                                    break
-                                decoded = None
-                            except (LookupError, UnicodeDecodeError):
-                                continue
-
-                        if decoded is None:
-                            decoded = content.decode('utf-8', errors='replace')
-                        decoded_parts.append(decoded)
-                    else:
-                        decoded_parts.append(str(content))
-                return ''.join(decoded_parts)
+                return _decode_grouped_rfc2047_parts(parts, fallback_charset)
             except Exception:
                 pass
 
@@ -270,33 +351,26 @@ class EmailParser:
             if not has_issues:
                 return raw_value
 
-            # If mostly readable (90%+), accept minor issues rather than risk corruption
-            if has_issues:
-                readable = sum(1 for c in raw_value if c.isprintable() or c.isspace())
-                if readable / len(raw_value) > 0.9:
-                    return raw_value
-
         # Try direct decoding with common charsets
         if isinstance(raw_value, bytes):
-            for enc in ['utf-8', 'cp949', 'euc-kr', 'iso-8859-1']:
-                try:
-                    return raw_value.decode(enc)
-                except (UnicodeDecodeError, LookupError):
-                    continue
-            return raw_value.decode('utf-8', errors='replace')
+            best_charset = _detect_charset(raw_value, fallback_charset)
+            try:
+                return raw_value.decode(best_charset)
+            except (UnicodeDecodeError, LookupError):
+                return raw_value.decode('utf-8', errors='replace')
 
         # For strings with encoding issues, try re-encoding and decoding
         if isinstance(raw_value, str) and ('\ufffd' in raw_value or '�' in raw_value):
             # Try to recover by encoding to latin-1 and decoding as Korean
             try:
                 raw_bytes = raw_value.encode('latin-1', errors='replace')
-                for enc in ['cp949', 'euc-kr', 'utf-8']:
-                    try:
-                        decoded = raw_bytes.decode(enc)
-                        if '\ufffd' not in decoded:
-                            return decoded
-                    except (UnicodeDecodeError, LookupError):
-                        continue
+                best_charset = _detect_charset(raw_bytes, fallback_charset)
+                try:
+                    decoded = raw_bytes.decode(best_charset)
+                    if '\ufffd' not in decoded:
+                        return decoded
+                except (UnicodeDecodeError, LookupError):
+                    pass
             except Exception:
                 pass
 
@@ -339,13 +413,6 @@ class EmailParser:
                     if '\ufffd' not in raw_decoded:
                         return EmailParser._sanitize_header(raw_decoded)
 
-            # If raw extraction didn't work but value is mostly readable (90%+),
-            # accept it even with minor issues to avoid corrupting mostly-good headers
-            if has_issues and len(val_str) > 0:
-                readable = sum(1 for c in val_str if (c.isprintable() or c.isspace()) and c != '\ufffd')
-                if readable / len(val_str) > 0.9:
-                    return EmailParser._sanitize_header(val_str)
-
             decoded = EmailParser._decode_header_value(val, fallback_charset)
             result = EmailParser._sanitize_header(decoded)
 
@@ -384,7 +451,7 @@ class EmailParser:
             pass
 
         # Remove non-ASCII prefix (Korean/garbled weekday)
-        cleaned = re.sub(r'^[^\x00-\x7F]+,?\s*', '', date_str)
+        cleaned = NON_ASCII_DATE_PREFIX_RE.sub('', date_str)
 
         # Try parsing the cleaned version
         try:
@@ -395,10 +462,7 @@ class EmailParser:
 
         # Try parsing numeric month format: "DD M YY(YY) H:MM:SS +Z(ZZZ)"
         # Handles: 2 or 4 digit year, 1-4 digit timezone
-        match = re.match(
-            r'(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([+-]?\d{1,4})?',
-            cleaned
-        )
+        match = NUMERIC_DATE_RE.match(cleaned)
         if match:
             day, month, year, hour, minute, second = [int(x) for x in match.groups()[:6]]
             tz_str = match.group(7) or "+0000"
@@ -550,9 +614,9 @@ class EmailParser:
             return ' '.join(text.split())
         except Exception:
             # Fallback to simple regex if lxml fails
-            text = re.sub(r'<style[^>]*>.*?</style>', ' ', html_content, flags=re.DOTALL | re.IGNORECASE)
-            text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-            text = re.sub(r'<[^>]+>', ' ', text)
+            text = STYLE_TAG_RE.sub(' ', html_content)
+            text = SCRIPT_TAG_RE.sub(' ', text)
+            text = HTML_TAG_RE.sub(' ', text)
             text = html.unescape(text)
             return ' '.join(text.split())
 
