@@ -310,7 +310,7 @@ a:hover { text-decoration: underline; }
 .ownmail-settings-section {
     border: 1px solid #ddd;
     border-radius: 6px;
-    padding: 20px;
+    padding: 15px;
     margin-bottom: 0;
 }
 .ownmail-settings-section legend {
