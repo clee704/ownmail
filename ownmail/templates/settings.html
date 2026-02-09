@@ -51,10 +51,17 @@
 
                 <div class="ownmail-settings-field">
                     <label for="timezone">Timezone</label>
-                    <input type="text" name="timezone" id="timezone"
-                           value="{{ settings.timezone or '' }}"
-                           placeholder="{{ server_timezone }}">
-                    <p class="ownmail-settings-hint">IANA timezone name (e.g. "America/New_York", "Asia/Seoul"). Leave blank for server default ({{ server_timezone }}).</p>
+                    <select name="timezone" id="timezone">
+                        <option value="">Server default ({{ server_timezone }})</option>
+                        {% for group_name, zones in timezone_groups %}
+                        <optgroup label="{{ group_name }}">
+                            {% for tz in zones %}
+                            <option value="{{ tz }}" {{ 'selected' if settings.timezone == tz else '' }}>{{ tz }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                    <p class="ownmail-settings-hint">Timezone for displaying email dates.</p>
                 </div>
             </fieldset>
 
@@ -86,7 +93,7 @@
             </fieldset>
 
             <fieldset class="ownmail-settings-section">
-                <legend>Trusted Senders</legend>
+                <legend>Trusted senders</legend>
                 <div class="ownmail-settings-field">
                     <label for="trusted_senders">Trusted sender emails (one per line)</label>
                     <textarea name="trusted_senders" id="trusted_senders" rows="8"

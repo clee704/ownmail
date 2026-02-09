@@ -295,7 +295,7 @@ class TestCreateApp:
         with app.test_client() as client:
             response = client.get("/help")
             assert response.status_code == 200
-            assert b"Search Syntax" in response.data
+            assert b"Search syntax" in response.data
 
     def test_email_route_not_found(self, mock_archive):
         """Email route with invalid ID should return 404."""
