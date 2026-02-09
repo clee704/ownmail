@@ -121,8 +121,24 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
             i += 1
             continue
 
-        # Negation (must be followed by a word, not whitespace)
+        # Negation (must be followed by a word or quote, not whitespace)
         if char == '-' and i + 1 < len(query) and not query[i+1].isspace():
+            next_char = query[i + 1]
+
+            # Negated phrase: -"exact phrase"
+            if next_char == '"':
+                end = query.find('"', i + 2)
+                if end == -1:
+                    partial = query[i+2:i+22]
+                    if len(query) > i + 22:
+                        partial += "..."
+                    return tokens, f"Unclosed quote after '{partial}'"
+                phrase = query[i+2:end]
+                # Negated phrase - add as NEGATION with the phrase value
+                tokens.append(Token(TokenType.NEGATION, phrase))
+                i = end + 1
+                continue
+
             # Find the word after -
             j = i + 1
             while j < len(query) and not query[j].isspace() and query[j] not in '()':
@@ -143,8 +159,7 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
 
                     if field_name in known_filters:
                         if not field_value:
-                            i = j
-                            continue
+                            return tokens, f"Empty value for '-{field_name}:' filter"
                         # Normalize field names
                         if field_name == 'sender':
                             field_name = 'from'
@@ -263,11 +278,11 @@ def _validate_tokens(tokens: list[Token]) -> str | None:
 def _escape_fts5_value(value: str) -> str:
     """Escape a value for safe inclusion in FTS5 query.
 
-    Wraps in quotes if it contains special characters.
+    Wraps in quotes if it contains special characters or whitespace.
     Escapes internal quotes by doubling them.
     """
-    # Check if quoting is needed
-    needs_quoting = any(c in FTS5_SPECIAL_CHARS for c in value)
+    # Check if quoting is needed (special chars or whitespace)
+    needs_quoting = any(c in FTS5_SPECIAL_CHARS or c.isspace() for c in value)
 
     if needs_quoting:
         # Escape internal quotes by doubling
