@@ -222,7 +222,7 @@ class EmailArchive:
                         # Index the email
                         self._index_email(msg_id, filepath, raw_data, skip_delete=True)
 
-                        # Mark as downloaded
+                        # Mark as downloaded and indexed
                         content_hash = hashlib.sha256(raw_data).hexdigest()
                         self.db.mark_downloaded(
                             message_id=msg_id,
@@ -230,6 +230,11 @@ class EmailArchive:
                             content_hash=content_hash,
                             account=account,
                             conn=self._batch_conn,
+                        )
+                        # Set indexed_hash to mark as indexed
+                        self._batch_conn.execute(
+                            "UPDATE emails SET indexed_hash = ? WHERE message_id = ?",
+                            (content_hash, msg_id)
                         )
 
                         success_count += 1
