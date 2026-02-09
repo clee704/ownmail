@@ -28,6 +28,7 @@ def cmd_rebuild(
     pattern: Optional[str] = None,
     force: bool = False,
     debug: bool = False,
+    only: Optional[str] = None,
 ) -> None:
     """Rebuild the search index and populate metadata.
 
@@ -40,7 +41,13 @@ def cmd_rebuild(
         pattern: Index only files matching this glob pattern (e.g., "2024/09/*")
         force: If True, rebuild all emails regardless of indexed_hash
         debug: If True, show timing info for each email
+        only: If 'dates', only populate email_date; if 'index', only rebuild index
     """
+    # Dates-only mode: fast path that skips full reindexing
+    if only == "dates":
+        _populate_dates_only(archive, pattern, force, debug)
+        return
+
     print("\n" + "=" * 50)
     print("ownmail - Rebuild")
     print("=" * 50 + "\n")
@@ -248,6 +255,153 @@ def cmd_rebuild(
         print(f"  Indexed: {success_count} emails in {elapsed_total:.1f}s")
     if error_count > 0:
         print(f"  Errors: {error_count}")
+    print("-" * 50 + "\n")
+
+
+def _populate_dates_only(
+    archive: EmailArchive,
+    pattern: Optional[str] = None,
+    force: bool = False,
+    debug: bool = False,
+) -> None:
+    """Populate email_date for emails that are missing it.
+
+    This is a fast path that avoids full reindexing. It reads the date_str
+    from the database (or parses the .eml file if date_str is NULL) and
+    converts it to a UTC ISO timestamp.
+
+    Args:
+        archive: EmailArchive instance
+        pattern: Only process files matching this glob pattern
+        force: If True, repopulate all dates (not just NULL ones)
+        debug: If True, show per-email details
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Populate Dates")
+    print("=" * 50 + "\n")
+
+    db_path = archive.db.db_path
+
+    # Build query
+    like_pattern = None
+    if pattern:
+        like_pattern = "%" + pattern.replace("*", "%").replace("?", "_") + "%"
+
+    t0 = time.time()
+    print("Finding emails...", end="", flush=True)
+    with sqlite3.connect(db_path) as conn:
+        if like_pattern:
+            if force:
+                emails = conn.execute(
+                    "SELECT email_id, filename, date_str FROM emails WHERE filename LIKE ?",
+                    (like_pattern,)
+                ).fetchall()
+            else:
+                emails = conn.execute(
+                    "SELECT email_id, filename, date_str FROM emails WHERE email_date IS NULL AND filename LIKE ?",
+                    (like_pattern,)
+                ).fetchall()
+        else:
+            if force:
+                emails = conn.execute(
+                    "SELECT email_id, filename, date_str FROM emails"
+                ).fetchall()
+            else:
+                emails = conn.execute(
+                    "SELECT email_id, filename, date_str FROM emails WHERE email_date IS NULL"
+                ).fetchall()
+        print(f" {len(emails)} emails ({time.time()-t0:.1f}s)")
+
+    if not emails:
+        print("\nAll emails already have dates." + (" Use --force to repopulate." if not force else ""))
+        return
+
+    print(f"\nPopulating dates for {len(emails)} emails...")
+
+    success_count = 0
+    skipped = 0
+    interrupted = False
+    start_time = time.time()
+
+    def signal_handler(signum, frame):
+        nonlocal interrupted
+        interrupted = True
+        print("\n\n⏸ Stopping after current email...")
+
+    original_handler = signal.signal(signal.SIGINT, signal_handler)
+
+    batch_conn = sqlite3.connect(db_path)
+    batch_conn.execute("PRAGMA journal_mode = WAL")
+    batch_conn.execute("PRAGMA synchronous = NORMAL")
+
+    try:
+        for i, (email_id, filename, date_str) in enumerate(emails, 1):
+            if interrupted:
+                break
+
+            # Try to get date from existing date_str first (fast)
+            email_date_iso = None
+            if date_str:
+                try:
+                    msg_date = parsedate_to_datetime(date_str)
+                    msg_date_utc = msg_date.astimezone(timezone.utc)
+                    email_date_iso = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+                except Exception:
+                    pass
+
+            # If no date_str or parsing failed, try parsing the .eml file
+            if not email_date_iso:
+                filepath = archive.archive_dir / filename
+                if filepath.exists():
+                    try:
+                        parsed = EmailParser.parse_file(filepath=filepath)
+                        if parsed["date_str"]:
+                            msg_date = parsedate_to_datetime(parsed["date_str"])
+                            msg_date_utc = msg_date.astimezone(timezone.utc)
+                            email_date_iso = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+                    except Exception:
+                        pass
+
+            if email_date_iso:
+                if force:
+                    batch_conn.execute(
+                        "UPDATE emails SET email_date = ? WHERE email_id = ?",
+                        (email_date_iso, email_id)
+                    )
+                else:
+                    batch_conn.execute(
+                        "UPDATE emails SET email_date = COALESCE(email_date, ?) WHERE email_id = ?",
+                        (email_date_iso, email_id)
+                    )
+                success_count += 1
+            else:
+                skipped += 1
+                if debug:
+                    print(f"\n  No date for: {filename}")
+
+            # Commit every 200 emails
+            if (success_count + skipped) % 200 == 0:
+                batch_conn.commit()
+
+            if i % 100 == 0 or i == len(emails):
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                print(f"\r\033[K  [{i}/{len(emails)}] {rate:.0f}/s", end="", flush=True)
+    finally:
+        batch_conn.commit()
+        batch_conn.close()
+        signal.signal(signal.SIGINT, original_handler)
+
+    elapsed_total = time.time() - start_time
+    print("\n" + "-" * 50)
+    if interrupted:
+        print("Populate Dates Paused!")
+        print("\n  Run 'ownmail rebuild --only dates' again to resume.")
+    else:
+        print("Populate Dates Complete!")
+    print(f"  Updated: {success_count} emails in {elapsed_total:.1f}s")
+    if skipped:
+        print(f"  Skipped (no parseable date): {skipped}")
     print("-" * 50 + "\n")
 
 

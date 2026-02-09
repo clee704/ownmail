@@ -743,6 +743,7 @@ Examples:
     rebuild_parser.add_argument("--pattern", type=str, help="Index only files matching pattern")
     rebuild_parser.add_argument("--force", "-f", action="store_true", help="Rebuild all, even if indexed")
     rebuild_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
+    rebuild_parser.add_argument("--only", choices=["index", "dates"], help="Only rebuild index or only populate dates")
 
     # verify command
     verify_parser = subparsers.add_parser(
@@ -857,7 +858,7 @@ Examples:
                 cmd_stats(archive, config, args.source)
             elif args.command == "rebuild":
                 from ownmail.commands import cmd_rebuild
-                cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug)
+                cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug, args.only)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify
                 cmd_verify(archive, args.fix, args.verbose)
