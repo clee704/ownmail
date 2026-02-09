@@ -70,11 +70,18 @@ class EmailArchive:
     # Backup
     # -------------------------------------------------------------------------
 
-    def backup(self, provider: EmailProvider) -> dict:
+    def backup(
+        self,
+        provider: EmailProvider,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+    ) -> dict:
         """Backup emails from a provider.
 
         Args:
             provider: Authenticated email provider
+            since: Only backup emails after this date (YYYY-MM-DD)
+            until: Only backup emails before this date (YYYY-MM-DD)
 
         Returns:
             Dictionary with success_count, error_count, interrupted
@@ -89,9 +96,9 @@ class EmailArchive:
         # Get sync state
         sync_state = self.db.get_sync_state(account, "history_id")
 
-        # Get new message IDs
+        # Get new message IDs (with optional date filter)
         print("Checking for new emails...")
-        new_ids, new_state = provider.get_new_message_ids(sync_state)
+        new_ids, new_state = provider.get_new_message_ids(sync_state, since=since, until=until)
 
         # Filter out already downloaded
         new_ids = [mid for mid in new_ids if mid not in downloaded_ids]

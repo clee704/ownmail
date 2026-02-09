@@ -325,13 +325,13 @@ class TestCmdSetup:
 
         config = {}
 
-        # Simulate user input
+        # Simulate user input - email first, then source name
         inputs = iter([
             '{"installed": {"client_id": "test"}}',  # credentials
             '',  # end of paste
             '',
+            'test@gmail.com',  # email (now first)
             'test_source',  # source name
-            'test@gmail.com',  # email
         ])
         monkeypatch.setattr('builtins.input', lambda _: next(inputs))
 
