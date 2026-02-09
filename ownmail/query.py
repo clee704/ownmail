@@ -418,12 +418,12 @@ def parse_query(query: str) -> ParsedQuery:
                     fts_parts.append(f'subject:{escaped}')
 
             elif field == 'label':
-                # Label filter on labels column
+                # Label filter - use normalized email_labels table for fast indexed lookup
                 if negated:
-                    where_clauses.append("(e.labels IS NULL OR e.labels NOT LIKE ?)")
+                    where_clauses.append("__NOT_LABEL__")
                 else:
-                    where_clauses.append("e.labels LIKE ?")
-                params.append(f"%{value}%")
+                    where_clauses.append("__LABEL__")
+                params.append(value.upper())  # Labels are typically uppercase
 
             elif field == 'before':
                 normalized = _normalize_date(value)

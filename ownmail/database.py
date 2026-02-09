@@ -125,6 +125,23 @@ class ArchiveDatabase:
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_email_recipients_email ON email_recipients(recipient_email)")
 
+            # Normalized labels table for fast label lookups
+            # LIKE '%INBOX%' on labels column requires full table scan
+            # This table allows indexed exact-match lookups
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS email_labels (
+                    email_rowid INTEGER,
+                    label TEXT,
+                    PRIMARY KEY (email_rowid, label)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_email_labels_label ON email_labels(label)")
+            # Compound index for (label, email_date) to speed up sorted label queries
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_email_labels_label_date
+                ON email_labels(label, email_rowid)
+            """)
+
             # Indexes for fast queries
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_account ON emails(account)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_indexed_hash ON emails(indexed_hash)")
@@ -428,6 +445,18 @@ class ArchiveDatabase:
                             (rowid, email)
                         )
 
+            # Update normalized labels table for fast lookups
+            conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
+            if labels:
+                # labels is comma-separated: "INBOX,IMPORTANT,CATEGORY_PERSONAL"
+                for label in labels.split(','):
+                    label = label.strip()
+                    if label:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO email_labels (email_rowid, label) VALUES (?, ?)",
+                            (rowid, label)
+                        )
+
             # Update FTS (contentless mode - we manage manually)
             if was_indexed:
                 # Delete old FTS entry (contentless FTS requires exact content)
@@ -512,6 +541,8 @@ class ArchiveDatabase:
             # Handle special markers that need custom handling
             recipient_email_filter = None
             not_recipient_email_filter = None
+            label_filter = None
+            not_label_filter = None
             param_idx = 0
 
             for clause in parsed.where_clauses:
@@ -522,6 +553,14 @@ class ArchiveDatabase:
                 elif clause == "__NOT_RECIPIENT_EMAIL__":
                     # This is a negated recipient email filter - needs NOT EXISTS
                     not_recipient_email_filter = parsed.params[param_idx]
+                    param_idx += 1
+                elif clause == "__LABEL__":
+                    # This is a label filter - needs JOIN with email_labels
+                    label_filter = parsed.params[param_idx]
+                    param_idx += 1
+                elif clause == "__NOT_LABEL__":
+                    # This is a negated label filter - needs NOT EXISTS
+                    not_label_filter = parsed.params[param_idx]
                     param_idx += 1
                 else:
                     where_clauses.append(clause)
@@ -540,6 +579,17 @@ class ArchiveDatabase:
                     )
                 """)
                 params.append(not_recipient_email_filter)
+
+            # Add negated label filter as a WHERE clause
+            if not_label_filter:
+                where_clauses.append("""
+                    NOT EXISTS (
+                        SELECT 1 FROM email_labels el2
+                        WHERE el2.email_rowid = e.rowid
+                          AND el2.label = ?
+                    )
+                """)
+                params.append(not_label_filter)
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
@@ -560,13 +610,35 @@ class ArchiveDatabase:
                 if sort == "relevance":
                     order_by = "rank"
 
+                # Build additional JOINs for label/recipient filters
+                extra_joins = []
+                extra_where = []
+                extra_params = []
+
+                if label_filter:
+                    extra_joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
+                    extra_where.append("el.label = ?")
+                    extra_params.append(label_filter)
+
+                if recipient_email_filter:
+                    extra_joins.append("JOIN email_recipients er ON er.email_rowid = e.rowid")
+                    extra_where.append("er.recipient_email = ?")
+                    extra_params.append(recipient_email_filter)
+
+                join_sql = " ".join(extra_joins)
+                if extra_where:
+                    where_sql = " AND ".join([where_sql] + extra_where) if where_sql != "1=1" else " AND ".join(extra_where)
+
+                # Determine if we need DISTINCT (when using JOINs)
+                distinct = "DISTINCT " if extra_joins else ""
+
                 # JOIN with FTS using rowid
-                fts_params = [fts_query] + params + [limit, offset]
+                fts_params = [fts_query] + extra_params + params + [limit, offset]
                 _t2 = time.time()
                 try:
                     results = conn.execute(
                         f"""
-                        SELECT
+                        SELECT {distinct}
                             e.message_id,
                             e.filename,
                             e.subject,
@@ -575,6 +647,7 @@ class ArchiveDatabase:
                             e.snippet
                         FROM emails e
                         JOIN emails_fts f ON f.rowid = e.rowid
+                        {join_sql}
                         WHERE f.emails_fts MATCH ?
                           AND {where_sql}
                         ORDER BY {order_by}
@@ -595,47 +668,41 @@ class ArchiveDatabase:
                 # No text search - query emails table only (fast with indexes)
                 _t2 = time.time()
 
-                # Build query - use JOIN with email_recipients if filtering by recipient email
-                if recipient_email_filter:
-                    # Use er.email_date for ORDER BY to leverage compound index
-                    if sort == "date_desc":
-                        er_order_by = "er.email_date DESC"
-                    elif sort == "date_asc":
-                        er_order_by = "er.email_date ASC"
-                    else:
-                        er_order_by = "er.email_date DESC"
+                # Build query - use JOIN if filtering by recipient email or label
+                joins = []
+                filter_params = []
 
-                    sql = f"""
-                        SELECT DISTINCT
-                            e.message_id,
-                            e.filename,
-                            e.subject,
-                            e.sender,
-                            e.date_str,
-                            e.snippet
-                        FROM emails e
-                        JOIN email_recipients er ON er.email_rowid = e.rowid
-                        WHERE er.recipient_email = ?
-                          AND {where_sql}
-                        ORDER BY {er_order_by}
-                        LIMIT ? OFFSET ?
-                        """
-                    query_params = [recipient_email_filter] + params + [limit, offset]
-                else:
-                    sql = f"""
-                        SELECT
-                            message_id,
-                            filename,
-                            subject,
-                            sender,
-                            date_str,
-                            snippet
-                        FROM emails e
-                        WHERE {where_sql}
-                        ORDER BY {order_by}
-                        LIMIT ? OFFSET ?
-                        """
-                    query_params = params + [limit, offset]
+                if recipient_email_filter:
+                    joins.append("JOIN email_recipients er ON er.email_rowid = e.rowid")
+                    where_clauses.insert(0, "er.recipient_email = ?")
+                    filter_params.append(recipient_email_filter)
+
+                if label_filter:
+                    joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
+                    where_clauses.insert(0, "el.label = ?")
+                    filter_params.append(label_filter)
+
+                join_sql = " ".join(joins)
+                where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+                # Determine if we need DISTINCT (when using JOINs)
+                distinct = "DISTINCT " if joins else ""
+
+                sql = f"""
+                    SELECT {distinct}
+                        e.message_id,
+                        e.filename,
+                        e.subject,
+                        e.sender,
+                        e.date_str,
+                        e.snippet
+                    FROM emails e
+                    {join_sql}
+                    WHERE {where_sql}
+                    ORDER BY {order_by}
+                    LIMIT ? OFFSET ?
+                    """
+                query_params = filter_params + params + [limit, offset]
 
                 print(f"[db.search] SQL: {sql}", flush=True)
                 print(f"[db.search] params: {query_params}", flush=True)
