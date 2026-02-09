@@ -338,19 +338,51 @@ def _index_email_for_reindex(
         return False
 
 
+def _verify_single_file(args: tuple) -> tuple:
+    """Verify a single file's hash. Returns (status, filename).
+
+    Status: 'ok', 'missing', 'corrupted', 'no_hash'
+    """
+    archive_dir, filename, stored_hash = args
+
+    filepath = archive_dir / filename
+
+    if not filepath.exists():
+        return ('missing', filename)
+
+    if not stored_hash:
+        return ('no_hash', filename)
+
+    # Compute current hash
+    with open(filepath, "rb") as f:
+        current_hash = hashlib.sha256(f.read()).hexdigest()
+
+    if current_hash == stored_hash:
+        return ('ok', filename)
+    else:
+        return ('corrupted', filename)
+
+
 def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
     """Verify integrity of downloaded emails against stored hashes."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time
+
     print("\n" + "=" * 50)
     print("ownmail - Verify Integrity")
     print("=" * 50 + "\n")
 
+    total_start = time.time()
+
     db_path = archive.db.db_path
 
     # Get all downloaded emails with hashes
+    step_start = time.time()
     with sqlite3.connect(db_path) as conn:
         emails = conn.execute(
             "SELECT message_id, filename, content_hash FROM emails"
         ).fetchall()
+    db_time = time.time() - step_start
 
     if not emails:
         print("No emails to verify.")
@@ -367,40 +399,50 @@ def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
 
     print(f"Verifying {total} indexed emails...\n")
 
-    for i, (_msg_id, filename, stored_hash) in enumerate(emails, 1):
-        print(f"  [{i}/{total}] Verifying indexed...", end="\r")
-
+    # Prepare work items
+    work_items = []
+    for _msg_id, filename, stored_hash in emails:
         indexed_files.add(filename)
-        filepath = archive.archive_dir / filename
+        work_items.append((archive.archive_dir, filename, stored_hash))
 
-        if not filepath.exists():
-            missing_count += 1
-            missing_files.append(filename)
-            continue
+    # Process with thread pool for parallel I/O
+    step_start = time.time()
+    completed = 0
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(_verify_single_file, item): item for item in work_items}
 
-        if not stored_hash:
-            no_hash_count += 1
-            continue
+        for future in as_completed(futures):
+            completed += 1
+            print(f"  [{completed}/{total}] Verifying indexed...", end="\r")
 
-        # Compute current hash
-        with open(filepath, "rb") as f:
-            current_hash = hashlib.sha256(f.read()).hexdigest()
-
-        if current_hash == stored_hash:
-            ok_count += 1
-        else:
-            corrupted_count += 1
-            corrupted_files.append(filename)
+            status, filename = future.result()
+            if status == 'ok':
+                ok_count += 1
+            elif status == 'missing':
+                missing_count += 1
+                missing_files.append(filename)
+            elif status == 'corrupted':
+                corrupted_count += 1
+                corrupted_files.append(filename)
+            elif status == 'no_hash':
+                no_hash_count += 1
+    verify_time = time.time() - step_start
 
     # Check for orphaned files (on disk but not in index)
+    step_start = time.time()
     print("\n  Scanning for orphaned files...", end="\r")
     orphaned_files = []
-    emails_dir = archive.archive_dir / "emails"
-    if emails_dir.exists():
-        for eml_file in emails_dir.rglob("*.eml"):
-            rel_path = str(eml_file.relative_to(archive.archive_dir))
-            if rel_path not in indexed_files:
-                orphaned_files.append(rel_path)
+    # Check both old 'emails/' and new 'accounts/' directory structures
+    for subdir in ["emails", "accounts"]:
+        check_dir = archive.archive_dir / subdir
+        if check_dir.exists():
+            for eml_file in check_dir.rglob("*.eml"):
+                rel_path = str(eml_file.relative_to(archive.archive_dir))
+                if rel_path not in indexed_files:
+                    orphaned_files.append(rel_path)
+    orphan_time = time.time() - step_start
+
+    total_time = time.time() - total_start
 
     print("\n" + "-" * 50)
     print("Verification Complete!")
@@ -413,58 +455,93 @@ def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
 
     if missing_count == 0 and corrupted_count == 0 and len(orphaned_files) == 0 and no_hash_count == 0:
         print("\n  ✓ All files verified successfully!")
+
+    print(f"\n  Time: {total_time:.1f}s (db: {db_time:.1f}s, verify: {verify_time:.1f}s, orphan scan: {orphan_time:.1f}s)")
     print("-" * 50 + "\n")
+
+
+def _compute_single_hash(args: tuple) -> tuple:
+    """Compute hash for a single file. Returns (msg_id, hash, error)."""
+    archive_dir, msg_id, filename = args
+
+    filepath = archive_dir / filename
+    if not filepath.exists():
+        return (msg_id, None, 'missing')
+
+    with open(filepath, "rb") as f:
+        content_hash = hashlib.sha256(f.read()).hexdigest()
+
+    return (msg_id, content_hash, None)
 
 
 def cmd_rehash(archive: EmailArchive) -> None:
     """Compute and store hashes for emails that don't have them."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time
+
     print("\n" + "=" * 50)
     print("ownmail - Compute Hashes")
     print("=" * 50 + "\n")
 
+    total_start = time.time()
     db_path = archive.db.db_path
 
     # Get emails without hashes
+    step_start = time.time()
     with sqlite3.connect(db_path) as conn:
         emails = conn.execute(
             "SELECT message_id, filename FROM emails WHERE content_hash IS NULL"
         ).fetchall()
+    db_time = time.time() - step_start
 
     if not emails:
         print("All emails already have hashes.")
         return
 
-    print(f"Computing hashes for {len(emails)} emails...\n")
+    total = len(emails)
+    print(f"Computing hashes for {total} emails...\n")
 
+    # Prepare work items
+    work_items = [(archive.archive_dir, msg_id, filename) for msg_id, filename in emails]
+
+    # Compute hashes in parallel
+    step_start = time.time()
+    results = []
+    completed = 0
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {executor.submit(_compute_single_hash, item): item for item in work_items}
+
+        for future in as_completed(futures):
+            completed += 1
+            print(f"  [{completed}/{total}] Hashing...", end="\r")
+            results.append(future.result())
+    hash_time = time.time() - step_start
+
+    # Update database in batch
+    step_start = time.time()
     success_count = 0
     error_count = 0
+    with sqlite3.connect(db_path) as conn:
+        for msg_id, content_hash, error in results:
+            if error:
+                error_count += 1
+            else:
+                conn.execute(
+                    "UPDATE emails SET content_hash = ? WHERE message_id = ?",
+                    (content_hash, msg_id)
+                )
+                success_count += 1
+        conn.commit()
+    update_time = time.time() - step_start
 
-    for i, (msg_id, filename) in enumerate(emails, 1):
-        print(f"  [{i}/{len(emails)}] Hashing...", end="\r")
-
-        filepath = archive.archive_dir / filename
-
-        if not filepath.exists():
-            error_count += 1
-            continue
-
-        with open(filepath, "rb") as f:
-            content_hash = hashlib.sha256(f.read()).hexdigest()
-
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "UPDATE emails SET content_hash = ? WHERE message_id = ?",
-                (content_hash, msg_id)
-            )
-            conn.commit()
-
-        success_count += 1
+    total_time = time.time() - total_start
 
     print("\n" + "-" * 50)
     print("Rehash Complete!")
     print(f"  Hashed: {success_count} emails")
     if error_count > 0:
         print(f"  Errors (missing files): {error_count}")
+    print(f"\n  Time: {total_time:.1f}s (db: {db_time:.1f}s, hash: {hash_time:.1f}s, update: {update_time:.1f}s)")
     print("-" * 50 + "\n")
 
 
