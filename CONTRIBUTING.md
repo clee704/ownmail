@@ -8,7 +8,7 @@ Thanks for your interest in contributing to ownmail!
 
 ```bash
 # Clone the repo
-git clone https://github.com/chungmin/ownmail.git
+git clone https://github.com/clee704/ownmail.git
 cd ownmail
 
 # Create a virtual environment
@@ -23,7 +23,7 @@ pip install -e ".[dev]"
 
 ```bash
 # Run directly
-python3 ownmail.py --help
+python3 -m ownmail --help
 
 # Or after pip install -e .
 ownmail --help
@@ -56,7 +56,7 @@ We enforce a coverage barrier to prevent regressions. Run tests with coverage:
 pytest --cov=ownmail --cov-report=term-missing
 ```
 
-Current minimum coverage: **85%** (configured in `pyproject.toml`).
+Current minimum coverage: **80%** (configured in `pyproject.toml`).
 
 When adding new code, write tests to maintain or improve coverage. The build will fail if coverage drops below the barrier.
 
