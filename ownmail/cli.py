@@ -533,9 +533,11 @@ Examples:
         help="Start web interface",
         description="Start a local web server to browse and search emails.",
     )
+    serve_parser.add_argument("--archive-dir", type=Path, help="Override archive location")
     serve_parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
     serve_parser.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
     serve_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    serve_parser.add_argument("--block-images", action="store_true", help="Block external images by default")
 
     # sources command
     sources_parser = subparsers.add_parser(
@@ -615,7 +617,14 @@ Examples:
                     print("❌ Flask is required for the web interface.")
                     print("   Install with: pip install ownmail[web]")
                     sys.exit(1)
-                run_server(archive, args.host, args.port, args.debug, args.verbose)
+                # serve can use its own archive-dir or fall back to global
+                serve_archive_root = args.archive_dir if args.archive_dir else archive_root
+                serve_archive = EmailArchive(serve_archive_root, config)
+                # Get web config from config.yaml, CLI args override
+                web_config = config.get("web", {})
+                block_images = args.block_images or web_config.get("block_images", False)
+                page_size = web_config.get("page_size", 20)
+                run_server(serve_archive, args.host, args.port, args.debug, args.verbose, block_images, page_size)
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
