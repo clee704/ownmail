@@ -451,12 +451,16 @@ class EmailParser:
             # First, try to get raw bytes and decode with proper charset
             payload = part.get_payload(decode=True)
             if payload and isinstance(payload, bytes):
-                # Check header charset first
+                # Check header charset first, but validate the result
                 header_charset = part.get_content_charset()
                 if header_charset:
                     charset = CHARSET_ALIASES.get(header_charset.lower(), header_charset)
                     try:
-                        return payload.decode(charset, errors='replace')
+                        decoded = payload.decode(charset)
+                        # Validate result - if it has replacement chars, charset was wrong
+                        if _validate_decoded_text(decoded):
+                            return decoded
+                        # Header charset produced garbage - fall through to auto-detection
                     except (LookupError, UnicodeDecodeError):
                         pass
 
@@ -470,16 +474,16 @@ class EmailParser:
                         if match:
                             meta_charset = match.group(1).lower()
                             charset = CHARSET_ALIASES.get(meta_charset, meta_charset)
-                            try:
-                                return payload.decode(charset, errors='replace')
-                            except (LookupError, UnicodeDecodeError):
-                                pass
+                            result = _try_decode(payload, charset)
+                            if result is not None:
+                                return result
                     except Exception:
                         pass
 
-                # No charset specified - try smart detection
-                # Check if payload has high bytes (non-ASCII) suggesting CJK encoding
-                high_bytes = sum(1 for b in payload[:500] if b >= 0x80)
+                # No charset specified or it was wrong - try smart detection
+                # Sample more bytes since CJK content may not appear until later
+                sample_size = min(len(payload), 4000)
+                high_bytes = sum(1 for b in payload[:sample_size] if b >= 0x80)
 
                 if high_bytes > 10:
                     # Has significant non-ASCII content - try various encodings
