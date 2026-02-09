@@ -1074,6 +1074,35 @@ Content-Type: text/html
             # The original src should be intact (not replaced with data-src)
             assert b'src="http://example.com/track.gif"' in resp2.data
 
+    def test_page_size_respects_runtime_config_change(self, tmp_path):
+        """Changing page_size via app.config should take effect immediately."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 100
+        mock_archive.search.return_value = []
+
+        # Start with page_size=10
+        app = create_app(mock_archive, page_size=10)
+        with app.test_client() as client:
+            client.get("/search?q=hello")
+            # Search should use limit=10+1 (fetches one extra to detect "more")
+            call_args = mock_archive.search.call_args
+            assert call_args[1]["limit"] == 11  # 10 + 1
+
+            mock_archive.search.reset_mock()
+
+            # Simulate settings page changing page_size
+            app.config["page_size"] = 50
+            client.get("/search?q=hello")
+            call_args = mock_archive.search.call_args
+            # Should now use limit=50+1
+            assert call_args[1]["limit"] == 51  # 50 + 1
+
 
 class TestExtractBodyContent:
     """Tests for _extract_body_content function."""
