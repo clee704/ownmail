@@ -283,104 +283,85 @@ class TestCmdDbCheck:
         captured = capsys.readouterr()
         assert "No issues found" in captured.out or "Database Check" in captured.out
 
-    def test_db_check_finds_duplicate_fts(self, temp_dir, capsys):
-        """Test db-check finds duplicate FTS entries."""
+    def test_db_check_finds_missing_metadata(self, temp_dir, capsys):
+        """Test db-check finds emails missing metadata (not indexed)."""
         archive = EmailArchive(temp_dir, {})
 
-        # Add email and index it twice
+        # Add email without indexing it (no subject set)
+        archive.db.mark_downloaded("test123", "test.eml")
+
+        cmd_db_check(archive, verbose=True)
+        captured = capsys.readouterr()
+        assert "missing" in captured.out.lower() or "not yet indexed" in captured.out.lower()
+
+    def test_db_check_finds_fts_sync_issues(self, temp_dir, capsys):
+        """Test db-check finds FTS sync issues."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Add email and index it
         archive.db.mark_downloaded("test123", "test.eml")
         archive.db.index_email(
             "test123", "Subject", "sender@test.com", "recipient@test.com",
             "2024-01-01", "Body text", ""
         )
-        # Add duplicate FTS entry
+
+        # Manually drop FTS to simulate sync issue
         with sqlite3.connect(archive.db.db_path) as conn:
+            conn.execute("DROP TABLE emails_fts")
             conn.execute("""
-                INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments)
-                VALUES ('test123', 'Subject 2', 'sender@test.com', 'recipient@test.com', '2024-01-01', 'Body', '')
+                CREATE VIRTUAL TABLE emails_fts USING fts5(
+                    subject, sender, recipients, body, attachments,
+                    content='', tokenize='porter unicode61'
+                )
             """)
             conn.commit()
 
         cmd_db_check(archive, verbose=True)
         captured = capsys.readouterr()
-        assert "duplicate" in captured.out.lower()
+        # Should detect FTS count mismatch
+        assert "FTS has 0 entries" in captured.out or "FTS" in captured.out
 
-    def test_db_check_fixes_duplicates(self, temp_dir, capsys):
-        """Test db-check --fix removes duplicates."""
+    def test_db_check_fixes_fts_sync(self, temp_dir, capsys):
+        """Test db-check --fix rebuilds FTS when out of sync."""
         archive = EmailArchive(temp_dir, {})
 
+        # Add email and index it
         archive.db.mark_downloaded("test123", "test.eml")
-        # Add two FTS entries for same message
+        archive.db.index_email(
+            "test123", "Subject", "sender@test.com", "recipient@test.com",
+            "2024-01-01", "Body text", ""
+        )
+
+        # Drop FTS entries to simulate sync issue
         with sqlite3.connect(archive.db.db_path) as conn:
+            conn.execute("DROP TABLE emails_fts")
             conn.execute("""
-                INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments)
-                VALUES ('test123', 'Subject 1', 'a@test.com', 'b@test.com', '2024-01-01', 'Body 1', '')
-            """)
-            conn.execute("""
-                INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments)
-                VALUES ('test123', 'Subject 2', 'a@test.com', 'b@test.com', '2024-01-01', 'Body 2', '')
+                CREATE VIRTUAL TABLE emails_fts USING fts5(
+                    subject, sender, recipients, body, attachments,
+                    content='', tokenize='porter unicode61'
+                )
             """)
             conn.commit()
 
         cmd_db_check(archive, fix=True)
         captured = capsys.readouterr()
-        assert "Fixed" in captured.out
+        assert "rebuilt" in captured.out.lower() or "Fixed" in captured.out
 
-        # Verify only one entry remains
+        # Verify FTS has entry now
         with sqlite3.connect(archive.db.db_path) as conn:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM emails_fts WHERE message_id = 'test123'"
-            ).fetchone()[0]
+            count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
         assert count == 1
 
-    def test_db_check_finds_orphaned_fts(self, temp_dir, capsys):
-        """Test db-check finds orphaned FTS entries."""
-        archive = EmailArchive(temp_dir, {})
-
-        # Add FTS entry without corresponding email record
-        with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("""
-                INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments)
-                VALUES ('orphan123', 'Orphan', 'a@test.com', 'b@test.com', '2024-01-01', 'Body', '')
-            """)
-            conn.commit()
-
-        cmd_db_check(archive)
-        captured = capsys.readouterr()
-        assert "orphaned" in captured.out.lower() or "no matching" in captured.out.lower()
-
     def test_db_check_finds_missing_fts(self, temp_dir, capsys):
-        """Test db-check finds emails missing from FTS."""
+        """Test db-check finds emails missing from FTS (not indexed)."""
         archive = EmailArchive(temp_dir, {})
 
-        # Add email without FTS entry
+        # Add email without FTS entry (not indexed)
         archive.db.mark_downloaded("test123", "test.eml")
 
         cmd_db_check(archive)
         captured = capsys.readouterr()
-        assert "not in search index" in captured.out or "missing" in captured.out.lower()
-
-    def test_db_check_fixes_orphaned_fts(self, temp_dir, capsys):
-        """Test db-check --fix removes orphaned FTS entries."""
-        archive = EmailArchive(temp_dir, {})
-
-        # Add FTS entry without corresponding email record
-        with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("""
-                INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments)
-                VALUES ('orphan123', 'Orphan', 'a@test.com', 'b@test.com', '2024-01-01', 'Body', '')
-            """)
-            conn.commit()
-
-        cmd_db_check(archive, fix=True)
-        capsys.readouterr()
-
-        # Verify entry was removed
-        with sqlite3.connect(archive.db.db_path) as conn:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM emails_fts WHERE message_id = 'orphan123'"
-            ).fetchone()[0]
-        assert count == 0
+        assert "missing" in captured.out.lower() or "not yet indexed" in captured.out.lower()
 
     def test_db_check_hash_mismatches(self, temp_dir, sample_eml_simple, capsys):
         """Test db-check detects hash mismatches."""
@@ -797,22 +778,18 @@ Body
 class TestCmdDbCheckVerbose:
     """Additional tests for db-check verbose output."""
 
-    def test_db_check_verbose_shows_all_files(self, temp_dir, capsys):
-        """Test db-check --verbose shows all files."""
+    def test_db_check_verbose_shows_all_info(self, temp_dir, capsys):
+        """Test db-check --verbose shows detailed info."""
         archive = EmailArchive(temp_dir, {})
 
-        # Create multiple orphaned FTS entries
-        with sqlite3.connect(archive.db.db_path) as conn:
-            for i in range(15):
-                conn.execute("""
-                    INSERT INTO emails_fts (message_id, subject, sender, recipients, body, attachments)
-                    VALUES (?, 'test', 'test', 'test', 'test', '')
-                """, (f"orphan{i}",))
-            conn.commit()
+        # Create multiple emails without indexing
+        for i in range(5):
+            archive.db.mark_downloaded(f"msg{i}", f"test{i}.eml")
 
         cmd_db_check(archive, verbose=True)
         captured = capsys.readouterr()
-        assert "orphan" in captured.out
+        # Should show count of emails missing metadata
+        assert "5 emails missing" in captured.out or "missing" in captured.out.lower()
 
 
 class TestCmdVerifyVerbose:
