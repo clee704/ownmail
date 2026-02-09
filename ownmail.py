@@ -1,34 +1,26 @@
 #!/usr/bin/env python3
 """
-Gmail Archive
+ownmail - Own your mail.
 
-A comprehensive tool for backing up and searching Gmail emails.
+A file-based email backup and search tool. Your emails, your files, your drive.
 All credentials are stored securely in macOS Keychain.
 
 Commands:
-    setup    - Configure OAuth credentials (one-time setup)
-    backup   - Download new emails from Gmail
-    search   - Full-text search across downloaded emails
-    stats    - Show backup statistics
-    reindex  - Rebuild the search index
-
-First-time Setup:
-1. Go to https://console.cloud.google.com/
-2. Create a new project (or select existing)
-3. Enable the Gmail API
-4. Create OAuth 2.0 credentials (Desktop application)
-5. Download the credentials JSON
-6. Run: python gmail_archive.py setup
-7. Paste the JSON contents when prompted
-8. Delete the downloaded JSON file
+    setup      - Configure OAuth credentials (one-time setup)
+    backup     - Download new emails
+    search     - Full-text search across downloaded emails
+    stats      - Show archive statistics
+    reindex    - Rebuild the search index
+    add-labels - Add Gmail labels to existing emails
+    verify     - Verify integrity of downloaded emails
+    rehash     - Compute hashes for emails without them
+    sync-check - Compare local archive with server
 
 Usage:
-    python gmail_archive.py setup
-    python gmail_archive.py setup --credentials-file ~/Downloads/credentials.json
-    python gmail_archive.py backup [--archive-dir PATH]
-    python gmail_archive.py search "query" [--archive-dir PATH]
-    python gmail_archive.py stats [--archive-dir PATH]
-    python gmail_archive.py reindex [--archive-dir PATH]
+    ownmail setup
+    ownmail backup [--archive-dir PATH]
+    ownmail search "query" [--archive-dir PATH]
+    ownmail stats
 """
 
 import os
@@ -65,14 +57,14 @@ try:
 except ImportError as e:
     print(f"Missing required package: {e}")
     print("\nPlease install required packages:")
-    print("    pip install google-auth google-auth-oauthlib google-api-python-client keyring")
+    print("    pip install ownmail")
     sys.exit(1)
 
 # Configuration
 SCRIPT_DIR = Path(__file__).parent.absolute()
 DEFAULT_ARCHIVE_DIR = SCRIPT_DIR / "archive"
 DEFAULT_CONFIG_FILENAME = "config.yaml"
-KEYCHAIN_SERVICE = "gmail-archive"
+KEYCHAIN_SERVICE = "ownmail"
 KEYCHAIN_ACCOUNT_TOKEN = "oauth-token"
 KEYCHAIN_ACCOUNT_CREDENTIALS = "client-credentials"
 
@@ -742,7 +734,7 @@ class GmailArchive:
     def cmd_backup(self) -> None:
         """Run the backup process."""
         print("\n" + "=" * 50)
-        print("Gmail Archive - Backup")
+        print("ownmail - Backup")
         print("=" * 50 + "\n")
 
         self.authenticate()
@@ -853,7 +845,7 @@ class GmailArchive:
         stats = self.db.get_stats()
 
         print("\n" + "=" * 50)
-        print("Gmail Archive - Statistics")
+        print("ownmail - Statistics")
         print("=" * 50)
         print(f"\nArchive location: {self.archive_dir}")
         print(f"Total emails: {stats['total_emails']}")
@@ -885,7 +877,7 @@ class GmailArchive:
     def cmd_setup(self, credentials_file: Optional[Path] = None) -> None:
         """Set up OAuth credentials."""
         print("\n" + "=" * 50)
-        print("Gmail Archive - Setup")
+        print("ownmail - Setup")
         print("=" * 50 + "\n")
 
         if self.keychain.has_client_credentials():
@@ -950,7 +942,7 @@ class GmailArchive:
     def cmd_reindex(self) -> None:
         """Rebuild the search index."""
         print("\n" + "=" * 50)
-        print("Gmail Archive - Reindex")
+        print("ownmail - Reindex")
         print("=" * 50 + "\n")
 
         print("Clearing existing index...")
@@ -992,7 +984,7 @@ class GmailArchive:
     def cmd_add_labels(self) -> None:
         """Add Gmail labels to existing downloaded emails."""
         print("\n" + "=" * 50)
-        print("Gmail Archive - Add Labels")
+        print("ownmail - Add Labels")
         print("=" * 50 + "\n")
 
         self.authenticate()
@@ -1116,7 +1108,7 @@ class GmailArchive:
     def cmd_verify(self, verbose: bool = False) -> None:
         """Verify integrity of downloaded emails against stored hashes."""
         print("\n" + "=" * 50)
-        print("Gmail Archive - Verify Integrity")
+        print("ownmail - Verify Integrity")
         print("=" * 50 + "\n")
 
         # Get all downloaded emails with hashes
@@ -1189,7 +1181,7 @@ class GmailArchive:
     def cmd_rehash(self) -> None:
         """Compute and store hashes for emails that don't have them."""
         print("\n" + "=" * 50)
-        print("Gmail Archive - Compute Hashes")
+        print("ownmail - Compute Hashes")
         print("=" * 50 + "\n")
 
         # Get emails without hashes
@@ -1238,7 +1230,7 @@ class GmailArchive:
     def cmd_sync_check(self, verbose: bool = False) -> None:
         """Compare local archive with Gmail server."""
         print("\n" + "=" * 50)
-        print("Gmail Archive - Sync Check")
+        print("ownmail - Sync Check")
         print("=" * 50 + "\n")
 
         self.authenticate()
@@ -1300,14 +1292,15 @@ class GmailArchive:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Gmail Archive - Backup and search your Gmail emails",
+        prog="ownmail",
+        description="ownmail - Own your mail. Backup and search your emails locally.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s setup                           First-time credential setup
   %(prog)s setup --credentials-file creds.json
   %(prog)s backup                          Download new emails
-  %(prog)s backup --archive-dir /Volumes/Secure/gmail
+  %(prog)s backup --archive-dir /Volumes/Secure/emails
   %(prog)s search "invoice from:amazon"   Search emails
   %(prog)s search "subject:meeting"        Search by subject
   %(prog)s stats                           Show statistics
@@ -1316,12 +1309,10 @@ Examples:
   %(prog)s verify                          Verify integrity of downloaded emails
   %(prog)s verify --verbose                Show full list of issues
   %(prog)s rehash                          Compute hashes for emails without them
-  %(prog)s sync-check                      Compare local archive with Gmail server
+  %(prog)s sync-check                      Compare local archive with server
 
-Config file:
-  Create a config.yaml in the current directory:
-  
-    archive_dir: /Volumes/My Passport Encrypted/Emails
+Config file (config.yaml):
+    archive_dir: /Volumes/Secure/emails
     include_labels: true
         """,
     )

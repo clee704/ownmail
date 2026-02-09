@@ -1,15 +1,15 @@
-# Gmail Archive
+# ownmail
 
-**A simple, file-based Gmail backup tool. No cloud. No BS. Just your emails on your drive.**
+**Own your mail.** A file-based email backup and search tool. Your emails, your files, your drive.
 
 ```
-$ gmail_archive.py backup
+$ ownmail backup
 
-Gmail Archive - Backup
+ownmail - Backup
 ==================================================
 
 ✓ Authenticated with Gmail API
-Archive location: /Volumes/Secure/gmail
+Archive location: /Volumes/Secure/emails
 Previously backed up: 12,847 emails
 
 Checking for new emails...
@@ -17,27 +17,33 @@ Checking for new emails...
 ✓ No new emails to download. Archive is up to date!
 ```
 
-## Why?
+## Philosophy
 
-- 📁 **File-based** — Your emails are stored as standard `.eml` files. Open them with any email client. No proprietary formats, no lock-in.
-- 🔐 **Secure by default** — OAuth credentials stored in macOS Keychain. Put your archive on an encrypted volume and you're done.
+- 📁 **Files as source of truth** — Your emails are stored as standard `.eml` files. No proprietary database, no lock-in.
+- 🔐 **You own your data** — Everything stays on your drive. Put it on an encrypted volume and you're done.
 - ⚡ **Fast & incremental** — Only downloads new emails. Resume anytime with Ctrl-C.
-- 🔍 **Optional search** — SQLite-based full-text search. Totally optional.
+- 🔍 **Optional search** — SQLite-based full-text search. The index is just a convenience layer.
+
+## Install
+
+```bash
+pip install ownmail
+# or
+pipx install ownmail
+```
 
 ## Quick Start
 
 ```bash
-# Install
-pip install google-auth google-auth-oauthlib google-api-python-client keyring
+# 1. Set up credentials (one-time)
+ownmail setup
 
-# Setup (one-time)
-python gmail_archive.py setup
+# 2. Backup your emails
+ownmail backup --archive-dir /Volumes/Secure/emails
 
-# Backup
-python gmail_archive.py backup --archive-dir /Volumes/Secure/gmail
+# 3. Search
+ownmail search "invoice from:amazon"
 ```
-
-That's it. Run `backup` whenever you want to sync new emails.
 
 ## Commands
 
@@ -45,9 +51,13 @@ That's it. Run `backup` whenever you want to sync new emails.
 |---------|-------------|
 | `setup` | Configure OAuth credentials (stored in Keychain) |
 | `backup` | Download new emails |
-| `search "query"` | Search your archive |
-| `stats` | Show backup statistics |
+| `search "query"` | Full-text search |
+| `stats` | Show archive statistics |
+| `verify` | Check file integrity (SHA256) |
+| `sync-check` | Compare local archive with server |
+| `add-labels` | Add Gmail labels to existing emails |
 | `reindex` | Rebuild search index |
+| `rehash` | Compute hashes for integrity verification |
 
 ## Setup
 
@@ -62,45 +72,39 @@ That's it. Run `backup` whenever you want to sync new emails.
 ### 2. Import Credentials
 
 ```bash
-# Option A: Paste directly (recommended — JSON never touches disk)
-python gmail_archive.py setup
+# Option A: Paste directly (recommended — never touches disk)
+ownmail setup
 
 # Option B: Import from file
-python gmail_archive.py setup --credentials-file ~/Downloads/credentials.json
+ownmail setup --credentials-file ~/Downloads/credentials.json
 rm ~/Downloads/credentials.json  # Delete after import!
 ```
 
-### 3. Backup
+Credentials are stored in macOS Keychain, never on the filesystem.
 
-```bash
-python gmail_archive.py backup --archive-dir /path/to/your/encrypted/volume
+## Config File
+
+Create `config.yaml` in your working directory:
+
+```yaml
+archive_dir: /Volumes/Secure/emails
+include_labels: true
 ```
-
-First run will open a browser for OAuth authorization. After that, it's fully automated.
 
 ## Search
 
 ```bash
-# Simple search
-gmail_archive.py search "invoice"
-
-# By sender
-gmail_archive.py search "from:amazon"
-
-# By subject
-gmail_archive.py search "subject:receipt"
-
-# Attachments
-gmail_archive.py search "attachment:pdf"
+ownmail search "invoice"
+ownmail search "from:amazon"
+ownmail search "subject:receipt"
+ownmail search "attachment:pdf"
 ```
-
-Search is powered by SQLite FTS5 — fast and works offline.
 
 ## Storage Layout
 
 ```
-/Volumes/Secure/gmail/          # Your encrypted volume
-├── archive.db                  # SQLite (tracking + search index)
+/Volumes/Secure/emails/
+├── archive.db              # SQLite (tracking + search index)
 └── emails/
     ├── 2024/
     │   ├── 01/
@@ -111,15 +115,28 @@ Search is powered by SQLite FTS5 — fast and works offline.
         └── ...
 ```
 
-- **Emails**: Standard `.eml` format. Open with Apple Mail, Thunderbird, Outlook, etc.
-- **Database**: Only stores message IDs and filenames (no email content). Search index is optional.
+- **Emails**: Standard `.eml` format with `X-Gmail-Labels` header
+- **Database**: Only stores message IDs, filenames, and hashes — not email content
+
+## Integrity Verification
+
+```bash
+# Verify all files match their stored hashes
+ownmail verify
+
+# Compute hashes for existing emails
+ownmail rehash
+
+# Check if local matches server
+ownmail sync-check
+```
 
 ## Resumable Backups
 
-Downloading thousands of emails takes time. Press **Ctrl-C** anytime to pause:
+Press **Ctrl-C** anytime to pause:
 
 ```
-  [1,342/15,000] Downloading and indexing...
+  [1,342/15,000]   45KB - indexing...
 ^C
 
 ⏸ Stopping after current email...
@@ -131,40 +148,21 @@ Backup Paused!
   Run 'backup' again to resume.
 ```
 
-Each email is saved atomically. No corruption, no duplicates. Just run `backup` again to continue.
-
 ## Security
 
 | What | Where |
 |------|-------|
-| OAuth client credentials | macOS Keychain |
-| OAuth access token | macOS Keychain |
+| OAuth credentials | macOS Keychain |
 | Emails & search index | Your chosen directory |
 
-Nothing sensitive is stored on the filesystem. Put your archive on an encrypted volume (FileVault, VeraCrypt, etc.) for full protection.
+Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
 
-## Requirements
+## Roadmap
 
-- Python 3.8+
-- macOS (uses Keychain for credential storage)
-
-```bash
-pip install google-auth google-auth-oauthlib google-api-python-client keyring
-```
-
-## FAQ
-
-**Can I run this on Linux?**  
-The `keyring` library supports Linux keyrings, but it's untested. PRs welcome!
-
-**What if I delete an email from Gmail?**  
-It stays in your backup. This is an archive, not a sync.
-
-**How do I restore emails to Gmail?**  
-Import the `.eml` files through any email client that supports IMAP.
-
-**Is this affiliated with Google?**  
-No. This uses the official Gmail API but is an independent open source project.
+- [ ] Outlook/Microsoft 365 support
+- [ ] Generic IMAP support
+- [ ] Web UI for self-hosted access
+- [ ] Linux keyring support
 
 ## License
 
