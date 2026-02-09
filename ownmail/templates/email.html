@@ -52,6 +52,7 @@
             {% endif %}
         </div>
 
+        <div class="email-content-area">
         {% if images_blocked and has_external_images %}
         <div class="image-banner" id="image-banner">
             <span class="image-banner-text" id="image-banner-text">🖼️ External images are blocked for security.</span>
@@ -272,6 +273,7 @@
         {% else %}
             <pre class="email-body">{{ body }}</pre>
         {% endif %}
+        </div>
 
         {% if attachments %}
         <div class="attachments">
