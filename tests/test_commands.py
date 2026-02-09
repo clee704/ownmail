@@ -104,7 +104,7 @@ class TestCmdReindex:
         # With force, should reindex
         cmd_reindex(archive, force=True)
         captured = capsys.readouterr()
-        assert "Force mode" in captured.out
+        assert "(force)" in captured.out
 
     def test_reindex_with_pattern(self, temp_dir, sample_eml_simple, capsys):
         """Test reindex with pattern filter."""

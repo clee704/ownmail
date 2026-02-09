@@ -469,7 +469,7 @@ class TestMainEdgeCases:
             main()
 
         captured = capsys.readouterr()
-        assert "Force mode" in captured.out
+        assert "(force)" in captured.out
 
     def test_main_reindex_pattern(self, temp_dir, capsys, monkeypatch):
         """Test reindex --pattern command."""

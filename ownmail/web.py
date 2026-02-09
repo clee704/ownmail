@@ -8,6 +8,7 @@ import time
 from flask import Flask, abort, g, redirect, render_template_string, request, send_file
 
 from ownmail.archive import EmailArchive
+from ownmail.parser import EmailParser
 
 # Regex to find external images in HTML
 EXTERNAL_IMAGE_RE = re.compile(
@@ -952,28 +953,29 @@ def create_app(
         if has_more:
             raw_results = raw_results[:per_page]
 
-        # Format results - if subject/sender are empty, extract from email file
+        # Format results - always extract from email file for correct encoding
         results = []
         for msg_id, filename, subject, sender, date_str, snippet in raw_results:
-            # For date-sorted queries, subject/sender/snippet may be empty - extract from file
-            if not subject and filename:
+            # Always extract from file to ensure proper Korean/encoding support
+            # The parser handles charset detection better than FTS stored values
+            if filename:
                 filepath = archive.archive_dir / filename
                 if filepath.exists():
                     try:
-                        with open(filepath, "rb") as f:
-                            # Read enough for headers + start of body
-                            content = f.read(32768)  # 32KB
-                        msg = email.message_from_bytes(content)
-                        subject = decode_header(msg.get("Subject", "")) or "(No subject)"
-                        sender = decode_header(msg.get("From", ""))
-                        date_str = msg.get("Date", "")
+                        # Use our parser which handles Korean charset properly
+                        parsed = EmailParser.parse_file(filepath=filepath)
+                        subject = parsed.get("subject") or "(No subject)"
+                        sender = parsed.get("sender", "")
+                        date_str = parsed.get("date_str", "")
 
-                        # Extract snippet from body if not provided
+                        # Extract snippet from body if not provided by FTS
                         if not snippet:
-                            snippet = _extract_snippet(msg)
+                            body = parsed.get("body", "")
+                            snippet = body[:150] + "..." if len(body) > 150 else body
                     except Exception:
-                        subject = "(Error reading email)"
-                        sender = ""
+                        # Fall back to FTS values if file parsing fails
+                        if not subject:
+                            subject = "(Error reading email)"
 
             results.append({
                 "message_id": msg_id,
