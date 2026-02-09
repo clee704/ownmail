@@ -582,6 +582,14 @@ class ArchiveDatabase:
 
                 # Build query - use JOIN with email_recipients if filtering by recipient email
                 if recipient_email_filter:
+                    # Use er.email_date for ORDER BY to leverage compound index
+                    if sort == "date_desc":
+                        er_order_by = "er.email_date DESC"
+                    elif sort == "date_asc":
+                        er_order_by = "er.email_date ASC"
+                    else:
+                        er_order_by = "er.email_date DESC"
+
                     sql = f"""
                         SELECT DISTINCT
                             e.message_id,
@@ -594,7 +602,7 @@ class ArchiveDatabase:
                         JOIN email_recipients er ON er.email_rowid = e.rowid
                         WHERE er.recipient_email = ?
                           AND {where_sql}
-                        ORDER BY {order_by}
+                        ORDER BY {er_order_by}
                         LIMIT ? OFFSET ?
                         """
                     query_params = [recipient_email_filter] + params + [limit, offset]
