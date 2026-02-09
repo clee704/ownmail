@@ -25,18 +25,19 @@ Import `.eml` files (or directories of them) into the archive. Files are copied 
 
 **Behavior:**
 1. Scan path for `.eml` files.
-2. For each file: parse, generate message ID (`local:{Message-ID}` or `local:sha256:{hash}`), check for duplicates, copy/move to archive, register + index in database.
+2. For each file: parse, generate `provider_id` (`local:{Message-ID}` or `local:sha256:{content_hash}`), derive `email_id` via `make_email_id(account, provider_id)`, check for duplicates, copy/move to archive, register + index in database.
 3. Batch-commit every 10 emails. Support Ctrl-C with graceful resume.
 
 #### `ownmail scan [--account EMAIL] [--dry-run]`
 
 Detect `.eml` files already present in the archive directory that aren't tracked in the database (e.g., manually placed there). Register and index them in-place — no file moving.
 
-### Message ID strategy
+### Provider ID strategy
 
-- Use `Message-ID` header: `local:<Message-ID>`.
-- If missing, fall back to SHA256: `local:sha256:{hash}`.
-- Prefix avoids collisions with provider-native IDs.
+- Use `Message-ID` header as `provider_id`: `local:<Message-ID>`.
+- If missing, fall back to content hash: `local:sha256:{hash}`.
+- `local:` prefix avoids collisions with Gmail/IMAP provider IDs.
+- `email_id` (PK) is derived as usual: `sha256(f"{account}/{provider_id}").hexdigest()[:24]`.
 
 ### Code changes
 
