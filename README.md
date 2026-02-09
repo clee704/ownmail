@@ -104,7 +104,7 @@ ownmail search "attachment:pdf"
 
 ```
 /path/to/archive/
-├── archive.db              # SQLite (tracking + search index)
+├── ownmail.db              # SQLite (tracking + search index)
 └── emails/
     ├── 2024/
     │   ├── 01/
