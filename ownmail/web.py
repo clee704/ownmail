@@ -417,10 +417,18 @@ def _clean_snippet_text(text: str) -> str:
 
     Removes invisible Unicode characters often used by email marketers
     as preheader padding (ZWNJ, ZWJ, ZWSP, etc.), CSS code that leaked
-    through, and repetitive padding characters.
+    through, MIME headers embedded in body text, and repetitive padding
+    characters.
     """
     if not text:
         return text
+
+    # Strip leading MIME headers embedded in body text
+    # Some senders (e.g. USPS) accidentally include MIME headers in the body
+    text = re.sub(
+        r'^(\s*Content-(?:Type|Transfer-Encoding|Disposition)[^\n]*\n)+\s*',
+        '', text, flags=re.IGNORECASE
+    )
 
     # Remove zero-width and invisible characters
     # U+200B Zero Width Space
@@ -434,8 +442,13 @@ def _clean_snippet_text(text: str) -> str:
         text = text.replace(char, '')
 
     # Remove CSS-like content (selectors with braces)
-    # Matches patterns like ".class { ... }" or "#id { ... }"
+    # Matches ".class { ... }", "#id { ... }", and element selectors like
+    # "body { ... }", "table, td, tr { ... }", "* { ... }", "@media (...) { ... }"
     text = re.sub(r'[.#][\w-]+\s*\{[^}]*\}', '', text)
+    text = re.sub(r'(?:^|\s)(?:[a-z][a-z0-9-]*(?:\s*,\s*[a-z][a-z0-9-]*)*|\*)\s*\{[^}]*\}', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'@media\s*[^{]*\{[^}]*(?:\{[^}]*\}[^}]*)*\}', '', text)
+    # Remove CSS selectors with attribute selectors like a[x-apple-data-detectors=true]
+    text = re.sub(r'\w+\[[^\]]+\]\s*\{[^}]*\}', '', text)
 
     # Remove repetitive padding patterns (single char repeated with spaces)
     # Matches "ä ä ä ä" or ". . . ." etc.

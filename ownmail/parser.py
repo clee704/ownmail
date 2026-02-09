@@ -538,7 +538,7 @@ class EmailParser:
                         decoded = payload.decode(charset)
                         # Validate result - if it has replacement chars, charset was wrong
                         if _validate_decoded_text(decoded):
-                            return decoded
+                            return EmailParser._strip_embedded_mime_headers(decoded)
                         # Header charset produced garbage - fall through to auto-detection
                     except (LookupError, UnicodeDecodeError):
                         pass
@@ -571,24 +571,39 @@ class EmailParser:
                                      'big5', 'shift_jis', 'euc-jp']:
                         result = _try_decode(payload, encoding)
                         if result is not None:
-                            return result
+                            return EmailParser._strip_embedded_mime_headers(result)
 
                 # Try common encodings with validation
                 for encoding in ['utf-8', 'iso-8859-1', 'cp1252']:
                     result = _try_decode(payload, encoding)
                     if result is not None:
-                        return result
+                        return EmailParser._strip_embedded_mime_headers(result)
 
                 # Last resort - decode with replacement
-                return payload.decode('utf-8', errors='replace')
+                return EmailParser._strip_embedded_mime_headers(
+                    payload.decode('utf-8', errors='replace')
+                )
 
             # Fallback to get_content() for non-bytes
             payload = part.get_content()
             if isinstance(payload, str):
-                return payload
+                return EmailParser._strip_embedded_mime_headers(payload)
         except Exception:
             pass
         return ""
+
+    @staticmethod
+    def _strip_embedded_mime_headers(text: str) -> str:
+        """Strip MIME headers accidentally embedded in body text.
+
+        Some email senders (e.g. USPS Informed Delivery) include MIME headers
+        like 'Content-Type: text/plain; charset=UTF-8' as part of the body
+        content. This strips them from the beginning of the text.
+        """
+        return re.sub(
+            r'^(\s*Content-(?:Type|Transfer-Encoding|Disposition)[^\n]*\n)+\s*',
+            '', text, flags=re.IGNORECASE
+        )
 
     @staticmethod
     def _strip_html(html_content: str) -> str:

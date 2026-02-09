@@ -677,6 +677,45 @@ class TestExtractSnippet:
         result = _clean_snippet_text(text)
         assert result == "Hello World"
 
+    def test_clean_snippet_text_mime_headers(self):
+        """Test _clean_snippet_text strips embedded MIME headers."""
+        from ownmail.web import _clean_snippet_text
+        text = "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 7bit\r\n\r\nInformed Delivery(TM)"
+        result = _clean_snippet_text(text)
+        assert result == "Informed Delivery(TM)"
+
+    def test_clean_snippet_text_mime_headers_case_insensitive(self):
+        """Test MIME header stripping is case-insensitive."""
+        from ownmail.web import _clean_snippet_text
+        text = "content-type: text/html\ncontent-transfer-encoding: quoted-printable\n\nActual content"
+        result = _clean_snippet_text(text)
+        assert result == "Actual content"
+
+    def test_clean_snippet_text_element_css_selectors(self):
+        """Test _clean_snippet_text strips element CSS selectors like body { ... }."""
+        from ownmail.web import _clean_snippet_text
+        text = "body { margin: 0; padding: 0; } table, td, tr { vertical-align: top; } Hello"
+        result = _clean_snippet_text(text)
+        assert "margin" not in result
+        assert "vertical-align" not in result
+        assert "Hello" in result
+
+    def test_clean_snippet_text_media_query(self):
+        """Test _clean_snippet_text strips @media queries."""
+        from ownmail.web import _clean_snippet_text
+        text = "@media (max-width: 620px) { .block-grid { width: 100%; } } Hello"
+        result = _clean_snippet_text(text)
+        assert "max-width" not in result
+        assert "Hello" in result
+
+    def test_clean_snippet_text_attribute_css_selectors(self):
+        """Test _clean_snippet_text strips attribute CSS selectors."""
+        from ownmail.web import _clean_snippet_text
+        text = "a[x-apple-data-detectors=true] { color: inherit; } Hello"
+        result = _clean_snippet_text(text)
+        assert "apple-data" not in result
+        assert "Hello" in result
+
     def test_extract_snippet_plain_email(self):
         """Test _extract_snippet with a plain text email."""
         import email
