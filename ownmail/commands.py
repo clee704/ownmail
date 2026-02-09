@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from ownmail.archive import EmailArchive
+from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
 from ownmail.providers.gmail import GmailProvider
 
@@ -298,6 +299,16 @@ def _index_email_for_reindex(
         body = parsed["body"]
         snippet = body[:200] + "..." if len(body) > 200 else body
 
+        labels = parsed.get("labels", "")
+        recipients = parsed["recipients"]
+        
+        # Extract email addresses from recipients for normalized table
+        recipient_emails = ArchiveDatabase._normalize_recipients(recipients) if recipients else ""
+        
+        # Check if has attachments
+        attachments = parsed["attachments"]
+        has_attachments = 1 if attachments else 0
+
         # Update metadata in emails table and get rowid in one query
         row = conn.execute(
             """
@@ -309,25 +320,50 @@ def _index_email_for_reindex(
                 labels = ?,
                 snippet = ?,
                 indexed_hash = ?,
-                content_hash = COALESCE(content_hash, ?)
+                content_hash = COALESCE(content_hash, ?),
+                has_attachments = ?
             WHERE message_id = ?
             RETURNING rowid
             """,
-            (parsed["subject"], parsed["sender"], parsed["recipients"],
-             parsed["date_str"], parsed.get("labels", ""), snippet,
-             content_hash, content_hash, message_id)
+            (parsed["subject"], parsed["sender"], recipients,
+             parsed["date_str"], labels, snippet,
+             content_hash, content_hash, has_attachments, message_id)
         ).fetchone()
 
-        # Insert into FTS
+        # Insert into FTS and normalized tables
         if row:
+            rowid = row[0]
+            
             conn.execute(
                 """
                 INSERT INTO emails_fts (rowid, subject, sender, recipients, body, attachments)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (row[0], parsed["subject"], parsed["sender"], parsed["recipients"],
-                 parsed["body"], parsed["attachments"])
+                (rowid, parsed["subject"], parsed["sender"], recipients,
+                 parsed["body"], attachments)
             )
+            
+            # Populate email_recipients normalized table
+            conn.execute("DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,))
+            if recipient_emails:
+                for email in recipient_emails.strip(',').split(','):
+                    email = email.strip()
+                    if email:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
+                            (rowid, email)
+                        )
+            
+            # Populate email_labels normalized table
+            conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
+            if labels:
+                for label in labels.split(','):
+                    label = label.strip()
+                    if label:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO email_labels (email_rowid, label) VALUES (?, ?)",
+                            (rowid, label)
+                        )
 
         return True
     except Exception as e:
