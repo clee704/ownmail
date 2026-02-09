@@ -31,7 +31,7 @@ class HtmlSanitizer:
         sanitizer = HtmlSanitizer()
         sanitizer.start()
         try:
-            clean_html = sanitizer.sanitize(dirty_html)
+            clean_html, needs_padding, supports_dark = sanitizer.sanitize(dirty_html)
         finally:
             sanitizer.stop()
 
@@ -176,18 +176,18 @@ class HtmlSanitizer:
             logger.warning("Failed to start HTML sanitizer: %s", e)
             self._kill_process()
 
-    def sanitize(self, html: str) -> tuple[str, bool]:
+    def sanitize(self, html: str) -> tuple[str, bool, bool]:
         """Sanitize HTML content using DOMPurify.
 
         Args:
             html: Raw HTML string to sanitize.
 
         Returns:
-            Tuple of (sanitized HTML string, needs_padding bool).
-            Returns (original HTML, True) if sanitizer is unavailable or on error.
+            Tuple of (sanitized HTML, needs_padding, supports_dark_mode).
+            Returns (original HTML, True, False) if sanitizer is unavailable or on error.
         """
         if not self._available or self._process is None:
-            return html, True
+            return html, True, False
 
         with self._lock:
             self._request_id += 1
@@ -209,14 +209,14 @@ class HtmlSanitizer:
                             "HTML sanitization timed out after %.1fs", self._timeout
                         )
                         self._restart()
-                        return html, True
+                        return html, True, False
 
                     line = self._process.stdout.readline()
                     if not line:
                         # Process died
                         logger.warning("HTML sanitizer process died unexpectedly")
                         self._restart()
-                        return html, True
+                        return html, True, False
 
                     try:
                         response = json.loads(line)
@@ -229,21 +229,22 @@ class HtmlSanitizer:
                             logger.warning(
                                 "DOMPurify error: %s", response["error"]
                             )
-                            return html, True
+                            return html, True, False
                         result_html = response.get("html", html)
                         needs_padding = response.get("needsPadding", True)
+                        supports_dark = response.get("supportsDarkMode", False)
                         if self._verbose:
                             elapsed_ms = (time.monotonic() - _t0) * 1000
                             print(
                                 f"[verbose] Sanitized {input_len:,} chars → {len(result_html):,} chars in {elapsed_ms:.1f}ms",
                                 flush=True,
                             )
-                        return result_html, needs_padding
+                        return result_html, needs_padding, supports_dark
 
             except (BrokenPipeError, OSError) as e:
                 logger.warning("Sanitizer communication error: %s", e)
                 self._restart()
-                return html, True
+                return html, True, False
 
     def _restart(self) -> None:
         """Restart the worker process after a failure."""
