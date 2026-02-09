@@ -123,14 +123,16 @@ class EmailArchive:
 
         if not new_ids:
             print("\n✓ No new emails to download. Archive is up to date!")
-            # Update sync state even if nothing new
-            if new_state:
-                self.db.set_sync_state(account, "history_id", new_state)
-            elif sync_state is None:
-                # After full sync, get current state
-                current_state = provider.get_current_sync_state()
-                if current_state:
-                    self.db.set_sync_state(account, "history_id", current_state)
+            # Only update sync state if NOT using date filters (full sync)
+            # Date-filtered runs are partial syncs, don't update history_id
+            if not since and not until:
+                if new_state:
+                    self.db.set_sync_state(account, "history_id", new_state)
+                elif sync_state is None:
+                    # After full sync, get current state
+                    current_state = provider.get_current_sync_state()
+                    if current_state:
+                        self.db.set_sync_state(account, "history_id", current_state)
             return {"success_count": 0, "error_count": 0, "interrupted": False}
 
         print(f"\nFound {len(new_ids)} new emails to download")
@@ -256,8 +258,9 @@ class EmailArchive:
             self._batch_conn = None
             signal.signal(signal.SIGINT, original_handler)
 
-        # Update sync state if completed
-        if not interrupted:
+        # Update sync state only for full syncs (no date filters)
+        # Date-filtered runs are partial syncs, don't update history_id
+        if not interrupted and not since and not until:
             if new_state:
                 self.db.set_sync_state(account, "history_id", new_state)
             else:
