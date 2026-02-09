@@ -270,3 +270,19 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         result = self.sanitizer.sanitize(html)
         assert "@media" in result
         assert "#email-content .col" in result
+
+    def test_preserves_font_face(self):
+        """Test that @font-face blocks are not scoped."""
+        html = '<style>@font-face { font-family: MyFont; src: local("MyFont"); } p { color: red; }</style><p>Hi</p>'
+        result = self.sanitizer.sanitize(html)
+        assert "@font-face" in result
+        assert "@#email-content" not in result
+        assert "#email-content p" in result
+
+    def test_strips_dark_mode_media(self):
+        """Test that @media (prefers-color-scheme: dark) blocks are removed."""
+        html = '<style>p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }</style><p>Hi</p>'
+        result = self.sanitizer.sanitize(html)
+        assert "color: #333" in result or "color:#333" in result
+        assert "prefers-color-scheme: dark" not in result
+        assert "prefers-color-scheme:dark" not in result
