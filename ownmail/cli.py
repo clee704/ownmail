@@ -16,56 +16,55 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 DEFAULT_ARCHIVE_DIR = SCRIPT_DIR.parent / "archive"
 
 
-def cmd_setup(keychain: KeychainStorage, source_name: str = None, credentials_file: Optional[Path] = None) -> None:
+def cmd_setup(
+    keychain: KeychainStorage,
+    config: dict,
+    config_path: Optional[Path],
+    source_name: str = None,
+    credentials_file: Optional[Path] = None,
+) -> None:
     """Set up OAuth credentials for a source."""
     print("\n" + "=" * 50)
     print("ownmail - Setup")
     print("=" * 50 + "\n")
 
-    # Determine keychain key name
-    if source_name:
-        keychain_key = f"{source_name}_token"
-    else:
-        keychain_key = "default_gmail_token"
-        print("Tip: Use --source <name> to set up a specific source from config.yaml")
-        print()
+    # Check if client credentials already exist
+    has_client_creds = keychain.has_client_credentials("gmail")
 
-    if credentials_file:
-        # Import from file
-        if not credentials_file.exists():
-            print(f"❌ Error: File not found: {credentials_file}")
-            sys.exit(1)
+    if not has_client_creds:
+        # First time setup - need client credentials
+        print("First-time setup: OAuth client credentials needed.\n")
 
-        with open(credentials_file) as f:
-            credentials_json = f.read()
+        if credentials_file:
+            if not credentials_file.exists():
+                print(f"❌ Error: File not found: {credentials_file}")
+                sys.exit(1)
 
-        keychain.save_client_credentials("gmail", credentials_json)
-        print("✓ OAuth credentials imported from file")
-        print(f"\n  You can now delete: {credentials_file}")
-    else:
-        # Interactive paste
-        print("Paste your OAuth client credentials JSON below.")
-        print("(The JSON from Google Cloud Console → Credentials → Download)")
-        print("\nPaste the entire JSON content, then press Enter twice:\n")
+            with open(credentials_file) as f:
+                credentials_json = f.read()
+        else:
+            print("Paste your OAuth client credentials JSON below.")
+            print("(The JSON from Google Cloud Console → Credentials → Download)")
+            print("\nPaste the entire JSON content, then press Enter twice:\n")
 
-        lines = []
-        empty_count = 0
-        while empty_count < 2:
-            try:
-                line = input()
-                if line == "":
-                    empty_count += 1
-                else:
-                    empty_count = 0
-                    lines.append(line)
-            except EOFError:
-                break
+            lines = []
+            empty_count = 0
+            while empty_count < 2:
+                try:
+                    line = input()
+                    if line == "":
+                        empty_count += 1
+                    else:
+                        empty_count = 0
+                        lines.append(line)
+                except EOFError:
+                    break
 
-        if not lines:
-            print("❌ Error: No input received")
-            sys.exit(1)
+            if not lines:
+                print("❌ Error: No input received")
+                sys.exit(1)
 
-        credentials_json = "\n".join(lines)
+            credentials_json = "\n".join(lines)
 
         try:
             keychain.save_client_credentials("gmail", credentials_json)
@@ -73,19 +72,77 @@ def cmd_setup(keychain: KeychainStorage, source_name: str = None, credentials_fi
             print(f"❌ Error: {e}")
             sys.exit(1)
 
-        print("\n✓ OAuth credentials saved to system keychain")
+        print("✓ OAuth client credentials saved to keychain")
+        if credentials_file:
+            print(f"  You can now delete: {credentials_file}")
+        print()
 
-    print(f"\nKeychain key: {keychain_key}")
-    print("\nAdd this to your config.yaml:")
-    print(f"""
-sources:
-  - name: {source_name or 'gmail_personal'}
+    # Now set up an account
+    print("Add a Gmail account to backup:\n")
+
+    # Get source name
+    if not source_name:
+        default_name = "gmail_personal"
+        source_name = input(f"Source name [{default_name}]: ").strip() or default_name
+
+    # Get email address
+    account_email = input("Gmail address: ").strip()
+    if not account_email:
+        print("❌ Error: Email address required")
+        sys.exit(1)
+
+    # The keychain key for this account's token
+    token_key = f"oauth-token/{account_email}"
+
+    # Check if token already exists
+    existing_token = keychain.load_gmail_token(account_email)
+    if existing_token:
+        print(f"\n✓ OAuth token already exists for {account_email}")
+    else:
+        # Need to authenticate
+        print(f"\nAuthenticating {account_email}...")
+        print("A browser window will open for you to authorize access.\n")
+
+        from ownmail.providers.gmail import GmailProvider
+
+        provider = GmailProvider(account=account_email, keychain=keychain)
+        provider.authenticate()
+
+    # Generate config snippet
+    config_snippet = f"""
+  - name: {source_name}
     type: gmail_api
-    account: your@gmail.com
+    account: {account_email}
     auth:
-      secret_ref: keychain:{keychain_key}
-""")
-    print("Then run 'ownmail backup' to start backing up your emails.")
+      secret_ref: keychain:{token_key}
+    include_labels: true
+"""
+
+    # Check if we should update config file
+    sources = get_sources(config)
+    existing_source = get_source_by_name(config, source_name)
+
+    if existing_source:
+        print(f"\n✓ Source '{source_name}' already exists in config.")
+        print("  No config changes needed.")
+    else:
+        print("\n" + "-" * 50)
+        print("Add this to your config.yaml under 'sources:':")
+        print(config_snippet)
+
+        # Offer to append automatically
+        if config_path and config_path.exists():
+            add_to_config = input("Add to config.yaml automatically? [Y/n]: ").strip().lower()
+            if add_to_config != "n":
+                with open(config_path, "a") as f:
+                    if not sources:
+                        # No sources section yet
+                        f.write("\nsources:\n")
+                    f.write(config_snippet)
+                print(f"✓ Added to {config_path}")
+
+    print("\n✓ Setup complete!")
+    print(f"  Run 'ownmail backup --source {source_name}' to start backing up.")
 
 
 def cmd_backup(archive: EmailArchive, config: dict, source_name: Optional[str] = None) -> None:
@@ -341,6 +398,14 @@ Examples:
     # Load config
     config = load_config(args.config, SCRIPT_DIR)
 
+    # Determine config file path for potential updates
+    config_path = args.config
+    if not config_path:
+        # Check default locations
+        cwd_config = Path.cwd() / "config.yaml"
+        if cwd_config.exists():
+            config_path = cwd_config
+
     # Determine archive_root
     if args.archive_root:
         archive_root = args.archive_root
@@ -350,7 +415,7 @@ Examples:
     try:
         if args.command == "setup":
             keychain = KeychainStorage()
-            cmd_setup(keychain, args.source, args.credentials_file)
+            cmd_setup(keychain, config, config_path, args.source, args.credentials_file)
 
         elif args.command == "sources":
             if args.sources_cmd == "list":
