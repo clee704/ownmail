@@ -3,6 +3,12 @@
 
 
 from ownmail.archive import EmailArchive
+from ownmail.database import ArchiveDatabase
+
+
+def _eid(provider_id, account=""):
+    """Compute email_id from provider_id for tests."""
+    return ArchiveDatabase.make_email_id(account, provider_id)
 
 
 class TestEmailArchiveInit:
@@ -83,9 +89,9 @@ class TestSearch:
         archive = EmailArchive(temp_dir, {})
 
         # Create and index an email
-        archive.db.mark_downloaded("test123", "test.eml", email_date="2024-01-15T00:00:00")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml", email_date="2024-01-15T00:00:00")
         archive.db.index_email(
-            message_id="test123",
+            email_id=_eid("test123"),
             subject="Invoice for Amazon purchase",
             sender="orders@amazon.com",
             recipients="buyer@example.com",
@@ -110,9 +116,9 @@ class TestSearch:
 
         # Add multiple emails
         for i in range(10):
-            archive.db.mark_downloaded(f"msg{i}", f"email{i}.eml", email_date="2024-01-15T00:00:00")
+            archive.db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", f"email{i}.eml", email_date="2024-01-15T00:00:00")
             archive.db.index_email(
-                message_id=f"msg{i}",
+                email_id=_eid(f"msg{i}"),
                 subject=f"Test email number {i}",
                 sender="sender@test.com",
                 recipients="recipient@test.com",
@@ -136,11 +142,11 @@ class TestIndexEmail:
         email_path = temp_dir / "test.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        archive.db.mark_downloaded("test123", "test.eml")
-        result = archive._index_email("test123", email_path, content=sample_eml_simple)
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
+        result = archive._index_email(_eid("test123"), email_path, content=sample_eml_simple)
 
         assert result is True
-        assert archive.db.is_indexed("test123")
+        assert archive.db.is_indexed(_eid("test123"))
 
     def test_index_email_from_file(self, temp_dir, sample_eml_simple):
         """Test indexing email from file."""
@@ -149,8 +155,8 @@ class TestIndexEmail:
         email_path = temp_dir / "test.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        archive.db.mark_downloaded("test123", "test.eml")
-        result = archive._index_email("test123", email_path)
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
+        result = archive._index_email(_eid("test123"), email_path)
 
         assert result is True
 
@@ -287,7 +293,7 @@ Body
         archive = EmailArchive(temp_dir, {})
 
         # Mark msg1 as already downloaded
-        archive.db.mark_downloaded("msg1", "emails/test.eml", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("msg1", "test@gmail.com"), "msg1", "emails/test.eml", account="test@gmail.com")
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
@@ -381,7 +387,7 @@ class TestIndexEmailFromContent:
         dummy_path.write_bytes(sample_eml_simple)
 
         result = archive._index_email(
-            message_id="test123",
+            email_id=_eid("test123"),
             filepath=dummy_path,
             content=sample_eml_simple,
             skip_delete=True,
@@ -400,7 +406,7 @@ class TestIndexEmailFromContent:
         email_path.write_bytes(sample_eml_simple)
 
         result = archive._index_email(
-            message_id="test123",
+            email_id=_eid("test123"),
             filepath=email_path,
             skip_delete=False,
         )
@@ -419,7 +425,7 @@ class TestIndexEmailFromContent:
 
         # Should not crash
         result = archive._index_email(
-            message_id="bad123",
+            email_id=_eid("bad123"),
             filepath=email_path,
         )
 
@@ -527,9 +533,9 @@ class TestArchiveSearch:
         email_path.write_bytes(sample_eml_simple)
 
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="abc", email_date="2024-01-15T00:00:00")
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="abc", email_date="2024-01-15T00:00:00")
         archive.db.index_email(
-            message_id="test123",
+            email_id=_eid("test123"),
             subject="Test Email",
             sender="sender@example.com",
             recipients="recipient@example.com",

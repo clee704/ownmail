@@ -482,7 +482,7 @@ class TestTryDecode:
 
 
 class TestRawEmailRoute:
-    """Tests for /raw/<message_id> route."""
+    """Tests for /raw/<email_id> route."""
 
     def test_raw_email_found(self, tmp_path):
         """Raw email route should return file content."""
@@ -527,7 +527,7 @@ class TestRawEmailRoute:
 
 
 class TestAttachmentRoute:
-    """Tests for /attachment/<message_id>/<index> route."""
+    """Tests for /attachment/<email_id>/<index> route."""
 
     def test_attachment_not_found(self, tmp_path):
         """Attachment route should 404 for missing email."""
@@ -624,7 +624,7 @@ class TestSearchCacheHit:
 
 
 class TestViewEmailRoute:
-    """Tests for /email/<message_id> route."""
+    """Tests for /email/<email_id> route."""
 
     def test_view_email_success(self, tmp_path):
         """View email should render email detail page."""
@@ -813,7 +813,7 @@ Body.
 
 
 class TestDownloadAttachment:
-    """Tests for /attachment/<message_id>/<index> route."""
+    """Tests for /attachment/<email_id>/<index> route."""
 
     def test_download_attachment_success(self, tmp_path):
         """Downloading attachment should return file."""

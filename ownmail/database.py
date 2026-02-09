@@ -1,5 +1,6 @@
 """SQLite database for tracking emails and full-text search."""
 
+import hashlib
 import re
 import sqlite3
 from datetime import datetime
@@ -13,7 +14,7 @@ class ArchiveDatabase:
     """SQLite database for tracking emails and full-text search.
 
     Schema:
-    - emails: Track downloaded emails with message_id, filename, hash, account
+    - emails: Track downloaded emails with email_id, provider_id, filename, hash, account
     - sync_state: Key-value store for per-account sync state
     - emails_fts: FTS5 virtual table for full-text search
     """
@@ -39,13 +40,33 @@ class ArchiveDatabase:
 
         self._init_db()
 
+    @staticmethod
+    def make_email_id(account: str, provider_id: str) -> str:
+        """Generate a stable email_id from account and provider_id.
+
+        Uses 24 hex chars (96 bits) of SHA-256, giving collision resistance
+        up to ~79 billion emails (birthday bound at 2^48).
+
+        Args:
+            account: Email address (e.g., "user@gmail.com")
+            provider_id: Provider-specific message ID (e.g., Gmail API hex ID)
+
+        Returns:
+            24-character hex string
+        """
+        return hashlib.sha256(f"{account}/{provider_id}".encode()).hexdigest()[:24]
+
     def _init_db(self) -> None:
         """Initialize the database schema."""
         with sqlite3.connect(self.db_path) as conn:
+            # Migrate from old message_id schema if needed
+            self._migrate_message_id_to_email_id(conn)
+
             # Main emails table - stores all metadata for fast indexed queries
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS emails (
-                    message_id TEXT PRIMARY KEY,
+                    email_id TEXT PRIMARY KEY,
+                    provider_id TEXT,
                     filename TEXT,
                     downloaded_at TEXT,
                     content_hash TEXT,
@@ -159,6 +180,8 @@ class ArchiveDatabase:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_sender_date ON emails(sender_email, email_date DESC)")
             # Composite index for has:attachment sorted by date
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_attachments_date ON emails(has_attachments, email_date DESC)")
+            # Unique index for fast provider_id lookups and duplicate prevention
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_emails_provider ON emails(account, provider_id)")
 
             # Drop legacy single-column indexes replaced by composites or normalized tables
             conn.execute("DROP INDEX IF EXISTS idx_emails_labels")  # replaced by email_labels table
@@ -178,6 +201,83 @@ class ArchiveDatabase:
             """)
 
             conn.commit()
+
+    def _migrate_message_id_to_email_id(self, conn: sqlite3.Connection) -> None:
+        """Migrate from old message_id PK schema to email_id PK schema.
+
+        Preserves rowids so that FTS5 and junction tables remain valid.
+        """
+        # Check if migration is needed
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(emails)")}
+        if not cols:
+            return  # Table doesn't exist yet (fresh install)
+        if 'provider_id' in cols:
+            return  # Already migrated
+        if 'message_id' not in cols:
+            return  # Unexpected schema
+
+        print("Migrating database schema (message_id → email_id)...", end="", flush=True)
+
+        # Read all existing data with rowids
+        rows = conn.execute(
+            """SELECT rowid, message_id, filename, downloaded_at, content_hash,
+               indexed_hash, account, labels, email_date, subject, sender,
+               recipients, date_str, snippet,
+               sender_email, recipient_emails,
+               COALESCE(has_attachments, 0)
+               FROM emails"""
+        ).fetchall()
+
+        # Compute email_id for each row
+        migrated = []
+        for row in rows:
+            rowid, message_id = row[0], row[1]
+            account = row[6] or ""
+            email_id = self.make_email_id(account, message_id)
+            # (rowid, email_id, provider_id=message_id, filename, ...)
+            migrated.append((rowid, email_id, message_id) + row[2:])
+
+        # Drop trigger before dropping table
+        conn.execute("DROP TRIGGER IF EXISTS trg_emails_delete")
+        conn.execute("DROP TABLE emails")
+
+        # Create new table with email_id PK
+        conn.execute("""
+            CREATE TABLE emails (
+                email_id TEXT PRIMARY KEY,
+                provider_id TEXT,
+                filename TEXT,
+                downloaded_at TEXT,
+                content_hash TEXT,
+                indexed_hash TEXT,
+                account TEXT,
+                labels TEXT,
+                email_date TEXT,
+                subject TEXT,
+                sender TEXT,
+                recipients TEXT,
+                date_str TEXT,
+                snippet TEXT,
+                sender_email TEXT,
+                recipient_emails TEXT,
+                has_attachments INTEGER DEFAULT 0
+            )
+        """)
+
+        # Insert with preserved rowids (keeps FTS5 and junction tables valid)
+        if migrated:
+            conn.executemany(
+                """INSERT INTO emails
+                   (rowid, email_id, provider_id, filename, downloaded_at,
+                    content_hash, indexed_hash, account, labels, email_date,
+                    subject, sender, recipients, date_str, snippet,
+                    sender_email, recipient_emails, has_attachments)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                migrated
+            )
+
+        conn.commit()
+        print(f" migrated {len(migrated)} rows", flush=True)
 
     # -------------------------------------------------------------------------
     # Email address parsing helpers
@@ -300,55 +400,65 @@ class ArchiveDatabase:
     # Email Tracking
     # -------------------------------------------------------------------------
 
-    def is_downloaded(self, message_id: str, account: str = None) -> bool:
-        """Check if a message has already been downloaded."""
+    def is_downloaded(self, provider_id: str, account: str = None) -> bool:
+        """Check if a message has already been downloaded.
+
+        Args:
+            provider_id: Provider-specific message ID (e.g., Gmail API hex ID)
+            account: Email address for scoped lookup
+        """
         with sqlite3.connect(self.db_path) as conn:
             if account:
                 result = conn.execute(
-                    "SELECT 1 FROM emails WHERE message_id = ? AND account = ?",
-                    (message_id, account)
+                    "SELECT 1 FROM emails WHERE provider_id = ? AND account = ?",
+                    (provider_id, account)
                 ).fetchone()
             else:
                 result = conn.execute(
-                    "SELECT 1 FROM emails WHERE message_id = ?",
-                    (message_id,)
+                    "SELECT 1 FROM emails WHERE provider_id = ?",
+                    (provider_id,)
                 ).fetchone()
             return result is not None
 
     def get_downloaded_ids(self, account: str = None) -> set:
-        """Get all downloaded message IDs."""
+        """Get all downloaded provider IDs.
+
+        Returns:
+            Set of provider_id values (for comparison with provider's ID list)
+        """
         with sqlite3.connect(self.db_path) as conn:
             if account:
                 results = conn.execute(
-                    "SELECT message_id FROM emails WHERE account = ?",
+                    "SELECT provider_id FROM emails WHERE account = ?",
                     (account,)
                 ).fetchall()
             else:
                 results = conn.execute(
-                    "SELECT message_id FROM emails"
+                    "SELECT provider_id FROM emails"
                 ).fetchall()
             return {row[0] for row in results}
 
-    def get_email_by_id(self, message_id: str) -> Optional[tuple]:
-        """Get email info by message ID.
+    def get_email_by_id(self, email_id: str) -> Optional[tuple]:
+        """Get email info by email_id.
 
         Args:
-            message_id: Message ID
+            email_id: 24-char hex hash
 
         Returns:
-            Tuple of (message_id, filename, downloaded_at, content_hash, account)
+            Tuple of (email_id, filename, downloaded_at, content_hash, account)
             or None if not found
         """
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(
-                "SELECT message_id, filename, downloaded_at, content_hash, account FROM emails WHERE message_id = ?",
-                (message_id,)
+                "SELECT email_id, filename, downloaded_at, content_hash, account FROM emails WHERE email_id = ?",
+                (email_id,)
             ).fetchone()
             return result
 
     def mark_downloaded(
         self,
-        message_id: str,
+        email_id: str,
+        provider_id: str,
         filename: str,
         content_hash: str = None,
         account: str = None,
@@ -358,7 +468,8 @@ class ArchiveDatabase:
         """Mark a message as downloaded.
 
         Args:
-            message_id: Provider-specific message ID
+            email_id: 24-char hex hash (PK)
+            provider_id: Provider-specific message ID
             filename: Relative path to .eml file
             content_hash: SHA256 hash of file content
             account: Email address
@@ -373,10 +484,10 @@ class ArchiveDatabase:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO emails
-                (message_id, filename, downloaded_at, content_hash, account, email_date)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (email_id, provider_id, filename, downloaded_at, content_hash, account, email_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (message_id, filename, datetime.now().isoformat(), content_hash, account, email_date)
+                (email_id, provider_id, filename, datetime.now().isoformat(), content_hash, account, email_date)
             )
             if should_close:
                 conn.commit()
@@ -390,7 +501,7 @@ class ArchiveDatabase:
 
     def index_email(
         self,
-        message_id: str,
+        email_id: str,
         subject: str,
         sender: str,
         recipients: str,
@@ -404,7 +515,7 @@ class ArchiveDatabase:
         """Add email to search index by updating emails table metadata and FTS.
 
         Args:
-            message_id: Message ID
+            email_id: 24-char hex hash
             subject, sender, recipients, date_str, body, attachments: Parsed email fields
             labels: Gmail labels
             conn: Optional existing connection (for batching)
@@ -420,8 +531,8 @@ class ArchiveDatabase:
         try:
             # Check if already indexed BEFORE updating (for FTS delete logic)
             row = conn.execute(
-                "SELECT rowid, subject, email_date FROM emails WHERE message_id = ?",
-                (message_id,)
+                "SELECT rowid, subject, email_date FROM emails WHERE email_id = ?",
+                (email_id,)
             ).fetchone()
             if not row:
                 # Message not in database yet - can't index
@@ -453,9 +564,9 @@ class ArchiveDatabase:
                     sender_email = ?,
                     recipient_emails = ?,
                     has_attachments = ?
-                WHERE message_id = ?
+                WHERE email_id = ?
                 """,
-                (subject, sender, recipients, date_str, labels, snippet, sender_email, recipient_emails, has_attachments, message_id)
+                (subject, sender, recipients, date_str, labels, snippet, sender_email, recipient_emails, has_attachments, email_id)
             )
 
             # Update normalized recipients table for fast lookups
@@ -506,12 +617,12 @@ class ArchiveDatabase:
             if should_close:
                 conn.close()
 
-    def is_indexed(self, message_id: str) -> bool:
+    def is_indexed(self, email_id: str) -> bool:
         """Check if a message is in the search index (has metadata populated)."""
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(
-                "SELECT 1 FROM emails WHERE message_id = ? AND subject IS NOT NULL",
-                (message_id,)
+                "SELECT 1 FROM emails WHERE email_id = ? AND subject IS NOT NULL",
+                (email_id,)
             ).fetchone()
             return result is not None
 
@@ -674,7 +785,7 @@ class ArchiveDatabase:
                     results = conn.execute(
                         f"""
                         SELECT {distinct}
-                            e.message_id,
+                            e.email_id,
                             e.filename,
                             e.subject,
                             e.sender,
@@ -733,7 +844,7 @@ class ArchiveDatabase:
 
                 sql = f"""
                     SELECT {distinct}
-                        e.message_id,
+                        e.email_id,
                         e.filename,
                         e.subject,
                         e.sender,

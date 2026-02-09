@@ -233,15 +233,19 @@ class EmailArchive:
                         size_bytes = filepath.stat().st_size
                         size_str = self._format_size(size_bytes)
 
+                        # Compute stable email_id from account + provider_id
+                        email_id = ArchiveDatabase.make_email_id(account, msg_id)
+
                         # Index the email
                         labels_str = ", ".join(labels) if labels else ""
-                        self._index_email(msg_id, filepath, raw_data,
+                        self._index_email(email_id, filepath, raw_data,
                                           skip_delete=True, labels=labels_str)
 
                         # Mark as downloaded and indexed
                         content_hash = hashlib.sha256(raw_data).hexdigest()
                         self.db.mark_downloaded(
-                            message_id=msg_id,
+                            email_id=email_id,
+                            provider_id=msg_id,
                             filename=str(filepath.relative_to(self.archive_dir)),
                             content_hash=content_hash,
                             account=account,
@@ -250,8 +254,8 @@ class EmailArchive:
                         )
                         # Set indexed_hash to mark as indexed
                         self._batch_conn.execute(
-                            "UPDATE emails SET indexed_hash = ? WHERE message_id = ?",
-                            (content_hash, msg_id)
+                            "UPDATE emails SET indexed_hash = ? WHERE email_id = ?",
+                            (content_hash, email_id)
                         )
 
                         success_count += 1
@@ -355,7 +359,7 @@ class EmailArchive:
 
     def _index_email(
         self,
-        message_id: str,
+        email_id: str,
         filepath: Path,
         content: bytes = None,
         skip_delete: bool = False,
@@ -364,7 +368,7 @@ class EmailArchive:
         """Index an email for full-text search.
 
         Args:
-            message_id: Message ID
+            email_id: 24-char hex hash
             filepath: Path to .eml file
             content: Raw email bytes (avoids re-reading file)
             skip_delete: Skip DELETE before INSERT (for new emails)
@@ -389,7 +393,7 @@ class EmailArchive:
             conn = self._batch_conn
 
             self.db.index_email(
-                message_id=message_id,
+                email_id=email_id,
                 subject=parsed["subject"],
                 sender=parsed["sender"],
                 recipients=parsed["recipients"],

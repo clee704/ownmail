@@ -54,7 +54,7 @@ def cmd_reindex(
             print(f"File not found: {file_path}")
             return
 
-        # Find message_id for this file
+        # Find email_id for this file
         rel_path = None
         try:
             rel_path = file_path.relative_to(archive.archive_dir)
@@ -65,19 +65,19 @@ def cmd_reindex(
         if rel_path:
             with sqlite3.connect(db_path) as conn:
                 result = conn.execute(
-                    "SELECT message_id FROM emails WHERE filename = ?",
+                    "SELECT email_id FROM emails WHERE filename = ?",
                     (str(rel_path),)
                 ).fetchone()
                 if result:
-                    msg_id = result[0]
+                    email_id = result[0]
                     print(f"Indexing: {file_path.name}")
-                    if _index_single_email(archive, msg_id, file_path, debug):
+                    if _index_single_email(archive, email_id, file_path, debug):
                         print("✓ Indexed successfully")
                     else:
                         print("✗ Failed to index")
                     return
 
-        # If not in DB, use filename as message_id
+        # If not in DB, use filename as email_id
         print(f"Indexing: {file_path.name}")
         if _index_single_email(archive, file_path.stem, file_path, debug):
             print("✓ Indexed successfully")
@@ -98,7 +98,7 @@ def cmd_reindex(
             if force:
                 # Force mode: select ALL matching emails regardless of indexed state
                 emails = conn.execute(
-                    """SELECT message_id, filename, content_hash, indexed_hash
+                    """SELECT email_id, filename, content_hash, indexed_hash
                        FROM emails
                        WHERE filename LIKE ?""",
                     (like_pattern,)
@@ -106,7 +106,7 @@ def cmd_reindex(
                 print(f" {len(emails)} matching '{pattern}' (force) ({time.time()-t0:.1f}s)")
             else:
                 emails = conn.execute(
-                    """SELECT message_id, filename, content_hash, indexed_hash
+                    """SELECT email_id, filename, content_hash, indexed_hash
                        FROM emails
                        WHERE filename LIKE ?
                        AND (indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash)""",
@@ -121,13 +121,13 @@ def cmd_reindex(
             if force:
                 # Force mode: select ALL emails
                 emails = conn.execute(
-                    """SELECT message_id, filename, content_hash, indexed_hash
+                    """SELECT email_id, filename, content_hash, indexed_hash
                        FROM emails"""
                 ).fetchall()
                 print(f" {len(emails)} emails (force) ({time.time()-t0:.1f}s)")
             else:
                 emails = conn.execute(
-                    """SELECT message_id, filename, content_hash, indexed_hash
+                    """SELECT email_id, filename, content_hash, indexed_hash
                    FROM emails
                    WHERE indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash"""
             ).fetchall()
@@ -254,7 +254,7 @@ def cmd_reindex(
 
 def _index_single_email(
     archive: EmailArchive,
-    message_id: str,
+    email_id: str,
     filepath: Path,
     debug: bool = False,
 ) -> bool:
@@ -262,7 +262,7 @@ def _index_single_email(
     try:
         parsed = EmailParser.parse_file(filepath=filepath)
         archive.db.index_email(
-            message_id=message_id,
+            email_id=email_id,
             subject=parsed["subject"],
             sender=parsed["sender"],
             recipients=parsed["recipients"],
@@ -279,7 +279,7 @@ def _index_single_email(
 
 def _index_email_for_reindex(
     archive: EmailArchive,
-    message_id: str,
+    email_id: str,
     filepath: Path,
     conn: sqlite3.Connection,
     debug: bool = False,
@@ -299,8 +299,8 @@ def _index_email_for_reindex(
 
         # Preserve existing labels from DB (labels are not stored in .eml files)
         existing = conn.execute(
-            "SELECT labels FROM emails WHERE message_id = ?",
-            (message_id,)
+            "SELECT labels FROM emails WHERE email_id = ?",
+            (email_id,)
         ).fetchone()
         labels = (existing[0] if existing and existing[0] else "") or parsed.get("labels", "")
         recipients = parsed["recipients"]
@@ -325,12 +325,12 @@ def _index_email_for_reindex(
                 indexed_hash = ?,
                 content_hash = COALESCE(content_hash, ?),
                 has_attachments = ?
-            WHERE message_id = ?
+            WHERE email_id = ?
             RETURNING rowid
             """,
             (parsed["subject"], parsed["sender"], recipients,
              parsed["date_str"], labels, snippet,
-             content_hash, content_hash, has_attachments, message_id)
+             content_hash, content_hash, has_attachments, email_id)
         ).fetchone()
 
         # Insert into FTS and normalized tables
@@ -423,7 +423,7 @@ def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
     step_start = time.time()
     with sqlite3.connect(db_path) as conn:
         emails = conn.execute(
-            "SELECT message_id, filename, content_hash FROM emails"
+            "SELECT email_id, filename, content_hash FROM emails"
         ).fetchall()
     db_time = time.time() - step_start
 
@@ -444,7 +444,7 @@ def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
 
     # Prepare work items
     work_items = []
-    for _msg_id, filename, stored_hash in emails:
+    for _email_id, filename, stored_hash in emails:
         indexed_files.add(filename)
         work_items.append((archive.archive_dir, filename, stored_hash))
 
@@ -504,17 +504,17 @@ def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
 
 
 def _compute_single_hash(args: tuple) -> tuple:
-    """Compute hash for a single file. Returns (msg_id, hash, error)."""
-    archive_dir, msg_id, filename = args
+    """Compute hash for a single file. Returns (email_id, hash, error)."""
+    archive_dir, email_id, filename = args
 
     filepath = archive_dir / filename
     if not filepath.exists():
-        return (msg_id, None, 'missing')
+        return (email_id, None, 'missing')
 
     with open(filepath, "rb") as f:
         content_hash = hashlib.sha256(f.read()).hexdigest()
 
-    return (msg_id, content_hash, None)
+    return (email_id, content_hash, None)
 
 
 def cmd_rehash(archive: EmailArchive) -> None:
@@ -533,7 +533,7 @@ def cmd_rehash(archive: EmailArchive) -> None:
     step_start = time.time()
     with sqlite3.connect(db_path) as conn:
         emails = conn.execute(
-            "SELECT message_id, filename FROM emails WHERE content_hash IS NULL"
+            "SELECT email_id, filename FROM emails WHERE content_hash IS NULL"
         ).fetchall()
     db_time = time.time() - step_start
 
@@ -545,7 +545,7 @@ def cmd_rehash(archive: EmailArchive) -> None:
     print(f"Computing hashes for {total} emails...\n")
 
     # Prepare work items
-    work_items = [(archive.archive_dir, msg_id, filename) for msg_id, filename in emails]
+    work_items = [(archive.archive_dir, email_id, filename) for email_id, filename in emails]
 
     # Compute hashes in parallel
     step_start = time.time()
@@ -565,13 +565,13 @@ def cmd_rehash(archive: EmailArchive) -> None:
     success_count = 0
     error_count = 0
     with sqlite3.connect(db_path) as conn:
-        for msg_id, content_hash, error in results:
+        for email_id, content_hash, error in results:
             if error:
                 error_count += 1
             else:
                 conn.execute(
-                    "UPDATE emails SET content_hash = ? WHERE message_id = ?",
-                    (content_hash, msg_id)
+                    "UPDATE emails SET content_hash = ? WHERE email_id = ?",
+                    (content_hash, email_id)
                 )
                 success_count += 1
         conn.commit()
@@ -672,7 +672,7 @@ def cmd_sync_check(
             local_only_files = []
             for msg_id in on_local_not_gmail:
                 result = conn.execute(
-                    "SELECT filename FROM emails WHERE message_id = ?", (msg_id,)
+                    "SELECT filename FROM emails WHERE provider_id = ? AND account = ?", (msg_id, account)
                 ).fetchone()
                 if result:
                     local_only_files.append(f"{result[0]} ({msg_id})")
@@ -868,7 +868,7 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
     # Get all downloaded emails for this account that don't have labels yet
     with sqlite3.connect(archive.db.db_path) as conn:
         emails = conn.execute(
-            "SELECT message_id FROM emails WHERE (account = ? OR account IS NULL) AND (labels IS NULL OR labels = '')",
+            "SELECT email_id, provider_id FROM emails WHERE (account = ? OR account IS NULL) AND (labels IS NULL OR labels = '')",
             (account,)
         ).fetchall()
 
@@ -896,22 +896,22 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
 
     try:
         with sqlite3.connect(archive.db.db_path) as conn:
-            for i, (msg_id,) in enumerate(emails, 1):
+            for i, (email_id, provider_id) in enumerate(emails, 1):
                 if interrupted:
                     break
 
                 print(f"  [{i}/{len(emails)}] Fetching labels...", end="\r")
 
                 try:
-                    labels = provider.get_labels_for_message(msg_id)
+                    labels = provider.get_labels_for_message(provider_id)
                     if not labels:
                         skip_count += 1
                         continue
 
                     labels_str = ", ".join(labels)
                     conn.execute(
-                        "UPDATE emails SET labels = ? WHERE message_id = ?",
-                        (labels_str, msg_id)
+                        "UPDATE emails SET labels = ? WHERE email_id = ?",
+                        (labels_str, email_id)
                     )
                     success_count += 1
 
@@ -920,7 +920,7 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
                         conn.commit()
 
                 except Exception as e:
-                    print(f"\n  Error processing {msg_id}: {e}")
+                    print(f"\n  Error processing {provider_id}: {e}")
                     error_count += 1
 
     finally:
@@ -973,7 +973,7 @@ def cmd_list_unknown(
     with sqlite3.connect(db_path) as conn:
         results = conn.execute(
             """
-            SELECT message_id, filename, account
+            SELECT email_id, filename, account
             FROM emails
             WHERE email_date IS NULL
             ORDER BY account, filename
@@ -988,16 +988,16 @@ def cmd_list_unknown(
 
     # Group by account
     by_account = {}
-    for msg_id, filename, account in results:
+    for email_id, filename, account in results:
         account = account or "(legacy)"
         if account not in by_account:
             by_account[account] = []
-        by_account[account].append((msg_id, filename))
+        by_account[account].append((email_id, filename))
 
     for account, emails in sorted(by_account.items()):
         print(f"  {account}: {len(emails)} emails")
         if verbose:
-            for _msg_id, filename in emails:
+            for _email_id, filename in emails:
                 print(f"    - {filename}")
                 # Try to extract date from email file
                 filepath = archive.archive_dir / filename
@@ -1049,7 +1049,7 @@ def cmd_populate_dates(
         # Find emails without email_date
         results = conn.execute(
             """
-            SELECT message_id, filename
+            SELECT email_id, filename
             FROM emails
             WHERE email_date IS NULL
             """
@@ -1076,8 +1076,8 @@ def cmd_populate_dates(
     # Install signal handler
     old_handler = signal.signal(signal.SIGINT, signal_handler)
 
-    def extract_date(msg_id: str, filename: str) -> tuple:
-        """Extract date from a single email file. Returns (email_date, msg_id, error)."""
+    def extract_date(email_id: str, filename: str) -> tuple:
+        """Extract date from a single email file. Returns (email_date, email_id, error)."""
         import re
         from datetime import datetime, timedelta, timezone
 
@@ -1163,7 +1163,7 @@ def cmd_populate_dates(
         else:
             error = "File not found"
 
-        return (email_date, msg_id, error)
+        return (email_date, email_id, error)
 
     success_count = 0
     error_count = 0
@@ -1185,8 +1185,8 @@ def cmd_populate_dates(
                 # Use ThreadPoolExecutor for parallel I/O within each batch
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     futures = [
-                        executor.submit(extract_date, msg_id, filename)
-                        for msg_id, filename in batch
+                        executor.submit(extract_date, email_id, filename)
+                        for email_id, filename in batch
                     ]
 
                     for future in futures:
@@ -1194,7 +1194,7 @@ def cmd_populate_dates(
                             executor.shutdown(wait=False, cancel_futures=True)
                             break
 
-                        email_date, msg_id, error = future.result()
+                        email_date, email_id, error = future.result()
                         processed += 1
 
                         if error:
@@ -1202,7 +1202,7 @@ def cmd_populate_dates(
                                 print(f"    Error: {error}")
                             error_count += 1
 
-                        updates.append((email_date, msg_id))
+                        updates.append((email_date, email_id))
 
                         if email_date:
                             success_count += 1
@@ -1212,7 +1212,7 @@ def cmd_populate_dates(
                 # Commit this batch
                 if updates:
                     conn.executemany(
-                        "UPDATE emails SET email_date = ? WHERE message_id = ?",
+                        "UPDATE emails SET email_date = ? WHERE email_id = ?",
                         updates
                     )
                     conn.commit()

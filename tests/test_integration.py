@@ -7,6 +7,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ownmail import GmailArchive
+from ownmail.database import ArchiveDatabase
+
+
+def _eid(provider_id, account=""):
+    return ArchiveDatabase.make_email_id(account, provider_id)
 
 
 class TestGmailArchiveInit:
@@ -39,13 +44,13 @@ class TestIndexEmail:
         email_path.write_bytes(sample_eml_simple)
 
         # Mark as downloaded first
-        archive.db.mark_downloaded("test123", str(email_path.relative_to(temp_dir)))
+        archive.db.mark_downloaded(_eid("test123"), "test123", str(email_path.relative_to(temp_dir)))
 
         # Index it
-        result = archive.index_email("test123", email_path)
+        result = archive.index_email(_eid("test123"), email_path)
 
         assert result is True
-        assert archive.db.is_indexed("test123")
+        assert archive.db.is_indexed(_eid("test123"))
 
     def test_index_email_updates_hash(self, temp_dir, sample_eml_simple):
         """Test that indexing updates content_hash and indexed_hash."""
@@ -54,13 +59,13 @@ class TestIndexEmail:
         email_path = temp_dir / "test.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        archive.db.mark_downloaded("test123", "test.eml")
-        archive.index_email("test123", email_path, update_hash=True)
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
+        archive.index_email(_eid("test123"), email_path, update_hash=True)
 
         with sqlite3.connect(archive.db.db_path) as conn:
             row = conn.execute(
-                "SELECT content_hash, indexed_hash FROM emails WHERE message_id = ?",
-                ("test123",)
+                "SELECT content_hash, indexed_hash FROM emails WHERE email_id = ?",
+                (_eid("test123"),)
             ).fetchone()
 
         assert row[0] is not None  # content_hash
@@ -105,12 +110,12 @@ class TestCmdDbCheck:
         archive = GmailArchive(temp_dir)
 
         # Add email without metadata (not indexed)
-        archive.db.mark_downloaded("msg1", "file1.eml")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "file1.eml")
 
         # Check email exists but has no subject
         with sqlite3.connect(archive.db.db_path) as conn:
             result = conn.execute(
-                "SELECT subject FROM emails WHERE message_id = ?", ("msg1",)
+                "SELECT subject FROM emails WHERE email_id = ?", (_eid("msg1"),)
             ).fetchone()
         assert result[0] is None
 
@@ -119,9 +124,9 @@ class TestCmdDbCheck:
         archive = GmailArchive(temp_dir)
 
         # Add email and index it
-        archive.db.mark_downloaded("msg1", "file1.eml")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "file1.eml")
         archive.db.index_email(
-            "msg1", "Subject", "from@test.com", "to@test.com",
+            _eid("msg1"), "Subject", "from@test.com", "to@test.com",
             "2024-01-01", "Body text", ""
         )
 

@@ -7,7 +7,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ownmail.archive import EmailArchive
+from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
+
+
+def _eid(provider_id, account=""):
+    """Compute email_id from provider_id for tests."""
+    return ArchiveDatabase.make_email_id(account, provider_id)
 
 
 class TestGmailProviderAuthentication:
@@ -392,7 +398,7 @@ This is a test email body.
             email_path.write_bytes(sample_eml_simple)
 
             rel_path = str(email_path.relative_to(temp_dir))
-            archive.db.mark_downloaded(f"test{i}", rel_path, content_hash=None)
+            archive.db.mark_downloaded(_eid(f"test{i}"), f"test{i}", rel_path, content_hash=None)
 
         cmd_reindex(archive)
         captured = capsys.readouterr()
@@ -457,7 +463,7 @@ Body
 
         # Add to emails table but not to FTS
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="abc")
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="abc")
 
         cmd_db_check(archive)
         captured = capsys.readouterr()
@@ -498,7 +504,7 @@ Body
         # Add with correct hash
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=content_hash)
 
         cmd_verify(archive)
         captured = capsys.readouterr()
@@ -539,9 +545,9 @@ Body
         rel_path = str(email_path.relative_to(temp_dir))
 
         # Mark as downloaded with content_hash but different indexed_hash
-        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=content_hash)
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("UPDATE emails SET indexed_hash = 'old_hash' WHERE message_id = ?", ("test123",))
+            conn.execute("UPDATE emails SET indexed_hash = 'old_hash' WHERE email_id = ?", (_eid("test123"),))
             conn.commit()
 
         cmd_reindex(archive)
@@ -614,9 +620,9 @@ class TestDbCheckDuplicateFTS:
         # Insert an email with metadata but manually delete its FTS entry to simulate sync issue
         with sqlite3.connect(archive.db.db_path) as conn:
             conn.execute("""
-                INSERT INTO emails (message_id, filename, subject, sender)
-                VALUES ('sync123', 'emails/2024/01/sync.eml', 'Test Subject', 'test@example.com')
-            """)
+                INSERT INTO emails (email_id, provider_id, filename, subject, sender)
+                VALUES (?, 'sync123', 'emails/2024/01/sync.eml', 'Test Subject', 'test@example.com')
+            """, (_eid("sync123"),))
             # FTS entry should have been created, but we'll check db-check works
             conn.commit()
 
@@ -680,7 +686,7 @@ sources:
         # Create and initialize archive
         archive = EmailArchive(temp_dir, {})
         archive.db.index_email(
-            message_id="test123",
+            email_id=_eid("test123"),
             subject="Test Email",
             sender="sender@example.com",
             recipients="recipient@example.com",
@@ -715,8 +721,8 @@ class TestStatsWithData:
 
         # Create archive with some emails
         archive = EmailArchive(temp_dir, {})
-        archive.db.mark_downloaded("msg1", "emails/2024/01/msg1.eml", content_hash="abc")
-        archive.db.mark_downloaded("msg2", "emails/2024/01/msg2.eml", content_hash="def")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/01/msg2.eml", content_hash="def")
 
         with patch.object(sys, 'argv', ['ownmail', 'stats']):
             main()
@@ -835,7 +841,7 @@ class TestCliRehash:
         email_path.write_bytes(b"From: test@example.com\r\nSubject: Test\r\n\r\nBody")
 
         # Mark as downloaded without content_hash
-        archive.db.mark_downloaded("msg1", "emails/2024/01/test.eml", content_hash=None)
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/test.eml", content_hash=None)
 
         cmd_rehash(archive)
 
@@ -869,7 +875,7 @@ class TestAddLabelsCmd:
         emails_dir.mkdir(parents=True)
         email_path = emails_dir / "test.eml"
         email_path.write_text("From: test@example.com\r\nSubject: Test\r\n\r\nBody")
-        archive.db.mark_downloaded("msg1", "emails/2024/01/test.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/test.eml", content_hash="abc")
 
         with patch('ownmail.commands.GmailProvider') as mock_provider_cls:
             mock_provider = MagicMock()
@@ -1020,7 +1026,7 @@ This is a test email body.
         archive = EmailArchive(temp_dir, {})
 
         # Add email to DB but don't create file
-        archive.db.mark_downloaded("missing123", "emails/2024/01/missing.eml", content_hash=None)
+        archive.db.mark_downloaded(_eid("missing123"), "missing123", "emails/2024/01/missing.eml", content_hash=None)
 
         cmd_reindex(archive)
 
@@ -1041,7 +1047,7 @@ This is a test email body.
         email_path.write_bytes(sample_eml_simple)
 
         # Add to DB without hash
-        archive.db.mark_downloaded("test123", "emails/2024/01/test.eml", content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash=None)
 
         cmd_verify(archive)
 
@@ -1064,7 +1070,7 @@ This is a test email body.
         email_path.write_bytes(sample_eml_simple)
 
         # Add to DB
-        archive.db.mark_downloaded("test123", "emails/2024/01/test.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash="abc")
 
         cmd_reindex(archive, file_path=Path(email_path))
 
@@ -1101,7 +1107,7 @@ This is a test email body.
         cmd_reindex(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
-        # Should still try to index using filename as message_id
+        # Should still try to index using filename as email_id
         assert "Indexing:" in captured.out
 
     def test_reindex_single_file_not_in_db(self, temp_dir, sample_eml_simple, capsys):
@@ -1121,7 +1127,7 @@ This is a test email body.
         cmd_reindex(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
-        # Should use filename as message_id and index it
+        # Should use filename as email_id and index it
         assert "Indexing:" in captured.out
 
     def test_reindex_single_file_index_fails(self, temp_dir, sample_eml_simple, capsys):
@@ -1138,7 +1144,7 @@ This is a test email body.
         email_path = emails_dir / "test.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        archive.db.mark_downloaded("test123", "emails/2024/01/test.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash="abc")
 
         # Mock the parser to raise an exception
         with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Parse error")):
@@ -1161,7 +1167,7 @@ This is a test email body.
         email_path = emails_dir / "newfile.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        # Don't add to DB, so it uses filename as message_id
+        # Don't add to DB, so it uses filename as email_id
 
         # Mock the parser to raise an exception
         with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Parse error")):
@@ -1183,9 +1189,9 @@ This is a test email body.
         email_path.write_bytes(sample_eml_simple)
 
         # Add to DB with indexed_hash already set
-        archive.db.mark_downloaded("test123", "emails/2024/01/test.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash="abc")
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("UPDATE emails SET indexed_hash = 'old_hash' WHERE message_id = ?", ("test123",))
+            conn.execute("UPDATE emails SET indexed_hash = 'old_hash' WHERE email_id = ?", (_eid("test123"),))
 
         cmd_reindex(archive, force=True)
 
@@ -1206,7 +1212,7 @@ This is a test email body.
         archive = EmailArchive(temp_dir, config)
 
         # Add some emails
-        archive.db.mark_downloaded("msg1", "emails/2024/01/msg1.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
 
         cmd_stats(archive, config)
 
@@ -1228,8 +1234,8 @@ This is a test email body.
         archive = EmailArchive(temp_dir, config)
 
         # Add some emails locally
-        archive.db.mark_downloaded("msg1", "emails/2024/01/msg1.eml", content_hash="abc")
-        archive.db.mark_downloaded("msg2", "emails/2024/01/msg2.eml", content_hash="def")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/01/msg2.eml", content_hash="def")
 
         with patch('ownmail.commands.GmailProvider') as mock_provider_cls:
             mock_provider = MagicMock()
@@ -1249,7 +1255,7 @@ This is a test email body.
         archive = EmailArchive(temp_dir, {})
 
         # Add some emails with various states
-        archive.db.mark_downloaded("msg1", "emails/2024/01/msg1.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
 
         cmd_db_check(archive, verbose=True)
 
@@ -1471,7 +1477,7 @@ This is a test email body.
         email_path = emails_dir / "test.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        archive.db.mark_downloaded("test123", "emails/2024/01/test.eml", content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash=None)
 
         cmd_reindex(archive, debug=True)
 
@@ -1492,7 +1498,7 @@ This is a test email body.
         email_path = emails_dir / "test.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        archive.db.mark_downloaded("test123", "emails/2024/01/test.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash="abc")
 
         # Mock parser to fail
         with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Debug error msg")):
@@ -1514,7 +1520,7 @@ This is a test email body.
         for i in range(3):
             email_path = emails_dir / f"test{i}.eml"
             email_path.write_bytes(sample_eml_simple)
-            archive.db.mark_downloaded(f"msg{i}", f"emails/2024/01/test{i}.eml", content_hash=None)
+            archive.db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", f"emails/2024/01/test{i}.eml", content_hash=None)
 
         # Make one file fail by patching conditionally
         original_parse = EmailParser.parse_file
