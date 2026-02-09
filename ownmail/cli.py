@@ -20,9 +20,7 @@ _CONFIG_TEMPLATE = """\
 # ownmail configuration
 # See README.md for all options.
 
-# Where to store emails (default: ./archive in working directory)
-# archive_root: /path/to/your/archive
-
+{archive_root}
 # Store the database separately from the archive (optional).
 # Useful when archiving to a slow/external drive but wanting fast search.
 # db_dir: /path/to/fast/local/storage
@@ -115,9 +113,23 @@ def _update_or_create_config(
             f.write(source_snippet)
         print(f"✓ Added source '{source_name}' to {config_path}")
     else:
-        # Create new config file
+        # Create new config file — ask for archive root
+        default_archive = Path.cwd() / "archive"
+        archive_input = input(
+            f"\nWhere to store emails [{default_archive}]: "
+        ).strip()
+        if archive_input:
+            archive_path = Path(archive_input).resolve()
+        else:
+            archive_path = default_archive.resolve()
+
+        archive_root_line = f"archive_root: {archive_path}"
+
         new_path = config_path or (Path.cwd() / "config.yaml")
-        content = _CONFIG_TEMPLATE.format(sources=source_snippet)
+        content = _CONFIG_TEMPLATE.format(
+            archive_root=archive_root_line,
+            sources=source_snippet,
+        )
         new_path.write_text(content)
         print(f"\n✓ Created {new_path}")
 
@@ -721,9 +733,10 @@ Examples:
     # verify command
     verify_parser = subparsers.add_parser(
         "verify",
-        help="Verify integrity of downloaded emails",
-        description="Verify that downloaded emails haven't been corrupted.",
+        help="Verify archive integrity (files, hashes, database)",
+        description="Check file integrity, detect orphans, and validate database health.",
     )
+    verify_parser.add_argument("--fix", action="store_true", help="Fix issues (remove stale DB entries, rebuild FTS)")
     verify_parser.add_argument("--verbose", "-v", action="store_true", help="Show full list of issues")
 
     # rehash command
@@ -747,15 +760,6 @@ Examples:
         help="Reset sync state to force full re-download",
         description="Clear the sync state for all sources, forcing the next backup to do a full sync.",
     )
-
-    # db-check command
-    db_check_parser = subparsers.add_parser(
-        "db-check",
-        help="Check database integrity",
-        description="Check the database for integrity issues and optionally fix them.",
-    )
-    db_check_parser.add_argument("--fix", action="store_true", help="Fix fixable issues")
-    db_check_parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed issues")
 
     # add-labels command
     subparsers.add_parser(
@@ -848,7 +852,7 @@ Examples:
                 cmd_reindex(archive, args.file, args.pattern, args.force, args.debug)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify
-                cmd_verify(archive, args.verbose)
+                cmd_verify(archive, args.fix, args.verbose)
             elif args.command == "rehash":
                 from ownmail.commands import cmd_rehash
                 cmd_rehash(archive)
@@ -857,9 +861,6 @@ Examples:
                 cmd_sync_check(archive, args.source, args.verbose)
             elif args.command == "reset-sync":
                 cmd_reset_sync(archive, config, args.source)
-            elif args.command == "db-check":
-                from ownmail.commands import cmd_db_check
-                cmd_db_check(archive, args.fix, args.verbose)
             elif args.command == "add-labels":
                 from ownmail.commands import cmd_add_labels
                 cmd_add_labels(archive, args.source)

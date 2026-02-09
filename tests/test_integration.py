@@ -90,11 +90,11 @@ class TestCmdStats:
         assert stats["total_emails"] == 0
 
 
-class TestCmdDbCheck:
-    """Tests for db-check command."""
+class TestDatabaseIntegrity:
+    """Tests for database integrity (covered by verify command)."""
 
-    def test_db_check_clean_database(self, temp_dir):
-        """Test db-check on a clean database."""
+    def test_clean_database_has_fts(self, temp_dir):
+        """Test a clean database has expected FTS structure."""
         archive = GmailArchive(temp_dir)
 
         # Check database has expected structure
@@ -105,8 +105,8 @@ class TestCmdDbCheck:
             ).fetchone()
             assert result is not None
 
-    def test_db_check_finds_missing_metadata(self, temp_dir):
-        """Test that db-check finds emails without metadata."""
+    def test_missing_metadata_detected(self, temp_dir):
+        """Test that emails without metadata are detectable."""
         archive = GmailArchive(temp_dir)
 
         # Add email without metadata (not indexed)
@@ -119,7 +119,7 @@ class TestCmdDbCheck:
             ).fetchone()
         assert result[0] is None
 
-    def test_db_check_fts_sync(self, temp_dir):
+    def test_fts_sync(self, temp_dir):
         """Test that FTS stays in sync with emails table."""
         archive = GmailArchive(temp_dir)
 
