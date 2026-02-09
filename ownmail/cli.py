@@ -644,7 +644,7 @@ Examples:
                 serve_archive = EmailArchive(serve_archive_root, config)
                 # Get web config from config.yaml, CLI args override
                 web_config = config.get("web", {})
-                block_images = args.block_images or web_config.get("block_images", False)
+                block_images = args.block_images or web_config.get("block_images", True)
                 page_size = web_config.get("page_size", 20)
                 trusted_senders = web_config.get("trusted_senders", [])
                 date_format = web_config.get("date_format")  # e.g., "%Y-%m-%d" or "%m/%d"
