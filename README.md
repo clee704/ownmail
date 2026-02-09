@@ -46,23 +46,28 @@ ownmail serve
 - 📁 **Files as source of truth** — Your emails are stored as standard `.eml` files. No proprietary database, no lock-in.
 - 🔐 **You own your data** — Everything stays on your drive. Put it on an encrypted volume and you're done.
 - ⚡ **Fast & incremental** — Only downloads new emails. Resume anytime with Ctrl-C.
-- 🔍 **Optional search** — SQLite-based full-text search. The index is just a convenience layer.
+- 🔍 **Full-text search** — SQLite FTS5-backed search. Fast, local, private.
 - 🌐 **Built-in viewer** — Browse and read your archive in any browser. Dark mode, sanitized HTML, attachment downloads.
 
 ## Why ownmail?
 
-There are existing tools like `mbsync` + `mu` or `offlineimap` that can accomplish similar goals. Here's why you might prefer ownmail:
+Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs IMAP to a local Maildir, and `notmuch` indexes it for fast tag-based search. They're powerful and battle-tested. Here's how ownmail differs:
 
-| | mbsync + mu | ownmail |
+| | mbsync + notmuch | ownmail |
 |---|---|---|
-| **Setup** | Configure multiple tools separately | Single `pip install`, one config file |
+| **What it is** | Two separate tools (sync + index) | Single tool: backup, search, browse |
+| **Setup** | Configure `mbsync` and `notmuch` separately | `pip install ownmail && ownmail setup` |
 | **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
-| **Providers** | IMAP only | Any IMAP server + Gmail API (OAuth) |
-| **Integrity** | — | SHA256 hashes, `verify` and `sync-check` commands |
-| **Web viewer** | — | Built-in browser UI with search, dark mode, HTML sanitization |
-| **Hackability** | Multiple codebases in different languages | Single Python project — fork it, make it yours |
+| **Storage format** | Maildir (flags in filenames) | `.eml` files organized by date |
+| **Search engine** | Xapian (tag-based, very fast) | SQLite FTS5 (good enough for most archives) |
+| **Reading email** | Emacs, Vim, mutt, or other frontends | Built-in web UI |
+| **Providers** | IMAP only | IMAP + Gmail API (OAuth, batch downloads) |
+| **Integrity** | — | SHA256 hashes, `verify --fix` |
+| **Philosophy** | Power-user toolkit, compose your workflow | Opinionated single tool — backup, search, done |
 
-**The bottom line:** If you want a simple, single-tool email backup that stores plain files — ownmail is for you.
+**Choose mbsync + notmuch** if you already live in Emacs/mutt and want maximum flexibility.
+
+**Choose ownmail** if you want a simple, self-contained email backup that stores plain files and lets you search and read them in a browser.
 
 ## Commands
 
@@ -74,10 +79,9 @@ There are existing tools like `mbsync` + `mu` or `offlineimap` that can accompli
 | `serve` | Browse and read your archive in the browser |
 | `stats` | Show archive statistics |
 | `verify` | Check file integrity (SHA256) |
-| `sync-check` | Compare local archive with server |
-| `add-labels` | Add Gmail labels to existing emails |
+| `sync-check` | Compare local archive with server to find missing emails |
+| `update-labels` | Update Gmail labels on existing emails |
 | `reindex` | Rebuild search index |
-| `rehash` | Compute hashes for integrity verification |
 
 ## Setup
 
@@ -219,10 +223,10 @@ Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
 # Verify all files match their stored hashes
 ownmail verify
 
-# Compute hashes for existing emails
-ownmail rehash
+# Auto-fix missing files and broken index entries
+ownmail verify --fix
 
-# Check if local matches server
+# Check if local archive matches server
 ownmail sync-check
 ```
 
