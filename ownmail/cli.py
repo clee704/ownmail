@@ -50,7 +50,6 @@ def cmd_setup(
     config: dict,
     config_path: Optional[Path],
     source_name: str = None,
-    credentials_file: Optional[Path] = None,
     method: Optional[str] = None,
 ) -> None:
     """Set up email source credentials.
@@ -63,31 +62,28 @@ def cmd_setup(
     print("ownmail - Setup")
     print("=" * 50 + "\n")
 
-    # If --method not specified and no credentials file, ask user
+    # If --method not specified, ask user
     if not method:
-        if credentials_file:
+        print("Choose a setup method:\n")
+        print("  [1] IMAP with App Password (recommended)")
+        print("      Works with Gmail, Outlook, Fastmail, and any IMAP server.")
+        print("      For Gmail: generate an App Password in your Google Account.")
+        print()
+        print("  [2] Gmail API with OAuth")
+        print("      Faster (batch downloads), read-only scope, native Gmail labels.")
+        print("      Requires creating a Google Cloud project (~15 min one-time setup).")
+        print()
+
+        choice = input("Your choice [1]: ").strip()
+        if choice == "2":
             method = "oauth"
         else:
-            print("Choose a setup method:\n")
-            print("  [1] IMAP with App Password (recommended)")
-            print("      Works with Gmail, Outlook, Fastmail, and any IMAP server.")
-            print("      For Gmail: generate an App Password in your Google Account.")
-            print()
-            print("  [2] Gmail API with OAuth")
-            print("      Faster (batch downloads), read-only scope, native Gmail labels.")
-            print("      Requires creating a Google Cloud project (~15 min one-time setup).")
-            print()
-
-            choice = input("Your choice [1]: ").strip()
-            if choice == "2":
-                method = "oauth"
-            else:
-                method = "imap"
+            method = "imap"
 
     if method == "imap":
         _setup_imap(keychain, config, config_path, source_name)
     else:
-        _setup_oauth(keychain, config, config_path, source_name, credentials_file)
+        _setup_oauth(keychain, config, config_path, source_name)
 
 
 def _update_or_create_config(
@@ -245,7 +241,6 @@ def _setup_oauth(
     config: dict,
     config_path: Optional[Path],
     source_name: str = None,
-    credentials_file: Optional[Path] = None,
 ) -> None:
     """Set up Gmail API with OAuth (advanced)."""
     print("─" * 50)
@@ -274,15 +269,25 @@ def _setup_oauth(
     has_client_creds = keychain.has_client_credentials("gmail")
 
     if not has_client_creds:
-        if credentials_file:
-            if not credentials_file.exists():
-                print(f"❌ Error: File not found: {credentials_file}")
+        # Ask user how to provide credentials
+        try:
+            file_path = input("Path to credentials JSON file (or press Enter to paste): ").strip()
+        except EOFError:
+            print("\n❌ Error: No input received")
+            sys.exit(1)
+
+        if file_path:
+            creds_path = Path(file_path)
+            if not creds_path.exists():
+                print(f"❌ Error: File not found: {creds_path}")
                 sys.exit(1)
 
-            with open(credentials_file) as f:
+            with open(creds_path) as f:
                 credentials_json = f.read()
+
+            print(f"  You can now delete: {creds_path}")
         else:
-            print("Paste your OAuth client credentials JSON below.")
+            print("\nPaste your OAuth client credentials JSON below.")
             print("(The JSON from step 6 above)")
             print("\nPaste the entire JSON content, then press Enter twice:\n")
 
@@ -312,8 +317,6 @@ def _setup_oauth(
             sys.exit(1)
 
         print("✓ OAuth client credentials saved to keychain")
-        if credentials_file:
-            print(f"  You can now delete: {credentials_file}")
         print()
 
     # Now set up an account
@@ -668,7 +671,7 @@ Examples:
         "--archive-root",
         type=Path,
         dest="archive_root",
-        help="Directory to store emails and database",
+        help=argparse.SUPPRESS,
     )
 
     parser.add_argument(
@@ -695,11 +698,6 @@ Examples:
         "--method",
         choices=["imap", "oauth"],
         help="Setup method: 'imap' (App Password, default) or 'oauth' (Gmail API)",
-    )
-    setup_parser.add_argument(
-        "--credentials-file",
-        type=Path,
-        help="Path to OAuth credentials JSON file (implies --method oauth)",
     )
 
     # download command
@@ -741,10 +739,11 @@ Examples:
         description="Rebuild the full-text search index from email files.",
     )
     rebuild_parser.add_argument("--file", type=Path, help="Index only this specific .eml file")
-    rebuild_parser.add_argument("--pattern", type=str, help="Index only files matching pattern")
+    rebuild_parser.add_argument("--pattern", type=str, help="Index only files whose path matches this pattern (e.g., '2024/09/*')")
     rebuild_parser.add_argument("--force", "-f", action="store_true", help="Rebuild all, even if indexed")
     rebuild_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
-    rebuild_parser.add_argument("--only", choices=["index", "dates"], help="Only rebuild index or only populate dates")
+    rebuild_parser.add_argument("--index-only", action="store_true", help="Only rebuild the search index (skip date population)")
+    rebuild_parser.add_argument("--date-only", action="store_true", help="Only populate email dates (skip indexing)")
 
     # verify command
     verify_parser = subparsers.add_parser(
@@ -753,7 +752,7 @@ Examples:
         description="Check file integrity, detect orphans, and validate database health.",
     )
     verify_parser.add_argument("--fix", action="store_true", help="Fix issues (remove stale DB entries, rebuild FTS)")
-    verify_parser.add_argument("--verbose", "-v", action="store_true", help="Show full list of issues")
+    verify_parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
 
     # sync-check command
     sync_check_parser = subparsers.add_parser(
@@ -761,7 +760,7 @@ Examples:
         help="Compare local archive with server to find missing emails",
         description="Compare your local archive with what's on the server. Shows emails that exist on the server but haven't been downloaded yet, and local emails that were deleted from the server.",
     )
-    sync_check_parser.add_argument("--verbose", "-v", action="store_true", help="Show full differences")
+    sync_check_parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
 
     # reset-sync command
     subparsers.add_parser(
@@ -783,7 +782,7 @@ Examples:
         help="List emails with unparseable dates",
         description="Show emails that couldn't have their date extracted.",
     )
-    unknown_parser.add_argument("--verbose", "-v", action="store_true", help="Show file paths and date headers")
+    unknown_parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
 
     # serve command
     serve_parser = subparsers.add_parser(
@@ -791,11 +790,11 @@ Examples:
         help="Start web interface",
         description="Start a local web server to browse and search emails.",
     )
-    serve_parser.add_argument("--archive-dir", type=Path, help="Override archive location")
+    serve_parser.add_argument("--archive-dir", type=Path, help=argparse.SUPPRESS)
     serve_parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
     serve_parser.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
     serve_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    serve_parser.add_argument("--block-images", action="store_true", help="Block external images by default")
+    serve_parser.add_argument("--block-images", action="store_true", help=argparse.SUPPRESS)
 
     # sources command
     sources_parser = subparsers.add_parser(
@@ -840,7 +839,7 @@ Examples:
     try:
         if args.command == "setup":
             keychain = KeychainStorage()
-            cmd_setup(keychain, config, config_path, args.source, args.credentials_file, getattr(args, 'method', None))
+            cmd_setup(keychain, config, config_path, args.source, getattr(args, 'method', None))
 
         elif args.command == "sources":
             if args.sources_cmd == "list":
@@ -859,7 +858,12 @@ Examples:
                 cmd_stats(archive, config, args.source)
             elif args.command == "rebuild":
                 from ownmail.commands import cmd_rebuild
-                cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug, args.only)
+                only = None
+                if args.date_only:
+                    only = "dates"
+                elif args.index_only:
+                    only = "index"
+                cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug, only)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify
                 cmd_verify(archive, args.fix, args.verbose)
