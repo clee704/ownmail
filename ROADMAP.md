@@ -10,7 +10,7 @@
 
 **Goal**: Support importing externally-sourced `.eml` files into the archive.
 
-Currently, only emails downloaded by the `backup` command are recognized. This means exports from Tuta, Thunderbird, or any other client can't be added to the archive. Since ownmail's philosophy is "files as source of truth," any `.eml` file should be a first-class citizen.
+Currently, only emails downloaded by the `download` command are recognized. This means exports from Tuta, Thunderbird, or any other client can't be added to the archive. Since ownmail's philosophy is "files as source of truth," any `.eml` file should be a first-class citizen.
 
 ### Commands
 

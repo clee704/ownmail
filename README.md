@@ -3,14 +3,14 @@
 **Own your mail.** Back up your email to plain files. Search and read them offline. Own them forever.
 
 ```
-$ ownmail backup
+$ ownmail download
 
-ownmail - Backup
+ownmail - Download
 ==================================================
 
 ✓ Authenticated with Gmail API
 Archive location: /Volumes/Secure/ownmail
-Previously backed up: 12,847 emails
+Previously downloaded: 12,847 emails
 
 Checking for new emails...
 
@@ -31,8 +31,8 @@ pipx install ownmail
 # 1. Set up credentials (one-time)
 ownmail setup
 
-# 2. Backup your emails
-ownmail backup
+# 2. Download your emails
+ownmail download
 
 # 3. Search
 ownmail search "invoice from:amazon"
@@ -74,7 +74,7 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | Command | Description |
 |---------|-------------|
 | `setup` | Set up email source credentials (App Password or OAuth) |
-| `backup` | Download new emails (with content-hash dedup) |
+| `download` | Download new emails (with content-hash dedup) |
 | `search "query"` | Full-text search |
 | `serve` | Browse and read your archive in the browser |
 | `stats` | Show archive statistics |
@@ -236,7 +236,7 @@ ownmail verify --fix
 ownmail sync-check
 ```
 
-### Resumable Backups
+### Resumable Downloads
 
 Press **Ctrl-C** anytime to pause:
 
@@ -246,11 +246,11 @@ Press **Ctrl-C** anytime to pause:
 
 ⏸ Stopping after current email...
 --------------------------------------------------
-Backup Paused!
+Download Paused!
   Downloaded: 1,342 emails
   Remaining: 13,658 emails
 
-  Run 'backup' again to resume.
+  Run 'download' again to resume.
 ```
 
 ### HTML Sanitization
