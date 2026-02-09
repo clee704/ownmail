@@ -9,6 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from ownmail import ArchiveDatabase
 
 
+def _eid(provider_id, account=""):
+    """Compute email_id from provider_id for tests."""
+    return ArchiveDatabase.make_email_id(account, provider_id)
+
+
 class TestArchiveDatabaseInit:
     """Tests for database initialization."""
 
@@ -40,7 +45,8 @@ class TestArchiveDatabaseInit:
             info = conn.execute("PRAGMA table_info(emails)").fetchall()
             columns = {row[1] for row in info}
 
-        assert "message_id" in columns
+        assert "email_id" in columns
+        assert "provider_id" in columns
         assert "filename" in columns
         assert "downloaded_at" in columns
         assert "content_hash" in columns
@@ -54,7 +60,7 @@ class TestArchiveDatabaseOperations:
         """Test marking an email as downloaded."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg123", "emails/2024/01/test.eml", "abc123hash")
+        db.mark_downloaded(_eid("msg123"), "msg123", "emails/2024/01/test.eml", "abc123hash")
 
         assert db.is_downloaded("msg123")
         assert not db.is_downloaded("nonexistent")
@@ -63,9 +69,9 @@ class TestArchiveDatabaseOperations:
         """Test getting all downloaded message IDs."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "file1.eml")
-        db.mark_downloaded("msg2", "file2.eml")
-        db.mark_downloaded("msg3", "file3.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "file2.eml")
+        db.mark_downloaded(_eid("msg3"), "msg3", "file3.eml")
 
         ids = db.get_downloaded_ids()
 
@@ -90,10 +96,10 @@ class TestFullTextSearch:
     def test_index_email(self, temp_dir):
         """Test indexing an email."""
         db = ArchiveDatabase(temp_dir)
-        db.mark_downloaded("msg1", "test.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
 
         db.index_email(
-            message_id="msg1",
+            email_id=_eid("msg1"),
             subject="Meeting Tomorrow",
             sender="boss@example.com",
             recipients="team@example.com",
@@ -102,15 +108,15 @@ class TestFullTextSearch:
             attachments="agenda.pdf",
         )
 
-        assert db.is_indexed("msg1")
+        assert db.is_indexed(_eid("msg1"))
 
     def test_search_by_subject(self, temp_dir):
         """Test searching by subject."""
         db = ArchiveDatabase(temp_dir)
-        db.mark_downloaded("msg1", "test.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
 
         db.index_email(
-            message_id="msg1",
+            email_id=_eid("msg1"),
             subject="Invoice from Amazon",
             sender="orders@amazon.com",
             recipients="me@example.com",
@@ -121,15 +127,15 @@ class TestFullTextSearch:
 
         results = db.search("invoice", include_unknown=True)
         assert len(results) == 1
-        assert results[0][0] == "msg1"
+        assert results[0][0] == _eid("msg1")
 
     def test_search_by_sender(self, temp_dir):
         """Test searching by sender using from: prefix."""
         db = ArchiveDatabase(temp_dir)
-        db.mark_downloaded("msg1", "test.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
 
         db.index_email(
-            message_id="msg1",
+            email_id=_eid("msg1"),
             subject="Hello",
             sender="john@example.com",
             recipients="me@example.com",
@@ -154,9 +160,9 @@ class TestFullTextSearch:
         db = ArchiveDatabase(temp_dir)
 
         # Email with attachment
-        db.mark_downloaded("msg1", "test1.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
         db.index_email(
-            message_id="msg1",
+            email_id=_eid("msg1"),
             subject="Report",
             sender="alice@example.com",
             recipients="bob@example.com",
@@ -166,9 +172,9 @@ class TestFullTextSearch:
         )
 
         # Email without attachment
-        db.mark_downloaded("msg2", "test2.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "test2.eml")
         db.index_email(
-            message_id="msg2",
+            email_id=_eid("msg2"),
             subject="Hi",
             sender="alice@example.com",
             recipients="bob@example.com",
@@ -179,16 +185,16 @@ class TestFullTextSearch:
 
         results = db.search("has:attachment", include_unknown=True)
         assert len(results) == 1
-        assert results[0][0] == "msg1"
+        assert results[0][0] == _eid("msg1")
 
     def test_search_attachment_type(self, temp_dir):
         """Test attachment:type filter finds emails with specific attachment types."""
         db = ArchiveDatabase(temp_dir)
 
         # Email with PDF
-        db.mark_downloaded("msg1", "test1.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
         db.index_email(
-            message_id="msg1",
+            email_id=_eid("msg1"),
             subject="Report",
             sender="alice@example.com",
             recipients="bob@example.com",
@@ -198,9 +204,9 @@ class TestFullTextSearch:
         )
 
         # Email with Excel
-        db.mark_downloaded("msg2", "test2.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "test2.eml")
         db.index_email(
-            message_id="msg2",
+            email_id=_eid("msg2"),
             subject="Spreadsheet",
             sender="alice@example.com",
             recipients="bob@example.com",
@@ -211,19 +217,19 @@ class TestFullTextSearch:
 
         results = db.search("attachment:pdf", include_unknown=True)
         assert len(results) == 1
-        assert results[0][0] == "msg1"
+        assert results[0][0] == _eid("msg1")
 
         results = db.search("attachment:xlsx", include_unknown=True)
         assert len(results) == 1
-        assert results[0][0] == "msg2"
+        assert results[0][0] == _eid("msg2")
 
     def test_clear_index(self, temp_dir):
         """Test clearing the search index."""
         db = ArchiveDatabase(temp_dir)
-        db.mark_downloaded("msg1", "test.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
 
         db.index_email(
-            message_id="msg1",
+            email_id=_eid("msg1"),
             subject="Test",
             sender="test@test.com",
             recipients="",
@@ -232,11 +238,11 @@ class TestFullTextSearch:
             attachments="",
         )
 
-        assert db.is_indexed("msg1")
+        assert db.is_indexed(_eid("msg1"))
 
         db.clear_index()
 
-        assert not db.is_indexed("msg1")
+        assert not db.is_indexed(_eid("msg1"))
 
 
 class TestDatabaseStats:
@@ -254,13 +260,13 @@ class TestDatabaseStats:
         """Test stats with some data."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "f1.eml")
-        db.mark_downloaded("msg2", "f2.eml")
-        db.index_email("msg1", "Subj", "From", "To", "Date", "Body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "f1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "f2.eml")
+        db.index_email(_eid("msg1"), "Subj", "From", "To", "Date", "Body", "")
 
         # Also set indexed_hash for msg1 (simulates actual index flow)
         with sqlite3.connect(db.db_path) as conn:
-            conn.execute("UPDATE emails SET indexed_hash = 'hash1' WHERE message_id = 'msg1'")
+            conn.execute(f"UPDATE emails SET indexed_hash = 'hash1' WHERE email_id = '{_eid('msg1')}'")
 
         stats = db.get_stats()
 
@@ -271,9 +277,9 @@ class TestDatabaseStats:
         """Test stats filtered by account."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg2", "f2.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg3", "f3.eml", account="bob@gmail.com")
+        db.mark_downloaded(_eid("msg1", "alice@gmail.com"), "msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg2", "alice@gmail.com"), "msg2", "f2.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg3", "bob@gmail.com"), "msg3", "f3.eml", account="bob@gmail.com")
 
         stats_alice = db.get_stats(account="alice@gmail.com")
         stats_bob = db.get_stats(account="bob@gmail.com")
@@ -299,9 +305,9 @@ class TestPerAccountOperations:
         """Test getting downloaded IDs filtered by account."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg2", "f2.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg3", "f3.eml", account="bob@gmail.com")
+        db.mark_downloaded(_eid("msg1", "alice@gmail.com"), "msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg2", "alice@gmail.com"), "msg2", "f2.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg3", "bob@gmail.com"), "msg3", "f3.eml", account="bob@gmail.com")
 
         alice_ids = db.get_downloaded_ids(account="alice@gmail.com")
         bob_ids = db.get_downloaded_ids(account="bob@gmail.com")
@@ -315,7 +321,7 @@ class TestPerAccountOperations:
         """Test is_downloaded with account filter."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg1", "alice@gmail.com"), "msg1", "f1.eml", account="alice@gmail.com")
 
         assert db.is_downloaded("msg1", account="alice@gmail.com") is True
         assert db.is_downloaded("msg1", account="bob@gmail.com") is False
@@ -340,33 +346,33 @@ class TestSearchSorting:
         db = ArchiveDatabase(temp_dir)
 
         # email_date determines sort order
-        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
-        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
-        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
-        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
+        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
+        db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
+        db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 
         results = db.search("test", sort="date_desc", include_unknown=True)
 
         assert len(results) == 2
         # Newest first
-        assert results[0][0] == "msg2"
-        assert results[1][0] == "msg1"
+        assert results[0][0] == _eid("msg2")
+        assert results[1][0] == _eid("msg1")
 
     def test_search_sort_date_asc(self, temp_dir):
         """Test search with date ascending sort."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
-        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
-        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
-        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
+        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
+        db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
+        db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 
         results = db.search("test", sort="date_asc", include_unknown=True)
 
         assert len(results) == 2
         # Oldest first
-        assert results[0][0] == "msg1"
-        assert results[1][0] == "msg2"
+        assert results[0][0] == _eid("msg1")
+        assert results[1][0] == _eid("msg2")
 
 
 class TestSearchDateFilters:
@@ -376,31 +382,31 @@ class TestSearchDateFilters:
         """Test search with after: date filter."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00")
-        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00")
-        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
-        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00")
+        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00")
+        db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
+        db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 
         results = db.search("test after:2024-02-01", include_unknown=True)
 
         # Only msg2 is after 2024-02-01
         assert len(results) == 1
-        assert results[0][0] == "msg2"
+        assert results[0][0] == _eid("msg2")
 
     def test_search_before_filter(self, temp_dir):
         """Test search with before: date filter."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00")
-        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00")
-        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
-        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00")
+        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00")
+        db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
+        db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 
         results = db.search("test before:2024-02-01", include_unknown=True)
 
         # Only msg1 is before 2024-02-01
         assert len(results) == 1
-        assert results[0][0] == "msg1"
+        assert results[0][0] == _eid("msg1")
 
 
 class TestSearchLabelFilter:
@@ -410,29 +416,29 @@ class TestSearchLabelFilter:
         """Test search with label: only (no other terms)."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml")
-        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml")
-        db.index_email("msg1", "Test1", "from", "to", "date", "body", "", labels="INBOX,IMPORTANT")
-        db.index_email("msg2", "Test2", "from", "to", "date", "body", "", labels="INBOX")
+        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml")
+        db.index_email(_eid("msg1"), "Test1", "from", "to", "date", "body", "", labels="INBOX,IMPORTANT")
+        db.index_email(_eid("msg2"), "Test2", "from", "to", "date", "body", "", labels="INBOX")
 
         results = db.search("label:IMPORTANT", include_unknown=True)
 
         assert len(results) == 1
-        assert results[0][0] == "msg1"
+        assert results[0][0] == _eid("msg1")
 
     def test_search_label_with_text(self, temp_dir):
         """Test search with label: and text query."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml")
-        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml")
-        db.index_email("msg1", "Invoice", "from", "to", "date", "body", "", labels="IMPORTANT")
-        db.index_email("msg2", "Invoice", "from", "to", "date", "body", "", labels="INBOX")
+        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml")
+        db.index_email(_eid("msg1"), "Invoice", "from", "to", "date", "body", "", labels="IMPORTANT")
+        db.index_email(_eid("msg2"), "Invoice", "from", "to", "date", "body", "", labels="INBOX")
 
         results = db.search("invoice label:IMPORTANT", include_unknown=True)
 
         assert len(results) == 1
-        assert results[0][0] == "msg1"
+        assert results[0][0] == _eid("msg1")
 
 
 class TestAccountManagement:
@@ -442,9 +448,9 @@ class TestAccountManagement:
         """Test getting list of accounts."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg2", "f2.eml", account="bob@gmail.com")
-        db.mark_downloaded("msg3", "f3.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg1", "alice@gmail.com"), "msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg2", "bob@gmail.com"), "msg2", "f2.eml", account="bob@gmail.com")
+        db.mark_downloaded(_eid("msg3", "alice@gmail.com"), "msg3", "f3.eml", account="alice@gmail.com")
 
         accounts = db.get_accounts()
 
@@ -454,10 +460,10 @@ class TestAccountManagement:
         """Test getting email count per account."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg2", "f2.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg3", "f3.eml", account="bob@gmail.com")
-        db.mark_downloaded("msg4", "f4.eml")  # Legacy, no account
+        db.mark_downloaded(_eid("msg1", "alice@gmail.com"), "msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg2", "alice@gmail.com"), "msg2", "f2.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg3", "bob@gmail.com"), "msg3", "f3.eml", account="bob@gmail.com")
+        db.mark_downloaded(_eid("msg4"), "msg4", "f4.eml")  # Legacy, no account
 
         counts = db.get_email_count_by_account()
 
@@ -473,18 +479,18 @@ class TestSearchWithAccount:
         """Test that search can filter by account."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
-        db.mark_downloaded("msg2", "f2.eml", account="bob@gmail.com")
+        db.mark_downloaded(_eid("msg1", "alice@gmail.com"), "msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded(_eid("msg2", "bob@gmail.com"), "msg2", "f2.eml", account="bob@gmail.com")
 
-        db.index_email("msg1", "Invoice Alice", "From", "To", "Date", "Body", "")
-        db.index_email("msg2", "Invoice Bob", "From", "To", "Date", "Body", "")
+        db.index_email(_eid("msg1", "alice@gmail.com"), "Invoice Alice", "From", "To", "Date", "Body", "")
+        db.index_email(_eid("msg2", "bob@gmail.com"), "Invoice Bob", "From", "To", "Date", "Body", "")
 
         results_alice = db.search("invoice", account="alice@gmail.com", include_unknown=True)
         results_bob = db.search("invoice", account="bob@gmail.com", include_unknown=True)
         results_all = db.search("invoice", include_unknown=True)
 
         assert len(results_alice) == 1
-        assert results_alice[0][0] == "msg1"
+        assert results_alice[0][0] == _eid("msg1", "alice@gmail.com")
         assert len(results_bob) == 1
-        assert results_bob[0][0] == "msg2"
+        assert results_bob[0][0] == _eid("msg2", "bob@gmail.com")
         assert len(results_all) == 2

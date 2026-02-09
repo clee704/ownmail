@@ -11,6 +11,12 @@ from ownmail.commands import (
     cmd_reindex,
     cmd_verify,
 )
+from ownmail.database import ArchiveDatabase
+
+
+def _eid(provider_id, account=""):
+    """Compute email_id from provider_id for tests."""
+    return ArchiveDatabase.make_email_id(account, provider_id)
 
 
 class TestPrintFileList:
@@ -64,7 +70,7 @@ class TestCmdReindex:
 
         # Mark as downloaded
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path)
 
         # Reindex single file
         cmd_reindex(archive, file_path=email_path)
@@ -89,11 +95,11 @@ class TestCmdReindex:
         email_path.write_bytes(sample_eml_simple)
 
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="abc123")
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="abc123")
 
         # Set indexed_hash so it looks already indexed
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("UPDATE emails SET indexed_hash = 'abc123' WHERE message_id = 'test123'")
+            conn.execute("UPDATE emails SET indexed_hash = 'abc123' WHERE email_id = ?", (_eid("test123"),))
             conn.commit()
 
         # Without force, should skip
@@ -118,7 +124,7 @@ class TestCmdReindex:
             email_path.write_bytes(sample_eml_simple)
 
             rel_path = str(email_path.relative_to(temp_dir))
-            archive.db.mark_downloaded(f"msg_{year}", rel_path, content_hash=None)
+            archive.db.mark_downloaded(_eid(f"msg_{year}"), f"msg_{year}", rel_path, content_hash=None)
 
         # Reindex only 2024
         cmd_reindex(archive, pattern="2024/*")
@@ -156,7 +162,7 @@ class TestCmdVerify:
         archive = EmailArchive(temp_dir, {})
 
         # Add email record but don't create the file
-        archive.db.mark_downloaded("test123", "emails/2024/01/missing.eml", content_hash="abc123")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/missing.eml", content_hash="abc123")
 
         cmd_verify(archive)
         captured = capsys.readouterr()
@@ -174,7 +180,7 @@ class TestCmdVerify:
 
         # Store with different hash
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="wrong_hash_value")
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="wrong_hash_value")
 
         cmd_verify(archive)
         captured = capsys.readouterr()
@@ -195,7 +201,7 @@ class TestCmdVerify:
         # Store with correct hash
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=content_hash)
 
         cmd_verify(archive)
         captured = capsys.readouterr()
@@ -212,7 +218,7 @@ class TestCmdVerify:
         indexed_path = emails_dir / "indexed.eml"
         indexed_path.write_bytes(sample_eml_simple)
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
-        archive.db.mark_downloaded("indexed123", str(indexed_path.relative_to(temp_dir)), content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("indexed123"), "indexed123", str(indexed_path.relative_to(temp_dir)), content_hash=content_hash)
 
         # Create orphaned email file not in database
         (emails_dir / "orphaned.eml").write_bytes(b"Orphaned email")
@@ -246,7 +252,7 @@ class TestCmdRehash:
 
         # Store without hash
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=None)
 
         cmd_rehash(archive)
         captured = capsys.readouterr()
@@ -255,7 +261,8 @@ class TestCmdRehash:
         # Verify hash was stored
         with sqlite3.connect(archive.db.db_path) as conn:
             result = conn.execute(
-                "SELECT content_hash FROM emails WHERE message_id = 'test123'"
+                "SELECT content_hash FROM emails WHERE email_id = ?",
+                (_eid("test123"),)
             ).fetchone()
 
         expected_hash = hashlib.sha256(sample_eml_simple).hexdigest()
@@ -266,7 +273,7 @@ class TestCmdRehash:
         archive = EmailArchive(temp_dir, {})
 
         # Add record without creating file
-        archive.db.mark_downloaded("test123", "emails/missing.eml", content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", "emails/missing.eml", content_hash=None)
 
         cmd_rehash(archive)
         captured = capsys.readouterr()
@@ -288,7 +295,7 @@ class TestCmdDbCheck:
         archive = EmailArchive(temp_dir, {})
 
         # Add email without indexing it (no subject set)
-        archive.db.mark_downloaded("test123", "test.eml")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
 
         cmd_db_check(archive, verbose=True)
         captured = capsys.readouterr()
@@ -299,9 +306,9 @@ class TestCmdDbCheck:
         archive = EmailArchive(temp_dir, {})
 
         # Add email and index it
-        archive.db.mark_downloaded("test123", "test.eml")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
         archive.db.index_email(
-            "test123", "Subject", "sender@test.com", "recipient@test.com",
+            _eid("test123"), "Subject", "sender@test.com", "recipient@test.com",
             "2024-01-01", "Body text", ""
         )
 
@@ -326,9 +333,9 @@ class TestCmdDbCheck:
         archive = EmailArchive(temp_dir, {})
 
         # Add email and index it
-        archive.db.mark_downloaded("test123", "test.eml")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
         archive.db.index_email(
-            "test123", "Subject", "sender@test.com", "recipient@test.com",
+            _eid("test123"), "Subject", "sender@test.com", "recipient@test.com",
             "2024-01-01", "Body text", ""
         )
 
@@ -357,7 +364,7 @@ class TestCmdDbCheck:
         archive = EmailArchive(temp_dir, {})
 
         # Add email without FTS entry (not indexed)
-        archive.db.mark_downloaded("test123", "test.eml")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
 
         cmd_db_check(archive)
         captured = capsys.readouterr()
@@ -380,9 +387,9 @@ class TestCmdDbCheck:
 
         with sqlite3.connect(archive.db.db_path) as conn:
             conn.execute("""
-                INSERT INTO emails (message_id, filename, content_hash, indexed_hash)
-                VALUES (?, ?, ?, 'different_hash')
-            """, ("test123", rel_path, content_hash))
+                INSERT INTO emails (email_id, provider_id, filename, content_hash, indexed_hash)
+                VALUES (?, ?, ?, ?, 'different_hash')
+            """, (_eid("test123"), "test123", rel_path, content_hash))
             conn.commit()
 
         cmd_db_check(archive)
@@ -403,9 +410,9 @@ class TestCmdDbCheck:
 
         with sqlite3.connect(archive.db.db_path) as conn:
             conn.execute("""
-                INSERT INTO emails (message_id, filename, content_hash)
-                VALUES (?, ?, NULL)
-            """, ("test456", rel_path))
+                INSERT INTO emails (email_id, provider_id, filename, content_hash)
+                VALUES (?, ?, ?, NULL)
+            """, (_eid("test456"), "test456", rel_path))
             conn.commit()
 
         cmd_db_check(archive)
@@ -437,7 +444,7 @@ class TestCmdVerifyEdgeCases:
         # Store with correct hash
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=content_hash)
 
         cmd_verify(archive)
         captured = capsys.readouterr()
@@ -448,7 +455,7 @@ class TestCmdVerifyEdgeCases:
         archive = EmailArchive(temp_dir, {})
 
         # Add to DB but don't create file
-        archive.db.mark_downloaded("missing123", "emails/2024/01/missing.eml", content_hash="abc")
+        archive.db.mark_downloaded(_eid("missing123"), "missing123", "emails/2024/01/missing.eml", content_hash="abc")
 
         cmd_verify(archive)
         capsys.readouterr()
@@ -466,7 +473,7 @@ class TestCmdVerifyEdgeCases:
 
         # Store with wrong hash
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="wrong_hash")
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="wrong_hash")
 
         cmd_verify(archive)
         capsys.readouterr()
@@ -484,7 +491,7 @@ class TestCmdVerifyEdgeCases:
 
         # Store without hash
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=None)
 
         cmd_verify(archive)
         capsys.readouterr()
@@ -527,7 +534,7 @@ class TestCmdRehashEdgeCases:
 
         # Store without hash
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=None)
 
         cmd_rehash(archive)
         captured = capsys.readouterr()
@@ -547,7 +554,7 @@ class TestCmdRehashEdgeCases:
         # Store with hash
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=content_hash)
 
         cmd_rehash(archive)
         capsys.readouterr()
@@ -558,7 +565,7 @@ class TestCmdRehashEdgeCases:
         archive = EmailArchive(temp_dir, {})
 
         # Add to DB without hash but don't create file
-        archive.db.mark_downloaded("missing123", "emails/2024/01/missing.eml", content_hash=None)
+        archive.db.mark_downloaded(_eid("missing123"), "missing123", "emails/2024/01/missing.eml", content_hash=None)
 
         cmd_rehash(archive)
         captured = capsys.readouterr()
@@ -578,7 +585,7 @@ class TestCmdRehashEdgeCases:
 
         # Store without hash
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=None)
 
         cmd_rehash(archive)
 
@@ -586,8 +593,8 @@ class TestCmdRehashEdgeCases:
         expected_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         with sqlite3.connect(archive.db.db_path) as conn:
             stored_hash = conn.execute(
-                "SELECT content_hash FROM emails WHERE message_id = ?",
-                ("test123",)
+                "SELECT content_hash FROM emails WHERE email_id = ?",
+                (_eid("test123"),)
             ).fetchone()[0]
         assert stored_hash == expected_hash
 
@@ -647,8 +654,8 @@ class TestCmdSyncCheck:
         archive = EmailArchive(temp_dir, config)
 
         # Add messages to local archive
-        archive.db.mark_downloaded("msg1", "emails/2024/01/msg1.eml", content_hash="abc", account="test@gmail.com")
-        archive.db.mark_downloaded("msg2", "emails/2024/01/msg2.eml", content_hash="def", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("msg1", "test@gmail.com"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("msg2", "test@gmail.com"), "msg2", "emails/2024/01/msg2.eml", content_hash="def", account="test@gmail.com")
 
         with patch("ownmail.commands.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
@@ -722,7 +729,7 @@ class TestCmdAddLabels:
 
         # Add to database
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="abc", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("test123", "test@gmail.com"), "test123", rel_path, content_hash="abc", account="test@gmail.com")
 
         with patch("ownmail.commands.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
@@ -763,7 +770,7 @@ Body
 
         # Add to database
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="abc", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("test123", "test@gmail.com"), "test123", rel_path, content_hash="abc", account="test@gmail.com")
 
         with patch("ownmail.commands.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
@@ -784,7 +791,7 @@ class TestCmdDbCheckVerbose:
 
         # Create multiple emails without indexing
         for i in range(5):
-            archive.db.mark_downloaded(f"msg{i}", f"test{i}.eml")
+            archive.db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", f"test{i}.eml")
 
         cmd_db_check(archive, verbose=True)
         captured = capsys.readouterr()
@@ -807,7 +814,7 @@ class TestCmdVerifyVerbose:
             email_path.write_bytes(sample_eml_simple)
 
             rel_path = str(email_path.relative_to(temp_dir))
-            archive.db.mark_downloaded(f"test{i}", rel_path, content_hash="wrong_hash")
+            archive.db.mark_downloaded(_eid(f"test{i}"), f"test{i}", rel_path, content_hash="wrong_hash")
 
         cmd_verify(archive, verbose=True)
         captured = capsys.readouterr()
@@ -829,7 +836,7 @@ class TestCmdReindexDebug:
         email_path.write_bytes(sample_eml_simple)
 
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=None)
 
         cmd_reindex(archive, debug=True)
         captured = capsys.readouterr()
@@ -883,8 +890,8 @@ class TestCmdSyncCheckDifferences:
         archive = EmailArchive(temp_dir, config)
 
         # Add local emails
-        archive.db.mark_downloaded("local1", "emails/2024/01/local1.eml", content_hash="abc", account="test@gmail.com")
-        archive.db.mark_downloaded("local2", "emails/2024/01/local2.eml", content_hash="def", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("local1", "test@gmail.com"), "local1", "emails/2024/01/local1.eml", content_hash="abc", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("local2", "test@gmail.com"), "local2", "emails/2024/01/local2.eml", content_hash="def", account="test@gmail.com")
 
         with patch("ownmail.commands.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
@@ -932,7 +939,7 @@ class TestCmdReindexEdgeCases:
         archive = EmailArchive(temp_dir, {})
 
         # Add to DB but don't create file
-        archive.db.mark_downloaded("missing123", "emails/2024/01/missing.eml", content_hash=None)
+        archive.db.mark_downloaded(_eid("missing123"), "missing123", "emails/2024/01/missing.eml", content_hash=None)
 
         cmd_reindex(archive)
         captured = capsys.readouterr()
@@ -952,15 +959,15 @@ class TestCmdReindexEdgeCases:
 
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=content_hash)
 
         cmd_reindex(archive)
 
         # Check indexed_hash was set
         with sqlite3.connect(archive.db.db_path) as conn:
             result = conn.execute(
-                "SELECT indexed_hash FROM emails WHERE message_id = ?",
-                ("test123",)
+                "SELECT indexed_hash FROM emails WHERE email_id = ?",
+                (_eid("test123"),)
             ).fetchone()
         assert result[0] == content_hash
 
@@ -1057,7 +1064,7 @@ class TestCmdPopulateDates:
         email_path.write_bytes(sample_eml_simple)
 
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="abc123")
+        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="abc123")
 
         cmd_populate_dates(archive)
         captured = capsys.readouterr()

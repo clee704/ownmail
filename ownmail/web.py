@@ -1066,7 +1066,7 @@ def create_app(
                     date_short = date_str.split()[0] if date_str else ""
 
             results.append({
-                "message_id": msg_id,
+                "email_id": msg_id,
                 "filename": filename,
                 "subject": subject,
                 "sender": sender,
@@ -1092,22 +1092,22 @@ def create_app(
             hide_relevance=not has_fts_terms,
         )
 
-    @app.route("/email/<message_id>")
-    def view_email(message_id: str):
+    @app.route("/email/<email_id>")
+    def view_email(email_id: str):
         stats = get_cached_stats()
 
         # Check email cache first
-        cached = email_cache.get(message_id)
+        cached = email_cache.get(email_id)
         if cached is not None:
             if verbose:
-                print(f"[verbose] Email cache HIT for: {message_id}", flush=True)
+                print(f"[verbose] Email cache HIT for: {email_id}", flush=True)
             email_data = cached
         else:
             # Get email file path from database
             if verbose:
-                print(f"[verbose] Looking up email {message_id}...", flush=True)
+                print(f"[verbose] Looking up email {email_id}...", flush=True)
                 start = time.time()
-            email_info = archive.db.get_email_by_id(message_id)
+            email_info = archive.db.get_email_by_id(email_id)
             if verbose:
                 print(f"[verbose] DB lookup took {time.time()-start:.2f}s", flush=True)
             if not email_info:
@@ -1294,7 +1294,7 @@ def create_app(
                 "attachments": attachments,
                 "cid_images": cid_images,
             }
-            email_cache.set(message_id, email_data)
+            email_cache.set(email_id, email_data)
 
         # Block external images if configured (do this after cache since it depends on config)
         body_html = email_data.get("body_html")
@@ -1349,7 +1349,7 @@ def create_app(
         return render_template(
             "email.html",
             stats=stats,
-            message_id=message_id,
+            email_id=email_id,
             subject=email_data["subject"],
             sender=email_data["sender"],
             sender_name=sender_name,
@@ -1370,10 +1370,10 @@ def create_app(
             back_url=back_url,
         )
 
-    @app.route("/raw/<message_id>")
-    def view_raw(message_id: str):
+    @app.route("/raw/<email_id>")
+    def view_raw(email_id: str):
         """Show the original .eml file with filepath."""
-        email_info = archive.db.get_email_by_id(message_id)
+        email_info = archive.db.get_email_by_id(email_id)
         if not email_info:
             abort(404)
 
@@ -1416,10 +1416,10 @@ def create_app(
 </body>
 </html>'''
 
-    @app.route("/download/<message_id>")
-    def download_eml(message_id: str):
+    @app.route("/download/<email_id>")
+    def download_eml(email_id: str):
         """Download the original .eml file."""
-        email_info = archive.db.get_email_by_id(message_id)
+        email_info = archive.db.get_email_by_id(email_id)
         if not email_info:
             abort(404)
 
@@ -1429,14 +1429,14 @@ def create_app(
         if not filepath.exists():
             abort(404)
 
-        # Use the original filename or generate one from message_id
+        # Use the original filename or generate one from email_id
         download_name = filepath.name
         return send_file(filepath, as_attachment=True, download_name=download_name)
 
-    @app.route("/attachment/<message_id>/<int:index>")
-    def download_attachment(message_id: str, index: int):
+    @app.route("/attachment/<email_id>/<int:index>")
+    def download_attachment(email_id: str, index: int):
         # Get email file path
-        email_info = archive.db.get_email_by_id(message_id)
+        email_info = archive.db.get_email_by_id(email_id)
         if not email_info:
             abort(404)
 

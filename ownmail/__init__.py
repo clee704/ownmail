@@ -42,7 +42,7 @@ def _create_gmail_archive_compat():
 
         def index_email(
             self,
-            message_id: str,
+            email_id: str,
             filepath: Path,
             update_hash: bool = True,
             debug: bool = False,
@@ -67,7 +67,7 @@ def _create_gmail_archive_compat():
 
                 t0 = time.time()
                 self.db.index_email(
-                    message_id=message_id,
+                    email_id=email_id,
                     subject=parsed["subject"],
                     sender=parsed["sender"],
                     recipients=parsed["recipients"],
@@ -83,15 +83,15 @@ def _create_gmail_archive_compat():
                 if update_hash and new_hash:
                     if conn:
                         conn.execute(
-                            "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE message_id = ?",
-                            (new_hash, new_hash, message_id)
+                            "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE email_id = ?",
+                            (new_hash, new_hash, email_id)
                         )
                     else:
                         import sqlite3 as sql
                         with sql.connect(self.db.db_path) as c:
                             c.execute(
-                                "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE message_id = ?",
-                                (new_hash, new_hash, message_id)
+                                "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE email_id = ?",
+                                (new_hash, new_hash, email_id)
                             )
                             c.commit()
                 t_update = time.time() - t0

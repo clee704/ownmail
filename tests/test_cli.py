@@ -10,6 +10,11 @@ from ownmail.cli import (
     cmd_sources_list,
     cmd_stats,
 )
+from ownmail.database import ArchiveDatabase
+
+
+def _eid(provider_id, account=""):
+    return ArchiveDatabase.make_email_id(account, provider_id)
 
 
 class TestCmdSearch:
@@ -31,9 +36,9 @@ class TestCmdSearch:
         archive = EmailArchive(temp_dir, {})
 
         # Add an indexed email
-        archive.db.mark_downloaded("test123", "test.eml", email_date="2024-01-15T00:00:00")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml", email_date="2024-01-15T00:00:00")
         archive.db.index_email(
-            message_id="test123",
+            email_id=_eid("test123"),
             subject="Test Invoice",
             sender="billing@example.com",
             recipients="user@test.com",
@@ -72,7 +77,7 @@ class TestCmdStats:
             ]
         }
         archive = EmailArchive(temp_dir, config)
-        archive.db.mark_downloaded("msg1", "test.eml", account="test@gmail.com")
+        archive.db.mark_downloaded(_eid("msg1", "test@gmail.com"), "msg1", "test.eml", account="test@gmail.com")
 
         cmd_stats(archive, config)
         captured = capsys.readouterr()

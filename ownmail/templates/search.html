@@ -69,7 +69,7 @@
     {% elif results %}
             <ul class="ownmail-email-list">
             {% for result in results %}
-                <li class="ownmail-email-row" onclick="window.location='/email/{{ result.message_id }}'">
+                <li class="ownmail-email-row" onclick="window.location='/email/{{ result.email_id }}'">
                     <span class="ownmail-email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
                     <span class="ownmail-email-row-content">
                         <span class="ownmail-email-subject">{{ result.subject or '(No subject)' }}</span>

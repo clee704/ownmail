@@ -2,6 +2,12 @@
 
 from unittest.mock import MagicMock
 
+from ownmail.database import ArchiveDatabase
+
+
+def _eid(provider_id, account=""):
+    return ArchiveDatabase.make_email_id(account, provider_id)
+
 
 class TestWebSearchSortingV3:
     """Tests for web search sorting functionality."""
@@ -35,7 +41,7 @@ class TestWebCleanSnippet:
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = [
             {
-                "email_message_id": "test1",
+                "email_id": "test1",
                 "subject": "Test",
                 "sender": "a@b.com",
                 "recipients": "c@d.com",
@@ -131,8 +137,8 @@ class TestDatabaseGetDownloadedIds:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file1.eml")
-        db.mark_downloaded("msg2", "file2.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "file2.eml")
 
         ids = db.get_downloaded_ids()
         assert "msg1" in ids
@@ -191,8 +197,8 @@ class TestDatabaseGetEmailCount:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file1.eml")
-        db.mark_downloaded("msg2", "file2.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "file2.eml")
         count = db.get_email_count()
         assert count == 2
 
@@ -205,17 +211,17 @@ class TestDatabaseIsIndexedV3:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
-        assert db.is_indexed("msg1") is False
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
+        assert db.is_indexed(_eid("msg1")) is False
 
     def test_is_indexed_true(self, tmp_path):
         """Test is_indexed returns True for indexed email."""
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
-        db.index_email("msg1", "Subject", "from", "to", "date", "body", "")
-        assert db.is_indexed("msg1") is True
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
+        db.index_email(_eid("msg1"), "Subject", "from", "to", "date", "body", "")
+        assert db.is_indexed(_eid("msg1")) is True
 
 
 class TestDatabaseGetEmailByIdV3:
@@ -226,10 +232,10 @@ class TestDatabaseGetEmailByIdV3:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
-        result = db.get_email_by_id("msg1")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
+        result = db.get_email_by_id(_eid("msg1"))
         assert result is not None
-        assert result[0] == "msg1"
+        assert result[0] == _eid("msg1")
 
     def test_get_email_by_id_not_exists(self, tmp_path):
         """Test getting non-existing email by ID."""
@@ -411,7 +417,7 @@ class TestDatabaseIsDownloaded:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
         assert db.is_downloaded("msg1") is True
 
 
@@ -483,7 +489,7 @@ class TestDatabaseAccounts:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml", account="test@example.com")
+        db.mark_downloaded(_eid("msg1", "test@example.com"), "msg1", "file.eml", account="test@example.com")
         result = db.get_accounts()
         assert "test@example.com" in result
 
@@ -496,13 +502,13 @@ class TestDatabaseClearIndex:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
-        db.index_email("msg1", "Subject", "from", "to", "date", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
+        db.index_email(_eid("msg1"), "Subject", "from", "to", "date", "body", "")
 
         db.clear_index()
 
         # Email should still exist but not be indexed
-        assert db.is_indexed("msg1") is False
+        assert db.is_indexed(_eid("msg1")) is False
         assert db.is_downloaded("msg1") is True
 
 
@@ -615,9 +621,9 @@ class TestDatabaseEmailCountByAccount:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file1.eml", account="acct1@test.com")
-        db.mark_downloaded("msg2", "file2.eml", account="acct1@test.com")
-        db.mark_downloaded("msg3", "file3.eml", account="acct2@test.com")
+        db.mark_downloaded(_eid("msg1", "acct1@test.com"), "msg1", "file1.eml", account="acct1@test.com")
+        db.mark_downloaded(_eid("msg2", "acct1@test.com"), "msg2", "file2.eml", account="acct1@test.com")
+        db.mark_downloaded(_eid("msg3", "acct2@test.com"), "msg3", "file3.eml", account="acct2@test.com")
 
         result = db.get_email_count_by_account()
         assert result.get("acct1@test.com") == 2
@@ -912,9 +918,9 @@ class TestDatabaseMarkDownloadedV3:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
 
-        result = db.get_email_by_id("msg1")
+        result = db.get_email_by_id(_eid("msg1"))
         assert result is not None
 
     def test_mark_downloaded_with_account(self, tmp_path):
@@ -922,9 +928,9 @@ class TestDatabaseMarkDownloadedV3:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml", account="test@example.com")
+        db.mark_downloaded(_eid("msg1", "test@example.com"), "msg1", "file.eml", account="test@example.com")
 
-        result = db.get_email_by_id("msg1")
+        result = db.get_email_by_id(_eid("msg1", "test@example.com"))
         assert result is not None
 
 
@@ -1105,9 +1111,9 @@ class TestDatabaseIndexEmailV3:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
         db.index_email(
-            "msg1",  # message_id
+            _eid("msg1"),  # email_id
             "Test Subject",  # subject
             "from@test.com",  # sender
             "to@test.com",  # recipients
@@ -1116,7 +1122,7 @@ class TestDatabaseIndexEmailV3:
             "file.pdf",  # attachment_names
         )
 
-        assert db.is_indexed("msg1")
+        assert db.is_indexed(_eid("msg1"))
 
 
 class TestArchiveConfig:
@@ -1279,8 +1285,8 @@ class TestDatabaseSearchMethods:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
-        db.index_email("msg1", "Subject", "from", "to", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
+        db.index_email(_eid("msg1"), "Subject", "from", "to", "2024-01-01", "body", "")
 
         # Search should work even if no results
         results = db.search("test label:INBOX")
@@ -1376,8 +1382,8 @@ class TestDatabaseMoreMethods:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("msg1", "file.eml")
-        db.index_email("msg1", "Subject", "from", "to", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "file.eml")
+        db.index_email(_eid("msg1"), "Subject", "from", "to", "2024-01-01", "body", "")
 
         stats = db.get_stats()
         assert "total_emails" in stats or isinstance(stats, dict)
@@ -1473,11 +1479,11 @@ This is the email body.
         eml_path.write_bytes(eml_content)
 
         # Add email to database
-        archive.db.mark_downloaded("test123", "test.eml")
+        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
 
         app = create_app(archive)
         with app.test_client() as client:
-            response = client.get("/email/test123")
+            response = client.get("/email/" + _eid("test123"))
             assert response.status_code == 200
 
 
@@ -1512,7 +1518,7 @@ Body.
 """
         eml_path = tmp_path / "test.eml"
         eml_path.write_bytes(eml_content)
-        archive.db.mark_downloaded("test", "test.eml")
+        archive.db.mark_downloaded(_eid("test"), "test", "test.eml")
 
         # Run reindex with pattern
         cmd_reindex(archive, pattern="*.eml")
@@ -1531,8 +1537,8 @@ class TestWebSearchWithResults:
         archive = EmailArchive(tmp_path, {})
 
         # Add an indexed email
-        archive.db.mark_downloaded("msg1", "test.eml")
-        archive.db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body text", "")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
+        archive.db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body text", "")
 
         app = create_app(archive)
         with app.test_client() as client:
@@ -1606,8 +1612,8 @@ class TestDatabaseIndexMultiple:
         db = ArchiveDatabase(tmp_path / "test.db")
 
         for i in range(5):
-            db.mark_downloaded(f"msg{i}", f"file{i}.eml")
-            db.index_email(f"msg{i}", f"Subject {i}", "from", "to", "2024-01-01", f"body {i}", "")
+            db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", f"file{i}.eml")
+            db.index_email(_eid(f"msg{i}"), f"Subject {i}", "from", "to", "2024-01-01", f"body {i}", "")
 
         count = db.get_email_count()
         assert count == 5
@@ -1866,7 +1872,7 @@ class TestWebSearchResultsMocked:
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = [
             {
-                "email_message_id": "msg1",
+                "email_id": "msg1",
                 "subject": "First Email",
                 "sender": "a@example.com",
                 "recipients": "b@example.com",
@@ -1892,7 +1898,7 @@ class TestWebSearchResultsMocked:
         mock_archive.db.get_email_count.return_value = 50
         mock_archive.db.search.return_value = [
             {
-                "email_message_id": "recent1",
+                "email_id": "recent1",
                 "subject": "Recent Email",
                 "sender": "sender@example.com",
                 "recipients": "recipient@example.com",
@@ -2233,9 +2239,9 @@ class TestDatabaseEdgeCases:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path / "test.db")
-        db.mark_downloaded("unicodemsg", "unicode.eml")
+        db.mark_downloaded(_eid("unicodemsg"), "unicodemsg", "unicode.eml")
         db.index_email(
-            "unicodemsg",
+            _eid("unicodemsg"),
             "한글 제목",
             "발신자@example.com",
             "수신자@example.com",
@@ -2244,7 +2250,7 @@ class TestDatabaseEdgeCases:
             "첨부파일.pdf",
         )
 
-        assert db.is_indexed("unicodemsg")
+        assert db.is_indexed(_eid("unicodemsg"))
 
 
 class TestWebLRUCacheEdgeCases:
@@ -2306,8 +2312,8 @@ class TestCliSearch:
 
         archive = EmailArchive(tmp_path, {})
         # Index an email
-        archive.db.mark_downloaded("msg1", "test.eml")
-        archive.db.index_email("msg1", "Test Subject", "sender@test.com", "to@test.com", "2024-01-01", "body", "")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
+        archive.db.index_email(_eid("msg1"), "Test Subject", "sender@test.com", "to@test.com", "2024-01-01", "body", "")
 
         cmd_search(archive, "Subject")
         captured = capsys.readouterr()
@@ -2457,8 +2463,8 @@ Body.
 """
         eml_path = tmp_path / "force.eml"
         eml_path.write_bytes(eml_content)
-        archive.db.mark_downloaded("force", "force.eml")
-        archive.db.index_email("force", "Test", "sender", "to", "2024-01-01", "body", "")
+        archive.db.mark_downloaded(_eid("force"), "force", "force.eml")
+        archive.db.index_email(_eid("force"), "Test", "sender", "to", "2024-01-01", "body", "")
 
         # Force reindex
         cmd_reindex(archive, force=True)
@@ -2721,9 +2727,9 @@ class TestDatabaseMoreCoverage:
 
         db = ArchiveDatabase(tmp_path)
         # Add some emails
-        db.mark_downloaded("msg1", "test1.eml")
-        db.mark_downloaded("msg2", "test2.eml")
-        db.index_email("msg1", "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body 1", "INBOX")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "test2.eml")
+        db.index_email(_eid("msg1"), "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body 1", "INBOX")
 
         stats = db.get_stats()
         assert stats is not None
@@ -2733,8 +2739,8 @@ class TestDatabaseMoreCoverage:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "sender@example.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "sender@example.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("from:sender@example.com")
         assert len(results) >= 0
@@ -2744,8 +2750,8 @@ class TestDatabaseMoreCoverage:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "recipient@example.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "recipient@example.com", "2024-01-01", "body", "")
 
         results = db.search("to:recipient@example.com")
         assert len(results) >= 0
@@ -2760,8 +2766,8 @@ class TestArchiveMoreCoverageV2:
 
         archive = EmailArchive(tmp_path, {})
         # Index an email
-        archive.db.mark_downloaded("msg1", "test1.eml")
-        archive.db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        archive.db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        archive.db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = archive.search("Test")
         assert isinstance(results, list)
@@ -2798,7 +2804,7 @@ Body.
 """
         eml_path = tmp_path / "verifytest.eml"
         eml_path.write_bytes(eml_content)
-        archive.db.mark_downloaded("verifytest", "verifytest.eml")
+        archive.db.mark_downloaded(_eid("verifytest"), "verifytest", "verifytest.eml")
 
         cmd_verify(archive)
         captured = capsys.readouterr()
@@ -2884,8 +2890,8 @@ class TestQueryParserMoreCoverage:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "important body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "important body", "")
 
         # NOT query
         results = db.search("NOT spam")
@@ -2896,8 +2902,8 @@ class TestQueryParserMoreCoverage:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         # Date range query
         results = db.search("after:2023-01-01 before:2025-01-01")
@@ -2908,8 +2914,8 @@ class TestQueryParserMoreCoverage:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Newsletter Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Newsletter Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         # Wildcard query
         results = db.search("news*")
@@ -2963,8 +2969,8 @@ class TestQueryParser:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Hello World", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Hello World", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("Hello OR Goodbye")
         assert isinstance(results, list)
@@ -2974,8 +2980,8 @@ class TestQueryParser:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Hello World", "from@test.com", "to@test.com", "2024-01-01", "body text", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Hello World", "from@test.com", "to@test.com", "2024-01-01", "body text", "")
 
         results = db.search("Hello AND body")
         assert isinstance(results, list)
@@ -2985,8 +2991,8 @@ class TestQueryParser:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("(Test OR Other) AND Subject")
         assert isinstance(results, list)
@@ -2996,8 +3002,8 @@ class TestQueryParser:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Important Meeting", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Important Meeting", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("subject:Important")
         assert isinstance(results, list)
@@ -3007,8 +3013,8 @@ class TestQueryParser:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "INBOX")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "INBOX")
 
         results = db.search("label:INBOX")
         assert isinstance(results, list)
@@ -3089,10 +3095,10 @@ class TestDatabaseSorting:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.mark_downloaded("msg2", "test2.eml")
-        db.index_email("msg1", "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body", "")
-        db.index_email("msg2", "Subject 2", "from@test.com", "to@test.com", "2024-01-02", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "test2.eml")
+        db.index_email(_eid("msg1"), "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.index_email(_eid("msg2"), "Subject 2", "from@test.com", "to@test.com", "2024-01-02", "body", "")
 
         results = db.search("Subject", sort="date_desc")
         assert isinstance(results, list)
@@ -3102,8 +3108,8 @@ class TestDatabaseSorting:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("Subject", sort="date_asc")
         assert isinstance(results, list)
@@ -3159,7 +3165,7 @@ Body.
 """
         eml_path = tmp_path / "rehash.eml"
         eml_path.write_bytes(eml_content)
-        archive.db.mark_downloaded("rehash", "rehash.eml")
+        archive.db.mark_downloaded(_eid("rehash"), "rehash", "rehash.eml")
 
         cmd_rehash(archive)
         captured = capsys.readouterr()
@@ -3263,8 +3269,8 @@ class TestDatabasePagination:
         db = ArchiveDatabase(tmp_path)
         # Add multiple emails
         for i in range(10):
-            db.mark_downloaded(f"msg{i}", f"test{i}.eml")
-            db.index_email(f"msg{i}", f"Test Subject {i}", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+            db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", f"test{i}.eml")
+            db.index_email(_eid(f"msg{i}"), f"Test Subject {i}", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("Test", limit=5, offset=5)
         assert isinstance(results, list)
@@ -3274,8 +3280,8 @@ class TestDatabasePagination:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("Test", limit=10000)
         assert isinstance(results, list)
@@ -3289,8 +3295,8 @@ class TestQueryParserComplex:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Hello World Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Hello World Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search('"Hello World"')
         assert isinstance(results, list)
@@ -3300,8 +3306,8 @@ class TestQueryParserComplex:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("Test -spam")
         assert isinstance(results, list)
@@ -3439,11 +3445,11 @@ class TestDatabaseMoreMethodsV2:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         # Try to get email by filename
-        result = db.get_email_by_id("msg1")
+        result = db.get_email_by_id(_eid("msg1"))
         assert result is not None
 
 
@@ -3516,10 +3522,9 @@ class TestDatabaseLabels:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
         # Labels stored in the labels field during indexing
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "IMPORTANT")
-
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "IMPORTANT")
         results = db.search("label:IMPORTANT")
         assert isinstance(results, list)
 
@@ -3712,10 +3717,10 @@ class TestDatabaseEmailCount:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.mark_downloaded("msg2", "test2.eml")
-        db.index_email("msg1", "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body1", "")
-        db.index_email("msg2", "Subject 2", "from@test.com", "to@test.com", "2024-01-02", "body2", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "test2.eml")
+        db.index_email(_eid("msg1"), "Subject 1", "from@test.com", "to@test.com", "2024-01-01", "body1", "")
+        db.index_email(_eid("msg2"), "Subject 2", "from@test.com", "to@test.com", "2024-01-02", "body2", "")
 
         count = db.get_email_count()
         assert count >= 2
@@ -3786,11 +3791,11 @@ class TestDatabaseMultipleIndices:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Original Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Original Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         # Re-index with new subject
-        db.index_email("msg1", "Updated Subject", "from@test.com", "to@test.com", "2024-01-01", "new body", "")
+        db.index_email(_eid("msg1"), "Updated Subject", "from@test.com", "to@test.com", "2024-01-01", "new body", "")
 
         results = db.search("Updated")
         assert isinstance(results, list)
@@ -3852,8 +3857,8 @@ class TestQueryNormalization:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("  Test   Subject  ")
         assert isinstance(results, list)
@@ -3863,8 +3868,8 @@ class TestQueryNormalization:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "UPPERCASE Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "UPPERCASE Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("uppercase")
         assert isinstance(results, list)
@@ -3988,8 +3993,8 @@ class TestQueryParserFilters:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("has:attachment")
         assert isinstance(results, list)
@@ -3999,8 +4004,8 @@ class TestQueryParserFilters:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "STARRED")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "STARRED")
 
         results = db.search("is:starred")
         assert isinstance(results, list)
@@ -4010,8 +4015,8 @@ class TestQueryParserFilters:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("older_than:30d")
         assert isinstance(results, list)
@@ -4093,8 +4098,8 @@ class TestDatabaseSearchEdgeCases:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("")
         assert isinstance(results, list)
@@ -4104,8 +4109,8 @@ class TestDatabaseSearchEdgeCases:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("   ")
         assert isinstance(results, list)
@@ -4247,8 +4252,8 @@ class TestDatabaseIndexEmailVariants:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "", "")
 
         results = db.search("Subject")
         assert isinstance(results, list)
@@ -4258,8 +4263,8 @@ class TestDatabaseIndexEmailVariants:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Re: [URGENT] 50% off! Don't miss", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Re: [URGENT] 50% off! Don't miss", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("URGENT")
         assert isinstance(results, list)
@@ -4307,8 +4312,8 @@ class TestQueryParserOperatorCombinations:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Important Meeting", "boss@company.com", "me@company.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Important Meeting", "boss@company.com", "me@company.com", "2024-01-01", "body", "")
 
         results = db.search("from:boss subject:Important")
         assert isinstance(results, list)
@@ -4318,8 +4323,8 @@ class TestQueryParserOperatorCombinations:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "INBOX")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "INBOX")
 
         results = db.search("label:INBOX after:2023-01-01")
         assert isinstance(results, list)
@@ -4457,10 +4462,10 @@ class TestDatabaseEmailListMethods:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
-        result = db.get_email_by_id("msg1")
+        result = db.get_email_by_id(_eid("msg1"))
         assert result is not None
 
 
@@ -4527,8 +4532,8 @@ class TestQueryParserNegation:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Newsletter from Company", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Newsletter from Company", "from@test.com", "to@test.com", "2024-01-01", "body", "")
 
         results = db.search("from:test -unsubscribe")
         assert isinstance(results, list)
@@ -4542,8 +4547,8 @@ class TestDatabaseLabelSearch:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "INBOX")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "INBOX")
 
         results = db.search("in:inbox")
         assert isinstance(results, list)
@@ -4553,8 +4558,8 @@ class TestDatabaseLabelSearch:
         from ownmail.database import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "test1.eml")
-        db.index_email("msg1", "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "SENT")
+        db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
+        db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "body", "SENT")
 
         results = db.search("in:sent")
         assert isinstance(results, list)
@@ -6378,9 +6383,9 @@ class TestDatabaseIndexEmailV4:
 
         db = ArchiveDatabase(tmp_path)
         # Must mark as downloaded first
-        db.mark_downloaded("test-msg-id", "test.eml")
+        db.mark_downloaded(_eid("test-msg-id"), "test-msg-id", "test.eml")
         db.index_email(
-            "test-msg-id",
+            _eid("test-msg-id"),
             "Test Subject",
             "sender@test.com",
             "recipient@test.com",
@@ -6389,7 +6394,7 @@ class TestDatabaseIndexEmailV4:
             "",
             labels="INBOX,STARRED"
         )
-        assert db.is_indexed("test-msg-id")
+        assert db.is_indexed(_eid("test-msg-id"))
 
 
 class TestDatabaseGetEmailByIdV4:
@@ -6400,9 +6405,9 @@ class TestDatabaseGetEmailByIdV4:
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("find-me-id", "findme.eml")
+        db.mark_downloaded(_eid("find-me-id"), "find-me-id", "findme.eml")
         db.index_email(
-            "find-me-id",
+            _eid("find-me-id"),
             "Find Me",
             "sender@test.com",
             "recipient@test.com",
@@ -6410,7 +6415,7 @@ class TestDatabaseGetEmailByIdV4:
             "Find this email",
             ""
         )
-        result = db.get_email_by_id("find-me-id")
+        result = db.get_email_by_id(_eid("find-me-id"))
         assert result is not None
 
 
@@ -6762,8 +6767,8 @@ class TestDatabaseSyncStateV4:
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "msg1.eml")
-        db.mark_downloaded("msg2", "msg2.eml")
+        db.mark_downloaded(_eid("msg1"), "msg1", "msg1.eml")
+        db.mark_downloaded(_eid("msg2"), "msg2", "msg2.eml")
         ids = db.get_downloaded_ids()
         assert "msg1" in ids
         assert "msg2" in ids
@@ -7018,8 +7023,8 @@ class TestDatabaseMultipleAccounts:
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "msg1.eml", account="account1@test.com")
-        db.mark_downloaded("msg2", "msg2.eml", account="account2@test.com")
+        db.mark_downloaded(_eid("msg1", "account1@test.com"), "msg1", "msg1.eml", account="account1@test.com")
+        db.mark_downloaded(_eid("msg2", "account2@test.com"), "msg2", "msg2.eml", account="account2@test.com")
 
         count1 = db.get_email_count(account="account1@test.com")
         count2 = db.get_email_count(account="account2@test.com")
@@ -7138,18 +7143,18 @@ class TestDatabaseIsIndexedV4:
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("new-msg", "new.eml")
+        db.mark_downloaded(_eid("new-msg"), "new-msg", "new.eml")
         # Before indexing, should not be indexed
-        assert db.is_indexed("new-msg") is False
+        assert db.is_indexed(_eid("new-msg")) is False
 
     def test_is_indexed_returns_true_after_index(self, tmp_path):
         """Test is_indexed returns True after indexing."""
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("indexed-msg", "indexed.eml")
-        db.index_email("indexed-msg", "Subject", "sender", "recipient", "2024-01-01", "body", "")
-        assert db.is_indexed("indexed-msg") is True
+        db.mark_downloaded(_eid("indexed-msg"), "indexed-msg", "indexed.eml")
+        db.index_email(_eid("indexed-msg"), "Subject", "sender", "recipient", "2024-01-01", "body", "")
+        assert db.is_indexed(_eid("indexed-msg")) is True
 
 
 class TestWebAttachmentMimeTypes:
@@ -7304,7 +7309,7 @@ class TestDatabaseStatsMethod:
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("stat-msg", "stat.eml")
+        db.mark_downloaded(_eid("stat-msg"), "stat-msg", "stat.eml")
         stats = db.get_stats()
         assert isinstance(stats, dict)
 
@@ -7388,9 +7393,9 @@ class TestDatabaseMarkDownloadedV4:
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("dup-msg", "dup.eml")
+        db.mark_downloaded(_eid("dup-msg"), "dup-msg", "dup.eml")
         # Should not raise error on second call
-        db.mark_downloaded("dup-msg", "dup.eml")
+        db.mark_downloaded(_eid("dup-msg"), "dup-msg", "dup.eml")
         assert db.is_downloaded("dup-msg")
 
 
@@ -7508,8 +7513,8 @@ class TestDatabaseAccountFiltering:
         from ownmail import ArchiveDatabase
 
         db = ArchiveDatabase(tmp_path)
-        db.mark_downloaded("msg1", "msg1.eml", account="acc1")
-        db.mark_downloaded("msg2", "msg2.eml", account="acc2")
+        db.mark_downloaded(_eid("msg1", "acc1"), "msg1", "msg1.eml", account="acc1")
+        db.mark_downloaded(_eid("msg2", "acc2"), "msg2", "msg2.eml", account="acc2")
         total = db.get_email_count()  # All accounts
         assert total >= 2
 

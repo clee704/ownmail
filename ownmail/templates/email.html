@@ -19,8 +19,8 @@
                         {% endif %}
                         <hr class="ownmail-email-menu-divider">
                         {% endif %}
-                        <a href="/raw/{{ message_id }}">Show original</a>
-                        <a href="/download/{{ message_id }}">Download message</a>
+                        <a href="/raw/{{ email_id }}">Show original</a>
+                        <a href="/download/{{ email_id }}">Download message</a>
                     </div>
                 </div>
             </div>
@@ -199,7 +199,7 @@
             <ul class="ownmail-attachment-list">
             {% for att in attachments %}
                 <li class="ownmail-attachment-item">
-                    <a href="/attachment/{{ message_id }}/{{ loop.index0 }}">📎 {{ att.filename }}</a>
+                    <a href="/attachment/{{ email_id }}/{{ loop.index0 }}">📎 {{ att.filename }}</a>
                     ({{ att.size }})
                 </li>
             {% endfor %}
