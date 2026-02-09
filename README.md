@@ -255,7 +255,6 @@ When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify
 - [x] Gmail API (OAuth, batch downloads, native labels)
 - [x] Web UI for browsing and search
 - [ ] Local .eml import
-- [ ] Outlook/Microsoft 365 support
 
 ## License
 
