@@ -148,12 +148,12 @@ def cmd_reindex(
     email_ids = [msg_id for msg_id, _, _, _ in emails]
     with sqlite3.connect(db_path) as conn:
         placeholders = ",".join("?" * len(email_ids))
-        existing_fts = set(
+        existing_fts = {
             row[0] for row in conn.execute(
                 f"SELECT DISTINCT message_id FROM emails_fts WHERE message_id IN ({placeholders})",
                 email_ids
             ).fetchall()
-        )
+        }
     print(f" {len(existing_fts)} found ({time.time()-t0:.1f}s)")
 
     print(f"\nIndexing {len(emails)} emails...")
@@ -186,7 +186,7 @@ def cmd_reindex(
     batch_conn.execute("PRAGMA synchronous = NORMAL")
 
     try:
-        for i, (msg_id, filename, _content_hash, indexed_hash) in enumerate(emails, 1):
+        for i, (msg_id, filename, _content_hash, _indexed_hash) in enumerate(emails, 1):
             if interrupted:
                 break
 
@@ -365,8 +365,8 @@ def _verify_single_file(args: tuple) -> tuple:
 
 def cmd_verify(archive: EmailArchive, verbose: bool = False) -> None:
     """Verify integrity of downloaded emails against stored hashes."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     print("\n" + "=" * 50)
     print("ownmail - Verify Integrity")
@@ -476,8 +476,8 @@ def _compute_single_hash(args: tuple) -> tuple:
 
 def cmd_rehash(archive: EmailArchive) -> None:
     """Compute and store hashes for emails that don't have them."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     print("\n" + "=" * 50)
     print("ownmail - Compute Hashes")

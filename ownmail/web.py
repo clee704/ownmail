@@ -2,9 +2,9 @@
 
 import email
 import email.header
-from email.policy import default as email_policy
 import re
 import time
+from email.policy import default as email_policy
 
 from flask import Flask, abort, g, redirect, render_template_string, request, send_file
 
