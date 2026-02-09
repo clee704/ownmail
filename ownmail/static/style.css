@@ -13,7 +13,7 @@ body {
 header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: baseline;
     margin-bottom: 10px;
 }
 header h1 { margin: 0; font-size: 1.5em; }
@@ -169,6 +169,7 @@ header h1 a:hover { text-decoration: none; }
 .email-header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .email-header-top h2 { margin: 0 0 10px 0; font-size: 1.3em; flex: 1; }
 .email-header-row { margin: 8px 0; font-size: 0.9em; display: grid; grid-template-columns: 50px 1fr; }
+.email-header-top + .email-header-row { margin-top: 4px; }
 .email-header-label { color: #666; }
 .email-header-value { word-break: break-word; }
 
@@ -285,8 +286,9 @@ header h1 a:hover { text-decoration: none; }
     background: #fff3cd;
     border: 1px solid #ffc107;
     border-radius: 5px;
-    padding: 6px 10px;
+    padding: 9px;
     margin: 15px;
+    margin-top: 0;
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
