@@ -1070,8 +1070,8 @@ def create_app(
                 base_styles = '''<style>
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  padding: 1px 15px;
-  margin: 0;
+  padding: 0;
+  margin: 15px;
   background: #fff;
   color: #333;
 }
@@ -1081,8 +1081,8 @@ body {
                 base_styles = '''<style>
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  padding: 1px 15px;
-  margin: 0;
+  padding: 0;
+  margin: 15px;
 }
 @media (prefers-color-scheme: dark) {
   body { background: #242424; color: #e0e0e0; }
