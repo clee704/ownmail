@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "dependencies": {
+    "dompurify": "^3.2.4",
+    "jsdom": "^26.0.0"
+  }
+}

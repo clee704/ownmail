@@ -38,3 +38,7 @@ Thumbs.db
 
 # Temporary files
 *.tmp
+
+# Node.js (HTML sanitizer sidecar)
+ownmail/sanitizer/node_modules/
+ownmail/sanitizer/package-lock.json
