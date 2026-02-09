@@ -783,14 +783,6 @@ Examples:
     )
     unknown_parser.add_argument("--verbose", "-v", action="store_true", help="Show file paths and date headers")
 
-    # populate-dates command
-    populate_dates_parser = subparsers.add_parser(
-        "populate-dates",
-        help="Populate email_date column for existing emails",
-        description="Extract dates from email files and store in database for faster filtering.",
-    )
-    populate_dates_parser.add_argument("--verbose", "-v", action="store_true", help="Show progress for each email")
-
     # serve command
     serve_parser = subparsers.add_parser(
         "serve",
@@ -880,9 +872,6 @@ Examples:
             elif args.command == "list-unknown":
                 from ownmail.commands import cmd_list_unknown
                 cmd_list_unknown(archive, args.verbose)
-            elif args.command == "populate-dates":
-                from ownmail.commands import cmd_populate_dates
-                cmd_populate_dates(archive, args.verbose)
             elif args.command == "serve":
                 try:
                     from ownmail.web import run_server
