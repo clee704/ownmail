@@ -1,6 +1,7 @@
 """Tests for the HTML sanitizer (DOMPurify sidecar)."""
 
 import shutil
+import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -81,6 +82,232 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         """Test _ensure_deps returns False when npm not found."""
         sanitizer = HtmlSanitizer()
         result = sanitizer._ensure_deps()
+        assert result is False
+
+    @patch("ownmail.sanitizer.subprocess.run")
+    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
+    @patch("shutil.which")
+    def test_ensure_deps_npm_install_fails(self, mock_which, mock_isdir, mock_run):
+        """Test _ensure_deps returns False when npm install fails."""
+        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
+        mock_run.return_value = MagicMock(returncode=1, stderr="permission denied")
+
+        sanitizer = HtmlSanitizer()
+        result = sanitizer._ensure_deps()
+        assert result is False
+
+    @patch("ownmail.sanitizer.subprocess.run", side_effect=subprocess.TimeoutExpired("npm", 60))
+    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
+    @patch("shutil.which")
+    def test_ensure_deps_npm_timeout(self, mock_which, mock_isdir, mock_run):
+        """Test _ensure_deps returns False on npm timeout."""
+        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
+
+        sanitizer = HtmlSanitizer()
+        result = sanitizer._ensure_deps()
+        assert result is False
+
+    @patch("ownmail.sanitizer.subprocess.run", side_effect=OSError("disk full"))
+    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
+    @patch("shutil.which")
+    def test_ensure_deps_npm_exception(self, mock_which, mock_isdir, mock_run):
+        """Test _ensure_deps returns False on unexpected exception."""
+        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
+
+        sanitizer = HtmlSanitizer()
+        result = sanitizer._ensure_deps()
+        assert result is False
+
+    def test_start_with_mocked_process(self):
+        """Test start() with a mocked Node.js process that sends ready signal."""
+        import io
+
+        sanitizer = HtmlSanitizer()
+
+        mock_process = MagicMock()
+        mock_process.stdout = io.StringIO('{"ready": true}\n')
+        mock_process.stderr = io.StringIO('')
+
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True), \
+             patch.object(sanitizer, "_ensure_deps", return_value=True), \
+             patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process):
+            sanitizer.start()
+
+        assert sanitizer.available is True
+        sanitizer.stop()
+
+    def test_start_worker_no_ready_signal(self):
+        """Test start() when worker doesn't send ready signal."""
+        import io
+
+        sanitizer = HtmlSanitizer()
+
+        mock_process = MagicMock()
+        mock_process.stdout = io.StringIO('')
+        mock_process.stderr = io.StringIO('')
+        mock_process.terminate.return_value = None
+        mock_process.wait.return_value = 0
+
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True), \
+             patch.object(sanitizer, "_ensure_deps", return_value=True), \
+             patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process):
+            sanitizer.start()
+
+        assert sanitizer.available is False
+
+    def test_start_deps_fail(self):
+        """Test start() when _ensure_deps fails."""
+        sanitizer = HtmlSanitizer()
+
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True), \
+             patch.object(sanitizer, "_ensure_deps", return_value=False):
+            sanitizer.start()
+
+        assert sanitizer.available is False
+
+    def test_sanitize_with_mocked_process(self):
+        """Test sanitize() with a mocked running process."""
+        import io
+        import json
+
+        sanitizer = HtmlSanitizer()
+        sanitizer._available = True
+
+        response = json.dumps({
+            "id": 1,
+            "html": "<p>Clean</p>",
+            "needsPadding": False,
+            "supportsDarkMode": True,
+        }) + "\n"
+
+        mock_process = MagicMock()
+        mock_process.stdin = MagicMock()
+        mock_process.stdout = io.StringIO(response)
+        sanitizer._process = mock_process
+
+        result_html, needs_padding, supports_dark = sanitizer.sanitize("<p>Clean</p>")
+        assert result_html == "<p>Clean</p>"
+        assert needs_padding is False
+        assert supports_dark is True
+
+    def test_sanitize_process_died(self):
+        """Test sanitize() handles dead process gracefully."""
+        import html as html_module
+        import io
+
+        sanitizer = HtmlSanitizer()
+        sanitizer._available = True
+
+        mock_process = MagicMock()
+        mock_process.stdin = MagicMock()
+        mock_process.stdout = io.StringIO('')  # EOF = process died
+
+        sanitizer._process = mock_process
+
+        with patch.object(sanitizer, "_restart"):
+            result, needs_padding, _ = sanitizer.sanitize("<p>Test</p>")
+
+        assert result == html_module.escape("<p>Test</p>")
+
+    def test_sanitize_broken_pipe(self):
+        """Test sanitize() handles BrokenPipeError."""
+        import html as html_module
+
+        sanitizer = HtmlSanitizer()
+        sanitizer._available = True
+
+        mock_process = MagicMock()
+        mock_process.stdin.write.side_effect = BrokenPipeError("broken")
+        sanitizer._process = mock_process
+
+        with patch.object(sanitizer, "_restart"):
+            result, needs_padding, _ = sanitizer.sanitize("<p>Test</p>")
+
+        assert result == html_module.escape("<p>Test</p>")
+
+    def test_sanitize_dompurify_error(self):
+        """Test sanitize() handles DOMPurify errors from worker."""
+        import html as html_module
+        import io
+        import json
+
+        sanitizer = HtmlSanitizer()
+        sanitizer._available = True
+
+        response = json.dumps({"id": 1, "error": "parse failed"}) + "\n"
+
+        mock_process = MagicMock()
+        mock_process.stdin = MagicMock()
+        mock_process.stdout = io.StringIO(response)
+        sanitizer._process = mock_process
+
+        result, needs_padding, _ = sanitizer.sanitize("<p>Test</p>")
+        assert result == html_module.escape("<p>Test</p>")
+
+    def test_kill_process(self):
+        """Test _kill_process terminates the process."""
+        sanitizer = HtmlSanitizer()
+
+        mock_process = MagicMock()
+        sanitizer._process = mock_process
+
+        sanitizer._kill_process()
+
+        mock_process.stdin.close.assert_called_once()
+        mock_process.terminate.assert_called_once()
+        assert sanitizer._process is None
+
+    def test_kill_process_handles_broken_pipe(self):
+        """Test _kill_process handles BrokenPipeError on stdin.close."""
+        sanitizer = HtmlSanitizer()
+
+        mock_process = MagicMock()
+        mock_process.stdin.close.side_effect = BrokenPipeError()
+        sanitizer._process = mock_process
+
+        sanitizer._kill_process()
+        mock_process.terminate.assert_called_once()
+        assert sanitizer._process is None
+
+    def test_kill_process_handles_timeout(self):
+        """Test _kill_process uses kill() after wait timeout."""
+        sanitizer = HtmlSanitizer()
+
+        mock_process = MagicMock()
+        # First wait(timeout=3) times out, second wait(timeout=1) succeeds
+        mock_process.wait.side_effect = [
+            subprocess.TimeoutExpired("node", 3),
+            None,
+        ]
+        sanitizer._process = mock_process
+
+        sanitizer._kill_process()
+        mock_process.kill.assert_called_once()
+        assert sanitizer._process is None
+
+    def test_restart_calls_stop_and_start(self):
+        """Test _restart kills and restarts the process."""
+        sanitizer = HtmlSanitizer()
+        sanitizer._available = True
+
+        with patch.object(sanitizer, "_kill_process") as mock_kill, \
+             patch.object(sanitizer, "start") as mock_start:
+            sanitizer._restart()
+
+        mock_kill.assert_called_once()
+        assert sanitizer._available is False
+        mock_start.assert_called_once()
+
+    def test_verbose_ensure_deps(self):
+        """Test verbose mode output during _ensure_deps failure."""
+        sanitizer = HtmlSanitizer(verbose=True)
+
+        mock_run = MagicMock(returncode=1, stderr="verbose error msg")
+        with patch("ownmail.sanitizer.subprocess.run", return_value=mock_run), \
+             patch("ownmail.sanitizer.os.path.isdir", return_value=False), \
+             patch("shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None):
+            result = sanitizer._ensure_deps()
+
         assert result is False
 
 
