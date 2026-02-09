@@ -458,12 +458,12 @@ class ArchiveDatabase:
             email_id: 24-char hex hash
 
         Returns:
-            Tuple of (email_id, filename, downloaded_at, content_hash, account)
+            Tuple of (email_id, filename, downloaded_at, content_hash, account, labels)
             or None if not found
         """
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(
-                "SELECT email_id, filename, downloaded_at, content_hash, account FROM emails WHERE email_id = ?",
+                "SELECT email_id, filename, downloaded_at, content_hash, account, labels FROM emails WHERE email_id = ?",
                 (email_id,)
             ).fetchone()
             return result

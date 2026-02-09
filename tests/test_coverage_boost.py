@@ -6180,7 +6180,7 @@ Test body.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("labeled", "labeled.eml", "Labeled Email", "sender@example.com", "Mon, 01 Jan 2024", ["INBOX", "IMPORTANT", "STARRED"])
+        mock_archive.db.get_email_by_id.return_value = ("labeled", "labeled.eml", None, None, None, "INBOX, IMPORTANT, STARRED")
 
         app = create_app(mock_archive)
         with app.test_client() as client:
