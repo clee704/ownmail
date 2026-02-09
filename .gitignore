@@ -27,6 +27,11 @@ ENV/
 *.swp
 *.swo
 
+# Testing/Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
 # OS
 .DS_Store
 Thumbs.db
