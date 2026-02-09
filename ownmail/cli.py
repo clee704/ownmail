@@ -164,6 +164,11 @@ def _setup_imap(
         print("  2. Enter a name (e.g., 'ownmail') and click Create")
         print("  3. Copy the 16-character password shown")
         print()
+        print("  If you see 'The setting you are looking for is not available':")
+        print("  → Enable 2-Step Verification first, then try again")
+        print("  → For Google Workspace accounts, your admin may have disabled")
+        print("    App Passwords — use 'ownmail setup --method oauth' instead")
+        print()
     else:
         host = input("IMAP server hostname: ").strip()
         if not host:
