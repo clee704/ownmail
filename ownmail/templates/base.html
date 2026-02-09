@@ -19,11 +19,21 @@
         <div class="ownmail-loading-spinner"></div>
     </div>
     <div class="ownmail-header">
-        <h1><a href="/">📭 ownmail</a></h1>
-        <div class="ownmail-header-right">
-            <span class="ownmail-stats">{{ stats.total_emails | default(0) | int }} emails archived &bull; <a href="/help">Search help</a> &bull; <a href="/settings" class="ownmail-icon-link">⚙️</a></span>
-            <button class="ownmail-theme-toggle" id="ownmail-theme-toggle" onclick="toggleTheme()" title="Toggle theme"><span class="ownmail-theme-current">🌙</span><span class="ownmail-theme-next">☀️</span></button>
+        <div class="ownmail-hamburger" id="ownmail-hamburger">
+            <button class="ownmail-hamburger-btn" onclick="toggleHamburger(event)" title="Menu">☰</button>
+            <div class="ownmail-hamburger-dropdown" id="ownmail-hamburger-dropdown">
+                <span class="ownmail-hamburger-info">{{ stats.total_emails | default(0) | int }} emails archived</span>
+                <hr class="ownmail-hamburger-divider">
+                <a href="/help">Search help</a>
+                <a href="/settings">Settings</a>
+                <hr class="ownmail-hamburger-divider">
+                <a href="#" class="ownmail-hamburger-theme" onclick="toggleTheme(); return false;">
+                    <span class="ownmail-theme-current">🌙</span><span class="ownmail-theme-next">☀️</span>
+                    <span class="ownmail-hamburger-theme-label" id="ownmail-hamburger-theme-label">Switch to light mode</span>
+                </a>
+            </div>
         </div>
+        <h1><a href="/">📭 ownmail</a></h1>
     </div>
     {% block content %}{% endblock %}
     <script>
@@ -39,30 +49,26 @@
         if (typeof updateEmailDarkMode === 'function') updateEmailDarkMode(dark);
     }
     function updateThemeIcon(dark) {
-        var btn = document.getElementById('ownmail-theme-toggle');
-        if (!btn) return;
-        var current = btn.querySelector('.ownmail-theme-current');
-        var next = btn.querySelector('.ownmail-theme-next');
-        if (!current || !next) return;
-        current.textContent = dark ? '🌙' : '☀️';
-        next.textContent = dark ? '☀️' : '🌙';
-        btn.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+        // Update hamburger menu theme item
+        var label = document.getElementById('ownmail-hamburger-theme-label');
+        if (label) label.textContent = dark ? 'Switch to light mode' : 'Switch to dark mode';
+        var items = document.querySelectorAll('.ownmail-hamburger-theme');
+        items.forEach(function(item) {
+            var current = item.querySelector('.ownmail-theme-current');
+            var next = item.querySelector('.ownmail-theme-next');
+            if (current) current.textContent = dark ? '🌙' : '☀️';
+            if (next) next.textContent = dark ? '☀️' : '🌙';
+        });
     }
     function toggleTheme() {
         var dark = isDarkMode();
-        // Explicit override: set to opposite of current
         localStorage.setItem('ownmail-theme', dark ? 'light' : 'dark');
         applyTheme();
-        // Suppress hover swap until mouse leaves, so the icon
-        // correctly reflects the new state instead of previewing next
-        var btn = document.getElementById('ownmail-theme-toggle');
-        if (btn) {
-            btn.classList.add('ownmail-theme-locked');
-            btn.addEventListener('mouseleave', function unlock() {
-                btn.classList.remove('ownmail-theme-locked');
-                btn.removeEventListener('mouseleave', unlock);
-            });
-        }
+    }
+    function toggleHamburger(event) {
+        event.stopPropagation();
+        var dropdown = document.getElementById('ownmail-hamburger-dropdown');
+        dropdown.classList.toggle('ownmail-show');
     }
     // Listen for OS theme changes (matters when pref is 'auto')
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
@@ -88,6 +94,14 @@
     // Also hide on regular page load just in case
     window.addEventListener('load', function() {
         hideLoading();
+    });
+    // Close hamburger menu when clicking outside
+    document.addEventListener('click', function(event) {
+        var hamburger = document.getElementById('ownmail-hamburger');
+        var dropdown = document.getElementById('ownmail-hamburger-dropdown');
+        if (hamburger && dropdown && !hamburger.contains(event.target)) {
+            dropdown.classList.remove('ownmail-show');
+        }
     });
     // Show loading on form submit
     document.querySelectorAll('form').forEach(function(form) {
