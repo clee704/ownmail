@@ -1316,8 +1316,12 @@ def create_app(
         if sender_is_trusted:
             images_blocked = False
 
-        if body_html and images_blocked:
-            body_html, has_external_images = block_external_images(body_html)
+        # Always detect external images so dropdown menu can show load/block actions
+        if body_html and EXTERNAL_IMAGE_RE.search(body_html):
+            has_external_images = True
+
+        if body_html and images_blocked and has_external_images:
+            body_html, _ = block_external_images(body_html)
 
         # Extract just the body content for direct embedding
         # (strip <html>, <head>, <body> wrappers since we embed into our page)
