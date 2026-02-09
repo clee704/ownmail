@@ -509,7 +509,6 @@ a:hover { text-decoration: underline; }
         flex-shrink: 0;
     }
     .ownmail-results-header {
-        padding: 0 10px;
         flex-wrap: wrap;
     }
     .ownmail-results-header .ownmail-pagination { margin-left: auto; }
