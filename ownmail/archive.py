@@ -53,20 +53,16 @@ class EmailArchive:
         # Batch connection for fast writes
         self._batch_conn: Optional[sqlite3.Connection] = None
 
-    def get_emails_dir(self, account: str = None) -> Path:
+    def get_emails_dir(self, account: str) -> Path:
         """Get emails directory for an account.
 
         Args:
-            account: Email address. If None, returns legacy single-account path.
+            account: Email address.
 
         Returns:
             Path to emails directory
         """
-        if account:
-            return self.archive_dir / "accounts" / account
-        else:
-            # Legacy single-account structure
-            return self.archive_dir / "emails"
+        return self.archive_dir / "accounts" / account
 
     # -------------------------------------------------------------------------
     # Backup

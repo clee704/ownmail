@@ -38,12 +38,6 @@ class TestGetEmailsDir:
         emails_dir = archive.get_emails_dir("alice@gmail.com")
         assert emails_dir == temp_dir / "accounts" / "alice@gmail.com"
 
-    def test_returns_legacy_path_when_no_account(self, temp_dir):
-        """Test getting legacy emails dir when no account specified."""
-        archive = EmailArchive(temp_dir, {})
-        emails_dir = archive.get_emails_dir()
-        assert emails_dir == temp_dir / "emails"
-
 
 class TestFormatHelpers:
     """Tests for static format helper methods."""
