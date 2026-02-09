@@ -512,7 +512,7 @@ a:hover { text-decoration: underline; }
 }
 
 /* Mobile responsive: 2-line layout */
-@media (max-width: 600px) {
+@media screen and (max-width: 600px) {
     html, body {
         overflow-x: hidden;
         -webkit-text-size-adjust: 100%;
@@ -729,4 +729,32 @@ html.ownmail-dark {
         border-color: #6b5a00;
         color: #f0e0a0;
     }
+}
+
+/* Print */
+@media print {
+    html.ownmail-dark { color-scheme: light; }
+    html.ownmail-dark body { background: none; color: #333; }
+    html.ownmail-dark .ownmail-email-detail { background: none; color: #333; }
+    html.ownmail-dark .ownmail-email-header-label { color: #666; }
+    html.ownmail-dark .ownmail-email-body { color: #333; }
+    html.ownmail-dark .ownmail-email-content-area { background: none !important; }
+    html.ownmail-dark #ownmail-email-content { background: none !important; color: #333 !important; }
+    html.ownmail-dark .ownmail-attachments { border-top-color: #eee; }
+    html.ownmail-dark .ownmail-attachment-item a { color: #333; }
+    body { background: none; padding: 0; max-width: none; }
+    .ownmail-header,
+    .ownmail-hamburger,
+    .ownmail-email-menu,
+    .ownmail-image-banner,
+    .ownmail-loading-overlay { display: none !important; }
+    .ownmail-email-detail {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+    }
+    .ownmail-labels { display: none; }
+    a { color: inherit; }
+    .ownmail-email-content-area { border: none !important; }
+    .ownmail-attachments { break-inside: avoid; }
 }
