@@ -1078,12 +1078,31 @@ def create_app(
         # Make all links in email open in new tab (prevents X-Frame-Options issues)
         # Also inject base styles for consistent rendering
         if body_html:
-            # Detect if email has its own styling (inline styles or <style> tags)
-            has_own_styles = ('<style' in body_html.lower() or
-                             'style=' in body_html.lower())
+            # Determine if we should apply dark mode to email content
+            # Check if email already has dark mode support
+            html_lower = body_html.lower()
+            has_dark_mode_support = 'prefers-color-scheme' in html_lower or 'color-scheme' in html_lower
 
-            if has_own_styles:
-                # Email has CSS - keep it light mode (emails assume light background)
+            # Check if email has explicit background colors that would conflict with dark mode
+            # (bgcolor attribute, background-color CSS, or <style> blocks with colors)
+            has_explicit_colors = (
+                'bgcolor' in html_lower or
+                'background-color' in html_lower or
+                'background:' in html_lower or
+                ('<style' in html_lower and ('color:' in html_lower or '#' in html_lower))
+            )
+
+            if has_dark_mode_support:
+                # Email handles dark mode itself - just add font
+                base_styles = '''<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 0;
+  margin: 15px;
+}
+</style>'''
+            elif has_explicit_colors:
+                # Email has colors but no dark mode support - force light mode
                 base_styles = '''<style>
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1094,7 +1113,7 @@ body {
 }
 </style>'''
             else:
-                # Plain email without CSS - can apply dark mode safely
+                # Plain email or layout-only styles - can apply dark mode safely
                 base_styles = '''<style>
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
