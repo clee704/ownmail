@@ -19,9 +19,9 @@
                 <span class="email-header-label">From:</span>
                 {% if sender_name and sender_email %}
                     {{ sender_name }}
-                    &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ sender_email }}</a>&gt;
+                    &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>&gt;
                 {% elif sender_email %}
-                    <a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ sender_email }}</a>
+                    <a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>
                 {% else %}
                     {{ sender }}
                 {% endif %}
@@ -32,9 +32,9 @@
                     {% if not loop.first %}, {% endif %}
                     {% if rcpt.name and rcpt.email %}
                         {{ rcpt.name }}
-                        &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ rcpt.email }}</a>&gt;
+                        &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ rcpt.email }}</a>&gt;
                     {% elif rcpt.email %}
-                        <a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ rcpt.email }}</a>
+                        <a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ rcpt.email }}</a>
                     {% else %}
                         {{ rcpt.raw }}
                     {% endif %}
@@ -46,7 +46,7 @@
             {% if labels %}
             <div class="labels">
                 {% for label in labels %}
-                <a href="/search?q=label:{{ label | urlencode }}&sort=date_desc" class="label clickable-label" onclick="showLoading()">{{ label }}</a>
+                <a href="/search?q=label:{{ label | urlencode }}&sort=date_desc" class="label clickable-label" onclick="showLoading(event)">{{ label }}</a>
                 {% endfor %}
             </div>
             {% endif %}
