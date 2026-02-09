@@ -256,6 +256,7 @@ header h1 a:hover { text-decoration: none; }
     overflow: auto;
     overflow-wrap: break-word;
     word-wrap: break-word;
+    padding: 15px;
 }
 .email-body { font-family: inherit; margin: 0; line-height: 1.6; padding: 15px; }
 .email-body a { color: #0066cc; text-decoration: none; }
