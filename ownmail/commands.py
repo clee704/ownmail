@@ -655,6 +655,79 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
         else:
             print("  ✓ All emails have hashes")
 
+        # Duplicate content (same content_hash, different email_id)
+        dup_rows = conn.execute("""
+            SELECT content_hash, COUNT(*) as cnt
+            FROM emails
+            WHERE content_hash IS NOT NULL
+            GROUP BY content_hash
+            HAVING cnt > 1
+        """).fetchall()
+        dup_count = sum(cnt - 1 for _, cnt in dup_rows)
+
+        if dup_count > 0:
+            issues_found += 1
+            print(f"  ✗ {dup_count} duplicate emails ({len(dup_rows)} unique messages duplicated)")
+            if verbose:
+                for content_hash, _cnt in dup_rows[:10]:
+                    rows = conn.execute(
+                        "SELECT email_id, provider_id, filename FROM emails WHERE content_hash = ?",
+                        (content_hash,)
+                    ).fetchall()
+                    for eid, pid, fn in rows:
+                        print(f"      {eid} | {pid} | {fn}")
+                if len(dup_rows) > 10:
+                    print(f"      ... and {len(dup_rows) - 10} more groups")
+            if fix:
+                removed_count = 0
+                removed_files = 0
+                for content_hash, _cnt in dup_rows:
+                    # Get all rows for this content_hash, keep the one with highest rowid (newest)
+                    rows = conn.execute(
+                        "SELECT rowid, email_id, filename FROM emails WHERE content_hash = ? ORDER BY rowid DESC",
+                        (content_hash,)
+                    ).fetchall()
+                    # Keep the first (newest), delete the rest
+                    for rowid, _email_id, filename in rows[1:]:
+                        # Delete labels
+                        conn.execute(
+                            "DELETE FROM email_labels WHERE email_rowid = ?", (rowid,)
+                        )
+                        # Delete recipients
+                        conn.execute(
+                            "DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,)
+                        )
+                        # Delete the email row
+                        conn.execute(
+                            "DELETE FROM emails WHERE rowid = ?", (rowid,)
+                        )
+                        # Delete the orphaned .eml file
+                        eml_path = archive.archive_dir / filename
+                        if eml_path.exists():
+                            eml_path.unlink()
+                            removed_files += 1
+                        removed_count += 1
+                # Rebuild FTS since we can't delete from contentless FTS5
+                conn.execute("DROP TABLE IF EXISTS emails_fts")
+                conn.execute("""
+                    CREATE VIRTUAL TABLE emails_fts USING fts5(
+                        subject, sender, recipients, body, attachments,
+                        content='', tokenize='porter unicode61'
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO emails_fts(rowid, subject, sender, recipients, body, attachments)
+                    SELECT rowid, COALESCE(subject, ''), COALESCE(sender, ''),
+                           COALESCE(recipients, ''), '', ''
+                    FROM emails WHERE subject IS NOT NULL
+                """)
+                conn.commit()
+                issues_fixed += 1
+                print(f"    → Removed {removed_count} duplicate DB entries and {removed_files} orphaned files")
+                print("    → FTS rebuilt (run 'reindex --force' to restore body text)")
+        else:
+            print("  ✓ No duplicate emails")
+
     # ── Summary ──────────────────────────────────────────────────────────
 
     total_time = time.time() - total_start
@@ -681,6 +754,8 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     suggestions.append("  • 'ownmail reindex' to index orphaned files")
                 if corrupted_count > 0:
                     suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
+                if dup_count > 0:
+                    suggestions.append("  • 'ownmail verify --fix' to remove duplicate emails")
                 for s in suggestions:
                     print(s)
         else:
@@ -698,6 +773,8 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 suggestions.append("  • 'ownmail reindex' to populate metadata / update stale index")
             if fts_count != emails_with_metadata:
                 suggestions.append("  • 'ownmail verify --fix' to rebuild FTS index")
+            if dup_count > 0:
+                suggestions.append("  • 'ownmail verify --fix' to remove duplicate emails")
             if suggestions:
                 print("\n  To fix:")
                 for s in suggestions:
