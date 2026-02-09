@@ -151,11 +151,14 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "<embed" not in result
         assert "Safe" in result
 
-    def test_strips_form(self):
-        """Test that <form> tags are removed."""
-        html = '<form action="https://evil.com"><input type="text"><button>Submit</button></form><p>Safe</p>'
+    def test_allows_form_elements(self):
+        """Test that form elements are preserved (matching Gmail behavior)."""
+        html = '<form action="https://example.com"><input type="text" name="title"><button>Submit</button></form><p>Safe</p>'
         result = self.sanitizer.sanitize(html)
-        assert "<form" not in result
+        assert "<form" in result
+        assert "<input" in result
+        assert "<button" in result
+        assert 'target="_blank"' in result
         assert "Safe" in result
 
     def test_strips_meta_refresh(self):
