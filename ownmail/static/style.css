@@ -520,7 +520,8 @@ a:hover { text-decoration: underline; }
     .ownmail-email-list {
         font-size: 0.95em;
     }
-    .ownmail-email-detail {
+    .ownmail-email-detail,
+    .ownmail-settings-page {
         padding: 10px;
         padding-bottom: 15px;
     }
