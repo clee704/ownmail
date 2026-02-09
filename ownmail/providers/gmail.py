@@ -151,7 +151,9 @@ class GmailProvider(EmailProvider):
             Tuple of (new_ids, new_history_id)
         """
         # If date filter is specified, always do a full filtered sync
+        # (History API doesn't support date filtering)
         if since or until:
+            print("  Searching Gmail (this may take a minute)...", flush=True)
             return self.get_all_message_ids(since=since, until=until), None
 
         if not since_state:
