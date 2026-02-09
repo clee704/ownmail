@@ -1597,7 +1597,7 @@ class TestConfigNoYAML:
     """Test config behavior when YAML is not available."""
 
     def test_load_config_no_yaml(self, tmp_path, monkeypatch, capsys):
-        """Test load_config when PyYAML is not installed."""
+        """Test load_config when ruamel.yaml is not installed."""
         # Create a config file
         config_file = tmp_path / "config.yaml"
         config_file.write_text("archive_root: /test\n")
@@ -1614,7 +1614,7 @@ class TestConfigNoYAML:
             result = load_config()
 
             captured = capsys.readouterr()
-            assert "PyYAML is not installed" in captured.out
+            assert "ruamel.yaml is not installed" in captured.out
             assert result == {}
         finally:
             config_module.HAS_YAML = original_has_yaml
