@@ -1299,12 +1299,13 @@ def create_app(
                 body_html = body_html.replace(f'cid:{cid}', data_uri)
 
         # Sanitize HTML/CSS using DOMPurify sidecar (if available)
+        needs_padding = True
         if body_html:
             sanitizer = app.config.get("sanitizer")
             if sanitizer:
                 if verbose:
                     print(f"[verbose] Sanitizing HTML ({len(body_html):,} chars)...", flush=True)
-                body_html = sanitizer.sanitize(body_html)
+                body_html, needs_padding = sanitizer.sanitize(body_html)
 
         # Parse sender and recipients for clickable links
         sender_name, sender_email = parse_email_address(email_data["sender"])
@@ -1352,6 +1353,7 @@ def create_app(
             images_blocked=images_blocked,
             has_external_images=has_external_images,
             sender_is_trusted=sender_is_trusted,
+            needs_padding=needs_padding,
             back_url=back_url,
         )
 

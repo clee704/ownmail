@@ -256,6 +256,9 @@ header h1 a:hover { text-decoration: none; }
     overflow: auto;
     overflow-wrap: break-word;
     word-wrap: break-word;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.email-content-padded, .email-content-plain {
     padding: 15px;
 }
 .email-body { font-family: inherit; margin: 0; line-height: 1.6; }
@@ -477,6 +480,11 @@ header h1 a:hover { text-decoration: none; }
         color: #333 !important;
         color-scheme: light;
         border-radius: 0 0 5px 5px;
+    }
+    #email-content.email-content-plain {
+        background: transparent !important;
+        color: #e0e0e0 !important;
+        color-scheme: dark;
     }
     .email-body { color: #e0e0e0; }
     .email-body a { color: #6cb6ff; }

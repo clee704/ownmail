@@ -36,7 +36,7 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         """Test sanitize() returns original HTML when not available."""
         sanitizer = HtmlSanitizer()
         html = "<script>alert(1)</script><p>Hello</p>"
-        result = sanitizer.sanitize(html)
+        result, needs_padding = sanitizer.sanitize(html)
         assert result == html
 
     def test_stop_without_start(self):
@@ -101,7 +101,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_strips_script_tags(self):
         """Test that <script> tags are removed."""
         html = "<p>Hello</p><script>alert('xss')</script>"
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "<script>" not in result
         assert "alert" not in result
         assert "Hello" in result
@@ -109,7 +109,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_strips_event_handlers(self):
         """Test that on* event attributes are removed."""
         html = '<p onclick="alert(1)" onmouseover="steal()">Text</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "onclick" not in result
         assert "onmouseover" not in result
         assert "Text" in result
@@ -117,7 +117,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_keeps_safe_html(self):
         """Test that safe HTML is preserved."""
         html = "<h1>Title</h1><p>Paragraph with <strong>bold</strong> and <em>italic</em></p>"
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "<h1>Title</h1>" in result
         assert "<strong>bold</strong>" in result
         assert "<em>italic</em>" in result
@@ -125,28 +125,28 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_keeps_data_uris(self):
         """Test that data: URIs for images are preserved (CID replacements)."""
         html = '<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==" alt="inline">'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "data:image/png;base64" in result
         assert 'alt="inline"' in result
 
     def test_keeps_links(self):
         """Test that links are preserved with target=_blank."""
         html = '<a href="https://example.com">Link</a>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert 'href="https://example.com"' in result
         assert "Link" in result
 
     def test_strips_iframe(self):
         """Test that <iframe> tags are removed."""
         html = '<p>Text</p><iframe src="https://evil.com"></iframe>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "<iframe" not in result
         assert "Text" in result
 
     def test_strips_object_embed(self):
         """Test that <object> and <embed> tags are removed."""
         html = '<object data="evil.swf"></object><embed src="evil.swf"><p>Safe</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "<object" not in result
         assert "<embed" not in result
         assert "Safe" in result
@@ -154,7 +154,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_allows_form_elements(self):
         """Test that form elements are preserved (matching Gmail behavior)."""
         html = '<form action="https://example.com"><input type="text" name="title"><button>Submit</button></form><p>Safe</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "<form" in result
         assert "<input" in result
         assert "<button" in result
@@ -164,14 +164,14 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_strips_meta_refresh(self):
         """Test that <meta http-equiv=refresh> is removed."""
         html = '<html><head><meta http-equiv="refresh" content="0;url=https://evil.com"></head><body>Content</body></html>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "http-equiv" not in result
         assert "Content" in result
 
     def test_strips_css_import(self):
         """Test that @import rules are removed from CSS."""
         html = '<style>@import url("https://evil.com/spy.css"); p { color: red; }</style><p>Text</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "@import" not in result or "removed" in result.lower()
         assert "color: red" in result or "color:red" in result
         assert "Text" in result
@@ -179,28 +179,28 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_strips_css_external_url(self):
         """Test that external url() references are removed from CSS."""
         html = '<style>body { background: url("https://evil.com/track.gif"); }</style><p>Text</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "evil.com" not in result
         assert "Text" in result
 
     def test_strips_css_expression(self):
         """Test that CSS expression() is removed."""
         html = '<div style="width: expression(document.body.clientWidth)">Text</div>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "expression" not in result or "removed" in result.lower()
         assert "Text" in result
 
     def test_keeps_inline_styles(self):
         """Test that safe inline CSS is preserved."""
         html = '<p style="color: blue; font-size: 14px;">Styled</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "color:" in result or "color: blue" in result
         assert "Styled" in result
 
     def test_preserves_table_structure(self):
         """Test that HTML email tables are preserved."""
         html = '<table><tr><td style="padding: 10px;">Cell</td></tr></table>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "<table>" in result or "<table" in result
         assert "<td" in result
         assert "Cell" in result
@@ -208,46 +208,46 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_keeps_data_src_attribute(self):
         """Test that data-src attribute is preserved (used by image blocking)."""
         html = '<img data-src="https://example.com/img.jpg" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==">'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "data-src" in result
 
     def test_preserves_bgcolor(self):
         """Test that bgcolor attribute is preserved (common in email HTML)."""
         html = '<table bgcolor="#ffffff"><tr><td>Content</td></tr></table>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "bgcolor" in result
 
     def test_strips_javascript_uri(self):
         """Test that javascript: URIs are removed from links."""
         html = '<a href="javascript:alert(1)">Click</a>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "javascript:" not in result
 
     def test_multiple_sanitize_calls(self):
         """Test that multiple sequential calls work correctly."""
         html1 = "<p>First</p><script>bad()</script>"
         html2 = "<p>Second</p><script>bad()</script>"
-        r1 = self.sanitizer.sanitize(html1)
-        r2 = self.sanitizer.sanitize(html2)
+        r1, _ = self.sanitizer.sanitize(html1)
+        r2, _ = self.sanitizer.sanitize(html2)
         assert "First" in r1 and "<script>" not in r1
         assert "Second" in r2 and "<script>" not in r2
 
     def test_empty_html(self):
         """Test sanitizing empty HTML."""
-        result = self.sanitizer.sanitize("")
+        result, _ = self.sanitizer.sanitize("")
         assert isinstance(result, str)
 
     def test_large_html(self):
         """Test sanitizing a large HTML string."""
         html = "<p>" + "x" * 100000 + "</p>"
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "x" in result
         assert len(result) > 100000
 
     def test_preserves_whole_document(self):
         """Test that full HTML document structure is preserved."""
         html = "<html><head><title>Test</title></head><body><p>Hello</p></body></html>"
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "<html>" in result or "<html" in result
         assert "<body>" in result or "<body" in result
         assert "Hello" in result
@@ -255,7 +255,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_scopes_css_selectors(self):
         """Test that CSS selectors are scoped under #email-content."""
         html = '<style>.header { color: red; } p { margin: 0; }</style><p>Text</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "#email-content .header" in result
         assert "#email-content p" in result
         assert "Text" in result
@@ -263,21 +263,21 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_scopes_body_selector_to_email_content(self):
         """Test that body {} becomes #email-content {}."""
         html = '<html><head><style>body { font-size: 14px; }</style></head><body><p>Hi</p></body></html>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "#email-content" in result
         assert "font-size" in result
 
     def test_scopes_css_in_media_query(self):
         """Test that selectors inside @media are also scoped."""
         html = '<style>@media (max-width: 600px) { .col { width: 100%; } }</style><div class="col">X</div>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "@media" in result
         assert "#email-content .col" in result
 
     def test_preserves_font_face(self):
         """Test that @font-face blocks are not scoped."""
         html = '<style>@font-face { font-family: MyFont; src: local("MyFont"); } p { color: red; }</style><p>Hi</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "@font-face" in result
         assert "@#email-content" not in result
         assert "#email-content p" in result
@@ -285,7 +285,35 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
     def test_strips_dark_mode_media(self):
         """Test that @media (prefers-color-scheme: dark) blocks are removed."""
         html = '<style>p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }</style><p>Hi</p>'
-        result = self.sanitizer.sanitize(html)
+        result, _ = self.sanitizer.sanitize(html)
         assert "color: #333" in result or "color:#333" in result
         assert "prefers-color-scheme: dark" not in result
         assert "prefers-color-scheme:dark" not in result
+
+    def test_allows_google_fonts_import(self):
+        """Test that @import from Google Fonts is preserved."""
+        html = '<style>@import url("https://fonts.googleapis.com/css2?family=Roboto"); p { font-family: Roboto; }</style><p>Hi</p>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "@import" in result
+        assert "fonts.googleapis.com" in result
+        assert "font-family" in result
+
+    def test_strips_untrusted_import(self):
+        """Test that @import from untrusted domain is removed."""
+        html = '<style>@import url("https://evil.com/spy.css"); p { color: red; }</style><p>Text</p>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "evil.com" not in result
+        assert "Text" in result
+
+    def test_allows_google_fonts_font_face_url(self):
+        """Test that @font-face with Google Fonts url() is preserved."""
+        html = '<style>@font-face { font-family: Roboto; src: url("https://fonts.gstatic.com/s/roboto/v30/font.woff2"); }</style><p>Hi</p>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "@font-face" in result
+        assert "fonts.gstatic.com" in result
+
+    def test_strips_untrusted_font_face_url(self):
+        """Test that @font-face with untrusted url() has the url removed."""
+        html = '<style>@font-face { font-family: Evil; src: url("https://evil.com/font.woff2"); }</style><p>Hi</p>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "evil.com" not in result

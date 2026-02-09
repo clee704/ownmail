@@ -48,12 +48,37 @@ const PURIFY_CONFIG = {
   RETURN_DOM_FRAGMENT: false,
 };
 
+// Trusted font provider domains (for @import and @font-face url())
+const TRUSTED_FONT_HOSTS = [
+  "fonts.googleapis.com",
+  "fonts.gstatic.com",
+  "use.typekit.net",    // Adobe Fonts
+  "p.typekit.net",
+  "fast.fonts.net",     // Monotype
+  "cloud.typography.com", // Hoefler
+];
+
+/**
+ * Check if a URL is from a trusted font provider.
+ */
+function isTrustedFontUrl(url) {
+  try {
+    // Extract URL from url() or @import url() or @import "..."
+    const match = url.match(/url\s*\(\s*['"]?([^'")\s]+)/i) || url.match(/['"]([^'"]+)['"]/);
+    if (!match) return false;
+    const parsed = new URL(match[1]);
+    return TRUSTED_FONT_HOSTS.includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Scope and sanitize a CSS stylesheet using postcss AST.
- * - Removes @import, @charset
+ * - Removes @charset; allows @import only from trusted font providers
  * - Removes @media (prefers-color-scheme: dark) blocks
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
- * - Removes url() with external resources (keeps data: URIs)
+ * - Removes url() with external resources (keeps data: URIs and trusted font URLs)
  * - Scopes all selectors under #email-content
  * - Leaves @font-face, @keyframes unscoped
  */
@@ -65,11 +90,15 @@ function scopeAndSanitizeCSS(css) {
     return "/* CSS parse error */";
   }
 
-  // Remove @import and @charset
+  // Remove @import and @charset (allow @import from trusted font providers)
   root.walkAtRules((atRule) => {
     const name = atRule.name.toLowerCase();
-    if (name === "import" || name === "charset") {
+    if (name === "charset") {
       atRule.remove();
+    } else if (name === "import") {
+      if (!isTrustedFontUrl(atRule.params)) {
+        atRule.remove();
+      }
     }
   });
 
@@ -97,9 +126,18 @@ function scopeAndSanitizeCSS(css) {
       return;
     }
 
-    // Remove url() with external resources, keep data: URIs
+    // Remove url() with external resources, keep data: URIs and trusted font URLs
     if (/url\s*\(/i.test(val) && !/url\s*\(\s*['"]?data:/i.test(val)) {
-      decl.remove();
+      // Allow trusted font URLs inside @font-face blocks
+      const inFontFace =
+        decl.parent &&
+        decl.parent.type === "atrule" &&
+        decl.parent.name.toLowerCase() === "font-face";
+      if (inFontFace && isTrustedFontUrl(val)) {
+        // keep it
+      } else {
+        decl.remove();
+      }
     }
   });
 
@@ -170,6 +208,57 @@ purify.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 
+/**
+ * Detect whether an email needs padding.
+ *
+ * Heuristic: if the first significant element(s) in the email set an explicit
+ * background color (via style attribute or bgcolor), the email controls its own
+ * layout and padding would create an ugly frame.  Otherwise, the email likely
+ * assumes a white background and needs padding for readability.
+ */
+function detectNeedsPadding(html) {
+  try {
+    const dom = new JSDOM(html);
+    const doc = dom.window.document;
+    const body = doc.body;
+    if (!body) return true;
+
+    // Check the first few root-level elements (skip whitespace text nodes)
+    const children = Array.from(body.children);
+    // Skip <style> elements — look at actual content elements
+    const contentElements = children.filter(
+      (el) => el.tagName.toLowerCase() !== "style"
+    );
+    if (contentElements.length === 0) return true;
+
+    // Check the first content element and its immediate child
+    for (const el of contentElements.slice(0, 2)) {
+      if (hasExplicitBackground(el)) return false;
+      // Also check immediate wrapper children (common pattern: <div><table bgcolor=...>)
+      const firstChild = el.children[0];
+      if (firstChild && hasExplicitBackground(firstChild)) return false;
+    }
+
+    return true;
+  } catch (e) {
+    return true; // Default to padding on error
+  }
+}
+
+/**
+ * Check if an element has an explicit background color set.
+ */
+function hasExplicitBackground(el) {
+  // Check bgcolor attribute
+  if (el.hasAttribute("bgcolor")) return true;
+
+  // Check inline style for background or background-color
+  const style = el.getAttribute("style") || "";
+  if (/background(-color)?\s*:/i.test(style)) return true;
+
+  return false;
+}
+
 // Process input line by line
 const readline = require("readline");
 const rl = readline.createInterface({
@@ -194,7 +283,15 @@ rl.on("line", (line) => {
 
   try {
     const clean = purify.sanitize(html, PURIFY_CONFIG);
-    process.stdout.write(JSON.stringify({ id, html: clean, error: null }) + "\n");
+
+    // Detect if the email needs padding by checking whether root-level
+    // elements set an explicit background.  Emails with full-width tables
+    // and explicit backgrounds (marketing newsletters) look bad with extra
+    // padding, while simple HTML emails (GitHub notifications, plain
+    // formatted text) need breathing room.
+    const needsPadding = detectNeedsPadding(clean);
+
+    process.stdout.write(JSON.stringify({ id, html: clean, error: null, needsPadding }) + "\n");
   } catch (e) {
     process.stdout.write(
       JSON.stringify({ id, html: html, error: e.message }) + "\n"
