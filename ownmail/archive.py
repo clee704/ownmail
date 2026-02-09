@@ -110,7 +110,11 @@ class EmailArchive:
         print("Checking for new emails...", flush=True)
         if verbose:
             print("[verbose] Calling provider.get_new_message_ids()...", flush=True)
-        new_ids, new_state = provider.get_new_message_ids(sync_state, since=since, until=until)
+        try:
+            new_ids, new_state = provider.get_new_message_ids(sync_state, since=since, until=until)
+        except KeyboardInterrupt:
+            print("\nBackup cancelled.")
+            return {"success_count": 0, "error_count": 0, "interrupted": True}
         if verbose:
             print(f"[verbose] Provider returned {len(new_ids)} message IDs", flush=True)
 

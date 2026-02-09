@@ -107,29 +107,33 @@ class GmailProvider(EmailProvider):
 
         print("  Querying Gmail API...", end="\r", flush=True)
 
-        while True:
-            request_args = {
-                "userId": "me",
-                "pageToken": page_token,
-                "maxResults": 500,
-            }
-            if query:
-                request_args["q"] = query
+        try:
+            while True:
+                request_args = {
+                    "userId": "me",
+                    "pageToken": page_token,
+                    "maxResults": 500,
+                }
+                if query:
+                    request_args["q"] = query
 
-            response = (
-                self._service.users()
-                .messages()
-                .list(**request_args)
-                .execute()
-            )
+                response = (
+                    self._service.users()
+                    .messages()
+                    .list(**request_args)
+                    .execute()
+                )
 
-            if "messages" in response:
-                all_ids.extend([msg["id"] for msg in response["messages"]])
-                print(f"  Found {len(all_ids)} messages...", end="\r", flush=True)
+                if "messages" in response:
+                    all_ids.extend([msg["id"] for msg in response["messages"]])
+                    print(f"  Found {len(all_ids)} messages...", end="\r", flush=True)
 
-            page_token = response.get("nextPageToken")
-            if not page_token:
-                break
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+        except KeyboardInterrupt:
+            print("\n\n⏸ Interrupted during Gmail query.")
+            raise
 
         print(f"  Found {len(all_ids)} total messages")
         return all_ids
@@ -175,28 +179,32 @@ class GmailProvider(EmailProvider):
         new_ids = []
         page_token = None
 
-        while True:
-            response = (
-                self._service.users()
-                .history()
-                .list(
-                    userId="me",
-                    startHistoryId=history_id,
-                    historyTypes=["messageAdded"],
-                    pageToken=page_token,
+        try:
+            while True:
+                response = (
+                    self._service.users()
+                    .history()
+                    .list(
+                        userId="me",
+                        startHistoryId=history_id,
+                        historyTypes=["messageAdded"],
+                        pageToken=page_token,
+                    )
+                    .execute()
                 )
-                .execute()
-            )
 
-            if "history" in response:
-                for history in response["history"]:
-                    if "messagesAdded" in history:
-                        for msg in history["messagesAdded"]:
-                            new_ids.append(msg["message"]["id"])
+                if "history" in response:
+                    for history in response["history"]:
+                        if "messagesAdded" in history:
+                            for msg in history["messagesAdded"]:
+                                new_ids.append(msg["message"]["id"])
 
-            page_token = response.get("nextPageToken")
-            if not page_token:
-                break
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+        except KeyboardInterrupt:
+            print("\n\n⏸ Interrupted during Gmail query.")
+            raise
 
         return new_ids
 

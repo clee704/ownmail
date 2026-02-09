@@ -380,6 +380,12 @@ Examples:
         help="Source name to operate on (default: all sources)",
     )
 
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show detailed progress output",
+    )
+
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # setup command
@@ -409,11 +415,6 @@ Examples:
         "--until",
         type=str,
         help="Only backup emails before this date (YYYY-MM-DD)",
-    )
-    backup_parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Show detailed progress output",
     )
 
     # search command
