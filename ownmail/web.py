@@ -16,21 +16,46 @@ EXTERNAL_IMAGE_RE = re.compile(
 )
 
 
-def decode_header(value: str) -> str:
-    """Decode MIME encoded header (RFC 2047)."""
+def decode_header(value) -> str:
+    """Decode MIME encoded header (RFC 2047).
+
+    Args:
+        value: Header value (can be str, Header object, or None)
+
+    Returns:
+        Decoded string
+    """
     if not value:
+        return ""
+    # Handle Header objects by converting to string first
+    if hasattr(value, '__str__') and not isinstance(value, str):
+        value = str(value)
+    if not isinstance(value, str):
         return ""
     try:
         decoded_parts = email.header.decode_header(value)
         result = []
         for data, charset in decoded_parts:
             if isinstance(data, bytes):
-                result.append(data.decode(charset or "utf-8", errors="replace"))
+                # Try the declared charset first, then common fallbacks
+                charsets_to_try = [charset] if charset else []
+                charsets_to_try.extend(['utf-8', 'euc-kr', 'cp949', 'iso-2022-kr', 'latin-1'])
+                decoded = None
+                for cs in charsets_to_try:
+                    if cs:
+                        try:
+                            decoded = data.decode(cs)
+                            break
+                        except (UnicodeDecodeError, LookupError):
+                            continue
+                if decoded is None:
+                    decoded = data.decode('utf-8', errors='replace')
+                result.append(decoded)
             else:
                 result.append(data)
         return "".join(result)
     except Exception:
-        return value
+        return str(value) if value else ""
 
 
 def _extract_snippet(msg: email.message.Message, max_len: int = 150) -> str:
@@ -332,7 +357,7 @@ def create_app(
             border: none;
             background: white;
         }
-        .back-link { margin-bottom: 15px; }
+        .back-link { margin-bottom: 15px; margin-top: 15px; }
         .back-link a { color: #0066cc; }
         .no-results { color: #666; text-align: center; padding: 40px; }
         .search-error {
@@ -389,6 +414,9 @@ def create_app(
             gap: 10px;
             margin: 20px 0;
         }
+        .pagination.pagination-bottom {
+            justify-content: flex-end;
+        }
         .pagination a, .pagination span {
             padding: 8px 12px;
             border: 1px solid #ddd;
@@ -412,7 +440,6 @@ def create_app(
             align-items: center;
             margin-bottom: 15px;
             padding: 10px 0;
-            border-bottom: 1px solid #ddd;
         }
         .results-header p { margin: 0; color: #666; }
         .results-header .pagination { margin: 0; }
@@ -426,8 +453,8 @@ def create_app(
             flex-wrap: wrap;
             gap: 10px;
             align-items: center;
+            justify-content: space-between;
         }
-        .image-banner span { flex: 1; }
         .image-banner button {
             background: #0066cc;
             color: white;
@@ -441,6 +468,11 @@ def create_app(
             background: #28a745;
         }
         .image-banner .trust-btn:hover { background: #1e7e34; }
+        .image-banner .undo-btn {
+            background: #ffc107;
+            color: #212529;
+        }
+        .image-banner .undo-btn:hover { background: #e0a800; }
         /* Loading overlay */
         .loading-overlay {
             display: none;
@@ -529,35 +561,64 @@ def create_app(
         "{% block content %}{% endblock %}",
         """{% block content %}
     <form class="search-form" action="/search" method="get">
-        <input type="text" name="q" value="{{ query | default('') }}" placeholder="Search emails..." autofocus>
-        <select name="sort" class="sort-select">
-            <option value="relevance" {{ 'selected' if sort == 'relevance' else '' }}>Relevance</option>
+        <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search emails..." autofocus>
+        <select name="sort" class="sort-select" id="sort-select">
+            <option value="relevance" id="relevance-option" {{ 'selected' if sort == 'relevance' else '' }}{% if hide_relevance %} disabled{% endif %}>Relevance</option>
             <option value="date_desc" {{ 'selected' if sort == 'date_desc' else '' }}>Newest first</option>
             <option value="date_asc" {{ 'selected' if sort == 'date_asc' else '' }}>Oldest first</option>
         </select>
         <button type="submit">Search</button>
     </form>
+    <script>
+    // Enable/disable Relevance option based on search input
+    (function() {
+        var input = document.getElementById('search-input');
+        var relevanceOpt = document.getElementById('relevance-option');
+        var sortSelect = document.getElementById('sort-select');
+
+        function updateRelevanceOption() {
+            var query = input.value.trim();
+            // Remove date/label filters to check for FTS terms
+            var withoutFilters = query
+                .replace(/\\b(before|after):\\d{4}-?\\d{2}-?\\d{2}\\b/gi, '')
+                .replace(/\\b(label|tag):\\S+\\b/gi, '')
+                .replace(/\\bAND\\b/gi, '')
+                .trim();
+            var hasFtsTerms = withoutFilters.length > 0;
+
+            relevanceOpt.disabled = !hasFtsTerms;
+
+            // If relevance is selected but disabled, switch to date_desc
+            if (!hasFtsTerms && sortSelect.value === 'relevance') {
+                sortSelect.value = 'date_desc';
+            }
+        }
+
+        input.addEventListener('input', updateRelevanceOption);
+        // Run on page load too
+        updateRelevanceOption();
+    })();
+    </script>
     <div class="help">
         Search: <code>from:</code> <code>subject:</code> <code>attachment:</code> <code>before:2024-01-01</code> <code>after:2023-06-15</code> <code>label:INBOX</code>
         &bull; <a href="/help">Syntax help</a>
     </div>
 
-    {% if query %}
-        {% if search_error %}
-            <div class="search-error">
-                <strong>Search error:</strong> {{ search_error }}
-                <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
-            </div>
-        {% elif results %}
-            <div class="results-header">
-                <p>Showing {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %} (took {{ "%.2f"|format(search_time) }}s)</p>
-                {% if has_prev or has_more %}
-                <div class="pagination">
-                    {% if has_prev %}
-                        <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
-                    {% endif %}
-                    <span class="current">Page {{ page }}</span>
-                    {% if has_more %}
+    {% if search_error %}
+        <div class="search-error">
+            <strong>Search error:</strong> {{ search_error }}
+            <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
+        </div>
+    {% elif results %}
+        <div class="results-header">
+            <p>{% if query %}Showing{% else %}Recent emails:{% endif %} {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %}{% if query %} (took {{ "%.2f"|format(search_time) }}s){% endif %}</p>
+            {% if has_prev or has_more %}
+            <div class="pagination">
+                {% if has_prev %}
+                    <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
+                {% endif %}
+                <span class="current">Page {{ page }}</span>
+                {% if has_more %}
                         <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}">Next &raquo;</a>
                     {% endif %}
                 </div>
@@ -577,7 +638,7 @@ def create_app(
             {% endfor %}
             </ul>
             {% if has_prev or has_more %}
-            <div class="pagination">
+            <div class="pagination pagination-bottom">
                 {% if has_prev %}
                     <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
                 {% endif %}
@@ -587,11 +648,8 @@ def create_app(
                 {% endif %}
             </div>
             {% endif %}
-        {% else %}
-            <div class="no-results">No results found for "{{ query }}"</div>
-        {% endif %}
-    {% else %}
-        <div class="no-results">Enter a search query to find emails</div>
+    {% elif query %}
+        <div class="no-results">No results found for "{{ query }}"</div>
     {% endif %}
 {% endblock %}"""
     )
@@ -699,18 +757,23 @@ def create_app(
 
         {% if images_blocked and has_external_images %}
         <div class="image-banner" id="image-banner">
-            <span>🖼️ External images are blocked for security.</span>
-            <button onclick="loadImages()">Load Images</button>
-            {% if sender_email %}
-            <form action="/trust-sender" method="post" style="display: inline;">
-                <input type="hidden" name="email" value="{{ sender_email }}">
-                <input type="hidden" name="redirect" value="/email/{{ message_id }}">
-                <button type="submit" class="trust-btn">Always trust {{ sender_email }}</button>
-            </form>
-            {% endif %}
+            <span id="image-banner-text">🖼️ External images are blocked for security.</span>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button id="load-images-btn" onclick="loadImages()">Load Images</button>
+                {% if sender_email %}
+                <span id="trust-container">
+                    <button class="trust-btn" onclick="trustSender()">Always trust this sender</button>
+                </span>
+                <span id="trusted-container" style="display: none;">
+                    <button class="undo-btn" onclick="untrustSender()">Undo</button>
+                </span>
+                {% endif %}
+            </div>
         </div>
         <script>
-        function loadImages() {
+        var senderEmail = "{{ sender_email }}";
+
+        function loadImages(skipTextUpdate) {
             var iframe = document.getElementById('email-frame');
             if (iframe) {
                 var doc = iframe.contentDocument;
@@ -723,7 +786,41 @@ def create_app(
                     iframe.style.height = doc.body.scrollHeight + 20 + 'px';
                 }, 500);
             }
-            document.getElementById('image-banner').style.display = 'none';
+            // Hide the load button and update text, but keep trust option visible
+            document.getElementById('load-images-btn').style.display = 'none';
+            if (!skipTextUpdate) {
+                document.getElementById('image-banner-text').textContent = '✓ Images loaded.';
+            }
+        }
+
+        function trustSender() {
+            fetch('/trust-sender', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'email=' + encodeURIComponent(senderEmail)
+            }).then(function(response) {
+                if (response.ok) {
+                    document.getElementById('trust-container').style.display = 'none';
+                    document.getElementById('trusted-container').style.display = 'inline';
+                    document.getElementById('image-banner-text').textContent = '✓ Images from this sender will always be loaded.';
+                    document.getElementById('load-images-btn').style.display = 'none';
+                    loadImages(true);
+                }
+            });
+        }
+
+        function untrustSender() {
+            fetch('/untrust-sender', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'email=' + encodeURIComponent(senderEmail)
+            }).then(function(response) {
+                if (response.ok) {
+                    document.getElementById('trusted-container').style.display = 'none';
+                    document.getElementById('trust-container').style.display = 'inline';
+                    document.getElementById('image-banner-text').textContent = '✓ Images loaded.';
+                }
+            });
         }
         </script>
         {% endif %}
@@ -756,13 +853,14 @@ def create_app(
         </div>
         {% endif %}
     </div>
+    <div class="back-link"><a href="javascript:history.back()">&larr; Back to search</a></div>
 {% endblock %}"""
     )
 
     @app.route("/")
     def index():
-        stats = get_cached_stats()
-        return render_template_string(SEARCH_TEMPLATE, stats=stats, query="", results=None, sort="relevance")
+        # Redirect to search page which now shows newest emails by default
+        return redirect("/search")
 
     @app.route("/help")
     def help_page():
@@ -780,8 +878,28 @@ def create_app(
         per_page = page_size  # Use configured page_size
         stats = get_cached_stats()
 
+        # Check if query is filter-only (no FTS search terms)
+        # Remove known filters to see if any search terms remain
+        query_without_filters = query
+        for pattern in [
+            r'\b(?:before|after):\d{4}-?\d{2}-?\d{2}\b',
+            r'\b(?:label|tag):\S+\b',
+        ]:
+            query_without_filters = re.sub(pattern, '', query_without_filters)
+        # Also remove orphaned AND
+        query_without_filters = re.sub(r'\bAND\b', '', query_without_filters, flags=re.IGNORECASE)
+        # Check if there are actual search terms (including field:value FTS queries)
+        has_fts_terms = bool(query_without_filters.strip())
+
+        # If no FTS terms, "relevance" doesn't make sense - use date_desc
+        if not has_fts_terms and sort == "relevance":
+            sort = "date_desc"
+
+        # If no query at all, show newest emails
         if not query:
-            return render_template_string(SEARCH_TEMPLATE, stats=stats, query="", results=None, sort=sort)
+            query = ""  # Will trigger filter-only path in database
+            has_fts_terms = False
+            sort = "date_desc"
 
         # Server-side pagination: fetch only what we need + 1 to check if more exist
         offset = (page - 1) * per_page
@@ -866,6 +984,7 @@ def create_app(
             has_prev=page > 1,
             search_time=search_time,
             search_error=search_error,
+            hide_relevance=not has_fts_terms,
         )
 
     @app.route("/email/<message_id>")
@@ -1104,7 +1223,49 @@ def create_app(
             if verbose:
                 print(f"[verbose] Error updating config: {e}", flush=True)
 
+        # Return JSON for AJAX, redirect for form submit
+        if request.headers.get("Content-Type") == "application/x-www-form-urlencoded" and not redirect_to:
+            return {"status": "ok"}
+        if redirect_to == "/":
+            return {"status": "ok"}
         return redirect(redirect_to)
+
+    @app.route("/untrust-sender", methods=["POST"])
+    def untrust_sender():
+        """Remove a sender from the trusted senders list."""
+        sender_email = request.form.get("email", "").strip().lower()
+
+        if not sender_email:
+            return {"status": "error", "message": "No email provided"}
+
+        # Remove from in-memory set
+        app.config["trusted_senders"].discard(sender_email)
+
+        config_path = app.config.get("config_path")
+        if config_path:
+            try:
+                # Read current config
+                with open(config_path) as f:
+                    import yaml
+                    config_data = yaml.safe_load(f) or {}
+
+                # Remove from trusted_senders
+                web_config = config_data.get("web", {})
+                trusted_list = web_config.get("trusted_senders", [])
+                if sender_email in trusted_list:
+                    trusted_list.remove(sender_email)
+
+                    # Write back
+                    with open(config_path, "w") as f:
+                        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+                    if verbose:
+                        print(f"[verbose] Removed trusted sender: {sender_email}", flush=True)
+            except Exception as e:
+                if verbose:
+                    print(f"[verbose] Error updating config: {e}", flush=True)
+
+        return {"status": "ok"}
 
     return app
 

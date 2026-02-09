@@ -89,7 +89,7 @@ class TestSearch:
         archive = EmailArchive(temp_dir, {})
 
         # Create and index an email
-        archive.db.mark_downloaded("test123", "test.eml")
+        archive.db.mark_downloaded("test123", "test.eml", email_date="2024-01-15T00:00:00")
         archive.db.index_email(
             message_id="test123",
             subject="Invoice for Amazon purchase",
@@ -116,7 +116,7 @@ class TestSearch:
 
         # Add multiple emails
         for i in range(10):
-            archive.db.mark_downloaded(f"msg{i}", f"email{i}.eml")
+            archive.db.mark_downloaded(f"msg{i}", f"email{i}.eml", email_date="2024-01-15T00:00:00")
             archive.db.index_email(
                 message_id=f"msg{i}",
                 subject=f"Test email number {i}",
@@ -529,7 +529,7 @@ class TestArchiveSearch:
         email_path.write_bytes(sample_eml_simple)
 
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded("test123", rel_path, content_hash="abc")
+        archive.db.mark_downloaded("test123", rel_path, content_hash="abc", email_date="2024-01-15T00:00:00")
         archive.db.index_email(
             message_id="test123",
             subject="Test Email",

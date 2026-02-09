@@ -1,21 +1,19 @@
 """Tests for web interface."""
 
 import email
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from ownmail.web import (
     LRUCache,
+    _extract_snippet,
+    _format_size,
     block_external_images,
     create_app,
     decode_header,
     parse_email_address,
     parse_recipients,
-    _extract_snippet,
-    _format_size,
 )
 
 
@@ -235,12 +233,12 @@ class TestCreateApp:
         assert app is not None
 
     def test_index_route(self, mock_archive):
-        """Index route should return 200."""
+        """Index route should redirect to search."""
         app = create_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/")
-            assert response.status_code == 200
-            assert b"ownmail" in response.data
+            assert response.status_code == 302
+            assert response.location == "/search"
 
     def test_search_route_empty(self, mock_archive):
         """Search route with no query should return search page."""

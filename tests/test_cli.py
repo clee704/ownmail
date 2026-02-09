@@ -31,7 +31,7 @@ class TestCmdSearch:
         archive = EmailArchive(temp_dir, {})
 
         # Add an indexed email
-        archive.db.mark_downloaded("test123", "test.eml")
+        archive.db.mark_downloaded("test123", "test.eml", email_date="2024-01-15T00:00:00")
         archive.db.index_email(
             message_id="test123",
             subject="Test Invoice",
