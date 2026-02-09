@@ -33,6 +33,53 @@ CHARSET_ALIASES = {
 }
 
 
+def _fix_mojibake_filename(filename: str) -> str:
+    """Fix mojibake in attachment filenames.
+
+    Some old emails have raw non-ASCII bytes in filenames without proper
+    MIME encoding. Python's email library decodes them as latin-1/ASCII,
+    producing mojibake. This function detects and fixes such cases.
+
+    Args:
+        filename: Potentially mojibake filename
+
+    Returns:
+        Properly decoded filename
+    """
+    if not filename:
+        return filename
+
+    # Check if the filename looks like mojibake (high latin-1 chars that
+    # could be EUC-KR/CP949 bytes interpreted as latin-1)
+    try:
+        # Try to encode as latin-1 to get raw bytes
+        raw_bytes = filename.encode('latin-1')
+    except UnicodeEncodeError:
+        # Contains chars outside latin-1, not simple mojibake
+        return filename
+
+    # Check if it has high bytes (potential CJK encoding)
+    if not any(b >= 0x80 for b in raw_bytes):
+        return filename  # All ASCII, no mojibake
+
+    # Try to decode as various CJK encodings
+    for encoding in ['euc-kr', 'cp949', 'utf-8', 'gb2312', 'gbk', 'shift_jis']:
+        try:
+            decoded = raw_bytes.decode(encoding)
+            # Validate that result looks like readable text
+            # (contains Hangul, CJK, or mostly printable ASCII)
+            hangul_cjk = sum(1 for c in decoded
+                            if '\uAC00' <= c <= '\uD7AF'  # Hangul
+                            or '\u4E00' <= c <= '\u9FFF'  # CJK
+                            or '\u3040' <= c <= '\u30FF')  # Japanese
+            if hangul_cjk > 0:
+                return decoded
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    return filename  # Return original if nothing worked
+
+
 def decode_header(value) -> str:
     """Decode MIME encoded header (RFC 2047).
 
@@ -706,8 +753,10 @@ def create_app(
                     content_disposition = str(part.get("Content-Disposition", ""))
 
                     if "attachment" in content_disposition:
-                        # Attachment
-                        att_filename = decode_header(part.get_filename() or "") or "attachment"
+                        # Attachment - decode_header for MIME, _fix_mojibake for raw bytes
+                        att_filename = part.get_filename() or ""
+                        att_filename = decode_header(att_filename)
+                        att_filename = _fix_mojibake_filename(att_filename) or "attachment"
                         size = len(part.get_payload(decode=True) or b"")
                         attachments.append({
                             "filename": att_filename,
@@ -858,8 +907,10 @@ def create_app(
             content_disposition = str(part.get("Content-Disposition", ""))
             if "attachment" in content_disposition:
                 if attachment_idx == index:
-                    # Found the attachment
-                    att_filename = decode_header(part.get_filename() or "") or "attachment"
+                    # Found the attachment - decode_header for MIME, _fix_mojibake for raw bytes
+                    att_filename = part.get_filename() or ""
+                    att_filename = decode_header(att_filename)
+                    att_filename = _fix_mojibake_filename(att_filename) or "attachment"
                     att_data = part.get_payload(decode=True)
                     content_type = part.get_content_type()
 
