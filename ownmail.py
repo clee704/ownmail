@@ -200,13 +200,20 @@ class ArchiveDatabase:
                     message_id TEXT PRIMARY KEY,
                     filename TEXT,
                     downloaded_at TEXT,
-                    content_hash TEXT
+                    content_hash TEXT,
+                    indexed_hash TEXT
                 )
             """)
             
             # Migration: add content_hash column if missing (for existing DBs)
             try:
                 conn.execute("ALTER TABLE emails ADD COLUMN content_hash TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            
+            # Migration: add indexed_hash column if missing (for existing DBs)
+            try:
+                conn.execute("ALTER TABLE emails ADD COLUMN indexed_hash TEXT")
             except sqlite3.OperationalError:
                 pass  # Column already exists
             
@@ -763,10 +770,29 @@ class GmailArchive:
             print(f"\n  Error downloading {message_id}: {e}")
             return None
 
-    def index_email(self, message_id: str, filepath: Path) -> bool:
-        """Index an email for full-text search."""
+    def index_email(self, message_id: str, filepath: Path, update_hash: bool = True) -> bool:
+        """Index an email for full-text search.
+        
+        Args:
+            message_id: The message ID
+            filepath: Path to the .eml file
+            update_hash: If True, also compute and update content_hash and indexed_hash
+        
+        Returns:
+            True if successful, False otherwise
+        """
         try:
+            # Read file content for both parsing and hashing
+            with open(filepath, "rb") as f:
+                content = f.read()
+            
+            # Compute hash
+            new_hash = hashlib.sha256(content).hexdigest() if update_hash else None
+            
+            # Parse email
             parsed = EmailParser.parse_file(filepath)
+            
+            # Index in FTS
             self.db.index_email(
                 message_id=message_id,
                 subject=parsed["subject"],
@@ -776,6 +802,16 @@ class GmailArchive:
                 body=parsed["body"],
                 attachments=parsed["attachments"],
             )
+            
+            # Update hashes
+            if update_hash and new_hash:
+                with sqlite3.connect(self.db.db_path) as conn:
+                    conn.execute(
+                        "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE message_id = ?",
+                        (new_hash, new_hash, message_id)
+                    )
+                    conn.commit()
+            
             return True
         except Exception as e:
             print(f"\n  Error indexing {filepath}: {e}")
@@ -999,13 +1035,16 @@ class GmailArchive:
             print(f"\n❌ Error: {e}")
             sys.exit(1)
 
-    def cmd_reindex(self, file_path: Optional[Path] = None, pattern: Optional[str] = None, clear: bool = True) -> None:
+    def cmd_reindex(self, file_path: Optional[Path] = None, pattern: Optional[str] = None, force: bool = False) -> None:
         """Rebuild the search index.
+        
+        By default, only indexes emails that have changed (content_hash != indexed_hash).
+        This makes reindex resumable - if cancelled, just run again to continue.
         
         Args:
             file_path: Index only this specific file
             pattern: Index only files matching this glob pattern (e.g., "2024/09/*")
-            clear: Whether to clear the existing index first (default: True for full reindex)
+            force: If True, reindex all emails regardless of indexed_hash
         """
         print("\n" + "=" * 50)
         print("ownmail - Reindex")
@@ -1048,49 +1087,87 @@ class GmailArchive:
                 print("✗ Failed to index")
             return
 
-        # Pattern mode or full reindex
-        if clear and not pattern:
-            print("Clearing existing index...")
-            self.db.clear_index()
+        # Force mode: clear indexed_hash so all emails are re-indexed
+        if force:
+            print("Force mode: will reindex all emails")
+            with sqlite3.connect(self.db.db_path) as conn:
+                conn.execute("UPDATE emails SET indexed_hash = NULL")
+                conn.commit()
 
-        # Get emails to index
+        # Get emails to index (where indexed_hash != content_hash or either is NULL)
         with sqlite3.connect(self.db.db_path) as conn:
             if pattern:
                 # Use LIKE for pattern matching
                 like_pattern = pattern.replace("*", "%").replace("?", "_")
                 emails = conn.execute(
-                    "SELECT message_id, filename FROM emails WHERE filename LIKE ?",
+                    """SELECT message_id, filename, content_hash, indexed_hash 
+                       FROM emails 
+                       WHERE filename LIKE ? 
+                       AND (indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash)""",
                     (f"emails/{like_pattern}",)
                 ).fetchall()
-                print(f"Pattern '{pattern}' matched {len(emails)} emails")
+                total_matching = conn.execute(
+                    "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
+                    (f"emails/{like_pattern}",)
+                ).fetchone()[0]
+                print(f"Pattern '{pattern}': {len(emails)} need indexing (of {total_matching} matching)")
             else:
                 emails = conn.execute(
-                    "SELECT message_id, filename FROM emails"
+                    """SELECT message_id, filename, content_hash, indexed_hash 
+                       FROM emails 
+                       WHERE indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash"""
                 ).fetchall()
+                total_emails = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
+                already_indexed = total_emails - len(emails)
+                if already_indexed > 0:
+                    print(f"Skipping {already_indexed} already-indexed emails")
 
         if not emails:
-            print("No emails to index.")
+            print("All emails are already indexed. Use --force to reindex everything.")
             return
 
-        print(f"Indexing {len(emails)} emails...\n")
+        print(f"Indexing {len(emails)} emails...")
+        print("(Press Ctrl-C to pause - progress is saved, run again to resume)\n")
 
         success_count = 0
+        skip_count = 0
         error_count = 0
+        interrupted = False
 
-        for i, (msg_id, filename) in enumerate(emails, 1):
-            print(f"  [{i}/{len(emails)}] Indexing...", end="\r")
-            filepath = self.archive_dir / filename
-            if filepath.exists():
-                if self.index_email(msg_id, filepath):
-                    success_count += 1
+        def signal_handler(signum, frame):
+            nonlocal interrupted
+            interrupted = True
+            print("\n\n⏸ Stopping after current email...")
+
+        original_handler = signal.signal(signal.SIGINT, signal_handler)
+
+        try:
+            for i, (msg_id, filename, content_hash, indexed_hash) in enumerate(emails, 1):
+                if interrupted:
+                    break
+                    
+                print(f"  [{i}/{len(emails)}] Indexing...", end="\r")
+                filepath = self.archive_dir / filename
+                if filepath.exists():
+                    if self.index_email(msg_id, filepath, update_hash=True):
+                        success_count += 1
+                    else:
+                        error_count += 1
                 else:
                     error_count += 1
-            else:
-                error_count += 1
+        finally:
+            signal.signal(signal.SIGINT, original_handler)
 
         print("\n" + "-" * 50)
-        print("Reindex Complete!")
-        print(f"  Indexed: {success_count} emails")
+        if interrupted:
+            remaining = len(emails) - success_count - error_count
+            print("Reindex Paused!")
+            print(f"  Indexed: {success_count} emails")
+            print(f"  Remaining: {remaining} emails")
+            print("\n  Run 'ownmail reindex' again to resume.")
+        else:
+            print("Reindex Complete!")
+            print(f"  Indexed: {success_count} emails")
         if error_count > 0:
             print(f"  Errors: {error_count}")
         print("-" * 50 + "\n")
@@ -1418,10 +1495,10 @@ Examples:
   %(prog)s search "invoice from:amazon"   Search emails
   %(prog)s search "subject:meeting"        Search by subject
   %(prog)s stats                           Show statistics
-  %(prog)s reindex                         Rebuild entire search index
+  %(prog)s reindex                         Index new/changed emails (resumable)
+  %(prog)s reindex --force                 Reindex everything from scratch
   %(prog)s reindex --file path/to/email.eml   Reindex single file
   %(prog)s reindex --pattern "2024/09/*"      Reindex September 2024 only
-  %(prog)s reindex --pattern "2024/*" --no-clear  Add 2024 to existing index
   %(prog)s add-labels                      Add Gmail labels to existing emails
   %(prog)s verify                          Verify integrity of downloaded emails
   %(prog)s verify --verbose                Show full list of issues
@@ -1488,9 +1565,9 @@ Config file (config.yaml):
         help="Index only files matching this pattern (e.g., '2024/09/*' or '2024/*')",
     )
     reindex_parser.add_argument(
-        "--no-clear",
+        "--force", "-f",
         action="store_true",
-        help="Don't clear the existing index first (for incremental updates)",
+        help="Reindex all emails, even if already indexed",
     )
 
     # add-labels command
@@ -1547,7 +1624,7 @@ Config file (config.yaml):
             archive.cmd_reindex(
                 file_path=args.file,
                 pattern=args.pattern,
-                clear=not args.no_clear
+                force=args.force
             )
         elif args.command == "add-labels":
             archive.cmd_add_labels()

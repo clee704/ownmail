@@ -15,6 +15,7 @@
 - [x] Integrity verification (SHA256 hashes)
 - [x] Secure credential storage (macOS/Windows/Linux via keyring)
 - [x] Resumable backups (Ctrl-C safe)
+- [x] Resumable reindex (hash-based change detection)
 - [x] Config file support
 
 ---
