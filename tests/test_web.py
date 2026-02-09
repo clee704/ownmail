@@ -52,6 +52,24 @@ class TestDecodeHeader:
         assert "테스트" in result
         assert "Test" in result
 
+    def test_split_multibyte_encoded_words(self):
+        """Split multi-byte chars across encoded-words should be decoded."""
+        # This is a malformed header where a multi-byte char is split
+        # "PhpBB2 forum at ROPAS에 오신것을 환영합니다" split across two encoded-words
+        encoded = "=?utf-8?B?UGhwQkIyIGZvcnVtIGF0IFJPUEFT7JeQIOyYpOyLoOqyg+ydhCDtmZjsmIHtla?= =?utf-8?B?nri4jri6Q=?="
+        result = decode_header(encoded)
+        # Should decode to readable Korean, not return the raw encoded string
+        assert "=?" not in result
+        assert "ROPAS" in result
+
+    def test_malformed_base64_fallback(self):
+        """Malformed base64 should not crash, return best effort."""
+        # Invalid base64 that can't be decoded
+        encoded = "=?utf-8?B?invalid!!!base64?="
+        result = decode_header(encoded)
+        # Should return something, not crash
+        assert isinstance(result, str)
+
 
 class TestBlockExternalImages:
     """Tests for block_external_images function."""
