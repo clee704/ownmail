@@ -178,13 +178,15 @@ Date: Mon, 15 Jan 2024 10:00:00 +0000
 
 Body
 """
-        filepath = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
+        filepath, email_date = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
 
         assert filepath is not None
         assert filepath.exists()
         assert "2024" in str(filepath)
         assert "01" in str(filepath)
         assert filepath.suffix == ".eml"
+        assert email_date is not None
+        assert "2024-01-15" in email_date
 
     def test_save_email_atomic_write(self, temp_dir):
         """Test that save_email uses atomic writes."""
@@ -198,7 +200,7 @@ Date: Mon, 15 Jan 2024 10:00:00 +0000
 
 Body
 """
-        filepath = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
+        filepath, email_date = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
 
         # File should exist and have correct content
         assert filepath.read_bytes() == raw_data
@@ -327,12 +329,13 @@ Date: not a valid date
 
 Body
 """
-        filepath = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
+        filepath, email_date = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
 
         assert filepath is not None
         assert filepath.exists()
         # Should use "unknown" for unparseable dates
         assert "unknown" in str(filepath)
+        assert email_date is None
 
     def test_save_email_no_date(self, temp_dir):
         """Test saving email without Date header."""
@@ -346,10 +349,11 @@ Subject: No Date
 
 Body
 """
-        filepath = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
+        filepath, email_date = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
 
         assert filepath is not None
         assert filepath.exists()
+        assert email_date is None
 
     def test_save_email_creates_directories(self, temp_dir):
         """Test that _save_email creates necessary directories."""
@@ -363,7 +367,7 @@ Date: Mon, 15 Jan 2024 10:00:00 +0000
 
 Body
 """
-        filepath = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
+        filepath, email_date = archive._save_email(raw_data, "msg123", "test@example.com", emails_dir)
 
         assert filepath is not None
         assert filepath.exists()

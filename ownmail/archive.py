@@ -211,7 +211,7 @@ class EmailArchive:
                     raw_data, labels, _ = result
 
                     # Save to file
-                    filepath = self._save_email(
+                    filepath, email_date = self._save_email(
                         raw_data, msg_id, account, emails_dir
                     )
 
@@ -230,6 +230,7 @@ class EmailArchive:
                             content_hash=content_hash,
                             account=account,
                             conn=self._batch_conn,
+                            email_date=email_date,
                         )
                         # Set indexed_hash to mark as indexed
                         self._batch_conn.execute(
@@ -288,21 +289,23 @@ class EmailArchive:
         msg_id: str,
         account: str,
         emails_dir: Path,
-    ) -> Optional[Path]:
+    ) -> tuple:
         """Save email to filesystem atomically.
 
         Returns:
-            Path to saved file, or None on error
+            Tuple of (filepath, email_date_iso) or (None, None) on error
         """
         try:
             # Parse date for directory structure
             email_msg = email.message_from_bytes(raw_data)
             date_str = email_msg.get("Date", "")
+            email_date_iso = None
 
             try:
                 msg_date = parsedate_to_datetime(date_str)
                 date_prefix = msg_date.strftime("%Y%m%d_%H%M%S")
                 year_month = msg_date.strftime("%Y/%m")
+                email_date_iso = msg_date.isoformat()
             except Exception:
                 date_prefix = "unknown"
                 year_month = "unknown"
@@ -327,11 +330,11 @@ class EmailArchive:
                     os.unlink(temp_path)
                 raise
 
-            return filepath
+            return filepath, email_date_iso
 
         except Exception as e:
             print(f"\n  Error saving {msg_id}: {e}")
-            return None
+            return None, None
 
     def _index_email(
         self,
