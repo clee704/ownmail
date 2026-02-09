@@ -1,8 +1,6 @@
 # ownmail
 
-**Own your mail.** A file-based email backup and search tool. Your emails, your files, your drive.
-
-> **Note:** ownmail is a backup tool, not an email client. It downloads and archives your emails for safekeeping and search — it doesn't send, receive, or manage your inbox. For that, keep using Gmail, Outlook, or your favorite mail app.
+**Own your mail.** Back up your Gmail to plain files. Search them offline. Own them forever.
 
 ```
 $ ownmail backup
@@ -18,27 +16,6 @@ Checking for new emails...
 
 ✓ No new emails to download. Archive is up to date!
 ```
-
-## Philosophy
-
-- 📁 **Files as source of truth** — Your emails are stored as standard `.eml` files. No proprietary database, no lock-in.
-- 🔐 **You own your data** — Everything stays on your drive. Put it on an encrypted volume and you're done.
-- ⚡ **Fast & incremental** — Only downloads new emails. Resume anytime with Ctrl-C.
-- 🔍 **Optional search** — SQLite-based full-text search. The index is just a convenience layer.
-
-## Why ownmail?
-
-There are existing tools like `mbsync` + `mu` or `offlineimap` that can accomplish similar goals. Here's why you might prefer ownmail:
-
-| | mbsync + mu | ownmail |
-|---|---|---|
-| **Setup** | Configure multiple tools separately | Single `pip install`, one config file |
-| **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
-| **Gmail sync** | IMAP only | IMAP (App Password) or Gmail API (OAuth) |
-| **Integrity** | — | SHA256 hashes, `verify` and `sync-check` commands |
-| **Hackability** | Multiple codebases in different languages | Single Python project — fork it, make it yours |
-
-**The bottom line:** If you're already comfortable with mbsync + mu, you probably don't need this. But if you want something simpler that "just works" for Gmail backup, or you want a single codebase you can easily modify to your taste — ownmail is for you.
 
 ## Install
 
@@ -61,6 +38,29 @@ ownmail backup
 ownmail search "invoice from:amazon"
 ```
 
+> ownmail backs up and searches your email — it doesn't replace your mail app.
+
+## Philosophy
+
+- 📁 **Files as source of truth** — Your emails are stored as standard `.eml` files. No proprietary database, no lock-in.
+- 🔐 **You own your data** — Everything stays on your drive. Put it on an encrypted volume and you're done.
+- ⚡ **Fast & incremental** — Only downloads new emails. Resume anytime with Ctrl-C.
+- 🔍 **Optional search** — SQLite-based full-text search. The index is just a convenience layer.
+
+## Why ownmail?
+
+There are existing tools like `mbsync` + `mu` or `offlineimap` that can accomplish similar goals. Here's why you might prefer ownmail:
+
+| | mbsync + mu | ownmail |
+|---|---|---|
+| **Setup** | Configure multiple tools separately | Single `pip install`, one config file |
+| **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
+| **Gmail sync** | IMAP only | IMAP (App Password) or Gmail API (OAuth) |
+| **Integrity** | — | SHA256 hashes, `verify` and `sync-check` commands |
+| **Hackability** | Multiple codebases in different languages | Single Python project — fork it, make it yours |
+
+**The bottom line:** If you want a simple, single-tool Gmail backup that stores plain files — ownmail is for you.
+
 ## Commands
 
 | Command | Description |
@@ -68,6 +68,7 @@ ownmail search "invoice from:amazon"
 | `setup` | Set up email source credentials (App Password or OAuth) |
 | `backup` | Download new emails |
 | `search "query"` | Full-text search |
+| `serve` | Launch web UI for browsing and searching emails |
 | `stats` | Show archive statistics |
 | `verify` | Check file integrity (SHA256) |
 | `sync-check` | Compare local archive with server |
@@ -180,7 +181,18 @@ ownmail search "subject:receipt"
 ownmail search "attachment:pdf"
 ```
 
-## Storage Layout
+## Security
+
+| What | Where |
+|------|-------|
+| App Passwords & OAuth tokens | System keychain (macOS/Windows/Linux) |
+| Emails & search index | Your chosen directory |
+
+Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
+
+## Advanced
+
+### Storage Layout
 
 ```
 /Volumes/Secure/ownmail/
@@ -198,7 +210,7 @@ ownmail search "attachment:pdf"
 - **Emails**: Standard `.eml` format with `X-Gmail-Labels` header
 - **Database**: Only stores message IDs, filenames, and hashes — not email content
 
-## Integrity Verification
+### Integrity Verification
 
 ```bash
 # Verify all files match their stored hashes
@@ -211,7 +223,7 @@ ownmail rehash
 ownmail sync-check
 ```
 
-## Resumable Backups
+### Resumable Backups
 
 Press **Ctrl-C** anytime to pause:
 
@@ -228,15 +240,6 @@ Backup Paused!
   Run 'backup' again to resume.
 ```
 
-## Security
-
-| What | Where |
-|------|-------|
-| App Passwords & OAuth tokens | System keychain (macOS/Windows/Linux) |
-| Emails & search index | Your chosen directory |
-
-Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
-
 ### HTML Sanitization
 
 When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify](https://github.com/cure53/DOMPurify) running in a Node.js sidecar process. This strips `<script>` tags, event handlers, dangerous CSS (`@import`, `expression()`), and other XSS vectors before the content reaches your browser.
@@ -248,8 +251,8 @@ When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify
 - [x] Gmail backup (API + OAuth)
 - [x] IMAP support (App Passwords, any IMAP server)
 - [x] Web UI for browsing and search
-- [ ] Outlook/Microsoft 365 support
 - [ ] Local .eml import
+- [ ] Outlook/Microsoft 365 support
 
 ## License
 
