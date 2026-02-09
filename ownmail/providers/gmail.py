@@ -2,6 +2,7 @@
 
 import base64
 import json
+import time
 from typing import Dict, List, Optional, Tuple
 
 from google.auth.transport.requests import Request
@@ -14,8 +15,11 @@ from ownmail.providers.base import EmailProvider
 # Gmail API scopes - readonly access
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-# Batch size for parallel downloads (Gmail API limit is 100)
-BATCH_SIZE = 50
+# Batch size for parallel downloads (conservative to avoid rate limits)
+BATCH_SIZE = 10
+
+# Delay between batches in seconds
+BATCH_DELAY = 0.1
 
 
 class GmailProvider(EmailProvider):
@@ -262,20 +266,38 @@ class GmailProvider(EmailProvider):
                 except Exception as e:
                     results[request_id] = (None, [], str(e))
 
-        # Create batch request with Gmail-specific batch URI
-        batch = self._service.new_batch_http_request(callback=callback)
+        # Retry logic for rate limiting
+        max_retries = 3
+        retry_delay = 1.0
 
-        for msg_id in msg_ids[:BATCH_SIZE]:
-            # Request raw format with labelIds included
-            batch.add(
-                self._service.users()
-                .messages()
-                .get(userId="me", id=msg_id, format="raw"),
-                request_id=msg_id,
-            )
+        for attempt in range(max_retries):
+            # Create batch request with Gmail-specific batch URI
+            batch = self._service.new_batch_http_request(callback=callback)
 
-        # Execute batch
-        batch.execute()
+            for msg_id in msg_ids[:BATCH_SIZE]:
+                # Request raw format with labelIds included
+                batch.add(
+                    self._service.users()
+                    .messages()
+                    .get(userId="me", id=msg_id, format="raw"),
+                    request_id=msg_id,
+                )
+
+            try:
+                # Execute batch
+                batch.execute()
+                break  # Success, exit retry loop
+            except HttpError as e:
+                if e.resp.status == 429 and attempt < max_retries - 1:
+                    # Rate limited, wait and retry
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    results.clear()  # Clear partial results
+                    continue
+                raise
+
+        # Small delay between batches to avoid rate limiting
+        time.sleep(BATCH_DELAY)
 
         return results
 

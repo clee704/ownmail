@@ -147,7 +147,7 @@ class EmailArchive:
         # Check if provider supports batch downloads
         from ownmail.providers.gmail import GmailProvider
         has_batch = isinstance(provider, GmailProvider)
-        batch_size = 50 if has_batch else 1
+        batch_size = 10 if has_batch else 1
 
         try:
             i = 0
