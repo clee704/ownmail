@@ -24,13 +24,13 @@
             <div class="ownmail-hamburger-dropdown" id="ownmail-hamburger-dropdown">
                 <span class="ownmail-hamburger-info">{{ stats.total_emails | default(0) | int }} emails archived</span>
                 <hr class="ownmail-hamburger-divider">
+                <a href="#" class="ownmail-hamburger-theme" onclick="toggleTheme(); return false;">
+                    <span id="ownmail-hamburger-theme-icon">☀️</span>
+                    <span id="ownmail-hamburger-theme-label">Switch to light mode</span>
+                </a>
+                <hr class="ownmail-hamburger-divider">
                 <a href="/help">Search help</a>
                 <a href="/settings">Settings</a>
-                <hr class="ownmail-hamburger-divider">
-                <a href="#" class="ownmail-hamburger-theme" onclick="toggleTheme(); return false;">
-                    <span class="ownmail-theme-current">🌙</span><span class="ownmail-theme-next">☀️</span>
-                    <span class="ownmail-hamburger-theme-label" id="ownmail-hamburger-theme-label">Switch to light mode</span>
-                </a>
             </div>
         </div>
         <h1><a href="/">📭 ownmail</a></h1>
@@ -49,16 +49,10 @@
         if (typeof updateEmailDarkMode === 'function') updateEmailDarkMode(dark);
     }
     function updateThemeIcon(dark) {
-        // Update hamburger menu theme item
+        var icon = document.getElementById('ownmail-hamburger-theme-icon');
         var label = document.getElementById('ownmail-hamburger-theme-label');
+        if (icon) icon.textContent = dark ? '☀️' : '🌙';
         if (label) label.textContent = dark ? 'Switch to light mode' : 'Switch to dark mode';
-        var items = document.querySelectorAll('.ownmail-hamburger-theme');
-        items.forEach(function(item) {
-            var current = item.querySelector('.ownmail-theme-current');
-            var next = item.querySelector('.ownmail-theme-next');
-            if (current) current.textContent = dark ? '🌙' : '☀️';
-            if (next) next.textContent = dark ? '☀️' : '🌙';
-        });
     }
     function toggleTheme() {
         var dark = isDarkMode();
