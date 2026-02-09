@@ -1598,6 +1598,164 @@ class GmailArchive:
             print("\n  ✓ Local archive is fully in sync with Gmail!")
         print("-" * 50 + "\n")
 
+    def cmd_db_check(self, fix: bool = False, verbose: bool = False) -> None:
+        """Check database integrity and optionally fix issues.
+        
+        Checks for:
+        - Duplicate FTS entries (same message_id multiple times)
+        - Orphaned FTS entries (in FTS but not in emails table)
+        - Missing FTS entries (in emails but not in FTS)
+        - indexed_hash mismatches
+        """
+        print("\n" + "=" * 50)
+        print("ownmail - Database Check")
+        print("=" * 50 + "\n")
+
+        issues_found = 0
+        issues_fixed = 0
+
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 1. Check for duplicate FTS entries
+            print("Checking for duplicate FTS entries...")
+            duplicates = conn.execute("""
+                SELECT message_id, COUNT(*) as cnt 
+                FROM emails_fts 
+                GROUP BY message_id 
+                HAVING cnt > 1
+            """).fetchall()
+            
+            if duplicates:
+                issues_found += len(duplicates)
+                print(f"  ✗ Found {len(duplicates)} message_ids with duplicate FTS entries")
+                if verbose:
+                    for msg_id, cnt in duplicates[:10]:
+                        print(f"      {msg_id}: {cnt} entries")
+                    if len(duplicates) > 10:
+                        print(f"      ... and {len(duplicates) - 10} more")
+                
+                if fix:
+                    print("  Fixing: keeping only newest entry for each...")
+                    for msg_id, cnt in duplicates:
+                        # Keep only the row with the highest rowid
+                        conn.execute("""
+                            DELETE FROM emails_fts 
+                            WHERE message_id = ? AND rowid < (
+                                SELECT MAX(rowid) FROM emails_fts WHERE message_id = ?
+                            )
+                        """, (msg_id, msg_id))
+                    conn.commit()
+                    issues_fixed += len(duplicates)
+                    print(f"  ✓ Fixed {len(duplicates)} duplicates")
+            else:
+                print("  ✓ No duplicate FTS entries")
+
+            # 2. Check for orphaned FTS entries (in FTS but not in emails)
+            print("\nChecking for orphaned FTS entries...")
+            orphaned_fts = conn.execute("""
+                SELECT f.message_id 
+                FROM emails_fts f
+                LEFT JOIN emails e ON f.message_id = e.message_id
+                WHERE e.message_id IS NULL
+            """).fetchall()
+            
+            if orphaned_fts:
+                # Get unique message_ids
+                orphaned_ids = list(set(row[0] for row in orphaned_fts))
+                issues_found += len(orphaned_ids)
+                print(f"  ✗ Found {len(orphaned_ids)} FTS entries with no matching email record")
+                if verbose:
+                    for msg_id in orphaned_ids[:10]:
+                        print(f"      {msg_id}")
+                    if len(orphaned_ids) > 10:
+                        print(f"      ... and {len(orphaned_ids) - 10} more")
+                
+                if fix:
+                    print("  Fixing: removing orphaned FTS entries...")
+                    for msg_id in orphaned_ids:
+                        conn.execute("DELETE FROM emails_fts WHERE message_id = ?", (msg_id,))
+                    conn.commit()
+                    issues_fixed += len(orphaned_ids)
+                    print(f"  ✓ Removed {len(orphaned_ids)} orphaned entries")
+            else:
+                print("  ✓ No orphaned FTS entries")
+
+            # 3. Check for missing FTS entries (in emails but not in FTS)
+            print("\nChecking for missing FTS entries...")
+            missing_fts = conn.execute("""
+                SELECT e.message_id, e.filename
+                FROM emails e
+                LEFT JOIN emails_fts f ON e.message_id = f.message_id
+                WHERE f.message_id IS NULL
+            """).fetchall()
+            
+            if missing_fts:
+                issues_found += len(missing_fts)
+                print(f"  ✗ Found {len(missing_fts)} emails not in search index")
+                if verbose:
+                    for msg_id, filename in missing_fts[:10]:
+                        print(f"      {filename}")
+                    if len(missing_fts) > 10:
+                        print(f"      ... and {len(missing_fts) - 10} more")
+                print("  → Run 'ownmail reindex' to index these emails")
+            else:
+                print("  ✓ All emails are in search index")
+
+            # 4. Check indexed_hash vs content_hash mismatches
+            print("\nChecking for index hash mismatches...")
+            hash_mismatches = conn.execute("""
+                SELECT message_id, filename
+                FROM emails
+                WHERE content_hash IS NOT NULL 
+                  AND indexed_hash IS NOT NULL 
+                  AND content_hash != indexed_hash
+            """).fetchall()
+            
+            if hash_mismatches:
+                issues_found += len(hash_mismatches)
+                print(f"  ✗ Found {len(hash_mismatches)} emails where index is out of date")
+                if verbose:
+                    for msg_id, filename in hash_mismatches[:10]:
+                        print(f"      {filename}")
+                    if len(hash_mismatches) > 10:
+                        print(f"      ... and {len(hash_mismatches) - 10} more")
+                print("  → Run 'ownmail reindex' to update these")
+            else:
+                print("  ✓ All indexed emails are up to date")
+
+            # 5. Check for NULL hashes
+            print("\nChecking for missing hashes...")
+            null_content_hash = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE content_hash IS NULL"
+            ).fetchone()[0]
+            null_indexed_hash = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NULL"
+            ).fetchone()[0]
+            
+            if null_content_hash > 0:
+                print(f"  ? {null_content_hash} emails without content_hash")
+                print("  → Run 'ownmail rehash' to compute")
+            if null_indexed_hash > 0:
+                print(f"  ? {null_indexed_hash} emails without indexed_hash (not yet indexed)")
+                print("  → Run 'ownmail reindex' to index")
+            if null_content_hash == 0 and null_indexed_hash == 0:
+                print("  ✓ All emails have hashes")
+
+        # Summary
+        print("\n" + "-" * 50)
+        if issues_found == 0:
+            print("Database Check Complete!")
+            print("  ✓ No issues found")
+        else:
+            print("Database Check Complete!")
+            print(f"  Issues found: {issues_found}")
+            if fix:
+                print(f"  Issues fixed: {issues_fixed}")
+                if issues_found > issues_fixed:
+                    print(f"  Remaining: {issues_found - issues_fixed} (run 'reindex' or 'rehash')")
+            else:
+                print("\n  Run with --fix to automatically fix fixable issues")
+        print("-" * 50 + "\n")
+
 
 def main():
     """Main entry point."""
@@ -1623,6 +1781,8 @@ Examples:
   %(prog)s verify --verbose                Show full list of issues
   %(prog)s rehash                          Compute hashes for emails without them
   %(prog)s sync-check                      Compare local archive with server
+  %(prog)s db-check                        Check database for issues
+  %(prog)s db-check --fix                  Check and fix database issues
 
 Config file (config.yaml):
     archive_dir: /Volumes/Secure/ownmail
@@ -1716,6 +1876,19 @@ Config file (config.yaml):
         help="Show full list of differences instead of truncated",
     )
 
+    # db-check command
+    db_check_parser = subparsers.add_parser("db-check", help="Check database integrity and fix issues")
+    db_check_parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Automatically fix fixable issues (duplicate FTS entries, orphaned entries)",
+    )
+    db_check_parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show detailed list of issues",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1759,6 +1932,8 @@ Config file (config.yaml):
             archive.cmd_rehash()
         elif args.command == "sync-check":
             archive.cmd_sync_check(verbose=args.verbose)
+        elif args.command == "db-check":
+            archive.cmd_db_check(fix=args.fix, verbose=args.verbose)
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
