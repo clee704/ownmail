@@ -106,9 +106,9 @@ The web UI is functional (Flask + Jinja, search, email detail, attachment downlo
 
 ### Improvements
 
-- [ ] Replace iframe with inline HTML rendering (sanitized) — iframe has sizing issues (infinite growth, incorrect height), waits for load before resizing (clunky scroll), and makes styling difficult
-- [ ] Color nested quote text to match quote bar color at each nesting level (like Gmail)
-- [ ] Rework image/content blocking UX: show a dismissible prompt for untrusted senders; move "load/block content" and "trust/untrust sender" actions into `...` overflow menu; fix prompt styling for dark mode
+- [x] Replace iframe with inline HTML rendering (sanitized) — iframe has sizing issues (infinite growth, incorrect height), waits for load before resizing (clunky scroll), and makes styling difficult
+- [x] Color nested quote text to match quote bar color at each nesting level (like Gmail)
+- [x] Rework image/content blocking UX: show a dismissible prompt for untrusted senders; move "load/block content" and "trust/untrust sender" actions into `...` overflow menu; fix prompt styling for dark mode
 
 ### Features
 
