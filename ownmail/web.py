@@ -519,7 +519,7 @@ QUOTE_RE = re.compile(r'^(&gt;)+')
 def _linkify_line(line: str) -> str:
     """Linkify a single line of text (already HTML-escaped)."""
     # Replace URLs with links
-    line = URL_RE.sub(r'<a href="\1" target="_blank">\1</a>', line)
+    line = URL_RE.sub(r'<a href="\1" target="_blank" rel="noopener noreferrer">\1</a>', line)
 
     # Replace email addresses with mailto links
     # But not if they're already inside an href (from URL linking)
@@ -531,7 +531,7 @@ def _linkify_line(line: str) -> str:
         last_close = max(preceding.rfind('>'), preceding.rfind('"'))
         if last_href > last_close:
             return email_addr
-        return f'<a href="mailto:{email_addr}">{email_addr}</a>'
+        return f'<a href="mailto:{email_addr}" rel="noopener noreferrer">{email_addr}</a>'
 
     return EMAIL_RE.sub(replace_email, line)
 
@@ -566,7 +566,7 @@ def _linkify(text: str) -> str:
                 color = colors[current_depth % len(colors)]
                 result_lines.append(
                     f'<div class="quote-level" style="border-left: 2px solid {color}; '
-                    f'padding-left: 6px; margin-left: 0;">'
+                    f'color: {color}; padding-left: 6px; margin-left: 0;">'
                 )
                 current_depth += 1
 
@@ -734,6 +734,7 @@ def parse_email_address(addr: str) -> tuple:
 
     Args:
         addr: Email address string like "John Doe <john@example.com>" or "john@example.com"
+              Handles quoted names with special chars: "옥션<발신전용>" <auction@auction.co.kr>
 
     Returns:
         Tuple of (name, email) where name may be empty
@@ -741,15 +742,20 @@ def parse_email_address(addr: str) -> tuple:
     if not addr:
         return ("", "")
 
-    # Try to match "Name <email>" format
-    match = re.match(r'^"?([^"<]*)"?\s*<([^>]+)>$', addr.strip())
-    if match:
-        name = match.group(1).strip()
-        email_addr = match.group(2).strip()
+    addr = addr.strip()
+
+    # Find the last <...> which should contain the email address
+    last_open = addr.rfind('<')
+    if last_open != -1 and addr.endswith('>'):
+        email_addr = addr[last_open + 1:-1].strip()
+        name = addr[:last_open].strip()
+        # Strip surrounding quotes from name and unescape internal quotes
+        if name.startswith('"') and name.endswith('"'):
+            name = name[1:-1].replace('\\"', '"').strip()
         return (name, email_addr)
 
     # Try to match just email
-    match = re.match(r'^<?([^@\s]+@[^>\s]+)>?$', addr.strip())
+    match = re.match(r'^<?([^@\s]+@[^>\s]+)>?$', addr)
     if match:
         return ("", match.group(1))
 
@@ -1022,12 +1028,10 @@ def create_app(
                 snippet = _clean_snippet_text(snippet)
 
             # Extract sender name (without email address)
-            sender_name, _ = parse_email_address(sender) if sender else ("", "")
+            sender_name, sender_email_parsed = parse_email_address(sender) if sender else ("", "")
             if not sender_name:
-                # Fall back to email address or full sender string
-                sender_name = sender.split('<')[0].strip() if sender else ""
-                if not sender_name and sender:
-                    sender_name = sender
+                # Fall back to email or full sender string
+                sender_name = sender_email_parsed or sender or ""
 
             # Format date as short date
             date_short = ""

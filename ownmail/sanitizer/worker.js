@@ -25,8 +25,8 @@ const purify = DOMPurify(window);
 const PURIFY_CONFIG = {
   // Explicitly forbid dangerous elements
   FORBID_TAGS: [
-    "script", "iframe", "object", "embed", "form", "input", "button",
-    "select", "textarea", "applet", "meta", "link", "base",
+    "script", "iframe", "object", "embed",
+    "applet", "meta", "link", "base",
     "math", "svg", "noscript",
   ],
 
@@ -34,7 +34,7 @@ const PURIFY_CONFIG = {
   FORBID_ATTR: [
     // Event handlers are blocked by DOMPurify by default,
     // but explicitly forbid dangerous attributes
-    "action", "formaction", "xlink:href", "xmlns",
+    "formaction", "xlink:href", "xmlns",
   ],
 
   // Allow data: URIs for inline images (CID replacements)
@@ -163,8 +163,8 @@ purify.addHook("afterSanitizeAttributes", (node) => {
     node.setAttribute("style", sanitizeInlineStyle(style));
   }
 
-  // Force links to open in new tab and add noopener
-  if (node.tagName === "A") {
+  // Force links and forms to open in new tab
+  if (node.tagName === "A" || node.tagName === "FORM") {
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
   }
