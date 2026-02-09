@@ -1,5 +1,6 @@
 """Web interface for browsing and searching the email archive."""
 
+import base64
 import email
 import email.header
 import os
@@ -50,7 +51,6 @@ def _extract_attachment_filename(part) -> str:
     Returns:
         Properly decoded filename, or "attachment" if none found
     """
-    import base64
     from urllib.parse import unquote_to_bytes
 
     # Try to get raw bytes from the part
@@ -302,8 +302,6 @@ def decode_header(value) -> str:
         # If standard decoding fails (malformed base64, etc.), try manual approach
         # Some emails have split multi-byte chars across encoded-words
         try:
-            import base64
-            import re
             # Find all encoded-words and try to decode them together
             pattern = r'=\?([^?]+)\?([BbQq])\?([^?]*)\?='
             matches = list(re.finditer(pattern, value))
@@ -983,11 +981,22 @@ def create_app(
             body = ""
             body_html = None
             attachments = []
+            cid_images = {}  # Content-ID -> data URI mapping
 
             if msg.is_multipart():
                 for part in msg.walk():
                     content_type = part.get_content_type()
                     content_disposition = str(part.get("Content-Disposition", ""))
+
+                    # Extract inline images with Content-ID (for cid: references)
+                    content_id = part.get("Content-ID", "")
+                    if content_id and content_type.startswith("image/"):
+                        # Content-ID is often wrapped in angle brackets
+                        cid = content_id.strip("<>")
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            data_uri = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
+                            cid_images[cid] = data_uri
 
                     if "attachment" in content_disposition:
                         # Extract filename with proper charset handling
@@ -1037,13 +1046,21 @@ def create_app(
                 "body": body,
                 "body_html": body_html,
                 "attachments": attachments,
+                "cid_images": cid_images,
             }
             email_cache.set(message_id, email_data)
 
         # Block external images if configured (do this after cache since it depends on config)
         body_html = email_data.get("body_html")
+        cid_images = email_data.get("cid_images", {})
         has_external_images = False
         images_blocked = block_images
+
+        # Replace cid: references with inline data URIs
+        if body_html and cid_images:
+            for cid, data_uri in cid_images.items():
+                # cid references can appear as "cid:xxx" in src attributes
+                body_html = body_html.replace(f'cid:{cid}', data_uri)
 
         # Parse sender and recipients for clickable links
         sender_name, sender_email = parse_email_address(email_data["sender"])
