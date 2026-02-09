@@ -143,19 +143,11 @@ function scopeAndSanitizeCSS(css) {
       return;
     }
 
-    // Remove url() with external resources, keep data: URIs and trusted font URLs
-    if (/url\s*\(/i.test(val) && !/url\s*\(\s*['"]?data:/i.test(val)) {
-      // Allow trusted font URLs inside @font-face blocks
-      const inFontFace =
-        decl.parent &&
-        decl.parent.type === "atrule" &&
-        decl.parent.name.toLowerCase() === "font-face";
-      if (inFontFace && isTrustedFontUrl(val)) {
-        // keep it
-      } else {
-        decl.remove();
-        return;
-      }
+    // Allow external url() — image blocking is handled server-side in Python.
+    // Only strip url() with javascript: scheme (security risk).
+    if (/url\s*\(\s*['"]?javascript:/i.test(val)) {
+      decl.remove();
+      return;
     }
 
     // Ensure font-family declarations end with a generic fallback
@@ -199,10 +191,9 @@ function scopeAndSanitizeCSS(css) {
  * Removes dangerous CSS constructs but does NOT scope (no selectors in inline styles).
  */
 function sanitizeInlineStyle(css) {
-  css = css.replace(
-    /url\s*\(\s*(?!['"]?data:)['"]?[^)]*['"]?\s*\)/gi,
-    "/* url removed */"
-  );
+  // Remove javascript: URLs (security risk) but allow external image URLs
+  // (image blocking is handled server-side in Python)
+  css = css.replace(/url\s*\(\s*['"]?javascript:[^)]*\)/gi, "/* url removed */");
   css = css.replace(/expression\s*\([^)]*\)/gi, "");
   css = css.replace(/behavior\s*:\s*[^;]*/gi, "");
   css = css.replace(/-moz-binding\s*:\s*[^;]*/gi, "");

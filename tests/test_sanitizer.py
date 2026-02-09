@@ -178,11 +178,18 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "color: red" in result or "color:red" in result
         assert "Text" in result
 
-    def test_strips_css_external_url(self):
-        """Test that external url() references are removed from CSS."""
-        html = '<style>body { background: url("https://evil.com/track.gif"); }</style><p>Text</p>'
+    def test_preserves_css_external_url(self):
+        """Test that external url() references are preserved (blocking handled server-side)."""
+        html = '<style>body { background: url("https://example.com/image.gif"); }</style><p>Text</p>'
         result, *_ = self.sanitizer.sanitize(html)
-        assert "evil.com" not in result
+        assert "example.com" in result
+        assert "Text" in result
+
+    def test_strips_css_javascript_url(self):
+        """Test that javascript: url() references are removed."""
+        html = '<div style="background: url(javascript:alert(1))">Text</div>'
+        result, *_ = self.sanitizer.sanitize(html)
+        assert "javascript:" not in result
         assert "Text" in result
 
     def test_strips_css_expression(self):
@@ -343,11 +350,11 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "@font-face" in result
         assert "fonts.gstatic.com" in result
 
-    def test_strips_untrusted_font_face_url(self):
-        """Test that @font-face with untrusted url() has the url removed."""
-        html = '<style>@font-face { font-family: Evil; src: url("https://evil.com/font.woff2"); }</style><p>Hi</p>'
+    def test_preserves_untrusted_font_face_url(self):
+        """Test that @font-face with any url() is preserved (not a security risk)."""
+        html = '<style>@font-face { font-family: Custom; src: url("https://example.com/font.woff2"); }</style><p>Hi</p>'
         result, *_ = self.sanitizer.sanitize(html)
-        assert "evil.com" not in result
+        assert "example.com" in result
 
     def test_allows_trusted_font_link_tag(self):
         """Test that <link rel=stylesheet> from Google Fonts is preserved."""

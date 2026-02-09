@@ -86,10 +86,27 @@
             var container = document.getElementById('ownmail-email-content');
             if (!container) return;
 
+            // Restore <img data-src="...">
             var imgs = Array.from(container.querySelectorAll('img[data-src]'));
             imgs.forEach(function(img) {
                 img.src = img.getAttribute('data-src');
                 img.removeAttribute('data-src');
+            });
+
+            // Restore CSS background-image from data-bg-urls
+            var bgEls = Array.from(container.querySelectorAll('[data-bg-urls]'));
+            bgEls.forEach(function(el) {
+                var urls = el.getAttribute('data-bg-urls').split(' ');
+                var style = el.getAttribute('style') || '';
+                // Replace placeholder data URIs back with original URLs
+                urls.forEach(function(url) {
+                    style = style.replace(
+                        /url\(data:image\/gif;base64,[A-Za-z0-9+\/=]+\)/,
+                        'url(' + url + ')'
+                    );
+                });
+                el.setAttribute('style', style);
+                el.removeAttribute('data-bg-urls');
             });
 
             hideBanner();
@@ -100,6 +117,7 @@
             var container = document.getElementById('ownmail-email-content');
             if (!container) return;
 
+            // Block <img src="https://...">
             var imgs = Array.from(container.querySelectorAll('img[src]'));
             imgs.forEach(function(img) {
                 var src = img.getAttribute('src');
