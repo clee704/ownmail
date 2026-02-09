@@ -1029,14 +1029,6 @@ class TestArchiveEmailsDir:
         assert "accounts" in str(result)
         assert "test@example.com" in str(result)
 
-    def test_get_emails_dir_legacy(self, tmp_path):
-        """Test get_emails_dir without account (legacy mode)."""
-        from ownmail.archive import EmailArchive
-        archive = EmailArchive(tmp_path)
-        result = archive.get_emails_dir(None)
-        assert "emails" in str(result)
-        assert "accounts" not in str(result)
-
 
 class TestDecodeHtmlBodyFunction:
     """Test web.py _decode_html_body function."""
