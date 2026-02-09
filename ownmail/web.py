@@ -32,8 +32,9 @@ CHARSET_ALIASES = {
     "euc_kr": "euc-kr",
 }
 
-# Regex to extract RFC 2231 encoded filename parts (filename*0*=charset''value)
-RFC2231_FILENAME_RE = re.compile(rb"filename\*(\d+)\*?=([^;\r\n]+)", re.IGNORECASE)
+# Regex to extract RFC 2231 encoded filename parts
+# Handles both: filename*=charset''value and filename*0*=charset''value
+RFC2231_FILENAME_RE = re.compile(rb"filename\*(\d*)\*?=([^;\r\n]+)", re.IGNORECASE)
 
 
 def _extract_attachment_filename(part) -> str:
@@ -49,19 +50,68 @@ def _extract_attachment_filename(part) -> str:
     Returns:
         Properly decoded filename, or "attachment" if none found
     """
+    import base64
     from urllib.parse import unquote_to_bytes
 
     # Try to get raw bytes from the part
     try:
         raw_part = part.as_bytes()
 
-        # Look for RFC 2231 encoded filename (filename*0*=charset'lang'value)
-        # This handles split filenames like filename*0*=..., filename*1*=...
+        # FIRST: Check for RFC2231 + MIME hybrid encoding (filename*N="=?UTF-8?B?...?=")
+        # Some email clients incorrectly combine RFC2231 continuation with MIME encoded-words
+        # This must be checked first because the quoted values break standard RFC2231 parsing
+        rfc2231_mime_re = re.compile(rb'filename\*\d+="([^"]+)"', re.IGNORECASE)
+        mime_matches = rfc2231_mime_re.findall(raw_part)
+        if mime_matches:
+            # Join all parts and clean up
+            combined_value = b''.join(mime_matches).replace(b'\r\n ', b' ').replace(b'\r\n', b'').replace(b'\n ', b' ')
+            combined_str = combined_value.decode('ascii', errors='ignore')
+
+            # Check if it contains MIME encoded-words
+            if '=?' in combined_str and '?=' in combined_str:
+                # Extract MIME encoded-words
+                mime_word_re = re.compile(r'=\?([^?]+)\?([BbQq])\?([^?]+)\?=')
+                mime_parts = mime_word_re.findall(combined_str)
+                if mime_parts:
+                    decoded_parts = []
+                    for charset_name, encoding, encoded_text in mime_parts:
+                        try:
+                            if encoding.upper() == 'B':
+                                # Base64 - fix padding
+                                padding = 4 - (len(encoded_text) % 4) if len(encoded_text) % 4 else 0
+                                encoded_text += '=' * padding
+                                decoded_bytes = base64.b64decode(encoded_text)
+                            else:
+                                # Quoted-printable
+                                import quopri
+                                decoded_bytes = quopri.decodestring(encoded_text.encode('ascii'))
+
+                            # Decode with charset
+                            cs = charset_name.lower()
+                            if cs == 'unknown':
+                                cs = 'utf-8'
+                            decoded_parts.append(decoded_bytes.decode(cs, errors='replace'))
+                        except Exception:
+                            continue
+
+                    if decoded_parts:
+                        result = ''.join(decoded_parts)
+                        if '\ufffd' not in result:
+                            return result
+
+        # SECOND: Look for standard RFC 2231 encoded filename
+        # Handles both: filename*=charset''value and filename*0*=charset''value
         filename_parts = []
 
         for match in RFC2231_FILENAME_RE.finditer(raw_part):
-            part_num = int(match.group(1))
+            # Part number may be empty (single part) or a number (multi-part)
+            part_num_bytes = match.group(1)
+            part_num = int(part_num_bytes) if part_num_bytes else 0
             value = match.group(2).strip()
+
+            # Skip if value starts with quote (handled above as hybrid)
+            if value.startswith(b'"'):
+                continue
 
             # First part has charset''value format
             if b"''" in value:
@@ -104,6 +154,28 @@ def _extract_attachment_filename(part) -> str:
                 except (UnicodeDecodeError, LookupError):
                     continue
 
+        # THIRD: Try to extract raw filename from simple filename="..." header
+        # Some old emails have raw non-ASCII bytes without any encoding
+        simple_fn_re = re.compile(rb'filename="([^"]+)"', re.IGNORECASE)
+        simple_match = simple_fn_re.search(raw_part)
+        if simple_match:
+            raw_filename = simple_match.group(1)
+            # Check if it has high bytes (non-ASCII)
+            if any(b >= 0x80 for b in raw_filename):
+                # Try various CJK encodings
+                for enc in ['euc-kr', 'cp949', 'utf-8', 'gb2312', 'gbk', 'shift_jis', 'cp1251', 'koi8-r']:
+                    try:
+                        decoded = raw_filename.decode(enc)
+                        # Validate - should have CJK/Cyrillic chars
+                        if any('\uAC00' <= c <= '\uD7AF' or  # Hangul
+                               '\u4E00' <= c <= '\u9FFF' or  # CJK
+                               '\u0400' <= c <= '\u04FF' or  # Cyrillic
+                               '\u3040' <= c <= '\u30FF'     # Japanese
+                               for c in decoded):
+                            return decoded
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+
     except Exception:
         pass
 
@@ -115,6 +187,11 @@ def _extract_attachment_filename(part) -> str:
             fixed = _fix_mojibake_filename(filename)
             if fixed:
                 return fixed
+        # Try decode_header for MIME-encoded filenames
+        if '=?' in filename:
+            decoded = decode_header(filename)
+            if decoded and '\ufffd' not in decoded:
+                return decoded
         return filename
 
     return "attachment"
@@ -194,14 +271,25 @@ def decode_header(value) -> str:
         for data, charset in decoded_parts:
             if isinstance(data, bytes):
                 # Try the declared charset first, then common fallbacks
-                charsets_to_try = [charset] if charset else []
-                charsets_to_try.extend(['utf-8', 'euc-kr', 'cp949', 'iso-2022-kr', 'latin-1'])
+                charsets_to_try = []
+                if charset and charset.upper() != 'UNKNOWN':
+                    charsets_to_try.append(charset)
+                # Add common fallbacks: CJK, Russian, Western European
+                charsets_to_try.extend([
+                    'utf-8', 'euc-kr', 'cp949', 'iso-2022-kr',  # Korean
+                    'cp1251', 'koi8-r',  # Russian
+                    'gb2312', 'gbk',  # Chinese
+                    'shift_jis', 'euc-jp',  # Japanese
+                    'iso-8859-1', 'cp1252',  # Western
+                ])
                 decoded = None
                 for cs in charsets_to_try:
                     if cs:
                         try:
                             decoded = data.decode(cs)
-                            break
+                            # Validate it doesn't have too many replacement chars
+                            if '\ufffd' not in decoded:
+                                break
                         except (UnicodeDecodeError, LookupError):
                             continue
                 if decoded is None:

@@ -221,12 +221,19 @@ class EmailParser:
                         }
                         declared_enc = charset_map.get(charset, charset) if charset else None
 
+                        # Handle 'unknown' charset - try common encodings based on content
+                        if declared_enc and declared_enc.lower() in ('unknown', 'unknown-8bit'):
+                            declared_enc = None
+
                         # Try declared charset first, then common fallbacks
                         encodings_to_try = []
                         if declared_enc:
                             encodings_to_try.append(declared_enc)
-                        # Always try common CJK encodings as fallback
-                        encodings_to_try.extend(['cp949', 'utf-8', 'euc-kr', 'gb2312', 'shift_jis'])
+                        # Include CJK and Cyrillic encodings for broad language support
+                        encodings_to_try.extend([
+                            'cp949', 'utf-8', 'euc-kr', 'gb2312', 'shift_jis',
+                            'cp1251', 'koi8-r',  # Russian/Cyrillic
+                        ])
 
                         decoded = None
                         for enc in encodings_to_try:
