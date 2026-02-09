@@ -1197,21 +1197,6 @@ class TestCommandsListUnknown:
         assert len(captured.out) >= 0
 
 
-class TestCommandsPopulateDates:
-    """Tests for cmd_populate_dates command."""
-
-    def test_populate_dates_empty(self, tmp_path, capsys):
-        """Test populate_dates on empty archive."""
-        from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_populate_dates
-
-        archive = EmailArchive(tmp_path, {})
-        cmd_populate_dates(archive)
-        _captured = capsys.readouterr()  # noqa: F841
-        # Should complete without error
-        assert True
-
-
 class TestQueryMoreEdgeCases:
     """More tests for query edge cases."""
 

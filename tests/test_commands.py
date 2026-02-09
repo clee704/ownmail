@@ -1182,40 +1182,6 @@ class TestCmdListUnknown:
         assert "test.eml" in captured.out or "unknown" in captured.out.lower()
 
 
-class TestCmdPopulateDates:
-    """Tests for cmd_populate_dates command."""
-
-    def test_populate_dates_empty(self, temp_dir, capsys):
-        """Test populate_dates on empty database."""
-        from ownmail.commands import cmd_populate_dates
-
-        archive = EmailArchive(temp_dir, {})
-        cmd_populate_dates(archive)
-        captured = capsys.readouterr()
-        # Should complete without error
-        assert "date" in captured.out.lower() or "0" in captured.out or captured.out == ""
-
-    def test_populate_dates_with_emails(self, temp_dir, sample_eml_simple, capsys):
-        """Test populate_dates with emails in database."""
-        from ownmail.commands import cmd_populate_dates
-
-        archive = EmailArchive(temp_dir, {})
-
-        # Create email file
-        emails_dir = temp_dir / "emails" / "2024" / "01"
-        emails_dir.mkdir(parents=True)
-        email_path = emails_dir / "test.eml"
-        email_path.write_bytes(sample_eml_simple)
-
-        rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="abc123")
-
-        cmd_populate_dates(archive)
-        captured = capsys.readouterr()
-        # Should process emails
-        assert "date" in captured.out.lower() or "test" in captured.out.lower() or captured.out
-
-
 class TestCmdVerifyDedup:
     """Tests for duplicate detection and removal in verify."""
 
