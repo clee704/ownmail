@@ -513,8 +513,8 @@ def _linkify(text: str) -> str:
             # Count quote depth (number of > characters)
             quote_prefix = quote_match.group(0)
             depth = quote_prefix.count('&gt;')
-            # Style based on depth (cycle through colors) - blue, green, orange, purple
-            colors = ['#6cb6ff', '#7ee787', '#f0a855', '#d2a8ff']
+            # Style based on depth (cycle through colors) - teal, green, orange, purple
+            colors = ['#58a6c9', '#7ee787', '#f0a855', '#d2a8ff']
             color = colors[(depth - 1) % len(colors)]
             rest = escaped[quote_match.end():]
             rest = _linkify_line(rest)
