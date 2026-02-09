@@ -7,7 +7,14 @@ from typing import Optional
 
 from ownmail import __version__
 from ownmail.archive import EmailArchive
-from ownmail.config import get_archive_root, get_source_by_name, get_sources, load_config, parse_secret_ref
+from ownmail.config import (
+    get_archive_root,
+    get_source_by_name,
+    get_sources,
+    load_config,
+    parse_secret_ref,
+    validate_config,
+)
 from ownmail.keychain import KeychainStorage
 from ownmail.providers.gmail import GmailProvider
 
@@ -812,6 +819,15 @@ Examples:
 
     # Load config
     config = load_config(args.config, SCRIPT_DIR)
+
+    # Validate config (skip for setup, which may create it)
+    if args.command != "setup":
+        errors = validate_config(config)
+        if errors:
+            print("❌ Configuration errors:")
+            for error in errors:
+                print(f"   - {error}")
+            sys.exit(1)
 
     # Determine config file path for potential updates
     config_path = args.config
