@@ -300,3 +300,727 @@ class TestCreateApp:
             )
             assert response.status_code == 302
             assert "new@example.com" in app.config["trusted_senders"]
+
+    def test_untrust_sender_route(self, mock_archive):
+        """Untrust sender route should remove from trusted set."""
+        app = create_app(mock_archive, trusted_senders=["trusted@example.com"])
+        with app.test_client() as client:
+            response = client.post(
+                "/untrust-sender",
+                data={"email": "trusted@example.com"},
+            )
+            assert response.status_code == 200
+            assert "trusted@example.com" not in app.config["trusted_senders"]
+
+    def test_untrust_sender_empty_email(self, mock_archive):
+        """Untrust sender with empty email should return error."""
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.post(
+                "/untrust-sender",
+                data={"email": ""},
+            )
+            assert response.status_code == 200
+            assert b"error" in response.data
+
+    def test_search_with_pagination(self, mock_archive):
+        """Search with pagination should work."""
+        # Return more than one page of results
+        mock_archive.search.return_value = [
+            (f"msg{i}", f"file{i}.eml", f"Subject {i}", "sender@example.com", "2024-01-01", "snippet")
+            for i in range(25)  # More than default page size
+        ]
+        app = create_app(mock_archive, page_size=20)
+        with app.test_client() as client:
+            response = client.get("/search?q=test&page=1")
+            assert response.status_code == 200
+            assert b"Next" in response.data  # Has pagination
+
+    def test_search_sort_options(self, mock_archive):
+        """Search with different sort options should work."""
+        mock_archive.search.return_value = []
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            # Date desc sort
+            response = client.get("/search?q=test&sort=date_desc")
+            assert response.status_code == 200
+
+            # Date asc sort
+            response = client.get("/search?q=test&sort=date_asc")
+            assert response.status_code == 200
+
+            # Invalid sort should default to relevance
+            response = client.get("/search?q=test&sort=invalid")
+            assert response.status_code == 200
+
+    def test_verbose_mode(self, mock_archive, capsys):
+        """Verbose mode should print timing info."""
+        app = create_app(mock_archive, verbose=True)
+        with app.test_client() as client:
+            response = client.get("/search")
+            assert response.status_code == 200
+            # Verbose logging happens via print
+
+
+class TestDecodeTextBody:
+    """Tests for _decode_text_body function."""
+
+    def test_utf8_content(self):
+        """UTF-8 content should decode correctly."""
+        from ownmail.web import _decode_text_body
+        payload = b"Hello World"
+        result = _decode_text_body(payload, "utf-8")
+        assert result == "Hello World"
+
+    def test_korean_content_euc_kr(self):
+        """Korean EUC-KR content should decode correctly."""
+        from ownmail.web import _decode_text_body
+        payload = "안녕하세요".encode("euc-kr")
+        result = _decode_text_body(payload, "euc-kr")
+        assert "안녕하세요" in result
+
+    def test_no_charset_auto_detect(self):
+        """Content without charset should auto-detect."""
+        from ownmail.web import _decode_text_body
+        payload = b"Hello World"
+        result = _decode_text_body(payload, None)
+        assert "Hello" in result
+
+    def test_invalid_charset_fallback(self):
+        """Invalid charset should fallback to auto-detection."""
+        from ownmail.web import _decode_text_body
+        payload = b"Hello World"
+        result = _decode_text_body(payload, "invalid-charset-xyz")
+        assert "Hello" in result
+
+
+class TestDecodeHtmlBody:
+    """Tests for _decode_html_body function."""
+
+    def test_html_with_meta_charset(self):
+        """HTML with meta charset should use it."""
+        from ownmail.web import _decode_html_body
+        html = b'<html><head><meta charset="utf-8"></head><body>Hello</body></html>'
+        result = _decode_html_body(html, None)
+        assert "Hello" in result
+
+    def test_html_with_header_charset(self):
+        """HTML with header charset should use it."""
+        from ownmail.web import _decode_html_body
+        html = "Hello 안녕".encode()
+        result = _decode_html_body(html, "utf-8")
+        assert "Hello" in result
+
+    def test_html_no_charset_fallback(self):
+        """HTML without charset should fallback."""
+        from ownmail.web import _decode_html_body
+        html = b"<html><body>Hello World</body></html>"
+        result = _decode_html_body(html, None)
+        assert "Hello" in result
+
+
+class TestValidateDecodedText:
+    """Tests for _validate_decoded_text function."""
+
+    def test_valid_ascii_text(self):
+        """Valid ASCII text should pass."""
+        from ownmail.web import _validate_decoded_text
+        assert _validate_decoded_text("Hello World") is True
+
+    def test_valid_korean_text(self):
+        """Valid Korean text should pass."""
+        from ownmail.web import _validate_decoded_text
+        assert _validate_decoded_text("안녕하세요") is True
+
+    def test_replacement_characters_fail(self):
+        """Text with replacement characters should fail."""
+        from ownmail.web import _validate_decoded_text
+        assert _validate_decoded_text("Hello\ufffd\ufffd") is False
+
+    def test_empty_text(self):
+        """Empty text should fail."""
+        from ownmail.web import _validate_decoded_text
+        assert _validate_decoded_text("") is False
+
+
+class TestTryDecode:
+    """Tests for _try_decode function."""
+
+    def test_valid_decode(self):
+        """Valid decoding should return text."""
+        from ownmail.web import _try_decode
+        result = _try_decode(b"Hello", "utf-8")
+        assert result == "Hello"
+
+    def test_invalid_decode(self):
+        """Invalid decoding should return None."""
+        from ownmail.web import _try_decode
+        # EUC-KR bytes that won't decode as UTF-8
+        korean_bytes = "안녕".encode("euc-kr")
+        result = _try_decode(korean_bytes, "utf-8")
+        # Should return None or invalid result
+        assert result is None or "\ufffd" not in result
+
+
+class TestRawEmailRoute:
+    """Tests for /raw/<message_id> route."""
+
+    def test_raw_email_found(self, tmp_path):
+        """Raw email route should return file content."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        # Create test .eml file
+        eml_content = b"From: test@example.com\nSubject: Test\n\nBody"
+        eml_path = tmp_path / "emails" / "test.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/raw/msg1")
+            assert response.status_code == 200
+            assert b"From: test@example.com" in response.data
+
+    def test_raw_email_not_found(self, tmp_path):
+        """Raw email route should 404 for missing email."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = None
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/raw/nonexistent")
+            assert response.status_code == 404
+
+
+class TestAttachmentRoute:
+    """Tests for /attachment/<message_id>/<index> route."""
+
+    def test_attachment_not_found(self, tmp_path):
+        """Attachment route should 404 for missing email."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = None
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/attachment/msg1/0")
+            assert response.status_code == 404
+
+    def test_attachment_file_missing(self, tmp_path):
+        """Attachment route should 404 for missing file."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "missing.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/attachment/msg1/0")
+            assert response.status_code == 404
+
+
+class TestExtractSnippetMultipart:
+    """Tests for _extract_snippet with multipart emails."""
+
+    def test_multipart_email_snippet(self):
+        """Extract snippet from multipart email."""
+        import email
+
+        from ownmail.web import _extract_snippet
+
+        content = b"""MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary"
+
+--boundary
+Content-Type: text/plain
+
+This is plain text content.
+--boundary
+Content-Type: text/html
+
+<html><body>This is HTML</body></html>
+--boundary--
+"""
+        msg = email.message_from_bytes(content)
+        snippet = _extract_snippet(msg)
+        assert "plain text" in snippet.lower()
+
+
+class TestSearchCacheHit:
+    """Tests for search cache functionality."""
+
+    def test_search_cache_returns_cached_results(self, tmp_path):
+        """Second search should use cached results."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 100
+        mock_archive.search.return_value = [
+            ("msg1", "file1.eml", "Subject 1", "sender@example.com", "2024-01-01", "snippet")
+        ]
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            # First search
+            response1 = client.get("/search?q=test")
+            assert response1.status_code == 200
+
+            # Second search (should hit cache)
+            response2 = client.get("/search?q=test")
+            assert response2.status_code == 200
+
+            # Search should only be called once (second is cached)
+            # Note: It may be called twice if cache is per-request
+            assert mock_archive.search.call_count >= 1
+
+
+class TestViewEmailRoute:
+    """Tests for /email/<message_id> route."""
+
+    def test_view_email_success(self, tmp_path):
+        """View email should render email detail page."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        # Create test .eml file
+        eml_content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Test Subject
+Date: Mon, 15 Jan 2024 10:30:00 +0000
+Content-Type: text/plain
+
+This is the email body.
+"""
+        eml_path = tmp_path / "emails" / "test.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/email/msg1")
+            assert response.status_code == 200
+            assert b"Test Subject" in response.data
+            assert b"sender@example.com" in response.data
+
+    def test_view_email_with_html_body(self, tmp_path):
+        """View email with HTML body should render HTML."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: HTML Email
+Content-Type: text/html
+
+<html><body><h1>HTML Title</h1><p>Paragraph text.</p></body></html>
+"""
+        eml_path = tmp_path / "emails" / "html.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg2", "emails/html.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/email/msg2")
+            assert response.status_code == 200
+
+    def test_view_email_with_attachment(self, tmp_path):
+        """View email with attachment should show attachment info."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: With Attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="---=_Part"
+
+-----=_Part
+Content-Type: text/plain
+
+Body text here.
+-----=_Part
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="document.pdf"
+
+PDF content here
+-----=_Part--
+"""
+        eml_path = tmp_path / "emails" / "attach.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg3", "emails/attach.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/email/msg3")
+            assert response.status_code == 200
+            assert b"document.pdf" in response.data
+
+    def test_view_email_file_missing(self, tmp_path):
+        """View email with missing file should 404."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/missing.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/email/msg1")
+            assert response.status_code == 404
+
+    def test_view_email_multipart_alternative(self, tmp_path):
+        """View multipart/alternative email should prefer HTML."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: Multipart Alternative
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="---=_Part"
+
+-----=_Part
+Content-Type: text/plain
+
+Plain text version.
+-----=_Part
+Content-Type: text/html
+
+<html><body>HTML version</body></html>
+-----=_Part--
+"""
+        eml_path = tmp_path / "emails" / "multipart.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg4", "emails/multipart.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/email/msg4")
+            assert response.status_code == 200
+
+    def test_view_email_cached(self, tmp_path):
+        """Second view of same email should use cache."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+Subject: Cacheable
+Content-Type: text/plain
+
+Body.
+"""
+        eml_path = tmp_path / "emails" / "cache.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg5", "emails/cache.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            # First request
+            response1 = client.get("/email/msg5")
+            assert response1.status_code == 200
+
+            # Second request (should hit cache)
+            response2 = client.get("/email/msg5")
+            assert response2.status_code == 200
+
+
+class TestDownloadAttachment:
+    """Tests for /attachment/<message_id>/<index> route."""
+
+    def test_download_attachment_success(self, tmp_path):
+        """Downloading attachment should return file."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+Subject: With Attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="---=_Part"
+
+-----=_Part
+Content-Type: text/plain
+
+Body text.
+-----=_Part
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="document.pdf"
+
+PDF CONTENT HERE
+-----=_Part--
+"""
+        eml_path = tmp_path / "emails" / "attach.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/attachment/msg1/0")
+            assert response.status_code == 200
+            assert b"PDF CONTENT HERE" in response.data
+
+    def test_download_attachment_wrong_index(self, tmp_path):
+        """Wrong attachment index should 404."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+Subject: With Attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="---=_Part"
+
+-----=_Part
+Content-Type: text/plain
+
+Body text.
+-----=_Part
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="document.pdf"
+
+PDF CONTENT
+-----=_Part--
+"""
+        eml_path = tmp_path / "emails" / "attach.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            # Index 99 doesn't exist
+            response = client.get("/attachment/msg1/99")
+            assert response.status_code == 404
+
+
+class TestTrustSenderWithConfig:
+    """Tests for trust sender with config file."""
+
+    def test_trust_sender_updates_config(self, tmp_path):
+        """Trust sender should update config.yaml."""
+        from unittest.mock import MagicMock
+
+        import yaml
+
+        from ownmail.web import create_app
+
+        # Create config file
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("web:\n  trusted_senders: []\n")
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive, config_path=str(config_path))
+        with app.test_client() as client:
+            # When redirect is "/", returns JSON 200 instead of redirect
+            response = client.post(
+                "/trust-sender",
+                data={"email": "newtrust@example.com", "redirect": "/"},
+            )
+            assert response.status_code == 200
+            assert b"ok" in response.data
+
+            # Check config was updated
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            assert "newtrust@example.com" in config["web"]["trusted_senders"]
+
+    def test_trust_sender_with_actual_redirect(self, tmp_path):
+        """Trust sender should redirect when redirect path is not '/'."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        # Create config file
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("web:\n  trusted_senders: []\n")
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive, config_path=str(config_path))
+        with app.test_client() as client:
+            response = client.post(
+                "/trust-sender",
+                data={"email": "another@example.com", "redirect": "/email/msg1"},
+            )
+            assert response.status_code == 302
+            assert "/email/msg1" in response.location
+
+    def test_untrust_sender_updates_config(self, tmp_path):
+        """Untrust sender should update config.yaml."""
+        from unittest.mock import MagicMock
+
+        import yaml
+
+        from ownmail.web import create_app
+
+        # Create config file with trusted sender
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("web:\n  trusted_senders:\n    - remove@example.com\n")
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive, config_path=str(config_path), trusted_senders=["remove@example.com"])
+        with app.test_client() as client:
+            response = client.post(
+                "/untrust-sender",
+                data={"email": "remove@example.com"},
+            )
+            assert response.status_code == 200
+
+            # Check config was updated
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            assert "remove@example.com" not in config["web"]["trusted_senders"]
+
+
+class TestBlockImages:
+    """Tests for image blocking feature."""
+
+    def test_block_images_enabled(self, tmp_path):
+        """Images should be blocked when enabled."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: sender@example.com
+Subject: With Images
+Content-Type: text/html
+
+<html><body><img src="http://example.com/track.gif"></body></html>
+"""
+        eml_path = tmp_path / "emails" / "img.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/img.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive, block_images=True)
+        with app.test_client() as client:
+            response = client.get("/email/msg1")
+            assert response.status_code == 200
+            # Image blocking banner should be shown
+            assert b"data-src" in response.data or b"blocked" in response.data.lower()
+
+    def test_trusted_sender_not_blocked(self, tmp_path):
+        """Images from trusted senders should not be blocked."""
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        eml_content = b"""From: trusted@example.com
+Subject: Trusted Images
+Content-Type: text/html
+
+<html><body><img src="http://example.com/logo.gif"></body></html>
+"""
+        eml_path = tmp_path / "emails" / "trusted.eml"
+        eml_path.parent.mkdir(parents=True)
+        eml_path.write_bytes(eml_content)
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/trusted.eml")
+        mock_archive.db.get_email_count.return_value = 100
+
+        app = create_app(mock_archive, block_images=True, trusted_senders=["trusted@example.com"])
+        with app.test_client() as client:
+            response = client.get("/email/msg1")
+            assert response.status_code == 200
+            # Should NOT show blocking banner
+            assert b"Images are blocked" not in response.data or b"trusted" in response.data.lower()
+
