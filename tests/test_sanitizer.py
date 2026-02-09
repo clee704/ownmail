@@ -32,12 +32,13 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
             sanitizer.start()
         assert sanitizer.available is False
 
-    def test_sanitize_without_node_returns_original(self):
-        """Test sanitize() returns original HTML when not available."""
+    def test_sanitize_without_node_returns_escaped(self):
+        """Test sanitize() returns escaped HTML when not available."""
+        import html as html_module
         sanitizer = HtmlSanitizer()
         html = "<script>alert(1)</script><p>Hello</p>"
         result, needs_padding, supports_dark = sanitizer.sanitize(html)
-        assert result == html
+        assert result == html_module.escape(html)
         assert needs_padding is True
         assert supports_dark is False
 
