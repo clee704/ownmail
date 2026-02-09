@@ -141,12 +141,6 @@ Encrypt `.eml` files (AES-256-GCM per file) and database. `ownmail encrypt` / `o
 ownmail stats --detailed  # Top senders, emails per month, attachment sizes
 ```
 
-### Optional Attachment Download
-
-```yaml
-include_attachments: false  # Default: true
-```
-
 ---
 
 ## Contributing
