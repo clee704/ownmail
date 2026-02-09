@@ -838,6 +838,7 @@ def create_app(
     config_path: str = None,
     date_format: str = None,
     auto_scale: bool = True,
+    brand_name: str = "ownmail",
 ) -> Flask:
     """Create the Flask application.
 
@@ -850,6 +851,7 @@ def create_app(
         config_path: Path to config.yaml for updating trusted senders
         date_format: strftime format for dates (default: auto - "Jan 26" or "2025/12/15")
         auto_scale: Scale down wide emails to fit viewport
+        brand_name: Custom branding name shown in header
 
     Returns:
         Flask application
@@ -866,6 +868,11 @@ def create_app(
     app.config["config_path"] = config_path
     app.config["date_format"] = date_format  # None = auto
     app.config["auto_scale"] = auto_scale
+    app.config["brand_name"] = brand_name
+
+    @app.context_processor
+    def inject_brand():
+        return {"brand_name": app.config["brand_name"]}
 
     # Cache for stats (refreshed every 60 seconds)
     stats_cache = {"value": None, "time": 0}
@@ -1489,6 +1496,7 @@ def create_app(
             "block_images": web_config.get("block_images", False),
             "auto_scale": web_config.get("auto_scale", True),
             "date_format": web_config.get("date_format", ""),
+            "brand_name": web_config.get("brand_name", "ownmail"),
             "trusted_senders": web_config.get("trusted_senders", []),
         }
         return render_template(
@@ -1542,6 +1550,10 @@ def create_app(
             app.config["date_format"] = date_format
         else:
             app.config["date_format"] = None
+
+        brand_name = request.form.get("brand_name", "").strip() or "ownmail"
+        web_config["brand_name"] = brand_name
+        app.config["brand_name"] = brand_name
 
         # Trusted senders: textarea, one per line
         trusted_raw = request.form.get("trusted_senders", "")
@@ -1672,6 +1684,7 @@ def run_server(
     config_path: str = None,
     date_format: str = None,
     auto_scale: bool = True,
+    brand_name: str = "ownmail",
 ) -> None:
     """Run the web server.
 
@@ -1687,6 +1700,7 @@ def run_server(
         config_path: Path to config.yaml for updating trusted senders
         date_format: strftime format for dates (default: auto)
         auto_scale: Scale down wide emails to fit viewport
+        brand_name: Custom branding name shown in header
     """
     app = create_app(
         archive,
@@ -1697,6 +1711,7 @@ def run_server(
         config_path=config_path,
         date_format=date_format,
         auto_scale=auto_scale,
+        brand_name=brand_name,
     )
 
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
@@ -1706,7 +1721,7 @@ def run_server(
     sanitizer.start()
     app.config["sanitizer"] = sanitizer
 
-    print("\n🌐 ownmail web interface")
+    print(f"\n🌐 {brand_name} web interface")
     print(f"   Running at: http://{host}:{port}")
     print(f"   Page size: {page_size}")
     if verbose:
