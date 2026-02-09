@@ -397,6 +397,12 @@ class TestParseQuery:
         assert result.error is None
         assert "e.has_attachments = 1" in result.where_clauses
 
+    def test_has_attachments_plural(self):
+        """Test has:attachments (plural) also works."""
+        result = parse_query("has:attachments")
+        assert result.error is None
+        assert "e.has_attachments = 1" in result.where_clauses
+
     def test_attachment_type_filter(self):
         """Test attachment:type uses FTS column search."""
         result = parse_query("attachment:pdf")

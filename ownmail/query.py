@@ -445,7 +445,7 @@ def parse_query(query: str) -> ParsedQuery:
                     where_clauses.append("e.email_date >= ?")
                 params.append(normalized)
 
-            elif field == 'has' and value == 'attachment':
+            elif field == 'has' and value in ('attachment', 'attachments'):
                 # Emails with attachments - use has_attachments column in emails table
                 if negated:
                     where_clauses.append("e.has_attachments = 0")
