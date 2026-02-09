@@ -78,16 +78,39 @@ class GmailProvider(EmailProvider):
         self._service = build("gmail", "v1", credentials=creds)
         print("✓ Authenticated with Gmail API")
 
-    def get_all_message_ids(self) -> List[str]:
-        """Get all message IDs from Gmail."""
+    def get_all_message_ids(
+        self, since: Optional[str] = None, until: Optional[str] = None
+    ) -> List[str]:
+        """Get all message IDs from Gmail.
+
+        Args:
+            since: Only get emails after this date (YYYY-MM-DD)
+            until: Only get emails before this date (YYYY-MM-DD)
+        """
         all_ids = []
         page_token = None
 
+        # Build query for date filtering
+        query_parts = []
+        if since:
+            query_parts.append(f"after:{since.replace('-', '/')}")
+        if until:
+            query_parts.append(f"before:{until.replace('-', '/')}")
+        query = " ".join(query_parts) if query_parts else None
+
         while True:
+            request_args = {
+                "userId": "me",
+                "pageToken": page_token,
+                "maxResults": 500,
+            }
+            if query:
+                request_args["q"] = query
+
             response = (
                 self._service.users()
                 .messages()
-                .list(userId="me", pageToken=page_token, maxResults=500)
+                .list(**request_args)
                 .execute()
             )
 
@@ -102,15 +125,26 @@ class GmailProvider(EmailProvider):
         print(f"  Found {len(all_ids)} total messages")
         return all_ids
 
-    def get_new_message_ids(self, since_state: Optional[str]) -> Tuple[List[str], Optional[str]]:
+    def get_new_message_ids(
+        self,
+        since_state: Optional[str],
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+    ) -> Tuple[List[str], Optional[str]]:
         """Get new message IDs since the given history ID.
 
         Args:
             since_state: Gmail history ID from previous sync
+            since: Only get emails after this date (YYYY-MM-DD)
+            until: Only get emails before this date (YYYY-MM-DD)
 
         Returns:
             Tuple of (new_ids, new_history_id)
         """
+        # If date filter is specified, always do a full filtered sync
+        if since or until:
+            return self.get_all_message_ids(since=since, until=until), None
+
         if not since_state:
             # Full sync needed
             return self.get_all_message_ids(), None

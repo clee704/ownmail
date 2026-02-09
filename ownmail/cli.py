@@ -80,16 +80,18 @@ def cmd_setup(
     # Now set up an account
     print("Add a Gmail account to backup:\n")
 
-    # Get source name
-    if not source_name:
-        default_name = "gmail_personal"
-        source_name = input(f"Source name [{default_name}]: ").strip() or default_name
-
-    # Get email address
+    # Get email address first
     account_email = input("Gmail address: ").strip()
     if not account_email:
         print("❌ Error: Email address required")
         sys.exit(1)
+
+    # Get source name (use email prefix as default)
+    if not source_name:
+        # Use part before @ as default name, replacing dots/plus with underscore
+        email_prefix = account_email.split("@")[0]
+        default_name = email_prefix.replace(".", "_").replace("+", "_")
+        source_name = input(f"Source name [{default_name}]: ").strip() or default_name
 
     # The keychain key for this account's token
     token_key = f"oauth-token/{account_email}"
@@ -145,8 +147,22 @@ def cmd_setup(
     print(f"  Run 'ownmail backup --source {source_name}' to start backing up.")
 
 
-def cmd_backup(archive: EmailArchive, config: dict, source_name: Optional[str] = None) -> None:
-    """Run backup for one or all sources."""
+def cmd_backup(
+    archive: EmailArchive,
+    config: dict,
+    source_name: Optional[str] = None,
+    since: Optional[str] = None,
+    until: Optional[str] = None,
+) -> None:
+    """Run backup for one or all sources.
+
+    Args:
+        archive: EmailArchive instance
+        config: Configuration dictionary
+        source_name: Specific source to backup (None = all)
+        since: Only backup emails after this date (YYYY-MM-DD)
+        until: Only backup emails before this date (YYYY-MM-DD)
+    """
     print("\n" + "=" * 50)
     print("ownmail - Backup")
     print("=" * 50 + "\n")
@@ -205,8 +221,17 @@ def cmd_backup(archive: EmailArchive, config: dict, source_name: Optional[str] =
             print(f"Archive location: {archive.archive_dir}")
             print(f"Previously backed up: {stats['total_emails']} emails")
 
+            # Show date filter if specified
+            if since or until:
+                date_range = []
+                if since:
+                    date_range.append(f"from {since}")
+                if until:
+                    date_range.append(f"until {until}")
+                print(f"Date filter: {' '.join(date_range)}")
+
             # Run backup
-            result = archive.backup(provider)
+            result = archive.backup(provider, since=since, until=until)
 
             # Print summary
             total = stats["total_emails"] + result["success_count"]
@@ -360,10 +385,20 @@ Examples:
     )
 
     # backup command
-    subparsers.add_parser(
+    backup_parser = subparsers.add_parser(
         "backup",
         help="Download new emails",
         description="Download new emails and index them for search.",
+    )
+    backup_parser.add_argument(
+        "--since",
+        type=str,
+        help="Only backup emails after this date (YYYY-MM-DD)",
+    )
+    backup_parser.add_argument(
+        "--until",
+        type=str,
+        help="Only backup emails before this date (YYYY-MM-DD)",
     )
 
     # search command
@@ -477,7 +512,7 @@ Examples:
             archive = EmailArchive(archive_root, config)
 
             if args.command == "backup":
-                cmd_backup(archive, config, args.source)
+                cmd_backup(archive, config, args.source, args.since, args.until)
             elif args.command == "search":
                 cmd_search(archive, args.query, args.source, args.limit)
             elif args.command == "stats":

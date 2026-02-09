@@ -745,7 +745,8 @@ class TestSetupCommand:
 
         config = {"sources": []}
 
-        inputs = iter(["my_source", "user@gmail.com", "n"])
+        # Email first, then source name
+        inputs = iter(["user@gmail.com", "my_source", "n"])
 
         # Create a mock keychain that doesn't touch real keychain
         mock_keychain = MagicMock()
@@ -764,7 +765,7 @@ class TestSetupCommand:
 
         config = {"sources": []}
 
-        inputs = iter(["my_source", ""])  # Empty email
+        inputs = iter([""])  # Empty email (now asked first)
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = True
@@ -782,7 +783,7 @@ class TestSetupCommand:
         creds_file = temp_dir / "credentials.json"
         creds_file.write_text('{"installed": {"client_id": "test", "client_secret": "secret"}}')
 
-        inputs = iter(["test_source", "user@gmail.com", "n"])
+        inputs = iter(["user@gmail.com", "test_source", "n"])
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = False
@@ -800,13 +801,13 @@ class TestSetupCommand:
 
         config = {"sources": []}
 
-        # Simulate user pasting JSON then entering source name and email
+        # Simulate user pasting JSON then entering email and source name
         inputs = iter([
             '{"installed": {"client_id": "test", "client_secret": "secret"}}',
             "",  # First empty line
             "",  # Second empty line to finish JSON input
-            "my_source",
             "user@gmail.com",
+            "my_source",
             "n",  # Don't add to config
         ])
 
@@ -916,7 +917,8 @@ class TestSetupAddToConfig:
 
         config = {"archive_root": str(temp_dir)}
 
-        inputs = iter(["test_source", "user@gmail.com", "y"])  # Accept adding to config
+        # Email first, then source name, then accept
+        inputs = iter(["user@gmail.com", "test_source", "y"])
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = True
@@ -945,7 +947,8 @@ class TestSetupAddToConfig:
             }]
         }
 
-        inputs = iter(["existing_source", "user@gmail.com"])
+        # Email first, then source name (which already exists)
+        inputs = iter(["user@gmail.com", "existing_source"])
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = True
@@ -1656,8 +1659,8 @@ class TestCliSetupErrors:
         mock_keychain.has_client_credentials.return_value = True
         mock_keychain.load_gmail_token.return_value = None
 
-        # Return empty email
-        inputs = iter(["source_name", ""])
+        # Return empty email (now asked first)
+        inputs = iter([""])
 
         def mock_input(prompt=""):
             return next(inputs)
