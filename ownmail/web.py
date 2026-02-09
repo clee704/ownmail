@@ -448,7 +448,7 @@ def create_app(
             justify-content: space-between;
             align-items: end;
             padding: 0;
-            margin-bottom: 10px;
+            margin: 10px 0;
         }
         .results-header p { margin: 0; color: #666; }
         .results-header .pagination { margin: 0; }
