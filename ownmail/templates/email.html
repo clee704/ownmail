@@ -68,11 +68,18 @@
                 doc.querySelectorAll('img[data-src]').forEach(function(img) {
                     img.src = img.getAttribute('data-src');
                     img.removeAttribute('data-src');
+                    // Resize when each image loads
+                    img.addEventListener('load', function() {
+                        iframe.style.height = doc.body.scrollHeight + 20 + 'px';
+                    });
                 });
-                // Resize after images load
+                // Also resize after delays as fallback
                 setTimeout(function() {
                     iframe.style.height = doc.body.scrollHeight + 20 + 'px';
                 }, 500);
+                setTimeout(function() {
+                    iframe.style.height = doc.body.scrollHeight + 20 + 'px';
+                }, 1500);
             }
             // Hide the load button and update text, but keep trust option visible
             document.getElementById('load-images-btn').style.display = 'none';
@@ -117,9 +124,27 @@
             <iframe id="email-frame" class="email-body-html" sandbox="allow-same-origin" srcdoc="{{ body_html | e }}"></iframe>
             <script>
             // Auto-resize iframe to fit content
-            document.getElementById('email-frame').onload = function() {
+            function resizeIframe() {
+                var iframe = document.getElementById('email-frame');
                 try {
-                    this.style.height = this.contentDocument.body.scrollHeight + 20 + 'px';
+                    var height = iframe.contentDocument.body.scrollHeight;
+                    if (height > 0) {
+                        iframe.style.height = height + 20 + 'px';
+                    }
+                } catch(e) {}
+            }
+            document.getElementById('email-frame').onload = function() {
+                resizeIframe();
+                // Also resize after a delay for images that load later
+                setTimeout(resizeIframe, 500);
+                setTimeout(resizeIframe, 1500);
+                // Listen for image load events inside iframe
+                try {
+                    var doc = this.contentDocument;
+                    doc.querySelectorAll('img').forEach(function(img) {
+                        img.addEventListener('load', resizeIframe);
+                        img.addEventListener('error', resizeIframe);
+                    });
                 } catch(e) {}
             };
             </script>
@@ -142,7 +167,8 @@
         {% endif %}
 
         <div class="email-actions" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
-            <a href="/raw/{{ message_id }}" class="btn-secondary" style="display: inline-block; padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; text-decoration: none; color: #333; font-size: 13px;">📄 View Original (.eml)</a>
+            <a href="/raw/{{ message_id }}" class="btn-secondary" style="display: inline-block; padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; text-decoration: none; color: #333; font-size: 13px;">📄 View Original</a>
+            <a href="/download/{{ message_id }}" class="btn-secondary" style="display: inline-block; padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; text-decoration: none; color: #333; font-size: 13px; margin-left: 8px;">⬇ Download .eml</a>
         </div>
     </div>
 {% endblock %}
