@@ -46,6 +46,7 @@ class ImapProvider(EmailProvider):
         host: str = GMAIL_IMAP_HOST,
         port: int = DEFAULT_PORT,
         exclude_folders: Optional[List[str]] = None,
+        source_name: str = "imap",
     ):
         """Initialize IMAP provider.
 
@@ -55,17 +56,23 @@ class ImapProvider(EmailProvider):
             host: IMAP server hostname
             port: IMAP server port (default: 993 for SSL)
             exclude_folders: Folders to skip during sync
+            source_name: Source name from config
         """
         self._account = account
         self._keychain = keychain
         self._host = host
         self._port = port
         self._exclude_folders = exclude_folders or DEFAULT_EXCLUDE_FOLDERS
+        self._source_name = source_name
         self._conn: Optional[imaplib.IMAP4_SSL] = None
 
     @property
     def name(self) -> str:
         return "imap"
+
+    @property
+    def source_name(self) -> str:
+        return self._source_name
 
     @property
     def account(self) -> str:

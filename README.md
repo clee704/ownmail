@@ -209,8 +209,8 @@ Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
 ```
 /Volumes/Secure/ownmail/
 ├── ownmail.db              # SQLite (tracking + search index)
-└── accounts/
-    └── you@gmail.com/
+└── sources/
+    └── gmail_personal/
         ├── 2024/
         │   ├── 01/
         │   │   ├── 20240115_143022_a1b2c3d4e5f6.eml

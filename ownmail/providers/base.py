@@ -18,9 +18,18 @@ class EmailProvider(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Provider name (e.g., 'gmail', 'imap', 'outlook').
+        """Provider type (e.g., 'gmail', 'imap', 'outlook').
 
-        Used for config keys and display.
+        Used for sync state key selection.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def source_name(self) -> str:
+        """Source name from config (e.g., 'gmail_personal').
+
+        Used for directory structure on disk.
         """
         ...
 
@@ -29,7 +38,7 @@ class EmailProvider(ABC):
     def account(self) -> str:
         """Account identifier (email address).
 
-        Used for directory structure and database tracking.
+        Used for database tracking and dedup.
         """
         ...
 

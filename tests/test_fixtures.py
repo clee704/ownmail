@@ -1070,7 +1070,7 @@ class TestArchiveEmailsDir:
         from ownmail.archive import EmailArchive
         archive = EmailArchive(tmp_path)
         result = archive.get_emails_dir("test@example.com")
-        assert "accounts" in str(result)
+        assert "sources" in str(result)
         assert "test@example.com" in str(result)
 
 

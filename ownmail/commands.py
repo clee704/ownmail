@@ -489,7 +489,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
         # Orphaned files
         print("\n  Scanning for orphaned files...\033[K", end="\r")
         orphaned_files = []
-        for subdir in ["emails", "accounts"]:
+        for subdir in ["emails", "sources"]:
             check_dir = archive.archive_dir / subdir
             if check_dir.exists():
                 for eml_file in check_dir.rglob("*.eml"):
@@ -832,7 +832,7 @@ def cmd_sync_check(
     # Create and authenticate provider
     from ownmail.providers.gmail import GmailProvider
 
-    provider = GmailProvider(account=account, keychain=archive.keychain)
+    provider = GmailProvider(account=account, keychain=archive.keychain, source_name=source["name"])
     provider.authenticate()
 
     # Get all message IDs from Gmail
