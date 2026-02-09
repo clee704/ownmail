@@ -224,20 +224,40 @@ class EmailParser:
         except Exception:
             pass
 
-        # Try parsing numeric month format: "DD M YYYY HH:MM:SS +ZZZZ"
-        # Pattern: day month(1-12) year hour:min:sec timezone
+        # Try parsing numeric month format: "DD M YY(YY) H:MM:SS +Z(ZZZ)"
+        # Handles: 2 or 4 digit year, 1-4 digit timezone
         match = re.match(
-            r'(\d{1,2})\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([+-]\d{4})?',
+            r'(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([+-]?\d{1,4})?',
             cleaned
         )
         if match:
             day, month, year, hour, minute, second = [int(x) for x in match.groups()[:6]]
             tz_str = match.group(7) or "+0000"
+
+            # Expand 2-digit year to 4-digit
+            if year < 100:
+                year = 2000 + year if year < 50 else 1900 + year
+
+            # Normalize timezone ("+9" -> "+0900", "+530" -> "+0530", "+0900" stays)
+            tz_str = tz_str.lstrip('+')
+            if tz_str.startswith('-'):
+                tz_sign = -1
+                tz_str = tz_str[1:]
+            else:
+                tz_sign = 1
+
+            # Handle short timezone formats:
+            # 1-2 digits = hours only (9 -> 0900, 12 -> 1200)
+            # 3-4 digits = HHMM format (530 -> 0530, 0900 -> 0900)
+            if len(tz_str) <= 2:
+                tz_hours = int(tz_str)
+                tz_mins = 0
+            else:
+                tz_str = tz_str.zfill(4)
+                tz_hours = int(tz_str[:2])
+                tz_mins = int(tz_str[2:4])
+
             try:
-                # Parse timezone offset
-                tz_sign = 1 if tz_str[0] == '+' else -1
-                tz_hours = int(tz_str[1:3])
-                tz_mins = int(tz_str[3:5])
                 from datetime import timezone, timedelta
                 tz = timezone(timedelta(hours=tz_sign * tz_hours, minutes=tz_sign * tz_mins))
                 dt = datetime(year, month, day, hour, minute, second, tzinfo=tz)
