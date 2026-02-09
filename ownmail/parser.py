@@ -731,5 +731,4 @@ class EmailParser:
             "date_str": date_str,
             "body": "\n".join(body_parts),
             "attachments": ", ".join(attachments),
-            "labels": EmailParser._safe_get_header(msg, "X-Gmail-Labels"),
         }

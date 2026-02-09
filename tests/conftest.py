@@ -103,13 +103,12 @@ Body text.
 
 @pytest.fixture
 def sample_eml_with_labels():
-    """An email with X-Gmail-Labels header."""
+    """An email with labels (stored in DB, not in .eml headers)."""
     return b"""From: sender@example.com
-X-Gmail-Labels: INBOX, IMPORTANT, Work
 To: recipient@example.com
 Subject: Labeled Email
 Date: Sat, 6 Jan 2024 20:00:00 +0000
 Message-ID: <labeled@example.com>
 
-This email has Gmail labels.
+This email has labels.
 """

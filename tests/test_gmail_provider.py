@@ -287,7 +287,6 @@ class TestGmailProviderDownloadMessage:
             raw_data, labels = provider.download_message("msg123")
 
             # Labels should be returned separately, not injected into raw data
-            assert b"X-Gmail-Labels" not in raw_data
             assert "INBOX" in labels or "IMPORTANT" in labels
 
 
@@ -366,7 +365,6 @@ class TestGmailProviderLabelHandling:
 
             # Raw data should be unmodified
             assert raw_data == b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
-            assert b"X-Gmail-Labels" not in raw_data
             # Labels returned separately
             assert "INBOX" in labels
             assert "Work" in labels

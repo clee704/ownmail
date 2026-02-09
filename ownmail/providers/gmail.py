@@ -31,7 +31,7 @@ class GmailProvider(EmailProvider):
     Supports:
     - OAuth2 authentication with credentials stored in keychain
     - Incremental sync via Gmail History API
-    - Labels as X-Gmail-Labels header
+    - Labels stored in database
     """
 
     def __init__(self, account: str, keychain, include_labels: bool = True):

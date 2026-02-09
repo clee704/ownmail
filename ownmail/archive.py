@@ -374,8 +374,8 @@ class EmailArchive:
             filepath: Path to .eml file
             content: Raw email bytes (avoids re-reading file)
             skip_delete: Skip DELETE before INSERT (for new emails)
-            labels: Labels string (from provider or DB). If None, falls back
-                to X-Gmail-Labels header in the file or existing DB value.
+            labels: Labels string (from provider or DB). If None, defaults
+                to empty string.
 
         Returns:
             True if successful
@@ -387,9 +387,8 @@ class EmailArchive:
             else:
                 parsed = EmailParser.parse_file(filepath=filepath)
 
-            # Labels priority: explicit param > parsed from file > empty
             if labels is None:
-                labels = parsed.get("labels", "")
+                labels = ""
 
             # Use batch connection if available
             conn = self._batch_conn
