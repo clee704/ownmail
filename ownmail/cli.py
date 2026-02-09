@@ -678,6 +678,10 @@ Examples:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # Helper: add global options to a subparser so they work in any position
+    def _add_global_opts(sub):
+        sub.add_argument("-v", "--verbose", action="store_true", help=argparse.SUPPRESS)
+
     # setup command
     setup_parser = subparsers.add_parser(
         "setup",
@@ -689,6 +693,7 @@ Examples:
         choices=["imap", "oauth"],
         help="Setup method: 'imap' (App Password, default) or 'oauth' (Gmail API)",
     )
+    _add_global_opts(setup_parser)
 
     # download command
     download_parser = subparsers.add_parser(
@@ -707,6 +712,7 @@ Examples:
         type=str,
         help="Only download emails before this date (YYYY-MM-DD)",
     )
+    _add_global_opts(download_parser)
 
     # search command
     search_parser = subparsers.add_parser(
@@ -716,6 +722,7 @@ Examples:
     )
     search_parser.add_argument("query", help="Search query")
     search_parser.add_argument("--limit", type=int, default=50, help="Maximum results")
+    _add_global_opts(search_parser)
 
     # stats command
     stats_parser = subparsers.add_parser(
@@ -723,6 +730,7 @@ Examples:
         help="Show archive statistics",
     )
     stats_parser.add_argument("--source", type=str, help="Source name to show stats for (default: all sources)")
+    _add_global_opts(stats_parser)
 
     # rebuild command
     rebuild_parser = subparsers.add_parser(
@@ -736,6 +744,7 @@ Examples:
     rebuild_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
     rebuild_parser.add_argument("--index-only", action="store_true", help="Only rebuild the search index (skip date population)")
     rebuild_parser.add_argument("--date-only", action="store_true", help="Only populate email dates (skip indexing)")
+    _add_global_opts(rebuild_parser)
 
     # verify command
     verify_parser = subparsers.add_parser(
@@ -744,7 +753,7 @@ Examples:
         description="Check file integrity, detect orphans, and validate database health.",
     )
     verify_parser.add_argument("--fix", action="store_true", help="Fix issues (remove stale DB entries, rebuild FTS)")
-    verify_parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
+    _add_global_opts(verify_parser)
 
     # sync-check command
     sync_check_parser = subparsers.add_parser(
@@ -753,7 +762,7 @@ Examples:
         description="Compare your local archive with what's on the server. Shows emails that exist on the server but haven't been downloaded yet, and local emails that were deleted from the server.",
     )
     sync_check_parser.add_argument("--source", type=str, help="Source name to check (default: all sources)")
-    sync_check_parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
+    _add_global_opts(sync_check_parser)
 
     # reset-sync command
     reset_sync_parser = subparsers.add_parser(
@@ -762,6 +771,7 @@ Examples:
         description="Clear the sync state for all sources, forcing the next download to do a full sync.",
     )
     reset_sync_parser.add_argument("--source", type=str, help="Source name to reset (default: all sources)")
+    _add_global_opts(reset_sync_parser)
 
     # update-labels command
     update_labels_parser = subparsers.add_parser(
@@ -770,6 +780,7 @@ Examples:
         description="Fetch current Gmail labels from the server and update the database for already-downloaded emails.",
     )
     update_labels_parser.add_argument("--source", type=str, help="Source name to update (default: all sources)")
+    _add_global_opts(update_labels_parser)
 
     # list-unknown command
     unknown_parser = subparsers.add_parser(
@@ -777,7 +788,7 @@ Examples:
         help="List emails with unparseable dates",
         description="Show emails that couldn't have their date extracted.",
     )
-    unknown_parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
+    _add_global_opts(unknown_parser)
 
     # serve command
     serve_parser = subparsers.add_parser(
@@ -790,6 +801,7 @@ Examples:
     serve_parser.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
     serve_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     serve_parser.add_argument("--block-images", action="store_true", help=argparse.SUPPRESS)
+    _add_global_opts(serve_parser)
 
     # sources command
     sources_parser = subparsers.add_parser(
@@ -798,6 +810,7 @@ Examples:
     )
     sources_sub = sources_parser.add_subparsers(dest="sources_cmd")
     sources_sub.add_parser("list", help="List configured sources")
+    _add_global_opts(sources_parser)
 
     args = parser.parse_args()
 
