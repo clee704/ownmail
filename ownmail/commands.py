@@ -1011,6 +1011,9 @@ def cmd_populate_dates(
 
     def extract_date(msg_id: str, filename: str) -> tuple:
         """Extract date from a single email file. Returns (email_date, msg_id, error)."""
+        import re
+        from datetime import datetime, timedelta, timezone
+
         filepath = archive.archive_dir / filename
         email_date = None
         error = None
@@ -1021,10 +1024,73 @@ def cmd_populate_dates(
                     # Read just headers (first 16KB should be enough)
                     content = f.read(16384)
                 msg = email.message_from_bytes(content)
-                date_str = msg.get("Date", "")
+                date_header = msg.get("Date", "")
+                # Convert Header object to string if needed
+                date_str = str(date_header) if date_header else ""
+
+                parsed = None
+
+                # Try standard parsing first
                 if date_str:
-                    parsed = email.utils.parsedate_to_datetime(date_str)
+                    try:
+                        parsed = email.utils.parsedate_to_datetime(date_str)
+                    except Exception:
+                        pass
+
+                # Try ISO format (e.g., "2022-10-16 00:01:52.776975+00:00")
+                if not parsed and date_str:
+                    try:
+                        # Remove microseconds if present
+                        iso_str = re.sub(r"\.\d+", "", date_str)
+                        parsed = datetime.fromisoformat(iso_str)
+                    except Exception:
+                        pass
+
+                # Try extracting from malformed date with Korean/garbled weekday
+                # Pattern: "XX, DD M YYYY HH:MM:SS +ZZZZ"
+                if not parsed and date_str:
+                    match = re.search(
+                        r"(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([+-]?\d{1,4})?",
+                        date_str
+                    )
+                    if match:
+                        try:
+                            day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                            hour, minute, second = int(match.group(4)), int(match.group(5)), int(match.group(6))
+                            # Handle 2-digit year
+                            if year < 100:
+                                year += 2000 if year < 50 else 1900
+                            tz_str = match.group(7) or "+0000"
+                            # Parse timezone offset
+                            if len(tz_str) <= 2:
+                                tz_hours = int(tz_str)
+                                tz_offset = timezone(timedelta(hours=tz_hours))
+                            else:
+                                tz_hours = int(tz_str[:-2]) if len(tz_str) > 2 else int(tz_str)
+                                tz_mins = int(tz_str[-2:]) if len(tz_str) > 2 else 0
+                                from datetime import timedelta
+                                tz_offset = timezone(timedelta(hours=tz_hours, minutes=tz_mins))
+                            parsed = datetime(year, month, day, hour, minute, second, tzinfo=tz_offset)
+                        except Exception:
+                            pass
+
+                # Fallback: try first Received header
+                if not parsed:
+                    received_header = msg.get("Received", "")
+                    received = str(received_header) if received_header else ""
+                    if received:
+                        # Extract date from end of Received header
+                        # Format: "... ; Sat, 15 Oct 2022 17:01:54 -0700 (PDT)"
+                        match = re.search(r";\s*(.+)$", received)
+                        if match:
+                            try:
+                                parsed = email.utils.parsedate_to_datetime(match.group(1).strip())
+                            except Exception:
+                                pass
+
+                if parsed:
                     email_date = parsed.isoformat()
+
             except Exception as e:
                 error = str(e)
         else:
