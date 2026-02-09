@@ -24,6 +24,20 @@ Checking for new emails...
 - ⚡ **Fast & incremental** — Only downloads new emails. Resume anytime with Ctrl-C.
 - 🔍 **Optional search** — SQLite-based full-text search. The index is just a convenience layer.
 
+## Why ownmail?
+
+There are existing tools like `mbsync` + `mu` or `offlineimap` that can accomplish similar goals. Here's why you might prefer ownmail:
+
+| | mbsync + mu | ownmail |
+|---|---|---|
+| **Setup** | Configure multiple tools separately | Single `pip install`, one config file |
+| **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
+| **Gmail sync** | IMAP (slower, label limitations) | Gmail API (fast, proper labels, history-based sync) |
+| **Integrity** | — | SHA256 hashes, `verify` and `sync-check` commands |
+| **Hackability** | Multiple codebases in different languages | Single Python project — fork it, make it yours |
+
+**The bottom line:** If you're already comfortable with mbsync + mu, you probably don't need this. But if you want something simpler that "just works" for Gmail backup, or you want a single codebase you can easily modify to your taste — ownmail is for you.
+
 ## Install
 
 ```bash
