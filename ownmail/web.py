@@ -32,7 +32,9 @@ def create_app(archive: EmailArchive, verbose: bool = False) -> Flask:
             if verbose:
                 print("[verbose] Refreshing stats cache...", flush=True)
             start = time.time()
-            stats_cache["value"] = archive.db.get_stats()
+            # Use fast email count instead of slow get_stats
+            total = archive.db.get_email_count()
+            stats_cache["value"] = {"total_emails": total}
             stats_cache["time"] = now
             if verbose:
                 print(f"[verbose] Stats query took {time.time()-start:.2f}s", flush=True)
@@ -287,10 +289,15 @@ def create_app(archive: EmailArchive, verbose: bool = False) -> Flask:
 
     @app.route("/email/<message_id>")
     def view_email(message_id: str):
-        stats = archive.db.get_stats()
+        stats = get_cached_stats()
 
         # Get email file path from database
+        if verbose:
+            print(f"[verbose] Looking up email {message_id}...", flush=True)
+            start = time.time()
         email_info = archive.db.get_email_by_id(message_id)
+        if verbose:
+            print(f"[verbose] DB lookup took {time.time()-start:.2f}s", flush=True)
         if not email_info:
             abort(404)
 
