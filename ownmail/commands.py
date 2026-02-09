@@ -410,10 +410,12 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
 
     Checks:
     - File integrity (missing files, hash mismatches)
+    - Moved/renamed files (missing + orphaned with matching hash)
     - Orphaned files (on disk but not indexed)
     - Database health (missing metadata, FTS sync, stale hashes)
 
     With --fix:
+    - Updates DB paths for moved/renamed files
     - Removes DB rows for files that no longer exist on disk
     - Rebuilds FTS index when out of sync
     """
@@ -445,6 +447,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
     corrupted_files = []
     missing_files = []
     missing_email_ids = []
+    missing_hashes = {}  # content_hash -> (filename, email_id)
     indexed_files = set()
 
     if total == 0:
@@ -454,9 +457,11 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
 
         work_items = []
         email_id_by_filename = {}
+        hash_by_filename = {}
         for email_id, filename, stored_hash in emails:
             indexed_files.add(filename)
             email_id_by_filename[filename] = email_id
+            hash_by_filename[filename] = stored_hash
             work_items.append((archive.archive_dir, filename, stored_hash))
 
         completed = 0
@@ -473,7 +478,11 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 elif status == 'missing':
                     missing_count += 1
                     missing_files.append(filename)
-                    missing_email_ids.append(email_id_by_filename[filename])
+                    eid = email_id_by_filename[filename]
+                    missing_email_ids.append(eid)
+                    stored_hash = hash_by_filename[filename]
+                    if stored_hash:
+                        missing_hashes[stored_hash] = (filename, eid)
                 elif status == 'corrupted':
                     corrupted_count += 1
                     corrupted_files.append(filename)
@@ -491,11 +500,48 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     if rel_path not in indexed_files:
                         orphaned_files.append(rel_path)
 
+        # Detect moved/renamed files by matching hashes
+        moved_files = []  # (old_path, new_path, email_id)
+        if missing_hashes and orphaned_files:
+            remaining_orphans = []
+            for orphan_path in orphaned_files:
+                orphan_full = archive.archive_dir / orphan_path
+                try:
+                    with open(orphan_full, "rb") as f:
+                        orphan_hash = hashlib.sha256(f.read()).hexdigest()
+                except OSError:
+                    remaining_orphans.append(orphan_path)
+                    continue
+
+                if orphan_hash in missing_hashes:
+                    old_path, eid = missing_hashes.pop(orphan_hash)
+                    moved_files.append((old_path, orphan_path, eid))
+                    missing_files.remove(old_path)
+                    missing_email_ids.remove(eid)
+                    missing_count -= 1
+                else:
+                    remaining_orphans.append(orphan_path)
+            orphaned_files = remaining_orphans
+
         # Report file results
         print(f"\n  ✓ OK: {ok_count}")
         if no_hash_count > 0:
             issues_found += 1
             print(f"  ? No hash stored: {no_hash_count}")
+        if moved_files:
+            issues_found += 1
+            moved_labels = [f"{old} → {new}" for old, new, _ in moved_files]
+            _print_file_list(moved_labels, "⟳ Moved/renamed", verbose)
+            if fix:
+                with sqlite3.connect(db_path) as conn:
+                    for _old_path, new_path, eid in moved_files:
+                        conn.execute(
+                            "UPDATE emails SET filename = ? WHERE email_id = ?",
+                            (new_path, eid),
+                        )
+                    conn.commit()
+                issues_fixed += 1
+                print(f"    → Updated {len(moved_files)} DB paths")
         if missing_count > 0:
             issues_found += 1
             _print_file_list(missing_files, "✗ Missing from disk", verbose)
@@ -601,6 +647,8 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 print(f"  Remaining: {fixed_remaining}")
                 # Actionable suggestions for unfixed issues
                 suggestions = []
+                if moved_files:
+                    suggestions.append("  • 'ownmail verify --fix' to update paths for moved files")
                 if missing_metadata > 0 or hash_mismatches > 0:
                     suggestions.append("  • 'ownmail reindex' to populate metadata / update stale index")
                 if len(orphaned_files) > 0:
@@ -614,6 +662,8 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
         else:
             # Suggestions for all issues
             suggestions = []
+            if moved_files:
+                suggestions.append("  • 'ownmail verify --fix' to update paths for moved files")
             if missing_count > 0:
                 suggestions.append("  • 'ownmail verify --fix' to remove stale DB entries for missing files")
             if len(orphaned_files) > 0:
