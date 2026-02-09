@@ -515,12 +515,19 @@ def _linkify(text: str) -> str:
             depth = quote_prefix.count('&gt;')
             # Style based on depth (cycle through colors) - teal, green, orange, purple
             colors = ['#58a6c9', '#7ee787', '#f0a855', '#d2a8ff']
-            color = colors[(depth - 1) % len(colors)]
             rest = escaped[quote_match.end():]
             rest = _linkify_line(rest)
+            # Create multiple vertical bars using box-shadow
+            shadows = []
+            for i in range(depth):
+                # Each bar is 2px wide, offset by 10px per level
+                offset = i * 10
+                shadows.append(f'{offset}px 0 0 0 {colors[i % len(colors)]}')
+            shadow_style = ', '.join(shadows)
+            padding_left = depth * 10 + 6
             result_lines.append(
-                f'<span class="quote-level-{min(depth, 4)}" style="color:{color}">'
-                f'{quote_prefix}{rest}</span>'
+                f'<div class="quote-line" style="box-shadow: inset {shadow_style}; '
+                f'padding-left: {padding_left}px; margin: 0;">{rest}</div>'
             )
             continue
 
