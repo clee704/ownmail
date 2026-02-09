@@ -1031,7 +1031,7 @@ def create_app(
         query_without_filters = query
         for pattern in [
             r'\b(?:before|after):\d{4}-?\d{2}-?\d{2}\b',
-            r'\b(?:label|tag):\S+\b',
+            r'\b(?:label|tag):(?:"[^"]*"|\S+)\b',
         ]:
             query_without_filters = re.sub(pattern, '', query_without_filters)
         # Also remove orphaned AND

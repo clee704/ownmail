@@ -13,6 +13,7 @@ Supported syntax:
     to:bob                      Recipient filter (name, uses FTS)
     subject:meeting             Subject field search (FTS)
     label:inbox                 Label/folder filter
+    label:"[Gmail]/All Mail"    Label with spaces/special chars
     has:attachment              Emails with attachments
     before:2024-06-01           Date filter
     after:2024-01-01            Date filter
@@ -141,7 +142,7 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
 
             # Find the word after -
             j = i + 1
-            while j < len(query) and not query[j].isspace() and query[j] not in '()':
+            while j < len(query) and not query[j].isspace() and query[j] not in '()"':
                 j += 1
             word = query[i+1:j]
             if word:
@@ -158,6 +159,17 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                     }
 
                     if field_name in known_filters:
+                        # Support quoted filter values: -label:"[Gmail]/All Mail"
+                        if not field_value and j < len(query) and query[j] == '"':
+                            end = query.find('"', j + 1)
+                            if end == -1:
+                                partial = query[j+1:j+21]
+                                if len(query) > j + 21:
+                                    partial += "..."
+                                return tokens, f"Unclosed quote after '{partial}'"
+                            field_value = query[j+1:end]
+                            j = end + 1
+
                         if not field_value:
                             return tokens, f"Empty value for '-{field_name}:' filter"
                         # Normalize field names
@@ -216,6 +228,17 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
             }
 
             if field_name in known_filters:
+                # Support quoted filter values: label:"[Gmail]/All Mail"
+                if not field_value and j < len(query) and query[j] == '"':
+                    end = query.find('"', j + 1)
+                    if end == -1:
+                        partial = query[j+1:j+21]
+                        if len(query) > j + 21:
+                            partial += "..."
+                        return tokens, f"Unclosed quote after '{partial}'"
+                    field_value = query[j+1:end]
+                    j = end + 1
+
                 if not field_value:
                     return tokens, f"Empty value for '{field_name}:' filter"
                 # Normalize field names
