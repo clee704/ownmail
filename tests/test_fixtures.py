@@ -1567,21 +1567,21 @@ class TestDatabaseClearIndex:
         assert not db.is_indexed(_eid("msg-1"))
 
 
-class TestCommandsReindexSingle:
-    """Test commands reindex with single file."""
+class TestCommandsRebuildSingle:
+    """Test commands rebuild with single file."""
 
-    def test_reindex_nonexistent_file(self, tmp_path, capsys):
-        """Test cmd_reindex with nonexistent file."""
+    def test_rebuild_nonexistent_file(self, tmp_path, capsys):
+        """Test cmd_rebuild with nonexistent file."""
         from pathlib import Path
 
         from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(tmp_path)
-        # Try to reindex a non-existent file
-        cmd_reindex(archive, file_path=Path("/nonexistent/file.eml"))
+        # Try to rebuild a non-existent file
+        cmd_rebuild(archive, file_path=Path("/nonexistent/file.eml"))
         captured = capsys.readouterr()
-        assert "not found" in captured.out.lower() or "Reindex" in captured.out
+        assert "not found" in captured.out.lower() or "Rebuild" in captured.out
 
 
 class TestCommandsVerify:

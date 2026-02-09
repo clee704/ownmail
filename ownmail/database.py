@@ -191,7 +191,7 @@ class ArchiveDatabase:
             # Cascade delete triggers - clean up junction tables when emails are deleted
             # Note: FTS cleanup is NOT handled here because contentless FTS5 requires
             # the exact original content (including body) for delete operations.
-            # After deleting emails, run `reindex --force` to rebuild the FTS index.
+            # After deleting emails, run `rebuild --force` to rebuild the FTS index.
             conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_emails_delete
                 AFTER DELETE ON emails
                 BEGIN
@@ -558,6 +558,7 @@ class ArchiveDatabase:
         conn: sqlite3.Connection = None,
         labels: str = "",
         skip_delete: bool = False,
+        email_date: str = None,
     ) -> None:
         """Add email to search index by updating emails table metadata and FTS.
 
@@ -567,6 +568,7 @@ class ArchiveDatabase:
             labels: Comma-separated labels string (written to email_labels table only)
             conn: Optional existing connection (for batching)
             skip_delete: Ignored (kept for API compatibility)
+            email_date: ISO-formatted UTC date string (populates email_date if NULL)
         """
         should_close = conn is None
         if conn is None:
@@ -589,7 +591,7 @@ class ArchiveDatabase:
 
             rowid = row[0]
             was_indexed = row[1] is not None  # Had subject before
-            email_date = row[2]  # For email_labels table
+            existing_email_date = row[2]  # For email_labels table
 
             # Extract email addresses for indexed lookups
             sender_email = self._extract_email(sender)
@@ -607,10 +609,11 @@ class ArchiveDatabase:
                     date_str = ?,
                     snippet = ?,
                     sender_email = ?,
-                    has_attachments = ?
+                    has_attachments = ?,
+                    email_date = COALESCE(email_date, ?)
                 WHERE email_id = ?
                 """,
-                (subject, sender, recipients, date_str, snippet, sender_email, has_attachments, email_id)
+                (subject, sender, recipients, date_str, snippet, sender_email, has_attachments, email_date, email_id)
             )
 
             # Update normalized recipients table for fast lookups
@@ -630,13 +633,15 @@ class ArchiveDatabase:
             # Update normalized labels table for fast lookups
             conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
             if labels:
+                # Use the newly-computed email_date if available, otherwise existing
+                label_date = email_date or existing_email_date
                 # labels is comma-separated: "INBOX,IMPORTANT,CATEGORY_PERSONAL"
                 for label in labels.split(','):
                     label = label.strip()
                     if label:
                         conn.execute(
                             "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                            (rowid, label, email_date)
+                            (rowid, label, label_date)
                         )
 
             # Update FTS (contentless mode - we manage manually)
@@ -644,9 +649,9 @@ class ArchiveDatabase:
                 # Delete old FTS entry (contentless FTS requires exact content)
                 # We don't have the old content, so we need a different approach
                 # Option 1: Store old content - too expensive
-                # Option 2: Just insert (may cause duplicates - not ideal for reindex)
+                # Option 2: Just insert (may cause duplicates - not ideal for rebuild)
                 # Option 3: Use delete-all for this rowid and rebuild
-                # For simplicity, we skip delete and just insert. Reindex handles cleanup.
+                # For simplicity, we skip delete and just insert. Rebuild handles cleanup.
                 pass
             # Insert new FTS entry
             conn.execute(

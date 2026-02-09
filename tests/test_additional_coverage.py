@@ -367,8 +367,8 @@ Binary data
         assert "body" in result
 
 
-class TestReindexMultipleEmails:
-    """Tests for reindex with multiple emails."""
+class TestRebuildMultipleEmails:
+    """Tests for rebuild with multiple emails."""
 
     @pytest.fixture
     def temp_dir(self, tmp_path):
@@ -384,9 +384,9 @@ Date: Mon, 15 Jan 2024 14:30:00 +0000
 This is a test email body.
 """
 
-    def test_reindex_multiple_emails(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with multiple emails to index."""
-        from ownmail.commands import cmd_reindex
+    def test_rebuild_multiple_emails(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with multiple emails to index."""
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -400,9 +400,9 @@ This is a test email body.
             rel_path = str(email_path.relative_to(temp_dir))
             archive.db.mark_downloaded(_eid(f"test{i}"), f"test{i}", rel_path, content_hash=None)
 
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured = capsys.readouterr()
-        assert "Indexing 5 emails" in captured.out or "Reindex" in captured.out
+        assert "Indexing 5 emails" in captured.out or "Rebuild" in captured.out
 
 
 class TestArchiveBackupProgress:
@@ -512,8 +512,8 @@ Body
         assert "verified" in captured.out.lower() or "Verify" in captured.out
 
 
-class TestReindexWithReindexedEmails:
-    """Test reindex with emails that are being re-indexed."""
+class TestRebuildWithRebuiltEmails:
+    """Test rebuild with emails that are being re-indexed."""
 
     @pytest.fixture
     def temp_dir(self, tmp_path):
@@ -528,11 +528,11 @@ Date: Mon, 15 Jan 2024 14:30:00 +0000
 Body
 """
 
-    def test_reindex_already_indexed_emails(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with emails that have indexed_hash."""
+    def test_rebuild_already_indexed_emails(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with emails that have indexed_hash."""
         import hashlib
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -551,9 +551,9 @@ Body
             conn.execute("UPDATE emails SET indexed_hash = 'old_hash' WHERE email_id = ?", (_eid("test123"),))
             conn.commit()
 
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured = capsys.readouterr()
-        assert "Reindex" in captured.out
+        assert "Rebuild" in captured.out
 
 
 class TestSyncCheckWithDifferences:
@@ -998,20 +998,20 @@ Date: Mon, 15 Jan 2024 14:30:00 +0000
 This is a test email body.
 """
 
-    def test_reindex_with_missing_file(self, temp_dir, capsys):
-        """Test reindex handles missing file gracefully."""
-        from ownmail.commands import cmd_reindex
+    def test_rebuild_with_missing_file(self, temp_dir, capsys):
+        """Test rebuild handles missing file gracefully."""
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
         # Add email to DB but don't create file
         archive.db.mark_downloaded(_eid("missing123"), "missing123", "emails/2024/01/missing.eml", content_hash=None)
 
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
 
         captured = capsys.readouterr()
         # Should complete without crashing
-        assert "Reindex" in captured.out
+        assert "Rebuild" in captured.out
 
     def test_verify_with_missing_hash(self, temp_dir, sample_eml_simple, capsys):
         """Test verify when email has no hash stored."""
@@ -1034,11 +1034,11 @@ This is a test email body.
         # Should note missing hash
         assert "Verify" in captured.out
 
-    def test_reindex_single_file(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with single file path."""
+    def test_rebuild_single_file(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with single file path."""
         from pathlib import Path
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1051,29 +1051,29 @@ This is a test email body.
         # Add to DB
         archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash="abc")
 
-        cmd_reindex(archive, file_path=Path(email_path))
+        cmd_rebuild(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
         assert "Indexing:" in captured.out
 
-    def test_reindex_single_file_not_found(self, temp_dir, capsys):
-        """Test reindex with nonexistent file path."""
+    def test_rebuild_single_file_not_found(self, temp_dir, capsys):
+        """Test rebuild with nonexistent file path."""
         from pathlib import Path
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
-        cmd_reindex(archive, file_path=Path("/nonexistent/file.eml"))
+        cmd_rebuild(archive, file_path=Path("/nonexistent/file.eml"))
 
         captured = capsys.readouterr()
         assert "File not found" in captured.out
 
-    def test_reindex_single_file_different_base(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with file outside archive directory."""
+    def test_rebuild_single_file_different_base(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with file outside archive directory."""
         from pathlib import Path
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1083,17 +1083,17 @@ This is a test email body.
         email_path = other_dir / "outside.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        cmd_reindex(archive, file_path=Path(email_path))
+        cmd_rebuild(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
         # Should still try to index using filename as email_id
         assert "Indexing:" in captured.out
 
-    def test_reindex_single_file_not_in_db(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with file not in database."""
+    def test_rebuild_single_file_not_in_db(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with file not in database."""
         from pathlib import Path
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1103,17 +1103,17 @@ This is a test email body.
         email_path = emails_dir / "newfile.eml"
         email_path.write_bytes(sample_eml_simple)
 
-        cmd_reindex(archive, file_path=Path(email_path))
+        cmd_rebuild(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
         # Should use filename as email_id and index it
         assert "Indexing:" in captured.out
 
-    def test_reindex_single_file_index_fails(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex single file when indexing fails - file in DB."""
+    def test_rebuild_single_file_index_fails(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild single file when indexing fails - file in DB."""
         from pathlib import Path
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1127,16 +1127,16 @@ This is a test email body.
 
         # Mock the parser to raise an exception
         with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Parse error")):
-            cmd_reindex(archive, file_path=Path(email_path))
+            cmd_rebuild(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
         assert "Failed to index" in captured.out
 
-    def test_reindex_single_file_not_in_db_fails(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex single file when indexing fails - file not in DB."""
+    def test_rebuild_single_file_not_in_db_fails(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild single file when indexing fails - file not in DB."""
         from pathlib import Path
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1150,14 +1150,14 @@ This is a test email body.
 
         # Mock the parser to raise an exception
         with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Parse error")):
-            cmd_reindex(archive, file_path=Path(email_path))
+            cmd_rebuild(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
         assert "Failed to index" in captured.out
 
-    def test_reindex_force_mode(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with force flag."""
-        from ownmail.commands import cmd_reindex
+    def test_rebuild_force_mode(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with force flag."""
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1172,10 +1172,10 @@ This is a test email body.
         with sqlite3.connect(archive.db.db_path) as conn:
             conn.execute("UPDATE emails SET indexed_hash = 'old_hash' WHERE email_id = ?", (_eid("test123"),))
 
-        cmd_reindex(archive, force=True)
+        cmd_rebuild(archive, force=True)
 
         captured = capsys.readouterr()
-        assert "force" in captured.out.lower() or "Reindex" in captured.out
+        assert "force" in captured.out.lower() or "Rebuild" in captured.out
 
     def test_stats_with_sources(self, temp_dir, capsys):
         """Test stats command with configured sources."""
@@ -1429,8 +1429,8 @@ class TestCliSetupAddToConfigAuto:
         assert "sources:" in config_content
 
 
-class TestReindexDebugMode:
-    """Tests for reindex debug mode."""
+class TestRebuildDebugMode:
+    """Tests for rebuild debug mode."""
 
     @pytest.fixture
     def temp_dir(self, tmp_path):
@@ -1446,9 +1446,9 @@ Date: Mon, 15 Jan 2024 14:30:00 +0000
 This is a test email body.
 """
 
-    def test_reindex_with_debug_flag(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with debug flag shows timing."""
-        from ownmail.commands import cmd_reindex
+    def test_rebuild_with_debug_flag(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with debug flag shows timing."""
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1460,16 +1460,16 @@ This is a test email body.
 
         archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash=None)
 
-        cmd_reindex(archive, debug=True)
+        cmd_rebuild(archive, debug=True)
 
         captured = capsys.readouterr()
-        assert "Reindex" in captured.out
+        assert "Rebuild" in captured.out
 
-    def test_reindex_single_file_debug_error(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex single file with debug shows error details."""
+    def test_rebuild_single_file_debug_error(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild single file with debug shows error details."""
         from pathlib import Path
 
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1483,14 +1483,14 @@ This is a test email body.
 
         # Mock parser to fail
         with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Debug error msg")):
-            cmd_reindex(archive, file_path=Path(email_path), debug=True)
+            cmd_rebuild(archive, file_path=Path(email_path), debug=True)
 
         captured = capsys.readouterr()
         assert "Failed to index" in captured.out or "Error" in captured.out
 
-    def test_reindex_batch_with_error_debug(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex batch with errors shows debug info."""
-        from ownmail.commands import cmd_reindex
+    def test_rebuild_batch_with_error_debug(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild batch with errors shows debug info."""
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(temp_dir, {})
 
@@ -1514,10 +1514,10 @@ This is a test email body.
             return original_parse(*args, **kwargs)
 
         with patch.object(EmailParser, 'parse_file', side_effect=failing_parse):
-            cmd_reindex(archive, debug=True)
+            cmd_rebuild(archive, debug=True)
 
         captured = capsys.readouterr()
-        assert "Reindex" in captured.out
+        assert "Rebuild" in captured.out
 
 
 class TestConfigEdgeCases:

@@ -1,7 +1,7 @@
 """Maintenance commands for ownmail.
 
 This module contains commands for archive maintenance:
-- reindex: Rebuild the full-text search index
+- rebuild: Rebuild the search index and populate metadata
 - verify: Verify archive integrity (files, hashes, database)
 - sync_check: Compare local archive with server
 - update_labels: Update labels from server or derive from IMAP folders
@@ -12,6 +12,8 @@ import signal
 import sqlite3
 import sys
 import time
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
 
@@ -20,27 +22,27 @@ from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
 
 
-def cmd_reindex(
+def cmd_rebuild(
     archive: EmailArchive,
     file_path: Optional[Path] = None,
     pattern: Optional[str] = None,
     force: bool = False,
     debug: bool = False,
 ) -> None:
-    """Rebuild the search index.
+    """Rebuild the search index and populate metadata.
 
     By default, only indexes emails that have changed (content_hash != indexed_hash).
-    This makes reindex resumable - if cancelled, just run again to continue.
+    This makes rebuild resumable - if cancelled, just run again to continue.
 
     Args:
         archive: EmailArchive instance
         file_path: Index only this specific file
         pattern: Index only files matching this glob pattern (e.g., "2024/09/*")
-        force: If True, reindex all emails regardless of indexed_hash
+        force: If True, rebuild all emails regardless of indexed_hash
         debug: If True, show timing info for each email
     """
     print("\n" + "=" * 50)
-    print("ownmail - Reindex")
+    print("ownmail - Rebuild")
     print("=" * 50 + "\n")
 
     db_path = archive.db.db_path
@@ -135,10 +137,10 @@ def cmd_reindex(
                 print(f"  (skipping {already_indexed} already-indexed)")
 
     if not emails:
-        print("\nAll emails are already indexed. Use --force to reindex everything.")
+        print("\nAll emails are already indexed. Use --force to rebuild everything.")
         return
 
-    # For full reindex with force mode, rebuild FTS table from scratch
+    # For full rebuild with force mode, rebuild FTS table from scratch
     # This is necessary because contentless FTS5 can't delete without original content
     if force and not pattern and not file_path:
         print("Rebuilding FTS index...", end="", flush=True)
@@ -199,7 +201,7 @@ def cmd_reindex(
                 continue
 
             # Index the email (updates emails table, FTS synced via triggers)
-            if _index_email_for_reindex(archive, msg_id, filepath, batch_conn, debug):
+            if _index_email_for_rebuild(archive, msg_id, filepath, batch_conn, debug):
                 success_count += 1
             else:
                 error_count += 1
@@ -237,12 +239,12 @@ def cmd_reindex(
     print("\n" + "-" * 50)
     if interrupted:
         remaining = len(emails) - success_count - error_count
-        print("Reindex Paused!")
+        print("Rebuild Paused!")
         print(f"  Indexed: {success_count} emails in {elapsed_total:.1f}s")
         print(f"  Remaining: {remaining} emails")
-        print("\n  Run 'ownmail reindex' again to resume.")
+        print("\n  Run 'ownmail rebuild' again to resume.")
     else:
-        print("Reindex Complete!")
+        print("Rebuild Complete!")
         print(f"  Indexed: {success_count} emails in {elapsed_total:.1f}s")
     if error_count > 0:
         print(f"  Errors: {error_count}")
@@ -258,6 +260,18 @@ def _index_single_email(
     """Index a single email file."""
     try:
         parsed = EmailParser.parse_file(filepath=filepath)
+
+        # Compute email_date from parsed date_str
+        email_date_iso = None
+        date_str = parsed["date_str"]
+        if date_str:
+            try:
+                msg_date = parsedate_to_datetime(date_str)
+                msg_date_utc = msg_date.astimezone(timezone.utc)
+                email_date_iso = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            except Exception:
+                pass
+
         archive.db.index_email(
             email_id=email_id,
             subject=parsed["subject"],
@@ -266,6 +280,7 @@ def _index_single_email(
             date_str=parsed["date_str"],
             body=parsed["body"],
             attachments=parsed["attachments"],
+            email_date=email_date_iso,
         )
         return True
     except Exception as e:
@@ -274,14 +289,14 @@ def _index_single_email(
         return False
 
 
-def _index_email_for_reindex(
+def _index_email_for_rebuild(
     archive: EmailArchive,
     email_id: str,
     filepath: Path,
     conn: sqlite3.Connection,
     debug: bool = False,
 ) -> bool:
-    """Index email during reindex (uses batch connection)."""
+    """Index email during rebuild (uses batch connection)."""
     try:
         # Read file once for both parsing and hashing
         with open(filepath, "rb") as f:
@@ -308,6 +323,17 @@ def _index_email_for_reindex(
         attachments = parsed["attachments"]
         has_attachments = 1 if attachments else 0
 
+        # Compute email_date from parsed date_str
+        email_date_iso = None
+        date_str = parsed["date_str"]
+        if date_str:
+            try:
+                msg_date = parsedate_to_datetime(date_str)
+                msg_date_utc = msg_date.astimezone(timezone.utc)
+                email_date_iso = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+            except Exception:
+                pass
+
         # Update metadata in emails table and get rowid in one query
         row = conn.execute(
             """
@@ -319,13 +345,14 @@ def _index_email_for_reindex(
                 snippet = ?,
                 indexed_hash = ?,
                 content_hash = COALESCE(content_hash, ?),
-                has_attachments = ?
+                has_attachments = ?,
+                email_date = COALESCE(email_date, ?)
             WHERE email_id = ?
             RETURNING rowid
             """,
             (parsed["subject"], parsed["sender"], recipients,
              parsed["date_str"], snippet,
-             content_hash, content_hash, has_attachments, email_id)
+             content_hash, content_hash, has_attachments, email_date_iso, email_id)
         ).fetchone()
 
         # Insert into FTS and normalized tables
@@ -626,7 +653,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 """)
                 conn.commit()
                 issues_fixed += 1
-                print("    → FTS rebuilt (run 'reindex --force' to restore body text)")
+                print("    → FTS rebuilt (run 'rebuild --force' to restore body text)")
         else:
             print(f"  ✓ FTS in sync ({fts_count} entries)")
 
@@ -724,7 +751,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 conn.commit()
                 issues_fixed += 1
                 print(f"    → Removed {removed_count} duplicate DB entries and {removed_files} orphaned files")
-                print("    → FTS rebuilt (run 'reindex --force' to restore body text)")
+                print("    → FTS rebuilt (run 'rebuild --force' to restore body text)")
         else:
             print("  ✓ No duplicate emails")
 
@@ -749,9 +776,9 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 if moved_files:
                     suggestions.append("  • 'ownmail verify --fix' to update paths for moved files")
                 if missing_metadata > 0 or hash_mismatches > 0:
-                    suggestions.append("  • 'ownmail reindex' to populate metadata / update stale index")
+                    suggestions.append("  • 'ownmail rebuild' to populate metadata / update stale index")
                 if len(orphaned_files) > 0:
-                    suggestions.append("  • 'ownmail reindex' to index orphaned files")
+                    suggestions.append("  • 'ownmail rebuild' to index orphaned files")
                 if corrupted_count > 0:
                     suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
                 if dup_count > 0:
@@ -766,11 +793,11 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
             if missing_count > 0:
                 suggestions.append("  • 'ownmail verify --fix' to remove stale DB entries for missing files")
             if len(orphaned_files) > 0:
-                suggestions.append("  • 'ownmail reindex' to index orphaned files")
+                suggestions.append("  • 'ownmail rebuild' to index orphaned files")
             if corrupted_count > 0:
                 suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
             if missing_metadata > 0 or hash_mismatches > 0:
-                suggestions.append("  • 'ownmail reindex' to populate metadata / update stale index")
+                suggestions.append("  • 'ownmail rebuild' to populate metadata / update stale index")
             if fts_count != emails_with_metadata:
                 suggestions.append("  • 'ownmail verify --fix' to rebuild FTS index")
             if dup_count > 0:

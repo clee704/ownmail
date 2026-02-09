@@ -188,19 +188,19 @@ sources:
         captured = capsys.readouterr()
         assert "Searching for" in captured.out
 
-    def test_main_reindex_command(self, temp_dir, capsys, monkeypatch):
-        """Test reindex command via main."""
+    def test_main_rebuild_command(self, temp_dir, capsys, monkeypatch):
+        """Test rebuild command via main."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'reindex']):
+        with patch.object(sys, 'argv', ['ownmail', 'rebuild']):
             main()
 
         captured = capsys.readouterr()
-        assert "Reindex" in captured.out
+        assert "Rebuild" in captured.out
 
     def test_main_verify_command(self, temp_dir, capsys, monkeypatch):
         """Test verify command via main."""
@@ -847,29 +847,29 @@ class TestMainEdgeCases:
         captured = capsys.readouterr()
         assert "Searching" in captured.out
 
-    def test_main_reindex_force(self, temp_dir, capsys, monkeypatch):
-        """Test reindex --force command."""
+    def test_main_rebuild_force(self, temp_dir, capsys, monkeypatch):
+        """Test rebuild --force command."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'reindex', '--force']):
+        with patch.object(sys, 'argv', ['ownmail', 'rebuild', '--force']):
             main()
 
         captured = capsys.readouterr()
         assert "(force)" in captured.out
 
-    def test_main_reindex_pattern(self, temp_dir, capsys, monkeypatch):
-        """Test reindex --pattern command."""
+    def test_main_rebuild_pattern(self, temp_dir, capsys, monkeypatch):
+        """Test rebuild --pattern command."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'reindex', '--pattern', '2024/*']):
+        with patch.object(sys, 'argv', ['ownmail', 'rebuild', '--pattern', '2024/*']):
             main()
 
         captured = capsys.readouterr()

@@ -733,16 +733,16 @@ Examples:
         help="Show archive statistics",
     )
 
-    # reindex command
-    reindex_parser = subparsers.add_parser(
-        "reindex",
-        help="Rebuild the search index",
+    # rebuild command
+    rebuild_parser = subparsers.add_parser(
+        "rebuild",
+        help="Rebuild the search index and populate metadata",
         description="Rebuild the full-text search index from email files.",
     )
-    reindex_parser.add_argument("--file", type=Path, help="Index only this specific .eml file")
-    reindex_parser.add_argument("--pattern", type=str, help="Index only files matching pattern")
-    reindex_parser.add_argument("--force", "-f", action="store_true", help="Reindex all, even if indexed")
-    reindex_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
+    rebuild_parser.add_argument("--file", type=Path, help="Index only this specific .eml file")
+    rebuild_parser.add_argument("--pattern", type=str, help="Index only files matching pattern")
+    rebuild_parser.add_argument("--force", "-f", action="store_true", help="Rebuild all, even if indexed")
+    rebuild_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
 
     # verify command
     verify_parser = subparsers.add_parser(
@@ -855,9 +855,9 @@ Examples:
                 cmd_search(archive, args.query, args.source, args.limit)
             elif args.command == "stats":
                 cmd_stats(archive, config, args.source)
-            elif args.command == "reindex":
-                from ownmail.commands import cmd_reindex
-                cmd_reindex(archive, args.file, args.pattern, args.force, args.debug)
+            elif args.command == "rebuild":
+                from ownmail.commands import cmd_rebuild
+                cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify
                 cmd_verify(archive, args.fix, args.verbose)

@@ -1143,16 +1143,16 @@ class TestWebIndexPageWithQuery:
             assert response.status_code in [200, 302]
 
 
-class TestCommandsReindex:
-    """Tests for cmd_reindex command."""
+class TestCommandsRebuild:
+    """Tests for cmd_rebuild command."""
 
-    def test_reindex_empty_archive(self, tmp_path, capsys):
-        """Test reindex on empty archive."""
+    def test_rebuild_empty_archive(self, tmp_path, capsys):
+        """Test rebuild on empty archive."""
         from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(tmp_path, {})
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured = capsys.readouterr()
         assert len(captured.out) > 0
 
@@ -1468,13 +1468,13 @@ class TestGmailProviderMocked:
         assert GmailProvider is not None
 
 
-class TestCommandsReindexPattern:
-    """Tests for reindex with pattern."""
+class TestCommandsRebuildPattern:
+    """Tests for rebuild with pattern."""
 
-    def test_reindex_with_pattern(self, tmp_path, capsys):
-        """Test reindex with a pattern."""
+    def test_rebuild_with_pattern(self, tmp_path, capsys):
+        """Test rebuild with a pattern."""
         from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(tmp_path, {})
 
@@ -1491,8 +1491,8 @@ Body.
         eml_path.write_bytes(eml_content)
         archive.db.mark_downloaded(_eid("test"), "test", "test.eml")
 
-        # Run reindex with pattern
-        cmd_reindex(archive, pattern="*.eml")
+        # Run rebuild with pattern
+        cmd_rebuild(archive, pattern="*.eml")
         captured = capsys.readouterr()
         assert len(captured.out) > 0
 
@@ -2416,10 +2416,10 @@ file content
 class TestCommandsFullCoverage:
     """Tests for commands.py edge cases."""
 
-    def test_reindex_with_force(self, tmp_path, capsys):
-        """Test reindex with force flag."""
+    def test_rebuild_with_force(self, tmp_path, capsys):
+        """Test rebuild with force flag."""
         from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_reindex
+        from ownmail.commands import cmd_rebuild
 
         archive = EmailArchive(tmp_path, {})
 
@@ -2437,8 +2437,8 @@ Body.
         archive.db.mark_downloaded(_eid("force"), "force", "force.eml")
         archive.db.index_email(_eid("force"), "Test", "sender", "to", "2024-01-01", "body", "")
 
-        # Force reindex
-        cmd_reindex(archive, force=True)
+        # Force rebuild
+        cmd_rebuild(archive, force=True)
         captured = capsys.readouterr()
         assert len(captured.out) > 0
 
