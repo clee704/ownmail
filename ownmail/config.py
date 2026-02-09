@@ -55,73 +55,89 @@ def load_config(config_path: Optional[Path] = None, script_dir: Path = None) -> 
     return {}
 
 
-def get_accounts(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Get list of account configurations.
-
-    Args:
-        config: Full configuration dictionary
-
-    Returns:
-        List of account configuration dictionaries
-    """
-    return config.get("accounts", [])
-
-
-def get_provider_defaults(config: Dict[str, Any], provider: str) -> Dict[str, Any]:
-    """Get default settings for a provider.
-
-    Args:
-        config: Full configuration dictionary
-        provider: Provider name (e.g., 'gmail', 'imap')
-
-    Returns:
-        Provider default settings
-    """
-    providers = config.get("providers", {})
-    return providers.get(provider, {})
-
-
-def get_account_config(
-    config: Dict[str, Any],
-    account: str
-) -> Optional[Dict[str, Any]]:
-    """Get configuration for a specific account.
-
-    Merges provider defaults with account-specific overrides.
-
-    Args:
-        config: Full configuration dictionary
-        account: Account email address
-
-    Returns:
-        Merged account configuration, or None if not found
-    """
-    for acct in get_accounts(config):
-        if acct.get("address") == account:
-            # Get provider defaults
-            provider = acct.get("provider", "gmail")
-            defaults = get_provider_defaults(config, provider)
-
-            # Merge: account config overrides provider defaults
-            merged = {**defaults, **acct}
-            return merged
-
-    return None
-
-
-def get_archive_dir(config: Dict[str, Any], default: Path = None) -> Path:
-    """Get archive directory from config.
+def get_archive_root(config: Dict[str, Any], default: Path = None) -> Path:
+    """Get archive root directory from config.
 
     Args:
         config: Configuration dictionary
         default: Default if not specified in config
 
     Returns:
-        Archive directory path
+        Archive root directory path
     """
+    # Support both new "archive_root" and legacy "archive_dir"
+    if "archive_root" in config:
+        return Path(config["archive_root"])
     if "archive_dir" in config:
         return Path(config["archive_dir"])
     return default or Path.cwd() / "archive"
+
+
+def get_sources(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Get list of source configurations.
+
+    Args:
+        config: Full configuration dictionary
+
+    Returns:
+        List of source configuration dictionaries
+    """
+    return config.get("sources", [])
+
+
+def get_source_by_name(config: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+    """Get a specific source by name.
+
+    Args:
+        config: Full configuration dictionary
+        name: Source name (e.g., 'gmail_personal')
+
+    Returns:
+        Source configuration, or None if not found
+    """
+    for source in get_sources(config):
+        if source.get("name") == name:
+            return source
+    return None
+
+
+def get_source_by_account(config: Dict[str, Any], account: str) -> Optional[Dict[str, Any]]:
+    """Get a specific source by account email.
+
+    Args:
+        config: Full configuration dictionary
+        account: Email address
+
+    Returns:
+        Source configuration, or None if not found
+    """
+    for source in get_sources(config):
+        if source.get("account") == account:
+            return source
+    return None
+
+
+def parse_secret_ref(secret_ref: str) -> Dict[str, str]:
+    """Parse a secret reference string.
+
+    Formats:
+        keychain:<key_name>  -> {"type": "keychain", "key": "<key_name>"}
+
+    Args:
+        secret_ref: Secret reference string (e.g., "keychain:gmail_personal_token")
+
+    Returns:
+        Dictionary with type and key
+    """
+    if ":" not in secret_ref:
+        raise ValueError(f"Invalid secret_ref format: {secret_ref}")
+
+    ref_type, ref_key = secret_ref.split(":", 1)
+
+    if ref_type == "keychain":
+        return {"type": "keychain", "key": ref_key}
+    else:
+        raise ValueError(f"Unsupported secret_ref type: {ref_type}")
 
 
 def validate_config(config: Dict[str, Any]) -> List[str]:
@@ -135,27 +151,45 @@ def validate_config(config: Dict[str, Any]) -> List[str]:
     """
     errors = []
 
-    # Validate accounts
-    accounts = get_accounts(config)
-    seen_addresses = set()
+    # Validate sources
+    sources = get_sources(config)
+    seen_names = set()
 
-    for i, acct in enumerate(accounts):
-        if "address" not in acct:
-            errors.append(f"Account {i+1}: missing 'address' field")
+    for i, source in enumerate(sources):
+        # Required fields
+        if "name" not in source:
+            errors.append(f"Source {i+1}: missing 'name' field")
             continue
 
-        address = acct["address"]
-        if address in seen_addresses:
-            errors.append(f"Duplicate account: {address}")
-        seen_addresses.add(address)
+        name = source["name"]
+        if name in seen_names:
+            errors.append(f"Duplicate source name: {name}")
+        seen_names.add(name)
 
-        provider = acct.get("provider", "gmail")
-        if provider not in ("gmail", "imap", "outlook"):
-            errors.append(f"Account {address}: unknown provider '{provider}'")
+        if "type" not in source:
+            errors.append(f"Source '{name}': missing 'type' field")
 
-        # IMAP requires server
-        if provider == "imap":
-            if "imap_server" not in acct:
-                errors.append(f"Account {address}: IMAP requires 'imap_server'")
+        source_type = source.get("type", "")
+        if source_type not in ("gmail_api", "imap"):
+            errors.append(f"Source '{name}': unknown type '{source_type}'")
+
+        if "account" not in source:
+            errors.append(f"Source '{name}': missing 'account' field")
+
+        # Auth validation
+        auth = source.get("auth", {})
+        if "secret_ref" not in auth:
+            errors.append(f"Source '{name}': missing 'auth.secret_ref'")
+        else:
+            try:
+                parse_secret_ref(auth["secret_ref"])
+            except ValueError as e:
+                errors.append(f"Source '{name}': {e}")
+
+        # IMAP requires host
+        if source_type == "imap":
+            if "host" not in source:
+                errors.append(f"Source '{name}': IMAP requires 'host' field")
 
     return errors
+

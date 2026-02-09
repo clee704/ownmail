@@ -103,8 +103,23 @@ Credentials are stored in your system keychain (macOS Keychain, Windows Credenti
 Create `config.yaml` in your working directory:
 
 ```yaml
-archive_dir: /Volumes/Secure/ownmail
-include_labels: true
+archive_root: /Volumes/Secure/ownmail
+
+sources:
+  - name: gmail_personal
+    type: gmail_api
+    account: you@gmail.com
+    auth:
+      secret_ref: keychain:gmail_personal_token
+    include_labels: true
+
+  # Add more sources as needed:
+  # - name: work_imap
+  #   type: imap
+  #   host: imap.company.com
+  #   account: you@company.com
+  #   auth:
+  #     secret_ref: keychain:work_imap_password
 ```
 
 ## Search
