@@ -123,7 +123,7 @@ class TestCmdReindex:
         # Reindex only 2024
         cmd_reindex(archive, pattern="2024/*")
         captured = capsys.readouterr()
-        assert "Pattern '2024/*'" in captured.out
+        assert "matching '2024/*'" in captured.out
 
     def test_reindex_single_file_not_in_db(self, temp_dir, sample_eml_simple, capsys):
         """Test reindex single file that's not in database."""

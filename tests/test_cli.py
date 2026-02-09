@@ -483,7 +483,7 @@ class TestMainEdgeCases:
             main()
 
         captured = capsys.readouterr()
-        assert "Pattern '2024/*'" in captured.out
+        assert "matching '2024/*'" in captured.out
 
     def test_main_verify_verbose(self, temp_dir, capsys, monkeypatch):
         """Test verify --verbose command."""
