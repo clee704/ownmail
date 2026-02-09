@@ -21,7 +21,7 @@
     <div class="ownmail-header">
         <h1><a href="/">📭 ownmail</a></h1>
         <div class="ownmail-header-right">
-            <span class="ownmail-stats">{{ stats.total_emails | default(0) | int }} emails archived &bull; <a href="/help">Search help</a> &bull; <a href="/settings">⚙️</a></span>
+            <span class="ownmail-stats">{{ stats.total_emails | default(0) | int }} emails archived &bull; <a href="/help">Search help</a> &bull; <a href="/settings" class="ownmail-icon-link">⚙️</a></span>
             <button class="ownmail-theme-toggle" id="ownmail-theme-toggle" onclick="toggleTheme()" title="Toggle theme"><span class="ownmail-theme-current">🌙</span><span class="ownmail-theme-next">☀️</span></button>
         </div>
     </div>
