@@ -86,28 +86,42 @@ def cmd_reindex(
             print("✗ Failed to index")
         return
 
-    # Force mode: clear indexed_hash so all emails are re-indexed
+    # Build the pattern for matching
+    like_pattern = None
+    if pattern:
+        like_pattern = "%" + pattern.replace("*", "%").replace("?", "_") + "%"
+
+    # Force mode: clear indexed_hash so matching emails are re-indexed
     if force:
-        print("Force mode: will reindex all emails")
         with sqlite3.connect(db_path) as conn:
-            conn.execute("UPDATE emails SET indexed_hash = NULL")
+            if like_pattern:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
+                    (like_pattern,)
+                ).fetchone()[0]
+                print(f"Force mode: will reindex {count} matching emails")
+                conn.execute(
+                    "UPDATE emails SET indexed_hash = NULL WHERE filename LIKE ?",
+                    (like_pattern,)
+                )
+            else:
+                print("Force mode: will reindex all emails")
+                conn.execute("UPDATE emails SET indexed_hash = NULL")
             conn.commit()
 
     # Get emails to index (where indexed_hash != content_hash or either is NULL)
     with sqlite3.connect(db_path) as conn:
-        if pattern:
-            # Use LIKE for pattern matching
-            like_pattern = pattern.replace("*", "%").replace("?", "_")
+        if like_pattern:
             emails = conn.execute(
                 """SELECT message_id, filename, content_hash, indexed_hash
                    FROM emails
                    WHERE filename LIKE ?
                    AND (indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash)""",
-                (f"emails/{like_pattern}",)
+                (like_pattern,)
             ).fetchall()
             total_matching = conn.execute(
                 "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
-                (f"emails/{like_pattern}",)
+                (like_pattern,)
             ).fetchone()[0]
             print(f"Pattern '{pattern}': {len(emails)} need indexing (of {total_matching} matching)")
         else:
