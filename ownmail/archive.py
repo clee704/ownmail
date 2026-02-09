@@ -16,6 +16,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ownmail.config import get_db_dir
 from ownmail.database import ArchiveDatabase
 from ownmail.keychain import KeychainStorage
 from ownmail.parser import EmailParser
@@ -45,7 +46,8 @@ class EmailArchive:
         """
         self.archive_dir = archive_dir
         self.config = config or {}
-        self.db = ArchiveDatabase(archive_dir)
+        db_dir = get_db_dir(self.config)
+        self.db = ArchiveDatabase(archive_dir, db_dir=db_dir)
         self.keychain = KeychainStorage()
 
         # Batch connection for fast writes

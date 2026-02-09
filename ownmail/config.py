@@ -72,6 +72,25 @@ def get_archive_root(config: Dict[str, Any], default: Path = None) -> Path:
     return default or Path.cwd() / "archive"
 
 
+def get_db_dir(config: Dict[str, Any]) -> Optional[Path]:
+    """Get optional database directory from config.
+
+    When set, the database is stored in this directory instead of archive_root.
+    Useful for keeping the database on fast local storage while archiving
+    emails to a network or external drive.
+
+    Args:
+        config: Configuration dictionary
+
+    Returns:
+        Database directory path, or None to use archive_root (default)
+    """
+    db_dir = config.get("db_dir")
+    if db_dir:
+        return Path(db_dir)
+    return None
+
+
 def get_sources(config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Get list of source configurations.
 
