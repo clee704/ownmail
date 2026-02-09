@@ -316,12 +316,7 @@ header h1 a:hover { text-decoration: none; }
 .image-banner .trust-btn:hover {
     background: #218838;
 }
-.image-banner .undo-btn {
-    background: #6c757d;
-}
-.image-banner .undo-btn:hover {
-    background: #5a6268;
-}
+
 
 /* Loading overlay */
 .loading-overlay {
@@ -528,10 +523,4 @@ header h1 a:hover { text-decoration: none; }
         border-color: #6b5a00;
         color: #f0e0a0;
     }
-    .image-banner button { background: #4a8eff; }
-    .image-banner button:hover { background: #3a7eef; }
-    .image-banner .trust-btn { background: #2ea043; }
-    .image-banner .trust-btn:hover { background: #238636; }
-    .image-banner .undo-btn { background: #6c757d; }
-    .image-banner .undo-btn:hover { background: #5a6268; }
 }
