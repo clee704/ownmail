@@ -7,7 +7,9 @@ import html
 import os
 import re
 import time
+from datetime import datetime
 from email.policy import default as email_policy
+from email.utils import parsedate_to_datetime
 
 from flask import Flask, abort, g, redirect, render_template, request, send_file
 
@@ -43,6 +45,42 @@ CHARSET_ALIASES = {
 # Regex to extract RFC 2231 encoded filename parts
 # Handles both: filename*=charset''value and filename*0*=charset''value
 RFC2231_FILENAME_RE = re.compile(rb"filename\*(\d*)\*?=([^;\r\n]+)", re.IGNORECASE)
+
+
+def _to_local_datetime(date_str: str) -> datetime | None:
+    """Parse an RFC 2822 date string and convert to local timezone.
+
+    Returns None if the date string cannot be parsed.
+    """
+    if not date_str:
+        return None
+    try:
+        parsed = parsedate_to_datetime(date_str)
+        return parsed.astimezone()  # Convert to system local timezone
+    except Exception:
+        return None
+
+
+def _format_date_short(dt: datetime, date_fmt: str | None = None) -> str:
+    """Format a datetime as a short date string for search results.
+
+    Uses the configured format if set, otherwise auto-formats as
+    "Jan 26" for this year or "2025/12/15" for other years.
+    """
+    if date_fmt:
+        return dt.strftime(date_fmt)
+    now = datetime.now(dt.tzinfo)
+    if dt.year == now.year:
+        return dt.strftime("%b %d")
+    return dt.strftime("%Y/%m/%d")
+
+
+def _format_date_long(dt: datetime) -> str:
+    """Format a datetime as a full date string for email detail view.
+
+    Example: "Sat, 08 Feb 2026 14:30:00 +0900"
+    """
+    return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
 
 
 def _extract_attachment_filename(part) -> str:
@@ -1127,27 +1165,14 @@ def create_app(
                 # Fall back to email or full sender string
                 sender_name = sender_email_parsed or sender or ""
 
-            # Format date as short date
+            # Format date as short date (converted to local timezone)
             date_short = ""
-            if date_str:
-                try:
-                    from datetime import datetime
-                    from email.utils import parsedate_to_datetime
-                    parsed_date = parsedate_to_datetime(date_str)
-                    date_fmt = app.config.get("date_format")
-                    if date_fmt:
-                        # Use configured format
-                        date_short = parsed_date.strftime(date_fmt)
-                    else:
-                        # Auto format: "Jan 26" for this year, "2025/12/15" for other years
-                        now = datetime.now(parsed_date.tzinfo) if parsed_date.tzinfo else datetime.now()
-                        if parsed_date.year == now.year:
-                            date_short = parsed_date.strftime("%b %d")
-                        else:
-                            date_short = parsed_date.strftime("%Y/%m/%d")
-                except Exception:
-                    # Fall back to extracting date part from string
-                    date_short = date_str.split()[0] if date_str else ""
+            local_dt = _to_local_datetime(date_str)
+            if local_dt:
+                date_short = _format_date_short(local_dt, app.config.get("date_format"))
+            elif date_str:
+                # Fall back to extracting date part from string
+                date_short = date_str.split()[0]
 
             results.append({
                 "email_id": msg_id,
@@ -1215,7 +1240,9 @@ def create_app(
             subject = parsed.get("subject") or "(No subject)"
             sender = parsed.get("sender", "")
             recipients = parsed.get("recipients", "")
-            date = parsed.get("date_str", "")
+            raw_date = parsed.get("date_str", "")
+            local_dt = _to_local_datetime(raw_date)
+            date = _format_date_long(local_dt) if local_dt else raw_date
 
             # Ensure MIME-encoded headers are fully decoded
             # Parser may return partially decoded or raw MIME strings
