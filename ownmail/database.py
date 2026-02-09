@@ -553,14 +553,18 @@ class ArchiveDatabase:
         before_match = re.search(r'\bbefore:(\d{4}-?\d{2}-?\d{2})\b', query)
         if before_match:
             date_str = before_match.group(1).replace("-", "")
-            filters["before"] = date_str
+            # Convert to filename prefix format: emails/YYYY/MM/YYYYMMDD
+            year, month = date_str[:4], date_str[4:6]
+            filters["before"] = f"emails/{year}/{month}/{date_str}"
             query = query[:before_match.start()] + query[before_match.end():]
 
         # Extract after:YYYY-MM-DD or after:YYYYMMDD
         after_match = re.search(r'\bafter:(\d{4}-?\d{2}-?\d{2})\b', query)
         if after_match:
             date_str = after_match.group(1).replace("-", "")
-            filters["after"] = date_str
+            # Convert to filename prefix format: emails/YYYY/MM/YYYYMMDD
+            year, month = date_str[:4], date_str[4:6]
+            filters["after"] = f"emails/{year}/{month}/{date_str}"
             query = query[:after_match.start()] + query[after_match.end():]
 
         # Extract label:xxx or tag:xxx
