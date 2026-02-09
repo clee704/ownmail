@@ -71,7 +71,7 @@
             {% for result in results %}
                 <li class="email-row" onclick="window.location='/email/{{ result.message_id }}'">
                     <span class="email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
-                    <span class="email-content">
+                    <span class="email-row-content">
                         <span class="email-subject">{{ result.subject or '(No subject)' }}</span>
                         {% if result.snippet %}<span class="email-snippet">{{ result.snippet }}</span>{% endif %}
                     </span>

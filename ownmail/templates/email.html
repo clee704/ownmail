@@ -159,9 +159,11 @@
         {% endif %}
 
         {% if body_html %}
-            <div id="email-content">{{ body_html | safe }}</div>
+            <div id="email-content" class="email-content-html">{{ body_html | safe }}</div>
         {% else %}
-            <pre class="email-body">{{ body | safe }}</pre>
+            <div id="email-content" class="email-content-plain">
+                <pre class="email-body">{{ body | safe }}</pre>
+            </div>
         {% endif %}
         </div>
 

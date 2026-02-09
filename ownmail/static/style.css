@@ -87,7 +87,7 @@ header h1 a:hover { text-decoration: none; }
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.email-content {
+.email-row-content {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
@@ -165,7 +165,7 @@ header h1 a:hover { text-decoration: none; }
     margin-bottom: 10px;
     overflow: hidden;
 }
-.email-header { border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 0; }
+.email-header { padding-bottom: 10px; margin-bottom: 0; }
 .email-header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .email-header-top h2 { margin: 0 0 10px 0; font-size: 1.3em; flex: 1; }
 .email-header-row { margin: 8px 0; font-size: 0.9em; display: grid; grid-template-columns: 50px 1fr; }
@@ -240,7 +240,7 @@ header h1 a:hover { text-decoration: none; }
     margin-bottom: 5px;
     text-decoration: none;
 }
-.label:hover { background: #d2e3fc; }
+.label:hover { background: #d2e3fc; text-decoration: none; }
 .clickable-label { cursor: pointer; }
 .email-content-area {
     background: white;
@@ -248,6 +248,8 @@ header h1 a:hover { text-decoration: none; }
     margin-top: 0;
     padding: 0;
     border-radius: 0 0 5px 5px;
+    display: flow-root;
+    overflow: hidden;
 }
 #email-content {
     min-height: 200px;
@@ -420,7 +422,7 @@ header h1 a:hover { text-decoration: none; }
         flex: none;
         color: #666;
     }
-    .email-content {
+    .email-row-content {
         grid-area: content;
     }
     .pagination {
