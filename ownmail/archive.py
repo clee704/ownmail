@@ -12,6 +12,7 @@ import sqlite3
 import sys
 import tempfile
 import time
+from datetime import timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -223,6 +224,10 @@ class EmailArchive:
 
                     if result is None or result[0] is None:
                         error_msg = result[2] if result else "Unknown error"
+                        # Treat 404 (message deleted/trashed) as a soft skip
+                        if "404" in str(error_msg) and "not found" in str(error_msg).lower():
+                            print(f"\r\033[K  [{current_idx}/{len(new_ids)}] skipped {msg_id} (deleted from server)", end="", flush=True)
+                            continue
                         print(f"\n  Error downloading {msg_id}: {error_msg}")
                         if msg_id not in failed_ids:
                             failed_ids.append(msg_id)
@@ -356,9 +361,11 @@ class EmailArchive:
 
             try:
                 msg_date = parsedate_to_datetime(date_str)
-                date_prefix = msg_date.strftime("%Y%m%d_%H%M%S")
-                year_month = msg_date.strftime("%Y/%m")
-                email_date_iso = msg_date.isoformat()
+                # Normalize to UTC for consistent sorting across timezones
+                msg_date_utc = msg_date.astimezone(timezone.utc)
+                date_prefix = msg_date_utc.strftime("%Y%m%d_%H%M%S")
+                year_month = msg_date_utc.strftime("%Y/%m")
+                email_date_iso = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
             except Exception:
                 date_prefix = "unknown"
                 year_month = "unknown"

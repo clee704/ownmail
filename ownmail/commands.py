@@ -1320,7 +1320,13 @@ def cmd_populate_dates(
                                 pass
 
                 if parsed:
-                    email_date = parsed.isoformat()
+                    # Normalize to UTC for consistent sorting
+                    from datetime import timezone as _tz
+                    if parsed.tzinfo is not None:
+                        parsed = parsed.astimezone(_tz.utc)
+                    else:
+                        parsed = parsed.replace(tzinfo=_tz.utc)
+                    email_date = parsed.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
             except Exception as e:
                 error = str(e)
