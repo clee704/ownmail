@@ -504,10 +504,8 @@ def _linkify(text: str) -> str:
     result_lines = []
 
     colors = ['#58a6c9', '#7ee787', '#f0a855', '#d2a8ff']
-    bar_width = 2
-    gap = 6
+    current_depth = 0
 
-    prev_was_quote = False
     for line in lines:
         escaped = html.escape(line)
 
@@ -518,30 +516,27 @@ def _linkify(text: str) -> str:
             rest = escaped[quote_match.end():]
             rest = _linkify_line(rest)
 
-            # Build border-left for each level using nested spans
-            padding = depth * (bar_width + gap) + 4
-            # Negative margin to connect with previous quote line's bars
-            margin_top = '-2px' if prev_was_quote else '0'
-            # Build the colored bars using linear-gradient (vertical)
-            stops = []
-            for i in range(depth):
-                start = i * (bar_width + gap)
-                end = start + bar_width
-                color = colors[i % len(colors)]
-                stops.append(f'{color} {start}px, {color} {end}px')
-                stops.append(f'transparent {end}px, transparent {end + gap}px')
+            # Adjust nesting level
+            while current_depth < depth:
+                color = colors[current_depth % len(colors)]
+                result_lines.append(
+                    f'<div class="quote-level" style="border-left: 2px solid {color}; '
+                    f'padding-left: 6px; margin-left: 0;">'
+                )
+                current_depth += 1
 
-            gradient = f'linear-gradient(to right, {", ".join(stops)})'
-            result_lines.append(
-                f'<div class="quote-line" style="background: {gradient}; '
-                f'background-repeat: repeat-y; padding-left: {padding}px; '
-                f'margin-top: {margin_top}; padding-top: 2px; padding-bottom: 2px; '
-                f'min-height: 1.2em;">{rest or "&nbsp;"}</div>'
-            )
-            prev_was_quote = True
+            while current_depth > depth:
+                result_lines.append('</div>')
+                current_depth -= 1
+
+            # Add the content line
+            result_lines.append(f'<div class="quote-content">{rest or "&nbsp;"}</div>')
             continue
 
-        prev_was_quote = False
+        # Close all quote levels before non-quote content
+        while current_depth > 0:
+            result_lines.append('</div>')
+            current_depth -= 1
 
         # Check for header lines (From:, Subject:, etc.)
         header_match = HEADER_RE.match(escaped)
@@ -556,6 +551,11 @@ def _linkify(text: str) -> str:
 
         # Regular line - just linkify
         result_lines.append(_linkify_line(escaped))
+
+    # Close any remaining quote levels
+    while current_depth > 0:
+        result_lines.append('</div>')
+        current_depth -= 1
 
     return '\n'.join(result_lines)
 

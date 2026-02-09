@@ -247,6 +247,8 @@ header h1 a { color: inherit; text-decoration: none; }
 .email-body a { color: #0066cc; text-decoration: none; }
 .email-body a:hover { text-decoration: underline; }
 .email-body .email-header-label { font-weight: 600; color: #666; }
+.email-body .quote-level { margin: 0; }
+.email-body .quote-content { min-height: 1.2em; }
 .email-body-html { width: 100%; border: none; min-height: 300px; }
 .attachments { margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
 .attachments h4 { margin: 0 0 10px 0; font-size: 0.95em; }
