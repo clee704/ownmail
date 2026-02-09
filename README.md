@@ -1,6 +1,6 @@
 # ownmail
 
-**Own your mail.** Back up your Gmail to plain files. Search and read them offline. Own them forever.
+**Own your mail.** Back up your email to plain files. Search and read them offline. Own them forever.
 
 ```
 $ ownmail backup
@@ -57,12 +57,12 @@ There are existing tools like `mbsync` + `mu` or `offlineimap` that can accompli
 |---|---|---|
 | **Setup** | Configure multiple tools separately | Single `pip install`, one config file |
 | **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
-| **Gmail sync** | IMAP only | IMAP (App Password) or Gmail API (OAuth) |
+| **Providers** | IMAP only | Any IMAP server + Gmail API (OAuth) |
 | **Integrity** | — | SHA256 hashes, `verify` and `sync-check` commands |
 | **Web viewer** | — | Built-in browser UI with search, dark mode, HTML sanitization |
 | **Hackability** | Multiple codebases in different languages | Single Python project — fork it, make it yours |
 
-**The bottom line:** If you want a simple, single-tool Gmail backup that stores plain files — ownmail is for you.
+**The bottom line:** If you want a simple, single-tool email backup that stores plain files — ownmail is for you.
 
 ## Commands
 
@@ -81,7 +81,7 @@ There are existing tools like `mbsync` + `mu` or `offlineimap` that can accompli
 
 ## Setup
 
-ownmail supports two methods for connecting to Gmail:
+ownmail supports two methods for connecting to your email:
 
 ### Option A: IMAP with App Password (recommended)
 
@@ -251,8 +251,8 @@ When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify
 
 ## Roadmap
 
-- [x] Gmail backup (API + OAuth)
-- [x] IMAP support (App Passwords, any IMAP server)
+- [x] IMAP support (Gmail, Outlook, Fastmail, any IMAP server)
+- [x] Gmail API (OAuth, batch downloads, native labels)
 - [x] Web UI for browsing and search
 - [ ] Local .eml import
 - [ ] Outlook/Microsoft 365 support
