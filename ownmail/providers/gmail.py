@@ -20,9 +20,9 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 # - Max 100 requests per batch (recommended max: 50)
 # - "Too many concurrent requests" error at high batch sizes
 # - 15,000 quota units/min, messages.get = 5 units = 3,000 msg/min max
-# Trade-off: larger batch = faster but more 429 errors
-BATCH_SIZE = 15  # Messages per batch request
-BATCH_DELAY = 0.3  # Seconds between batches
+# Conservative settings to avoid 429 concurrent request errors
+BATCH_SIZE = 10  # Messages per batch request
+BATCH_DELAY = 0.2  # Seconds between batches
 
 
 class GmailProvider(EmailProvider):
