@@ -458,15 +458,33 @@ class ArchiveDatabase:
             email_id: 24-char hex hash
 
         Returns:
-            Tuple of (email_id, filename, downloaded_at, content_hash, account, labels)
+            Tuple of (email_id, filename, downloaded_at, content_hash, account)
             or None if not found
         """
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(
-                "SELECT email_id, filename, downloaded_at, content_hash, account, labels FROM emails WHERE email_id = ?",
+                "SELECT email_id, filename, downloaded_at, content_hash, account FROM emails WHERE email_id = ?",
                 (email_id,)
             ).fetchone()
             return result
+
+    def get_labels_for_email(self, email_id: str) -> list:
+        """Get labels for an email from the email_labels table.
+
+        Args:
+            email_id: 24-char hex hash
+
+        Returns:
+            List of label strings, or empty list if none found
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT el.label FROM email_labels el "
+                "JOIN emails e ON e.rowid = el.email_rowid "
+                "WHERE e.email_id = ?",
+                (email_id,)
+            ).fetchall()
+            return [row[0] for row in rows]
 
     def mark_downloaded(
         self,
@@ -530,7 +548,7 @@ class ArchiveDatabase:
         Args:
             email_id: 24-char hex hash
             subject, sender, recipients, date_str, body, attachments: Parsed email fields
-            labels: Gmail labels
+            labels: Comma-separated labels string (written to email_labels table only)
             conn: Optional existing connection (for batching)
             skip_delete: Ignored (kept for API compatibility)
         """
@@ -572,14 +590,13 @@ class ArchiveDatabase:
                     sender = ?,
                     recipients = ?,
                     date_str = ?,
-                    labels = ?,
                     snippet = ?,
                     sender_email = ?,
                     recipient_emails = ?,
                     has_attachments = ?
                 WHERE email_id = ?
                 """,
-                (subject, sender, recipients, date_str, labels, snippet, sender_email, recipient_emails, has_attachments, email_id)
+                (subject, sender, recipients, date_str, snippet, sender_email, recipient_emails, has_attachments, email_id)
             )
 
             # Update normalized recipients table for fast lookups

@@ -648,7 +648,7 @@ This is the email body.
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -678,7 +678,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg2", "emails/html.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg2", "emails/html.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -716,7 +716,7 @@ PDF content here
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg3", "emails/attach.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg3", "emails/attach.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -734,7 +734,7 @@ PDF content here
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/missing.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/missing.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -771,7 +771,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg4", "emails/multipart.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg4", "emails/multipart.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -798,7 +798,7 @@ Body.
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg5", "emails/cache.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg5", "emails/cache.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -1000,7 +1000,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/img.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/img.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive, block_images=True)
@@ -1029,7 +1029,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/trusted.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/trusted.eml")
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive, block_images=True, trusted_senders=["trusted@example.com"])

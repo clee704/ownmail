@@ -250,9 +250,21 @@ class EmailArchive:
                         )
 
                         # Index the email (updates the row with parsed metadata + FTS)
-                        labels_str = ", ".join(labels) if labels else ""
                         self._index_email(email_id, filepath, raw_data,
-                                          skip_delete=True, labels=labels_str)
+                                          skip_delete=True)
+
+                        # Store labels in email_labels table
+                        if labels:
+                            rowid_row = self._batch_conn.execute(
+                                "SELECT rowid, email_date FROM emails WHERE email_id = ?",
+                                (email_id,)
+                            ).fetchone()
+                            if rowid_row:
+                                for label in labels:
+                                    self._batch_conn.execute(
+                                        "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                                        (rowid_row[0], label, rowid_row[1])
+                                    )
 
                         # Set indexed_hash to mark as indexed
                         self._batch_conn.execute(
@@ -365,7 +377,6 @@ class EmailArchive:
         filepath: Path,
         content: bytes = None,
         skip_delete: bool = False,
-        labels: str = None,
     ) -> bool:
         """Index an email for full-text search.
 
@@ -374,8 +385,6 @@ class EmailArchive:
             filepath: Path to .eml file
             content: Raw email bytes (avoids re-reading file)
             skip_delete: Skip DELETE before INSERT (for new emails)
-            labels: Labels string (from provider or DB). If None, defaults
-                to empty string.
 
         Returns:
             True if successful
@@ -386,9 +395,6 @@ class EmailArchive:
                 parsed = EmailParser.parse_file(content=content)
             else:
                 parsed = EmailParser.parse_file(filepath=filepath)
-
-            if labels is None:
-                labels = ""
 
             # Use batch connection if available
             conn = self._batch_conn
@@ -401,7 +407,6 @@ class EmailArchive:
                 date_str=parsed["date_str"],
                 body=parsed["body"],
                 attachments=parsed["attachments"],
-                labels=labels,
                 conn=conn,
                 skip_delete=skip_delete,
             )
