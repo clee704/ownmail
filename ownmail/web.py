@@ -82,7 +82,7 @@ def _extract_snippet(msg: email.message.Message, max_len: int = 150) -> str:
                 if part.get_content_type() == "text/plain":
                     payload = part.get_payload(decode=True)
                     if payload:
-                        text = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                        text = _decode_text_body(payload, part.get_content_charset())
                         # Clean up whitespace
                         text = " ".join(text.split())
                         return text[:max_len] + "..." if len(text) > max_len else text
@@ -90,7 +90,7 @@ def _extract_snippet(msg: email.message.Message, max_len: int = 150) -> str:
             if msg.get_content_type() == "text/plain":
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    text = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+                    text = _decode_text_body(payload, msg.get_content_charset())
                     text = " ".join(text.split())
                     return text[:max_len] + "..." if len(text) > max_len else text
     except Exception:
@@ -167,13 +167,13 @@ def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
     Returns:
         Decoded text string
     """
-    # If header specifies charset, use it (with alias mapping)
+    # If header specifies charset, try it first with validation
     if header_charset:
         charset = CHARSET_ALIASES.get(header_charset.lower(), header_charset)
-        try:
-            return payload.decode(charset, errors="replace")
-        except (LookupError, UnicodeDecodeError):
-            pass
+        result = _try_decode(payload, charset)
+        if result is not None:
+            return result
+        # Header charset didn't produce valid result - fall through to auto-detection
 
     # Check if payload has high bytes (non-ASCII) suggesting CJK encoding
     high_bytes = sum(1 for b in payload[:500] if b >= 0x80)
