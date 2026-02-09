@@ -40,7 +40,7 @@ web:
 
   # Block external images in emails by default (for privacy/security).
   # Images from trusted_senders are always shown.
-  # Default: false
+  # Default: true
   block_images: true
 
   # Scale down wide HTML emails to fit the viewport.
