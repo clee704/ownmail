@@ -68,12 +68,7 @@
             <div class="image-banner-buttons">
                 <button id="load-images-btn" onclick="loadImages()">Load Images</button>
                 {% if sender_email %}
-                <span id="trust-container">
-                    <button class="trust-btn" onclick="trustSender()">Always trust this sender</button>
-                </span>
-                <span id="trusted-container" style="display: none;">
-                    <button class="undo-btn" onclick="untrustSender()">Undo</button>
-                </span>
+                <button class="trust-btn" onclick="trustSender()">Always trust this sender</button>
                 {% endif %}
             </div>
         </div>
