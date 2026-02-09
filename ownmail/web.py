@@ -69,6 +69,57 @@ def _get_server_timezone_name() -> str:
     return f"UTC{offset[:3]}:{offset[3:]}"
 
 
+# Common IANA timezones grouped by region for the settings dropdown
+COMMON_TIMEZONES = [
+    ("Americas", [
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "America/Anchorage",
+        "America/Toronto",
+        "America/Vancouver",
+        "America/Mexico_City",
+        "America/Sao_Paulo",
+        "America/Argentina/Buenos_Aires",
+        "Pacific/Honolulu",
+    ]),
+    ("Europe", [
+        "Europe/London",
+        "Europe/Paris",
+        "Europe/Berlin",
+        "Europe/Amsterdam",
+        "Europe/Rome",
+        "Europe/Madrid",
+        "Europe/Zurich",
+        "Europe/Stockholm",
+        "Europe/Moscow",
+        "Europe/Istanbul",
+    ]),
+    ("Asia", [
+        "Asia/Seoul",
+        "Asia/Tokyo",
+        "Asia/Shanghai",
+        "Asia/Hong_Kong",
+        "Asia/Taipei",
+        "Asia/Singapore",
+        "Asia/Bangkok",
+        "Asia/Kolkata",
+        "Asia/Dubai",
+        "Asia/Jakarta",
+    ]),
+    ("Oceania", [
+        "Australia/Sydney",
+        "Australia/Melbourne",
+        "Australia/Perth",
+        "Pacific/Auckland",
+    ]),
+    ("Other", [
+        "UTC",
+    ]),
+]
+
+
 def _resolve_timezone(tz_name: str | None) -> ZoneInfo | None:
     """Resolve a timezone name to a ZoneInfo object.
 
@@ -1670,6 +1721,7 @@ def create_app(
             config_path=config_path or "(not set)",
             saved=request.args.get("saved") == "1",
             server_timezone=server_timezone,
+            timezone_groups=COMMON_TIMEZONES,
         )
 
     @app.route("/settings", methods=["POST"])

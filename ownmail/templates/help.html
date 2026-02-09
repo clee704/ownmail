@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Search Help - {{ brand_name }}{% endblock %}
+{% block title %}Search help - {{ brand_name }}{% endblock %}
 
 {% block content %}
     <div class="ownmail-help-page">
-        <h2>Search Syntax</h2>
+        <h2>Search syntax</h2>
 
-        <h3>Field Filters</h3>
+        <h3>Field filters</h3>
         <table class="ownmail-help-table">
             <tr><td><code>from:user@example.com</code></td><td>Emails from this address</td></tr>
             <tr><td><code>from:alice</code></td><td>Emails from sender named "alice"</td></tr>
@@ -17,14 +17,14 @@
             <tr><td><code>label:INBOX</code></td><td>Emails with specific Gmail label</td></tr>
         </table>
 
-        <h3>Date Filters</h3>
+        <h3>Date filters</h3>
         <table class="ownmail-help-table">
             <tr><td><code>after:2024-01-15</code></td><td>Emails on or after this date</td></tr>
             <tr><td><code>before:2024-06-01</code></td><td>Emails before this date</td></tr>
             <tr><td><code>after:2024-01-01 before:2024-02-01</code></td><td>Emails in January 2024</td></tr>
         </table>
 
-        <h3>Boolean Operators</h3>
+        <h3>Boolean operators</h3>
         <table class="ownmail-help-table">
             <tr><td><code>apple orange</code></td><td>Both words (implicit AND)</td></tr>
             <tr><td><code>apple OR orange</code></td><td>Either word</td></tr>
@@ -32,7 +32,7 @@
             <tr><td><code>-"exact phrase"</code></td><td>Exclude exact phrase</td></tr>
         </table>
 
-        <h3>Negated Filters</h3>
+        <h3>Negated filters</h3>
         <table class="ownmail-help-table">
             <tr><td><code>-from:user@example.com</code></td><td>Exclude emails from this sender</td></tr>
             <tr><td><code>-label:promotions</code></td><td>Exclude emails with this label</td></tr>
@@ -40,13 +40,13 @@
             <tr><td><code>-has:attachment</code></td><td>Emails without attachments</td></tr>
         </table>
 
-        <h3>Phrases &amp; Grouping</h3>
+        <h3>Phrases &amp; grouping</h3>
         <table class="ownmail-help-table">
             <tr><td><code>"hello world"</code></td><td>Exact phrase</td></tr>
             <tr><td><code>(apple OR orange) juice</code></td><td>Grouping with parentheses</td></tr>
         </table>
 
-        <h3>Prefix Matching</h3>
+        <h3>Prefix matching</h3>
         <table class="ownmail-help-table">
             <tr><td><code>meet*</code></td><td>Words starting with "meet" (meeting, meets, etc.)</td></tr>
         </table>
