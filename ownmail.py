@@ -1633,17 +1633,17 @@ class GmailArchive:
                         print(f"      ... and {len(duplicates) - 10} more")
 
                 if fix:
-                    print("  Fixing: keeping only newest entry for each...")
-                    for msg_id, _ in duplicates:
-                        # Keep only the row with the highest rowid
-                        conn.execute("""
-                            DELETE FROM emails_fts
-                            WHERE message_id = ? AND rowid < (
-                                SELECT MAX(rowid) FROM emails_fts WHERE message_id = ?
-                            )
-                        """, (msg_id, msg_id))
+                    print("  Fixing: keeping only newest entry for each...", end="", flush=True)
+                    # Single query: delete all rows that aren't the max rowid for their message_id
+                    conn.execute("""
+                        DELETE FROM emails_fts
+                        WHERE rowid NOT IN (
+                            SELECT MAX(rowid) FROM emails_fts GROUP BY message_id
+                        )
+                    """)
                     conn.commit()
                     issues_fixed += len(duplicates)
+                    print(f" done")
                     print(f"  ✓ Fixed {len(duplicates)} duplicates")
             else:
                 print("  ✓ No duplicate FTS entries")
