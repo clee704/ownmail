@@ -463,8 +463,16 @@ header h1 a { color: inherit; text-decoration: none; }
     .email-header-label { color: #999; }
     .email-content-area {
         background: #242424;
-        color: #e0e0e0;
         display: flow-root;
+    }
+    /* Email HTML assumes a white background — force light mode for email content.
+       !important needed because email's scoped <style> (inline, later in source)
+       can rewrite body{} → #email-content{} and override by source order. */
+    #email-content {
+        background: #fff !important;
+        color: #333 !important;
+        color-scheme: light;
+        border-radius: 0 0 5px 5px;
     }
     .email-body { color: #e0e0e0; }
     .email-body a { color: #6cb6ff; }

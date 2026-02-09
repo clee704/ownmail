@@ -47,56 +47,150 @@ const PURIFY_CONFIG = {
 };
 
 /**
+ * Remove @media blocks targeting dark mode (prefers-color-scheme: dark).
+ * We force email content to render in light mode, so dark mode CSS is harmful.
+ * Uses brace counting to handle nested rules.
+ */
+function removeDarkModeBlocks(css) {
+  const re = /@media\b/gi;
+  let result = "";
+  let lastIndex = 0;
+  let match;
+
+  while ((match = re.exec(css)) !== null) {
+    const bracePos = css.indexOf("{", match.index);
+    if (bracePos === -1) break;
+
+    const prelude = css.substring(match.index, bracePos);
+    if (/prefers-color-scheme\s*:\s*dark/i.test(prelude)) {
+      result += css.substring(lastIndex, match.index);
+      // Count braces to find the end of this block
+      let depth = 1;
+      let i = bracePos + 1;
+      while (i < css.length && depth > 0) {
+        if (css[i] === "{") depth++;
+        else if (css[i] === "}") depth--;
+        i++;
+      }
+      lastIndex = i;
+      re.lastIndex = i;
+    }
+  }
+
+  result += css.substring(lastIndex);
+  return result;
+}
+
+/**
+ * Split CSS into top-level chunks using brace counting.
+ * Returns array of { type, raw, prelude, body } objects.
+ * Types: 'rule' (regular rules), 'font-face', 'keyframes', 'media', 'at-rule'
+ */
+function splitTopLevel(css) {
+  const chunks = [];
+  let i = 0;
+  const len = css.length;
+
+  while (i < len) {
+    // Skip whitespace
+    while (i < len && /\s/.test(css[i])) i++;
+    if (i >= len) break;
+
+    if (css[i] === "@") {
+      // At-rule
+      const nameMatch = css.substring(i).match(/^@([\w-]+)/);
+      if (!nameMatch) { i++; continue; }
+
+      const name = nameMatch[1].toLowerCase();
+      const bracePos = css.indexOf("{", i);
+      const semiPos = css.indexOf(";", i);
+
+      // Statement at-rule (no block) — @import, @charset, etc.
+      if (bracePos === -1 || (semiPos !== -1 && semiPos < bracePos)) {
+        const end = semiPos !== -1 ? semiPos + 1 : len;
+        chunks.push({ type: "at-rule", raw: css.substring(i, end) });
+        i = end;
+        continue;
+      }
+
+      // Block at-rule — find matching closing brace
+      let depth = 1;
+      let j = bracePos + 1;
+      while (j < len && depth > 0) {
+        if (css[j] === "{") depth++;
+        else if (css[j] === "}") depth--;
+        j++;
+      }
+
+      const raw = css.substring(i, j);
+      const prelude = css.substring(i, bracePos);
+      const body = css.substring(bracePos + 1, j - 1);
+
+      if (name === "font-face") {
+        chunks.push({ type: "font-face", raw });
+      } else if (name === "keyframes" || name === "-webkit-keyframes") {
+        chunks.push({ type: "keyframes", raw });
+      } else if (name === "media") {
+        chunks.push({ type: "media", raw, prelude, body });
+      } else {
+        chunks.push({ type: "at-rule", raw });
+      }
+      i = j;
+    } else {
+      // Regular CSS rules — collect until next top-level at-rule or end
+      const start = i;
+      while (i < len) {
+        if (css[i] === "@") break;
+        if (css[i] === "{") {
+          let depth = 1;
+          i++;
+          while (i < len && depth > 0) {
+            if (css[i] === "{") depth++;
+            else if (css[i] === "}") depth--;
+            i++;
+          }
+        } else {
+          i++;
+        }
+      }
+      const raw = css.substring(start, i);
+      if (raw.trim()) {
+        chunks.push({ type: "rule", raw });
+      }
+    }
+  }
+
+  return chunks;
+}
+
+/**
  * Scope CSS selectors under #email-content to prevent email styles
- * from leaking into the host page. Handles:
- * - Simple selectors: .foo → #email-content .foo
- * - body/html selectors: body { ... } → #email-content { ... }
- * - @media blocks: recursively scopes inner rules
- * - @font-face, @keyframes: left unchanged
+ * from leaking into the host page. Uses brace-counting parser to
+ * properly handle nested @media, @font-face, and @keyframes blocks.
  */
 function scopeCSS(css) {
-  // Process @media blocks: scope the rules inside them
-  css = css.replace(/@media\s+[^{]+\{([\s\S]*?)\}\s*\}/gi, (match) => {
-    // Find the opening brace of the @media block
-    const braceIdx = match.indexOf("{");
-    const mediaQuery = match.substring(0, braceIdx + 1);
-    // Extract inner content (everything between outer braces)
-    let inner = match.substring(braceIdx + 1);
-    // Remove the trailing "}"
-    inner = inner.substring(0, inner.lastIndexOf("}"));
-    // Scope the inner rules
-    inner = scopeRules(inner);
-    return mediaQuery + inner + "}";
-  });
+  // Strip dark mode media queries (we force light mode for email content)
+  css = removeDarkModeBlocks(css);
 
-  // Scope top-level rules (outside @media)
-  // First, temporarily replace @media blocks to avoid double-processing
-  const mediaBlocks = [];
-  let temp = css.replace(/@media\s+[^{]+\{[\s\S]*?\}\s*\}/gi, (match) => {
-    mediaBlocks.push(match);
-    return `/*__MEDIA_${mediaBlocks.length - 1}__*/`;
-  });
+  const chunks = splitTopLevel(css);
 
-  // Also preserve @font-face and @keyframes blocks
-  const preservedBlocks = [];
-  temp = temp.replace(/@(?:font-face|keyframes|-webkit-keyframes)\s+[^{]*\{[\s\S]*?\}\s*\}/gi, (match) => {
-    preservedBlocks.push(match);
-    return `/*__PRESERVED_${preservedBlocks.length - 1}__*/`;
-  });
-
-  temp = scopeRules(temp);
-
-  // Restore preserved blocks
-  preservedBlocks.forEach((block, i) => {
-    temp = temp.replace(`/*__PRESERVED_${i}__*/`, block);
-  });
-
-  // Restore @media blocks
-  mediaBlocks.forEach((block, i) => {
-    temp = temp.replace(`/*__MEDIA_${i}__*/`, block);
-  });
-
-  return temp;
+  return chunks.map((chunk) => {
+    switch (chunk.type) {
+      case "font-face":
+      case "keyframes":
+      case "at-rule":
+        // Don't scope these
+        return chunk.raw;
+      case "media":
+        // Scope the rules inside @media
+        return chunk.prelude + "{" + scopeRules(chunk.body) + "}";
+      case "rule":
+        // Scope regular rules
+        return scopeRules(chunk.raw);
+      default:
+        return chunk.raw;
+    }
+  }).join("\n");
 }
 
 /**
