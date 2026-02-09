@@ -344,24 +344,24 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             if account:
-                email_count = conn.execute(
-                    "SELECT COUNT(*) FROM emails WHERE account = ?",
+                # Single query for all stats
+                row = conn.execute(
+                    """SELECT COUNT(*), MIN(downloaded_at), MAX(downloaded_at)
+                       FROM emails WHERE account = ?""",
                     (account,)
-                ).fetchone()[0]
-                oldest = conn.execute(
-                    "SELECT MIN(downloaded_at) FROM emails WHERE account = ?",
-                    (account,)
-                ).fetchone()[0]
-                newest = conn.execute(
-                    "SELECT MAX(downloaded_at) FROM emails WHERE account = ?",
-                    (account,)
-                ).fetchone()[0]
+                ).fetchone()
+                email_count, oldest, newest = row
             else:
-                email_count = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
-                oldest = conn.execute("SELECT MIN(downloaded_at) FROM emails").fetchone()[0]
-                newest = conn.execute("SELECT MAX(downloaded_at) FROM emails").fetchone()[0]
+                row = conn.execute(
+                    "SELECT COUNT(*), MIN(downloaded_at), MAX(downloaded_at) FROM emails"
+                ).fetchone()
+                email_count, oldest, newest = row
 
-            indexed_count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
+            # Count indexed emails (those with indexed_hash set)
+            # This is faster than counting FTS5 rows
+            indexed_count = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
+            ).fetchone()[0]
 
             return {
                 "total_emails": email_count,
