@@ -1492,7 +1492,7 @@ def create_app(
         web_config = config_data.get("web", {})
         current = {
             "page_size": web_config.get("page_size", 20),
-            "block_images": web_config.get("block_images", False),
+            "block_images": web_config.get("block_images", True),
             "auto_scale": web_config.get("auto_scale", True),
             "date_format": web_config.get("date_format", ""),
             "brand_name": web_config.get("brand_name", "ownmail"),
