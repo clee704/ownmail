@@ -1,0 +1,196 @@
+"""Tests for ArchiveDatabase class."""
+
+import sqlite3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from ownmail import ArchiveDatabase
+
+
+class TestArchiveDatabaseInit:
+    """Tests for database initialization."""
+
+    def test_creates_database(self, temp_dir):
+        """Test that database is created on initialization."""
+        db = ArchiveDatabase(temp_dir)
+        assert db.db_path.exists()
+        assert db.db_path.name == "ownmail.db"
+
+    def test_creates_tables(self, temp_dir):
+        """Test that all required tables are created."""
+        db = ArchiveDatabase(temp_dir)
+
+        with sqlite3.connect(db.db_path) as conn:
+            tables = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+            table_names = [t[0] for t in tables]
+
+        assert "emails" in table_names
+        assert "sync_state" in table_names
+        assert "emails_fts" in table_names
+
+    def test_emails_table_schema(self, temp_dir):
+        """Test that emails table has correct columns."""
+        db = ArchiveDatabase(temp_dir)
+
+        with sqlite3.connect(db.db_path) as conn:
+            info = conn.execute("PRAGMA table_info(emails)").fetchall()
+            columns = {row[1] for row in info}
+
+        assert "message_id" in columns
+        assert "filename" in columns
+        assert "downloaded_at" in columns
+        assert "content_hash" in columns
+        assert "indexed_hash" in columns
+
+
+class TestArchiveDatabaseOperations:
+    """Tests for database operations."""
+
+    def test_mark_downloaded(self, temp_dir):
+        """Test marking an email as downloaded."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg123", "emails/2024/01/test.eml", "abc123hash")
+
+        assert db.is_downloaded("msg123")
+        assert not db.is_downloaded("nonexistent")
+
+    def test_get_downloaded_ids(self, temp_dir):
+        """Test getting all downloaded message IDs."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "file1.eml")
+        db.mark_downloaded("msg2", "file2.eml")
+        db.mark_downloaded("msg3", "file3.eml")
+
+        ids = db.get_downloaded_ids()
+
+        assert ids == {"msg1", "msg2", "msg3"}
+
+    def test_history_id(self, temp_dir):
+        """Test history ID get/set."""
+        db = ArchiveDatabase(temp_dir)
+
+        assert db.get_history_id() is None
+
+        db.set_history_id("12345")
+        assert db.get_history_id() == "12345"
+
+        db.set_history_id("67890")
+        assert db.get_history_id() == "67890"
+
+
+class TestFullTextSearch:
+    """Tests for FTS5 search functionality."""
+
+    def test_index_email(self, temp_dir):
+        """Test indexing an email."""
+        db = ArchiveDatabase(temp_dir)
+        db.mark_downloaded("msg1", "test.eml")
+
+        db.index_email(
+            message_id="msg1",
+            subject="Meeting Tomorrow",
+            sender="boss@example.com",
+            recipients="team@example.com",
+            date_str="Mon, 1 Jan 2024 10:00:00",
+            body="Please attend the meeting at 3pm.",
+            attachments="agenda.pdf",
+        )
+
+        assert db.is_indexed("msg1")
+
+    def test_search_by_subject(self, temp_dir):
+        """Test searching by subject."""
+        db = ArchiveDatabase(temp_dir)
+        db.mark_downloaded("msg1", "test.eml")
+
+        db.index_email(
+            message_id="msg1",
+            subject="Invoice from Amazon",
+            sender="orders@amazon.com",
+            recipients="me@example.com",
+            date_str="Mon, 1 Jan 2024",
+            body="Your order has shipped.",
+            attachments="",
+        )
+
+        results = db.search("invoice")
+        assert len(results) == 1
+        assert results[0][0] == "msg1"
+
+    def test_search_by_sender(self, temp_dir):
+        """Test searching by sender using from: prefix."""
+        db = ArchiveDatabase(temp_dir)
+        db.mark_downloaded("msg1", "test.eml")
+
+        db.index_email(
+            message_id="msg1",
+            subject="Hello",
+            sender="john@example.com",
+            recipients="me@example.com",
+            date_str="Mon, 1 Jan 2024",
+            body="How are you?",
+            attachments="",
+        )
+
+        # The search converts from: to sender:
+        results = db.search("from:john")
+        assert len(results) == 1
+
+    def test_search_no_results(self, temp_dir):
+        """Test search with no matches."""
+        db = ArchiveDatabase(temp_dir)
+
+        results = db.search("nonexistent query xyz123")
+        assert results == []
+
+    def test_clear_index(self, temp_dir):
+        """Test clearing the search index."""
+        db = ArchiveDatabase(temp_dir)
+        db.mark_downloaded("msg1", "test.eml")
+
+        db.index_email(
+            message_id="msg1",
+            subject="Test",
+            sender="test@test.com",
+            recipients="",
+            date_str="",
+            body="Body",
+            attachments="",
+        )
+
+        assert db.is_indexed("msg1")
+
+        db.clear_index()
+
+        assert not db.is_indexed("msg1")
+
+
+class TestDatabaseStats:
+    """Tests for database statistics."""
+
+    def test_get_stats_empty(self, temp_dir):
+        """Test stats on empty database."""
+        db = ArchiveDatabase(temp_dir)
+        stats = db.get_stats()
+
+        assert stats["total_emails"] == 0
+        assert stats["indexed_emails"] == 0
+
+    def test_get_stats_with_data(self, temp_dir):
+        """Test stats with some data."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "f1.eml")
+        db.mark_downloaded("msg2", "f2.eml")
+        db.index_email("msg1", "Subj", "From", "To", "Date", "Body", "")
+
+        stats = db.get_stats()
+
+        assert stats["total_emails"] == 2
+        assert stats["indexed_emails"] == 1
