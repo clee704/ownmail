@@ -15,11 +15,12 @@ from ownmail.providers.base import EmailProvider
 # Gmail API scopes - readonly access
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
-# Batch size for parallel downloads (conservative to avoid rate limits)
-BATCH_SIZE = 10
-
-# Delay between batches in seconds
-BATCH_DELAY = 0.1
+# Batch download settings
+# Gmail API quota: 15,000 units/min per user, messages.get = 5 units
+# Max rate: 15,000 / 5 = 3,000 messages/min = 50 messages/sec
+# We use 80% of limit for safety margin: 40 messages/sec
+BATCH_SIZE = 40  # Messages per batch request
+BATCH_DELAY = 1.0  # Seconds between batches (40 msg/sec)
 
 
 class GmailProvider(EmailProvider):
