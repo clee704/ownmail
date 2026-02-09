@@ -980,13 +980,24 @@ def create_app(
             # Extract body
             body = ""
             body_html = None
+            body_parts = []  # Collect text parts from top-level only
             attachments = []
             cid_images = {}  # Content-ID -> data URI mapping
 
             if msg.is_multipart():
+                # Track depth to skip content nested inside message/rfc822 parts
+                # These are embedded messages (like in digests) that shouldn't be
+                # concatenated into the main body
+                inside_message_rfc822 = 0
+
                 for part in msg.walk():
                     content_type = part.get_content_type()
                     content_disposition = str(part.get("Content-Disposition", ""))
+
+                    # Track message/rfc822 nesting
+                    if content_type == "message/rfc822":
+                        inside_message_rfc822 += 1
+                        continue
 
                     # Extract inline images with Content-ID (for cid: references)
                     content_id = part.get("Content-ID", "")
@@ -998,6 +1009,10 @@ def create_app(
                             data_uri = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
                             cid_images[cid] = data_uri
 
+                    # Skip content inside embedded messages (digest entries)
+                    if inside_message_rfc822 > 0:
+                        continue
+
                     if "attachment" in content_disposition:
                         # Extract filename with proper charset handling
                         att_filename = _extract_attachment_filename(part)
@@ -1006,16 +1021,22 @@ def create_app(
                             "filename": att_filename,
                             "size": _format_size(size),
                         })
-                    elif content_type == "text/plain" and not body:
+                    elif content_type == "text/plain":
                         payload = part.get_payload(decode=True)
                         if payload:
-                            # Use helper that can detect Korean charset
-                            body = _decode_text_body(payload, part.get_content_charset())
+                            # Collect text/plain parts from main message
+                            text = _decode_text_body(payload, part.get_content_charset())
+                            if text:
+                                body_parts.append(text)
                     elif content_type == "text/html" and not body_html:
                         payload = part.get_payload(decode=True)
                         if payload:
                             # Use helper that can extract charset from HTML meta tag
                             body_html = _decode_html_body(payload, part.get_content_charset())
+
+                # Combine all text parts
+                if body_parts:
+                    body = "\n\n".join(body_parts)
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
