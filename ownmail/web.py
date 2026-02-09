@@ -366,8 +366,12 @@ def _clean_snippet_text(text: str) -> str:
     """Clean up text for snippet display.
 
     Removes invisible Unicode characters often used by email marketers
-    as preheader padding (ZWNJ, ZWJ, ZWSP, etc.).
+    as preheader padding (ZWNJ, ZWJ, ZWSP, etc.), CSS code that leaked
+    through, and repetitive padding characters.
     """
+    if not text:
+        return text
+
     # Remove zero-width and invisible characters
     # U+200B Zero Width Space
     # U+200C Zero Width Non-Joiner (ZWNJ) - common in marketing emails
@@ -378,6 +382,14 @@ def _clean_snippet_text(text: str) -> str:
     invisible_chars = '\u200b\u200c\u200d\ufeff\u00ad\u2060'
     for char in invisible_chars:
         text = text.replace(char, '')
+
+    # Remove CSS-like content (selectors with braces)
+    # Matches patterns like ".class { ... }" or "#id { ... }"
+    text = re.sub(r'[.#][\w-]+\s*\{[^}]*\}', '', text)
+
+    # Remove repetitive padding patterns (single char repeated with spaces)
+    # Matches "ä ä ä ä" or ". . . ." etc.
+    text = re.sub(r'(\S)\s+(?:\1\s+){3,}', '', text)
 
     # Collapse whitespace
     text = " ".join(text.split())
@@ -854,6 +866,10 @@ def create_app(
 
             if snippet and '=?' in snippet:
                 snippet = decode_header(snippet)
+
+            # Clean up snippet text (remove CSS, padding chars, etc.)
+            if snippet:
+                snippet = _clean_snippet_text(snippet)
 
             # Extract sender name (without email address)
             sender_name, _ = parse_email_address(sender) if sender else ("", "")
