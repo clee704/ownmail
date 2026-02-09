@@ -193,11 +193,11 @@ def _setup_imap(
 
     # Save password to keychain
     keychain.save_imap_password(account_email, password)
+    print("✓ Password saved to system keychain (not stored in any file)")
 
     # Get source name
     if not source_name:
-        email_prefix = account_email.split("@")[0]
-        default_name = email_prefix.replace(".", "_").replace("+", "_")
+        default_name = account_email
         source_name = input(f"\nSource name [{default_name}]: ").strip() or default_name
 
     # Generate config snippet
@@ -301,8 +301,7 @@ def _setup_oauth(
         sys.exit(1)
 
     if not source_name:
-        email_prefix = account_email.split("@")[0]
-        default_name = email_prefix.replace(".", "_").replace("+", "_")
+        default_name = account_email
         source_name = input(f"Source name [{default_name}]: ").strip() or default_name
 
     token_key = f"oauth-token/{account_email}"
