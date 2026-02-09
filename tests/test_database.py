@@ -264,6 +264,109 @@ class TestPerAccountOperations:
         assert db.get_history_id(account="bob@gmail.com") == "bob_history"
 
 
+class TestSearchSorting:
+    """Tests for search with different sort options."""
+
+    def test_search_sort_date_desc(self, temp_dir):
+        """Test search with date descending sort."""
+        db = ArchiveDatabase(temp_dir)
+
+        # Filenames determine sort order (YYYYMMDD_HHMMSS)
+        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml")
+        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml")
+        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
+        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+
+        results = db.search("test", sort="date_desc")
+
+        assert len(results) == 2
+        # Newest first
+        assert results[0][0] == "msg2"
+        assert results[1][0] == "msg1"
+
+    def test_search_sort_date_asc(self, temp_dir):
+        """Test search with date ascending sort."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml")
+        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml")
+        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
+        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+
+        results = db.search("test", sort="date_asc")
+
+        assert len(results) == 2
+        # Oldest first
+        assert results[0][0] == "msg1"
+        assert results[1][0] == "msg2"
+
+
+class TestSearchDateFilters:
+    """Tests for before: and after: date filters."""
+
+    def test_search_after_filter(self, temp_dir):
+        """Test search with after: date filter."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml")
+        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml")
+        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
+        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+
+        results = db.search("test after:2024-02-01")
+
+        # Only msg2 is after 2024-02-01
+        assert len(results) == 1
+        assert results[0][0] == "msg2"
+
+    def test_search_before_filter(self, temp_dir):
+        """Test search with before: date filter."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml")
+        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml")
+        db.index_email("msg1", "Test", "from", "to", "date", "body", "")
+        db.index_email("msg2", "Test", "from", "to", "date", "body", "")
+
+        results = db.search("test before:2024-02-01")
+
+        # Only msg1 is before 2024-02-01
+        assert len(results) == 1
+        assert results[0][0] == "msg1"
+
+
+class TestSearchLabelFilter:
+    """Tests for label: filter using labels column."""
+
+    def test_search_label_only(self, temp_dir):
+        """Test search with label: only (no other terms)."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml")
+        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml")
+        db.index_email("msg1", "Test1", "from", "to", "date", "body", "", labels="INBOX,IMPORTANT")
+        db.index_email("msg2", "Test2", "from", "to", "date", "body", "", labels="INBOX")
+
+        results = db.search("label:IMPORTANT")
+
+        assert len(results) == 1
+        assert results[0][0] == "msg1"
+
+    def test_search_label_with_text(self, temp_dir):
+        """Test search with label: and text query."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "emails/2024/01/20240115_120000_abc.eml")
+        db.mark_downloaded("msg2", "emails/2024/02/20240215_120000_def.eml")
+        db.index_email("msg1", "Invoice", "from", "to", "date", "body", "", labels="IMPORTANT")
+        db.index_email("msg2", "Invoice", "from", "to", "date", "body", "", labels="INBOX")
+
+        results = db.search("invoice label:IMPORTANT")
+
+        assert len(results) == 1
+        assert results[0][0] == "msg1"
+
+
 class TestAccountManagement:
     """Tests for account management methods."""
 
