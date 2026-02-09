@@ -482,41 +482,24 @@ Examples:
                 cmd_search(archive, args.query, args.source, args.limit)
             elif args.command == "stats":
                 cmd_stats(archive, config, args.source)
-            elif args.command in ("reindex", "verify", "rehash", "sync-check", "db-check", "add-labels"):
-                # These commands use the legacy ownmail.py until fully migrated
-                # Import the old GmailArchive from the root ownmail.py
-                import importlib.util
-
-                # Load the old ownmail.py as a module
-                old_ownmail_path = SCRIPT_DIR.parent / "ownmail.py"
-                if not old_ownmail_path.exists():
-                    print(f"❌ Error: Legacy commands require {old_ownmail_path}")
-                    print("  These commands are being migrated to the new architecture.")
-                    sys.exit(1)
-
-                spec = importlib.util.spec_from_file_location("ownmail_legacy", old_ownmail_path)
-                ownmail_legacy = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(ownmail_legacy)
-
-                legacy_archive = ownmail_legacy.GmailArchive(archive_root, config)
-
-                if args.command == "reindex":
-                    legacy_archive.cmd_reindex(
-                        file_path=args.file,
-                        pattern=args.pattern,
-                        force=args.force,
-                        debug=args.debug,
-                    )
-                elif args.command == "verify":
-                    legacy_archive.cmd_verify(verbose=args.verbose)
-                elif args.command == "rehash":
-                    legacy_archive.cmd_rehash()
-                elif args.command == "sync-check":
-                    legacy_archive.cmd_sync_check(verbose=args.verbose)
-                elif args.command == "db-check":
-                    legacy_archive.cmd_db_check(fix=args.fix, verbose=args.verbose)
-                elif args.command == "add-labels":
-                    legacy_archive.cmd_add_labels()
+            elif args.command == "reindex":
+                from ownmail.commands import cmd_reindex
+                cmd_reindex(archive, args.file, args.pattern, args.force, args.debug)
+            elif args.command == "verify":
+                from ownmail.commands import cmd_verify
+                cmd_verify(archive, args.verbose)
+            elif args.command == "rehash":
+                from ownmail.commands import cmd_rehash
+                cmd_rehash(archive)
+            elif args.command == "sync-check":
+                from ownmail.commands import cmd_sync_check
+                cmd_sync_check(archive, args.source, args.verbose)
+            elif args.command == "db-check":
+                from ownmail.commands import cmd_db_check
+                cmd_db_check(archive, args.fix, args.verbose)
+            elif args.command == "add-labels":
+                from ownmail.commands import cmd_add_labels
+                cmd_add_labels(archive, args.source)
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")

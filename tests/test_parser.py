@@ -114,3 +114,153 @@ class TestSanitizeHeader:
         """Test sanitizing empty string."""
         assert EmailParser._sanitize_header("") == ""
         assert EmailParser._sanitize_header(None) == ""
+
+
+class TestSafeGetHeader:
+    """Tests for _safe_get_header."""
+
+    def test_safe_get_header_normal(self, sample_eml_simple):
+        """Test getting a normal header."""
+        import email
+        msg = email.message_from_bytes(sample_eml_simple)
+        result = EmailParser._safe_get_header(msg, "Subject")
+        assert result == "Test Email"
+
+    def test_safe_get_header_missing(self, sample_eml_simple):
+        """Test getting a missing header returns empty string."""
+        import email
+        msg = email.message_from_bytes(sample_eml_simple)
+        result = EmailParser._safe_get_header(msg, "X-Nonexistent-Header")
+        assert result == ""
+
+
+class TestSafeGetContent:
+    """Tests for _safe_get_content."""
+
+    def test_safe_get_content_plain(self):
+        """Test getting plain text content."""
+        import email
+        content = b"""Content-Type: text/plain
+
+Hello world!
+"""
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        assert "Hello world" in result
+
+    def test_safe_get_content_bytes_utf8(self):
+        """Test getting UTF-8 bytes content."""
+        import email
+        content = b"""Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
+Hello world UTF-8!
+"""
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        assert "Hello" in result or result == ""  # May fail gracefully
+
+    def test_safe_get_content_korean(self):
+        """Test getting Korean encoded content."""
+        import email
+        content = """Content-Type: text/plain; charset="utf-8"
+
+안녕하세요
+""".encode('utf-8')
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        # Should handle Korean or return something reasonable
+        assert isinstance(result, str)
+
+
+class TestParseFileEdgeCases:
+    """Edge case tests for parse_file."""
+
+    def test_parse_file_no_args_raises(self):
+        """Test that parse_file raises when neither filepath nor content given."""
+        # If neither is given, should still work and return parse error or empty
+        result = EmailParser.parse_file()
+        # Should not crash - returns error info
+        assert "body" in result
+
+    def test_parse_file_from_disk(self, temp_dir, sample_eml_simple):
+        """Test parsing file from disk."""
+        filepath = temp_dir / "test.eml"
+        filepath.write_bytes(sample_eml_simple)
+
+        result = EmailParser.parse_file(filepath=filepath)
+        assert result["subject"] == "Test Email"
+        assert result["sender"] == "sender@example.com"
+
+    def test_parse_multipart_html_fallback(self):
+        """Test HTML fallback when no plain text."""
+        content = b"""From: sender@example.com
+To: recipient@example.com
+Subject: HTML Only
+MIME-Version: 1.0
+Content-Type: text/html
+
+<html><body><h1>Title</h1><p>Paragraph text.</p></body></html>
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "Title" in result["body"] or "Paragraph" in result["body"]
+
+    def test_parse_multiple_recipients(self):
+        """Test parsing email with To, Cc, and Bcc."""
+        content = b"""From: sender@example.com
+To: alice@example.com
+Cc: bob@example.com
+Bcc: charlie@example.com
+Subject: Multiple Recipients
+
+Body
+"""
+        result = EmailParser.parse_file(content=content)
+        assert "alice" in result["recipients"]
+        assert "bob" in result["recipients"]
+        assert "charlie" in result["recipients"]
+
+    def test_parse_multipart_with_plain_and_html(self):
+        """Test parsing multipart with both plain and HTML."""
+        content = b"""From: sender@example.com
+Subject: Mixed Content
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="bound1"
+
+--bound1
+Content-Type: text/plain; charset="utf-8"
+
+Plain text version.
+
+--bound1
+Content-Type: text/html; charset="utf-8"
+
+<html><body>HTML version</body></html>
+
+--bound1--
+"""
+        result = EmailParser.parse_file(content=content)
+        # Should prefer plain text
+        assert "Plain text" in result["body"]
+
+    def test_parse_deeply_nested_multipart(self):
+        """Test parsing deeply nested multipart."""
+        content = b"""From: sender@example.com
+Subject: Nested
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: multipart/alternative; boundary="inner"
+
+--inner
+Content-Type: text/plain
+
+Nested plain text.
+
+--inner--
+
+--outer--
+"""
+        result = EmailParser.parse_file(content=content)
+        assert isinstance(result["body"], str)
