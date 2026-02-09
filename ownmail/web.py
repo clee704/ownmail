@@ -177,7 +177,9 @@ def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
         # Header charset didn't produce valid result - fall through to auto-detection
 
     # Check if payload has high bytes (non-ASCII) suggesting CJK encoding
-    high_bytes = sum(1 for b in payload[:500] if b >= 0x80)
+    # Sample multiple regions since Korean content may not appear in first 500 bytes
+    sample_size = min(len(payload), 4000)
+    high_bytes = sum(1 for b in payload[:sample_size] if b >= 0x80)
 
     if high_bytes > 10:
         # Has significant non-ASCII content - try various encodings
@@ -236,7 +238,9 @@ def _decode_html_body(payload: bytes, header_charset: str | None) -> str:
         pass
 
     # No charset found - try smart detection like plain text
-    high_bytes = sum(1 for b in payload[:500] if b >= 0x80)
+    # Sample multiple regions since Korean content may not appear in first 500 bytes
+    sample_size = min(len(payload), 4000)
+    high_bytes = sum(1 for b in payload[:sample_size] if b >= 0x80)
 
     if high_bytes > 10:
         # Has significant non-ASCII content - try various encodings
@@ -718,16 +722,20 @@ def create_app(
                 showLoading('Searching...');
             });
         }
-        // Show loading on email link clicks
+        // Show loading on email link clicks (but not for cmd/ctrl+click which opens in new tab)
         document.querySelectorAll('.email-item a').forEach(function(link) {
-            link.addEventListener('click', function() {
-                showLoading('Loading email...');
+            link.addEventListener('click', function(e) {
+                if (!e.metaKey && !e.ctrlKey) {
+                    showLoading('Loading email...');
+                }
             });
         });
-        // Show loading on pagination clicks
+        // Show loading on pagination clicks (but not for cmd/ctrl+click)
         document.querySelectorAll('.pagination a').forEach(function(link) {
-            link.addEventListener('click', function() {
-                showLoading('Loading...');
+            link.addEventListener('click', function(e) {
+                if (!e.metaKey && !e.ctrlKey) {
+                    showLoading('Loading...');
+                }
             });
         });
     });
