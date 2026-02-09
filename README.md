@@ -74,14 +74,16 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | Command | Description |
 |---------|-------------|
 | `setup` | Set up email source credentials (App Password or OAuth) |
-| `backup` | Download new emails |
+| `backup` | Download new emails (with content-hash dedup) |
 | `search "query"` | Full-text search |
 | `serve` | Browse and read your archive in the browser |
 | `stats` | Show archive statistics |
-| `verify` | Check file integrity (SHA256) |
+| `verify` | Check file integrity (hashes, moved files, orphans, DB health) |
 | `sync-check` | Compare local archive with server to find missing emails |
 | `update-labels` | Update labels on existing emails |
 | `reindex` | Rebuild search index |
+| `reset-sync` | Reset sync state to force full re-download |
+| `sources list` | List configured email sources |
 
 ## Setup
 
@@ -207,26 +209,27 @@ Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
 ```
 /Volumes/Secure/ownmail/
 ├── ownmail.db              # SQLite (tracking + search index)
-└── emails/
-    ├── 2024/
-    │   ├── 01/
-    │   │   ├── 20240115_143022_a1b2c3d4e5f6.eml
-    │   │   └── ...
-    │   └── 02/
-    └── 2025/
-        └── ...
+└── accounts/
+    └── you@gmail.com/
+        ├── 2024/
+        │   ├── 01/
+        │   │   ├── 20240115_143022_a1b2c3d4e5f6.eml
+        │   │   └── ...
+        │   └── 02/
+        └── 2025/
+            └── ...
 ```
 
-- **Emails**: Standard `.eml` format
-- **Database**: Only stores message IDs, filenames, and hashes — not email content
+- **Emails**: Standard `.eml` format, organized by account and date
+- **Database**: Stores metadata (message IDs, filenames, hashes, subjects, senders) and a full-text search index — the `.eml` files are the source of truth
 
 ### Integrity Verification
 
 ```bash
-# Verify all files match their stored hashes
+# Verify file hashes, detect moved files, check for orphans and DB health
 ownmail verify
 
-# Auto-fix missing files and broken index entries
+# Auto-fix: update moved file paths, remove stale entries, rebuild FTS
 ownmail verify --fix
 
 # Check if local archive matches server

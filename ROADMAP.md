@@ -52,7 +52,7 @@ Detect `.eml` files already present in the archive directory that aren't tracked
 
 **Goal**: Finish and harden the web interface.
 
-The web UI is functional (Flask + Jinja, search, email detail, attachment download, dark mode, image blocking, pagination). Remaining work:
+The web UI is functional (Flask + Jinja, search, email detail, attachment download, dark mode, image blocking, pagination). Settings page with runtime configuration, trusted senders, and image blocking are implemented. Remaining work:
 
 ### Features
 
@@ -75,7 +75,7 @@ ownmail export --format pdf --query "from:important@example.com"
 
 ### Deduplication
 
-Detect duplicate emails across accounts/imports (same `content_hash`). `ownmail dedup` command. Cross-folder dedup within IMAP is already handled by the IMAP provider.
+~~Detect duplicate emails across accounts/imports (same `content_hash`). `ownmail dedup` command.~~ Cross-folder dedup within IMAP is handled by the IMAP provider. Content-hash dedup during backup skips duplicate downloads. `verify --fix` detects and cleans up duplicates in the archive. A standalone `ownmail dedup` command may be added later if needed.
 
 ### Headless Server Support
 
