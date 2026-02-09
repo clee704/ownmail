@@ -554,13 +554,30 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                         if row and row[0]:
                             affected_accounts.add(row[0])
                         conn.execute("DELETE FROM emails WHERE email_id = ?", (eid,))
+                    # Also reset sync state in the same transaction
+                    for account in affected_accounts:
+                        conn.execute(
+                            "DELETE FROM sync_state WHERE key LIKE ?",
+                            (f"{account}/%",),
+                        )
                     conn.commit()
-                # Reset sync state so next backup re-discovers deleted messages
-                for account in affected_accounts:
-                    archive.db.delete_account_sync_state(account)
                 issues_fixed += 1
                 print(f"    → Removed {missing_count} stale DB entries")
                 if affected_accounts:
+                    # Verify sync state was actually cleared
+                    with sqlite3.connect(db_path) as verify_conn:
+                        for account in affected_accounts:
+                            remaining = verify_conn.execute(
+                                "SELECT COUNT(*) FROM sync_state WHERE key LIKE ?",
+                                (f"{account}/%",),
+                            ).fetchone()[0]
+                            if remaining > 0:
+                                # Force delete with a fresh connection
+                                verify_conn.execute(
+                                    "DELETE FROM sync_state WHERE key LIKE ?",
+                                    (f"{account}/%",),
+                                )
+                                verify_conn.commit()
                     print(f"    → Reset sync state for {len(affected_accounts)} account(s) (next backup will do a full sync)")
         if len(orphaned_files) > 0:
             issues_found += 1
