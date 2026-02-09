@@ -21,7 +21,7 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 # - "Too many concurrent requests" error at high batch sizes
 # - 15,000 quota units/min, messages.get = 5 units = 3,000 msg/min max
 # Conservative settings to avoid 429 concurrent request errors
-BATCH_SIZE = 10  # Messages per batch request
+BATCH_SIZE = 10  # Messages per batch request (Gmail API limit)
 BATCH_DELAY = 0.2  # Seconds between batches
 
 
@@ -55,6 +55,11 @@ class GmailProvider(EmailProvider):
     @property
     def account(self) -> str:
         return self._account
+
+    @property
+    def download_batch_size(self) -> int:
+        """Number of messages to download per batch."""
+        return BATCH_SIZE
 
     def authenticate(self) -> None:
         """Authenticate with Gmail API using OAuth2."""

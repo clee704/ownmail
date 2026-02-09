@@ -17,7 +17,8 @@ from ownmail.providers.base import EmailProvider
 
 # Default IMAP settings
 DEFAULT_PORT = 993  # IMAPS
-FETCH_BATCH_SIZE = 50  # UIDs per FETCH command
+FETCH_BATCH_SIZE = 50  # UIDs per FETCH command (headers)
+FETCH_BODY_BATCH_SIZE = 25  # UIDs per FETCH command (full messages)
 FOLDER_BATCH_DELAY = 0.1  # Seconds between folder scans
 
 # Gmail-specific IMAP settings
@@ -69,6 +70,11 @@ class ImapProvider(EmailProvider):
     @property
     def account(self) -> str:
         return self._account
+
+    @property
+    def download_batch_size(self) -> int:
+        """Number of messages to download per batch."""
+        return FETCH_BODY_BATCH_SIZE
 
     def authenticate(self) -> None:
         """Connect and authenticate with the IMAP server."""
@@ -473,6 +479,79 @@ class ImapProvider(EmailProvider):
         labels = getattr(self, "_folder_lookup", {}).get(msg_id, [folder])
 
         return raw_data, labels
+
+    def download_messages_batch(
+        self, msg_ids: List[str]
+    ) -> Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]]:
+        """Download multiple messages, grouped by folder for efficiency.
+
+        Groups message IDs by folder to minimize SELECT calls, then uses
+        batched FETCH commands to download multiple messages at once.
+
+        Args:
+            msg_ids: List of composite IDs ("folder:uid")
+
+        Returns:
+            Dict mapping msg_id -> (raw_data, labels, error_msg)
+        """
+        results: Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]] = {}
+
+        # Group by folder to minimize SELECT calls
+        folder_groups: Dict[str, List[Tuple[str, int]]] = {}
+        for msg_id in msg_ids:
+            folder, uid_str = msg_id.rsplit(":", 1)
+            uid = int(uid_str)
+            folder_groups.setdefault(folder, []).append((msg_id, uid))
+
+        for folder, items in folder_groups.items():
+            # Select folder once for all messages in it
+            status, _ = self._conn.select(f'"{folder}"', readonly=True)
+            if status != "OK":
+                for msg_id, _ in items:
+                    results[msg_id] = (None, [], f"Cannot select folder: {folder}")
+                continue
+
+            # Fetch full messages in batches
+            for i in range(0, len(items), FETCH_BODY_BATCH_SIZE):
+                batch = items[i : i + FETCH_BODY_BATCH_SIZE]
+                uid_set = ",".join(str(uid) for _, uid in batch)
+                uid_map = {uid: mid for mid, uid in batch}
+
+                try:
+                    status, data = self._conn.uid("fetch", uid_set, "(RFC822)")
+                except Exception as e:
+                    for mid, _ in batch:
+                        results[mid] = (None, [], str(e))
+                    continue
+
+                if status != "OK":
+                    for mid, _ in batch:
+                        results[mid] = (None, [], f"FETCH failed in {folder}")
+                    continue
+
+                # Parse response
+                fetched_uids: set = set()
+                for item in data:
+                    if isinstance(item, tuple) and len(item) == 2:
+                        uid_match = re.search(rb"(\d+) \(", item[0])
+                        if uid_match:
+                            uid = int(uid_match.group(1))
+                            mid = uid_map.get(uid)
+                            if mid:
+                                labels = getattr(self, "_folder_lookup", {}).get(
+                                    mid, [folder]
+                                )
+                                results[mid] = (item[1], labels, None)
+                                fetched_uids.add(uid)
+
+                # Mark any missing UIDs as errors
+                for mid, uid in batch:
+                    if uid not in fetched_uids:
+                        results.setdefault(
+                            mid, (None, [], f"No data for UID {uid}")
+                        )
+
+        return results
 
     def get_current_sync_state(self) -> Optional[str]:
         """Get current sync state (per-folder max UID + UIDVALIDITY).
