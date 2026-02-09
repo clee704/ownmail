@@ -576,7 +576,7 @@ class TestSyncCheckWithDifferences:
         }
         archive = EmailArchive(temp_dir, config)
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             # More than 5 emails on Gmail
             mock_provider.get_all_message_ids.return_value = [f"msg{i}" for i in range(10)]
@@ -852,7 +852,7 @@ class TestUpdateLabelsCmd:
         email_path.write_text("From: test@example.com\r\nSubject: Test\r\n\r\nBody")
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/test.eml", content_hash="abc")
 
-        with patch('ownmail.commands.GmailProvider') as mock_provider_cls:
+        with patch('ownmail.providers.gmail.GmailProvider') as mock_provider_cls:
             mock_provider = MagicMock()
             mock_provider.get_message_labels.return_value = ["INBOX", "IMPORTANT"]
             mock_provider_cls.return_value = mock_provider
@@ -1212,7 +1212,7 @@ This is a test email body.
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
         archive.db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/01/msg2.eml", content_hash="def")
 
-        with patch('ownmail.commands.GmailProvider') as mock_provider_cls:
+        with patch('ownmail.providers.gmail.GmailProvider') as mock_provider_cls:
             mock_provider = MagicMock()
             # Gmail has msg1 and msg3 (msg2 missing on server)
             mock_provider.get_all_message_ids.return_value = ["msg1", "msg3"]

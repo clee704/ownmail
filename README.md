@@ -80,7 +80,7 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | `stats` | Show archive statistics |
 | `verify` | Check file integrity (SHA256) |
 | `sync-check` | Compare local archive with server to find missing emails |
-| `update-labels` | Update Gmail labels on existing emails |
+| `update-labels` | Update labels on existing emails |
 | `reindex` | Rebuild search index |
 
 ## Setup
