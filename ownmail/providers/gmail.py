@@ -279,7 +279,7 @@ class GmailProvider(EmailProvider):
                 except Exception as e:
                     results[request_id] = (None, [], str(e))
 
-        # Retry logic for rate limiting
+        # Retry logic for rate limiting (if entire batch fails)
         max_retries = 3
         retry_delay = 1.0
 
@@ -302,27 +302,16 @@ class GmailProvider(EmailProvider):
                 break  # Success, exit retry loop
             except HttpError as e:
                 if e.resp.status == 429 and attempt < max_retries - 1:
-                    # Rate limited, wait and retry
+                    # Rate limited, wait and retry entire batch
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     results.clear()  # Clear partial results
                     continue
                 raise
 
-        # Retry individual failed messages (429 errors within the batch)
-        failed_ids = [
-            msg_id for msg_id, (raw, _, err) in results.items()
-            if raw is None and err and "429" in err
-        ]
-        if failed_ids:
-            time.sleep(1.0)  # Wait before retrying
-            for msg_id in failed_ids:
-                try:
-                    raw_data, labels = self.download_message(msg_id)
-                    results[msg_id] = (raw_data, labels, None)
-                except Exception as e:
-                    results[msg_id] = (None, [], str(e))
-                time.sleep(0.1)  # Small delay between retries
+        # Note: Individual 429 errors within the batch are NOT retried here.
+        # They're returned as errors and will be picked up on the next backup run.
+        # This keeps the code simple and follows our "resumable operations" design.
 
         # Small delay between batches to avoid rate limiting
         time.sleep(BATCH_DELAY)
