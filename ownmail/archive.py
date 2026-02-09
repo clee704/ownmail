@@ -164,9 +164,12 @@ class EmailArchive:
         last_eta_str = "..."
 
         # Check if provider supports batch downloads
-        from ownmail.providers.gmail import BATCH_SIZE, GmailProvider
-        has_batch = isinstance(provider, GmailProvider)
-        batch_size = BATCH_SIZE if has_batch else 1
+        # Use download_batch_size property (int) as the signal — avoids
+        # false positives from MagicMock which creates attributes on access.
+        batch_size = getattr(provider, 'download_batch_size', None)
+        if not isinstance(batch_size, int) or batch_size < 1:
+            batch_size = 1
+        has_batch = batch_size > 1 and hasattr(provider, 'download_messages_batch')
 
         # Track failed message IDs for reporting
         failed_ids: list[str] = []
