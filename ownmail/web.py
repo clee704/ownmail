@@ -1496,6 +1496,7 @@ def create_app(
             settings=current,
             stats=get_cached_stats(),
             config_path=config_path or "(not set)",
+            saved=request.args.get("saved") == "1",
         )
 
     @app.route("/settings", methods=["POST"])
@@ -1559,7 +1560,7 @@ def create_app(
             if verbose:
                 print(f"[verbose] Error saving settings: {e}", flush=True)
 
-        return redirect("/settings")
+        return redirect("/settings?saved=1")
 
     @app.route("/trust-sender", methods=["POST"])
     def trust_sender():
