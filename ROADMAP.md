@@ -48,26 +48,6 @@ Detect `.eml` files already present in the archive directory that aren't tracked
 
 ---
 
-## Next Up — Retry Logic for Transient Failures
-
-**Goal**: Make backup resilient to transient API errors instead of crashing.
-
-### Current gaps
-
-- HTTP 503 (service unavailable) propagates as an unhandled crash.
-- Individual message failures within a batch are skipped but not retried.
-- No `try/except` around `download_messages_batch()` in `archive.py` — a single bad batch aborts the entire backup.
-- Failed message IDs are not tracked (only an aggregate `error_count`).
-
-### Plan
-
-1. **Retry individual failures in `gmail.py`**: After a batch completes, retry failed messages individually with exponential backoff. Add `_is_retriable()` helper for 429, 503, timeout, connection reset.
-2. **Wrap batch calls in `archive.py`**: Catch exceptions from `download_messages_batch()` so one bad batch doesn't abort everything.
-3. **Track failed IDs**: Return `failed_ids` list from `backup()` with error reasons. Print summary at the end.
-4. **Add 503 to batch-level retry**: Currently only 429 triggers batch retry.
-
----
-
 ## Next Up — Web UI Polish
 
 **Goal**: Finish and harden the web interface.
@@ -95,7 +75,7 @@ The web UI is functional (Flask + Jinja, search, email detail, attachment downlo
 
 ## Later — Parser Refactoring
 
-**Goal**: Improve readability of `parser.py` (~670 LOC) without changing behavior.
+**Goal**: Improve readability of `parser.py` (~735 LOC) without changing behavior.
 
 The parser works correctly but has deep nesting and long function bodies. Every fallback path exists for a real-world encoding edge case (especially Korean EUC-KR/CP949).
 
