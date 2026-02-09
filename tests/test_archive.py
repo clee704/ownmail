@@ -1,9 +1,6 @@
 """Tests for EmailArchive class."""
 
-import sqlite3
-from pathlib import Path
 
-import pytest
 
 from ownmail.archive import EmailArchive
 
@@ -14,7 +11,7 @@ class TestEmailArchiveInit:
     def test_creates_archive_directory(self, temp_dir):
         """Test that archive directory is created."""
         archive_path = temp_dir / "my_archive"
-        archive = EmailArchive(archive_path, {})
+        EmailArchive(archive_path, {})
 
         assert archive_path.exists()
         assert (archive_path / "ownmail.db").exists()
@@ -374,8 +371,8 @@ Body
         assert emails_dir.exists()
 
 
-class TestIndexEmail:
-    """Tests for _index_email method."""
+class TestIndexEmailFromContent:
+    """Tests for _index_email method with content."""
 
     def test_index_email_from_content(self, temp_dir, sample_eml_simple):
         """Test indexing email from raw content."""
@@ -470,3 +467,84 @@ class TestBackupFullSync:
         result = archive.backup(mock_provider)
 
         assert result["error_count"] == 1
+
+
+class TestBackupMultipleEmails:
+    """Tests for backup with multiple emails."""
+
+    def test_backup_multiple_success(self, temp_dir, capsys):
+        """Test backup downloads multiple emails successfully."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        mock_provider = MagicMock()
+        mock_provider.account = "test@gmail.com"
+        mock_provider.get_new_message_ids.return_value = (["msg1", "msg2", "msg3"], None)
+        mock_provider.get_current_sync_state.return_value = "12345"
+        mock_provider.download_message.return_value = (
+            b"From: test@example.com\nDate: Mon, 15 Jan 2024 10:00:00 +0000\n\nBody",
+            ["INBOX"]
+        )
+
+        result = archive.backup(mock_provider)
+
+        assert result["success_count"] == 3
+        assert result["error_count"] == 0
+
+    def test_backup_mixed_results(self, temp_dir, capsys):
+        """Test backup with mixed success/failure."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        mock_provider = MagicMock()
+        mock_provider.account = "test@gmail.com"
+        mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
+        mock_provider.get_current_sync_state.return_value = "12345"
+
+        # First call succeeds, second fails
+        mock_provider.download_message.side_effect = [
+            (b"From: test@example.com\nDate: Mon, 15 Jan 2024 10:00:00 +0000\n\nBody", ["INBOX"]),
+            (None, None),
+        ]
+
+        result = archive.backup(mock_provider)
+
+        assert result["success_count"] == 1
+        assert result["error_count"] == 1
+
+
+class TestArchiveSearch:
+    """Tests for archive search functionality."""
+
+    def test_search_basic(self, temp_dir, sample_eml_simple):
+        """Test basic search functionality."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create and index an email
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash="abc")
+        archive.db.index_email(
+            message_id="test123",
+            subject="Test Email",
+            sender="sender@example.com",
+            recipients="recipient@example.com",
+            date_str="2024-01-15",
+            body="Test body content",
+            attachments="",
+        )
+
+        results = archive.search("Test")
+        assert len(results) >= 1
+
+    def test_search_no_results(self, temp_dir):
+        """Test search with no results."""
+        archive = EmailArchive(temp_dir, {})
+        results = archive.search("nonexistent query xyz123")
+        assert len(results) == 0

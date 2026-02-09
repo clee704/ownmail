@@ -1,6 +1,5 @@
 """Tests for Gmail provider."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -77,8 +76,8 @@ class TestGmailProviderAuthentication:
 
     def test_authenticate_refreshes_expired_token(self, capsys):
         """Test that expired token is refreshed."""
-        with patch("ownmail.providers.gmail.build") as mock_build:
-            with patch("ownmail.providers.gmail.Request") as mock_request:
+        with patch("ownmail.providers.gmail.build"):
+            with patch("ownmail.providers.gmail.Request"):
                 from ownmail.providers.gmail import GmailProvider
 
                 mock_keychain = MagicMock()
@@ -215,6 +214,7 @@ class TestGmailProviderDownloadMessage:
         """Test downloading a message."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             import base64
+
             from ownmail.providers.gmail import GmailProvider
 
             mock_service = MagicMock()
@@ -249,6 +249,7 @@ class TestGmailProviderDownloadMessage:
         """Test downloading a message with labels."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             import base64
+
             from ownmail.providers.gmail import GmailProvider
 
             mock_service = MagicMock()
