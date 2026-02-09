@@ -462,41 +462,83 @@ URL_RE = re.compile(
 EMAIL_RE = re.compile(
     r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
 )
+# Header patterns for embedded messages
+HEADER_RE = re.compile(
+    r'^(From|Subject|Date|To|Reply-To|Cc|Bcc):\s*',
+    re.IGNORECASE
+)
+# Quote level pattern (lines starting with >)
+QUOTE_RE = re.compile(r'^(&gt;)+')
 
 
-def _linkify(text: str) -> str:
-    """Convert URLs and email addresses in plain text to clickable links.
-
-    Args:
-        text: Plain text content
-
-    Returns:
-        HTML with URLs and emails converted to <a> tags
-    """
-    # First, HTML-escape the text to prevent XSS
-    escaped = html.escape(text)
-
-    # Replace URLs with links (must do before emails since URLs may contain @)
-    escaped = URL_RE.sub(r'<a href="\1" target="_blank">\1</a>', escaped)
+def _linkify_line(line: str) -> str:
+    """Linkify a single line of text (already HTML-escaped)."""
+    # Replace URLs with links
+    line = URL_RE.sub(r'<a href="\1" target="_blank">\1</a>', line)
 
     # Replace email addresses with mailto links
     # But not if they're already inside an href (from URL linking)
     def replace_email(match):
         email_addr = match.group(1)
-        # Check if this email is inside an href attribute
         start = match.start()
-        # Look back to see if we're inside href="..."
-        preceding = escaped[:start]
-        # If the last href= is closer than the last > or ", we're inside a tag
+        preceding = line[:start]
         last_href = preceding.rfind('href="')
         last_close = max(preceding.rfind('>'), preceding.rfind('"'))
         if last_href > last_close:
-            return email_addr  # Don't linkify, we're inside href
+            return email_addr
         return f'<a href="mailto:{email_addr}">{email_addr}</a>'
 
-    escaped = EMAIL_RE.sub(replace_email, escaped)
+    return EMAIL_RE.sub(replace_email, line)
 
-    return escaped
+
+def _linkify(text: str) -> str:
+    """Convert URLs, emails, headers, and quotes in plain text to styled HTML.
+
+    Args:
+        text: Plain text content
+
+    Returns:
+        HTML with URLs/emails as links, headers styled, quotes colored
+    """
+    lines = text.split('\n')
+    result_lines = []
+
+    for line in lines:
+        # HTML-escape first
+        escaped = html.escape(line)
+
+        # Check for quote markers (>, >>, etc.)
+        quote_match = QUOTE_RE.match(escaped)
+        if quote_match:
+            # Count quote depth (number of > characters)
+            quote_prefix = quote_match.group(0)
+            depth = quote_prefix.count('&gt;')
+            # Style based on depth (cycle through colors)
+            colors = ['#8b949e', '#7c6bcc', '#5ca3cb', '#6b9e6b']
+            color = colors[(depth - 1) % len(colors)]
+            rest = escaped[quote_match.end():]
+            rest = _linkify_line(rest)
+            result_lines.append(
+                f'<span class="quote-level-{min(depth, 4)}" style="color:{color}">'
+                f'{quote_prefix}{rest}</span>'
+            )
+            continue
+
+        # Check for header lines (From:, Subject:, etc.)
+        header_match = HEADER_RE.match(escaped)
+        if header_match:
+            label = header_match.group(1)
+            rest = escaped[header_match.end():]
+            rest = _linkify_line(rest)
+            result_lines.append(
+                f'<span class="email-header-label">{label}:</span> {rest}'
+            )
+            continue
+
+        # Regular line - just linkify
+        result_lines.append(_linkify_line(escaped))
+
+    return '\n'.join(result_lines)
 
 
 def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
