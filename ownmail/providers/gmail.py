@@ -21,8 +21,8 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 # - "Too many concurrent requests" error at high batch sizes
 # - 15,000 quota units/min, messages.get = 5 units = 3,000 msg/min max
 # Using conservative batch size to avoid concurrent request errors
-BATCH_SIZE = 25  # Messages per batch request
-BATCH_DELAY = 0.5  # Seconds between batches (50 msg/sec max, well under quota)
+BATCH_SIZE = 10  # Messages per batch request (conservative to avoid concurrent errors)
+BATCH_DELAY = 0.2  # Seconds between batches
 
 
 class GmailProvider(EmailProvider):
@@ -308,6 +308,21 @@ class GmailProvider(EmailProvider):
                     results.clear()  # Clear partial results
                     continue
                 raise
+
+        # Retry individual failed messages (429 errors within the batch)
+        failed_ids = [
+            msg_id for msg_id, (raw, _, err) in results.items()
+            if raw is None and err and "429" in err
+        ]
+        if failed_ids:
+            time.sleep(1.0)  # Wait before retrying
+            for msg_id in failed_ids:
+                try:
+                    raw_data, labels = self.download_message(msg_id)
+                    results[msg_id] = (raw_data, labels, None)
+                except Exception as e:
+                    results[msg_id] = (None, [], str(e))
+                time.sleep(0.1)  # Small delay between retries
 
         # Small delay between batches to avoid rate limiting
         time.sleep(BATCH_DELAY)
