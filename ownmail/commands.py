@@ -302,8 +302,7 @@ def _index_email_for_reindex(
         labels_list = [row[0] for row in existing_labels_rows]
         recipients = parsed["recipients"]
 
-        # Extract email addresses from recipients for normalized table
-        recipient_emails = ArchiveDatabase._normalize_recipients(recipients) if recipients else ""
+        # recipient_emails normalized table is populated below
 
         # Check if has attachments
         attachments = parsed["attachments"]
@@ -344,13 +343,14 @@ def _index_email_for_reindex(
 
             # Populate email_recipients normalized table
             conn.execute("DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,))
-            if recipient_emails:
-                for email in recipient_emails.strip(',').split(','):
-                    email = email.strip()
-                    if email:
+            if recipients:
+                normalized = ArchiveDatabase._normalize_recipients(recipients)
+                for email_addr in normalized.strip(',').split(','):
+                    email_addr = email_addr.strip()
+                    if email_addr:
                         conn.execute(
                             "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
-                            (rowid, email)
+                            (rowid, email_addr)
                         )
 
             # Populate email_labels normalized table

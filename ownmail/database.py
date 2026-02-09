@@ -577,7 +577,6 @@ class ArchiveDatabase:
 
             # Extract email addresses for indexed lookups
             sender_email = self._extract_email(sender)
-            recipient_emails = self._normalize_recipients(recipients)
 
             # Check if email has attachments (non-empty attachments string)
             has_attachments = 1 if attachments and attachments.strip() else 0
@@ -592,25 +591,24 @@ class ArchiveDatabase:
                     date_str = ?,
                     snippet = ?,
                     sender_email = ?,
-                    recipient_emails = ?,
                     has_attachments = ?
                 WHERE email_id = ?
                 """,
-                (subject, sender, recipients, date_str, snippet, sender_email, recipient_emails, has_attachments, email_id)
+                (subject, sender, recipients, date_str, snippet, sender_email, has_attachments, email_id)
             )
 
             # Update normalized recipients table for fast lookups
             # First delete any existing entries for this email
             conn.execute("DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,))
-            # Then insert individual recipient emails
-            if recipient_emails:
-                # recipient_emails is in format ",a@b.com,c@d.com,"
-                for email in recipient_emails.strip(',').split(','):
-                    email = email.strip()
-                    if email:
+            # Then insert individual recipient emails from the recipients string
+            normalized = self._normalize_recipients(recipients) if recipients else None
+            if normalized:
+                for email_addr in normalized.strip(',').split(','):
+                    email_addr = email_addr.strip()
+                    if email_addr:
                         conn.execute(
                             "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
-                            (rowid, email)
+                            (rowid, email_addr)
                         )
 
             # Update normalized labels table for fast lookups
