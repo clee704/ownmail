@@ -753,7 +753,7 @@ class TestSetupCommand:
         mock_keychain.load_gmail_token.return_value = {"token": "existing"}
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, None)
+            cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
         assert "already exists" in captured.out
@@ -771,7 +771,7 @@ class TestSetupCommand:
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
             with pytest.raises(SystemExit):
-                cmd_setup(mock_keychain, config, None)
+                cmd_setup(mock_keychain, config, None, method="oauth")
 
     def test_setup_cmd_with_credentials_file(self, temp_dir, capsys):
         """Test cmd_setup with credentials file - token already exists."""
@@ -815,7 +815,7 @@ class TestSetupCommand:
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}  # Token exists
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, None)
+            cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out
@@ -924,7 +924,7 @@ class TestSetupAddToConfig:
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, config_path)
+            cmd_setup(mock_keychain, config, config_path, method="oauth")
 
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out
@@ -954,7 +954,7 @@ class TestSetupAddToConfig:
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, None)
+            cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
         assert "already exists in config" in captured.out
@@ -1431,14 +1431,14 @@ class TestCliSetupAddToConfigAuto:
 
         config = {"archive_root": str(temp_dir)}  # No sources
 
-        inputs = iter(["new_source", "user@gmail.com", "y"])  # Accept adding
+        inputs = iter(["user@gmail.com", "new_source", "y"])  # Accept adding
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = True
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, config_path)
+            cmd_setup(mock_keychain, config, config_path, method="oauth")
 
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out
@@ -1650,7 +1650,7 @@ class TestCliSetupErrors:
 
         with pytest.raises(SystemExit):
             cmd_setup(keychain=mock_keychain, config={}, config_path=None,
-                     source_name=None, credentials_file=None)
+                     source_name=None, credentials_file=None, method="oauth")
 
     def test_setup_empty_email(self, monkeypatch, capsys):
         """Test setup when email address is empty."""
@@ -1670,7 +1670,7 @@ class TestCliSetupErrors:
 
         with pytest.raises(SystemExit):
             cmd_setup(keychain=mock_keychain, config={}, config_path=None,
-                     source_name=None, credentials_file=None)
+                     source_name=None, credentials_file=None, method="oauth")
 
         captured = capsys.readouterr()
         assert "Email address required" in captured.out
