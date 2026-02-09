@@ -149,10 +149,28 @@ class ArchiveDatabase:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_account ON emails(account)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_indexed_hash ON emails(indexed_hash)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_filename ON emails(filename)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_labels ON emails(labels)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_date ON emails(email_date)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_sender_email ON emails(sender_email)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_recipient_emails ON emails(recipient_emails)")
+            # Composite index for from:user@example.com sorted by date (very common query)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_sender_date ON emails(sender_email, email_date DESC)")
+            # Composite index for has:attachment sorted by date
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_attachments_date ON emails(has_attachments, email_date DESC)")
+
+            # Drop legacy single-column indexes replaced by composites or normalized tables
+            conn.execute("DROP INDEX IF EXISTS idx_emails_labels")  # replaced by email_labels table
+            conn.execute("DROP INDEX IF EXISTS idx_emails_recipient_emails")  # replaced by email_recipients table
+            conn.execute("DROP INDEX IF EXISTS idx_emails_sender_email")  # replaced by idx_emails_sender_date
+
+            # Cascade delete triggers - clean up junction tables when emails are deleted
+            # Note: FTS cleanup is NOT handled here because contentless FTS5 requires
+            # the exact original content (including body) for delete operations.
+            # After deleting emails, run `reindex --force` to rebuild the FTS index.
+            conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_emails_delete
+                AFTER DELETE ON emails
+                BEGIN
+                    DELETE FROM email_recipients WHERE email_rowid = OLD.rowid;
+                    DELETE FROM email_labels WHERE email_rowid = OLD.rowid;
+                END
+            """)
 
             conn.commit()
 
@@ -638,8 +656,11 @@ class ArchiveDatabase:
                 if extra_where:
                     where_sql = " AND ".join([where_sql] + extra_where) if where_sql != "1=1" else " AND ".join(extra_where)
 
-                # Determine if we need DISTINCT (when using JOINs)
-                distinct = "DISTINCT " if extra_joins else ""
+                # Determine if we need DISTINCT
+                # Single-join cases never produce duplicates due to PKs on junction tables
+                # Multi-join (label + recipient) also safe: each email has at most one
+                # matching row per filter
+                distinct = ""
 
                 # JOIN with FTS using rowid
                 fts_params = [fts_query] + extra_params + params + [limit, offset]
@@ -699,8 +720,11 @@ class ArchiveDatabase:
                 join_sql = " ".join(joins)
                 where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
-                # Determine if we need DISTINCT (when using JOINs)
-                distinct = "DISTINCT " if joins else ""
+                # Determine if we need DISTINCT
+                # Single-join cases never produce duplicates due to PKs on junction tables
+                # Multi-join (label + recipient) also safe: each email has at most one
+                # matching row per filter
+                distinct = ""
 
                 sql = f"""
                     SELECT {distinct}
