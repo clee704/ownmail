@@ -623,10 +623,34 @@ def create_app(
         # Redirect to search page which now shows newest emails by default
         return redirect("/search")
 
+    def get_back_to_search_url() -> str | None:
+        """Get the URL to go back to search results, if applicable.
+
+        Returns the search URL from the Referer header if the user came from
+        a search page, otherwise returns None.
+        """
+        referer = request.headers.get("Referer", "")
+        if not referer:
+            return None
+
+        # Parse the referer to check if it's a search page on this host
+        from urllib.parse import urlparse
+        parsed = urlparse(referer)
+
+        # Check if it's the same host and a search path
+        if parsed.path == "/search" or parsed.path.startswith("/search?"):
+            # Return just the path and query (relative URL)
+            if parsed.query:
+                return f"/search?{parsed.query}"
+            return "/search"
+
+        return None
+
     @app.route("/help")
     def help_page():
         stats = get_cached_stats()
-        return render_template("help.html", stats=stats)
+        back_url = get_back_to_search_url()
+        return render_template("help.html", stats=stats, back_url=back_url)
 
     @app.route("/search")
     def search():
@@ -908,6 +932,9 @@ def create_app(
         if body_html and images_blocked:
             body_html, has_external_images = block_external_images(body_html)
 
+        # Get back URL if user came from search
+        back_url = get_back_to_search_url()
+
         return render_template(
             "email.html",
             stats=stats,
@@ -926,6 +953,7 @@ def create_app(
             images_blocked=images_blocked,
             has_external_images=has_external_images,
             sender_is_trusted=sender_is_trusted,
+            back_url=back_url,
         )
 
     @app.route("/raw/<message_id>")
