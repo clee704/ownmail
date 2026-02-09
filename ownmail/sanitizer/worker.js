@@ -26,8 +26,9 @@ const PURIFY_CONFIG = {
   // Explicitly forbid dangerous elements
   FORBID_TAGS: [
     "script", "iframe", "object", "embed",
-    "applet", "meta", "link", "base",
+    "applet", "meta", "base",
     "math", "svg", "noscript",
+    // "link" is NOT forbidden — we filter it in the uponSanitizeElement hook
   ],
 
   // Allow safe attributes
@@ -40,6 +41,10 @@ const PURIFY_CONFIG = {
   // Allow data: URIs for inline images (CID replacements)
   ALLOW_DATA_ATTR: true,
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|data):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+
+  // Allow <link> so we can filter it in the hook (trusted font stylesheets only)
+  ADD_TAGS: ["link"],
+  ADD_ATTR: ["rel", "href"],
 
   // Keep the full document structure so we can extract body content later
   WHOLE_DOCUMENT: true,
@@ -57,6 +62,26 @@ const TRUSTED_FONT_HOSTS = [
   "fast.fonts.net",     // Monotype
   "cloud.typography.com", // Hoefler
 ];
+
+// Generic font family keywords (CSS spec)
+const GENERIC_FONT_FAMILIES = new Set([
+  "serif", "sans-serif", "monospace", "cursive", "fantasy",
+  "system-ui", "ui-serif", "ui-sans-serif", "ui-monospace", "ui-rounded",
+  "math", "emoji", "fangsong",
+]);
+
+/**
+ * If a font-family value doesn't end with a generic family, append sans-serif.
+ */
+function ensureFontFallback(value) {
+  // Split on commas, trim, and check the last entry
+  const parts = value.split(",").map((s) => s.trim().replace(/['"]*/g, "").toLowerCase());
+  const last = parts[parts.length - 1];
+  if (last && GENERIC_FONT_FAMILIES.has(last)) {
+    return value;
+  }
+  return value + ", sans-serif";
+}
 
 /**
  * Check if a URL is from a trusted font provider.
@@ -137,7 +162,13 @@ function scopeAndSanitizeCSS(css) {
         // keep it
       } else {
         decl.remove();
+        return;
       }
+    }
+
+    // Ensure font-family declarations end with a generic fallback
+    if (prop === "font-family" || prop === "font") {
+      decl.value = ensureFontFallback(decl.value);
     }
   });
 
@@ -184,13 +215,36 @@ function sanitizeInlineStyle(css) {
   css = css.replace(/behavior\s*:\s*[^;]*/gi, "");
   css = css.replace(/-moz-binding\s*:\s*[^;]*/gi, "");
   css = css.replace(/javascript\s*:/gi, "");
+
+  // Ensure font-family in inline styles ends with a generic fallback
+  css = css.replace(
+    /font-family\s*:\s*([^;]+)/gi,
+    (match, value) => "font-family: " + ensureFontFallback(value.trim())
+  );
+
   return css;
 }
 
-// Hook into DOMPurify to sanitize and scope CSS
+// Hook into DOMPurify to sanitize and scope CSS, and filter <link> tags
 purify.addHook("uponSanitizeElement", (node, data) => {
   if (data.tagName === "style" && node.textContent) {
     node.textContent = scopeAndSanitizeCSS(node.textContent);
+  }
+
+  // Allow <link rel="stylesheet"> only from trusted font providers
+  if (data.tagName === "link") {
+    const rel = (node.getAttribute && node.getAttribute("rel") || "").toLowerCase();
+    const href = node.getAttribute && node.getAttribute("href") || "";
+    if (rel === "stylesheet" && href) {
+      try {
+        const parsed = new URL(href);
+        if (TRUSTED_FONT_HOSTS.includes(parsed.hostname)) {
+          return; // keep it
+        }
+      } catch {}
+    }
+    // Remove all other <link> tags
+    node.parentNode && node.parentNode.removeChild(node);
   }
 });
 

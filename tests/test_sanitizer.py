@@ -317,3 +317,42 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         html = '<style>@font-face { font-family: Evil; src: url("https://evil.com/font.woff2"); }</style><p>Hi</p>'
         result, _ = self.sanitizer.sanitize(html)
         assert "evil.com" not in result
+
+    def test_allows_trusted_font_link_tag(self):
+        """Test that <link rel=stylesheet> from Google Fonts is preserved."""
+        html = '<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto"></head><body><p>Hi</p></body></html>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "fonts.googleapis.com" in result
+        assert "<link" in result
+
+    def test_strips_untrusted_link_tag(self):
+        """Test that <link rel=stylesheet> from untrusted domain is removed."""
+        html = '<html><head><link rel="stylesheet" href="https://evil.com/spy.css"></head><body><p>Hi</p></body></html>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "evil.com" not in result
+        assert "<link" not in result
+
+    def test_strips_non_stylesheet_link_tag(self):
+        """Test that <link rel=prefetch> to trusted domain is still removed."""
+        html = '<html><head><link rel="prefetch" href="https://fonts.googleapis.com/css?family=Roboto"></head><body><p>Hi</p></body></html>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "<link" not in result
+
+    def test_appends_sans_serif_fallback_inline(self):
+        """Test that font-family without generic fallback gets sans-serif appended (inline style)."""
+        html = '<p style="font-family: Roboto">Hi</p>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "sans-serif" in result
+
+    def test_keeps_existing_generic_fallback_inline(self):
+        """Test that font-family already ending with generic is not modified."""
+        html = '<p style="font-family: Arial, sans-serif">Hi</p>'
+        result, _ = self.sanitizer.sanitize(html)
+        # Should not have double sans-serif
+        assert result.count("sans-serif") == 1
+
+    def test_appends_sans_serif_fallback_style_block(self):
+        """Test that font-family in <style> block gets sans-serif fallback."""
+        html = '<style>td { font-family: Roboto; }</style><td>Hi</td>'
+        result, _ = self.sanitizer.sanitize(html)
+        assert "sans-serif" in result
