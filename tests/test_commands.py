@@ -891,7 +891,7 @@ class TestCmdSyncCheckDifferences:
             cmd_sync_check(archive)
 
         captured = capsys.readouterr()
-        assert "On Gmail but not local" in captured.out or "3" in captured.out
+        assert "On server but not local" in captured.out or "3" in captured.out
 
     def test_sync_check_emails_on_local_not_gmail(self, temp_dir, capsys):
         """Test sync-check when local has emails not on Gmail."""
@@ -921,7 +921,7 @@ class TestCmdSyncCheckDifferences:
             cmd_sync_check(archive)
 
         captured = capsys.readouterr()
-        assert "On local but not on Gmail" in captured.out or "deleted" in captured.out
+        assert "On local but not on server" in captured.out or "deleted" in captured.out
 
     def test_sync_check_verbose_shows_all(self, temp_dir, capsys):
         """Test sync-check --verbose shows all message IDs."""
@@ -949,6 +949,130 @@ class TestCmdSyncCheckDifferences:
 
         captured = capsys.readouterr()
         assert "Sync Check" in captured.out
+
+    def test_sync_check_imap_source(self, temp_dir, capsys):
+        """Test sync-check with an IMAP source."""
+        from unittest.mock import MagicMock, patch
+
+        from ownmail.commands import cmd_sync_check
+
+        config = {
+            "sources": [{
+                "name": "work_imap",
+                "type": "imap",
+                "account": "user@company.com",
+                "host": "imap.company.com",
+                "auth": {"secret_ref": "keychain:work"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        # Add local emails
+        archive.db.mark_downloaded(
+            _eid("INBOX:1", "user@company.com"), "INBOX:1",
+            "emails/2024/01/e1.eml", content_hash="aaa", account="user@company.com",
+        )
+        archive.db.mark_downloaded(
+            _eid("INBOX:2", "user@company.com"), "INBOX:2",
+            "emails/2024/01/e2.eml", content_hash="bbb", account="user@company.com",
+        )
+
+        with patch("ownmail.providers.imap.ImapProvider") as mock_cls:
+            mock_provider = MagicMock()
+            mock_provider.get_all_message_ids.return_value = ["INBOX:1", "INBOX:2", "INBOX:3"]
+            mock_cls.return_value = mock_provider
+
+            cmd_sync_check(archive)
+
+        captured = capsys.readouterr()
+        assert "In sync: 2" in captured.out or "\u2713 In sync: 2" in captured.out
+        assert "On server but not local: 1" in captured.out
+
+    def test_sync_check_imap_fully_synced(self, temp_dir, capsys):
+        """Test sync-check IMAP fully in sync."""
+        from unittest.mock import MagicMock, patch
+
+        from ownmail.commands import cmd_sync_check
+
+        config = {
+            "sources": [{
+                "name": "work_imap",
+                "type": "imap",
+                "account": "user@company.com",
+                "host": "imap.company.com",
+                "auth": {"secret_ref": "keychain:work"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        archive.db.mark_downloaded(
+            _eid("INBOX:1", "user@company.com"), "INBOX:1",
+            "emails/2024/01/e1.eml", content_hash="aaa", account="user@company.com",
+        )
+
+        with patch("ownmail.providers.imap.ImapProvider") as mock_cls:
+            mock_provider = MagicMock()
+            mock_provider.get_all_message_ids.return_value = ["INBOX:1"]
+            mock_cls.return_value = mock_provider
+
+            cmd_sync_check(archive)
+
+        captured = capsys.readouterr()
+        assert "in sync with server" in captured.out.lower()
+
+    def test_sync_check_unsupported_type(self, temp_dir, capsys):
+        """Test sync-check with unsupported source type."""
+        from ownmail.commands import cmd_sync_check
+
+        config = {
+            "sources": [{
+                "name": "weird",
+                "type": "pop3",
+                "account": "x@x.com",
+                "auth": {"secret_ref": "keychain:x"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+        cmd_sync_check(archive)
+
+        captured = capsys.readouterr()
+        assert "not supported" in captured.out.lower()
+
+    def test_sync_check_specific_source(self, temp_dir, capsys):
+        """Test sync-check with --source targeting IMAP source."""
+        from unittest.mock import MagicMock, patch
+
+        from ownmail.commands import cmd_sync_check
+
+        config = {
+            "sources": [
+                {
+                    "name": "gmail_personal",
+                    "type": "gmail_api",
+                    "account": "me@gmail.com",
+                    "auth": {"secret_ref": "keychain:gmail"},
+                },
+                {
+                    "name": "work_imap",
+                    "type": "imap",
+                    "account": "user@company.com",
+                    "host": "imap.company.com",
+                    "auth": {"secret_ref": "keychain:work"},
+                },
+            ]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        with patch("ownmail.providers.imap.ImapProvider") as mock_cls:
+            mock_provider = MagicMock()
+            mock_provider.get_all_message_ids.return_value = []
+            mock_cls.return_value = mock_provider
+
+            cmd_sync_check(archive, source_name="work_imap")
+
+        captured = capsys.readouterr()
+        assert "work_imap" in captured.out
+        assert "user@company.com" in captured.out
 
 
 class TestCmdReindexEdgeCases:
