@@ -6,6 +6,63 @@
 
 ---
 
+## Next Up — Primary Key Refactoring
+
+**Goal**: Replace `message_id TEXT PRIMARY KEY` with a provider-agnostic `email_id` that's safe for multi-provider support.
+
+### Current problem
+
+The `message_id` column stores Gmail API hex IDs (e.g., `18f3a2b1c4d5e6f7`). These are unique within one Gmail account but could theoretically collide across accounts. More importantly, other providers use different ID schemes:
+- **IMAP**: folder-scoped UIDs (e.g., `INBOX:12345`) that can reset when UIDVALIDITY changes.
+- **Import**: locally-generated IDs (e.g., `local:<Message-ID>` or `local:sha256:{hash}`).
+
+A single opaque ID column can't safely cover all of these.
+
+### Proposed schema
+
+| Column | Purpose |
+|---|---|
+| `email_id` (PK) | `"{account}/{provider_id}"` — deterministic, unique, computed before download |
+| `provider_id` | Provider-specific ID: Gmail hex ID, `INBOX:12345` for IMAP, `local:sha256:{hash}` for imports |
+| `account` | Email address (indexed, for filtering) |
+| `filename` | Relative path on disk (unique) |
+| `content_hash` | SHA256 of raw bytes — for integrity checks and dedup safety net |
+
+- `email_id` is a single-column PK, keeping FK/query patterns simple.
+- `provider_id` encodes whatever the provider needs (Gmail ID, IMAP folder+UID, etc.).
+- Each provider implements `make_provider_id()` to format its own ID.
+
+### IMAP UID considerations
+
+- IMAP UIDs are per-folder and can reset when the server's UIDVALIDITY changes (mailbox rebuild, migration).
+- Keep UIDVALIDITY **out of `provider_id`** — store it in sync state instead.
+- On UIDVALIDITY change: invalidate download records for that folder → re-fetch UIDs → use `content_hash` to skip duplicates already on disk.
+- This avoids re-downloading the same email with a different ID.
+
+### Migration
+
+1. Rename `message_id` → `provider_id` in emails table.
+2. Add `email_id` column = `account || '/' || provider_id`.
+3. Recreate table with `email_id TEXT PRIMARY KEY` (SQLite can't alter PKs).
+4. Update FKs in `email_recipients`, `email_labels` junction tables.
+5. Update all queries in `database.py`, `archive.py`, `web.py`, `commands.py`.
+6. Update web UI email detail URLs.
+
+### Provider base class
+
+```python
+class EmailProvider:
+    @abstractmethod
+    def make_provider_id(self, raw_id: str) -> str:
+        """Format a provider-specific ID string."""
+        ...
+```
+
+- Gmail: `make_provider_id("18f3a2b1c4d5e6f7")` → `"18f3a2b1c4d5e6f7"`
+- IMAP: `make_provider_id(uid=12345, folder="INBOX")` → `"INBOX:12345"`
+
+---
+
 ## Next Up — Import & Scan
 
 **Goal**: Support importing externally-sourced `.eml` files into the archive.
