@@ -485,7 +485,6 @@ a:hover { text-decoration: underline; }
         padding: 0 10px;
         flex-wrap: wrap;
     }
-    .ownmail-header h1 { width: 100%; }
     .ownmail-header-right { margin-left: auto; }
     .ownmail-stats { font-size: 0.85em; }
     .ownmail-sticky-header {
@@ -513,7 +512,6 @@ a:hover { text-decoration: underline; }
         padding: 0 10px;
         flex-wrap: wrap;
     }
-    .ownmail-results-header p { width: 100%; }
     .ownmail-results-header .ownmail-pagination { margin-left: auto; }
     .ownmail-email-list,
     .ownmail-email-detail,
