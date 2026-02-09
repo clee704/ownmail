@@ -154,7 +154,7 @@
         {% endif %}
 
         {% if body_html %}
-            <div id="email-content" class="email-content-html">{{ body_html | safe }}</div>
+            <div id="email-content" class="email-content-html{% if needs_padding %} email-content-padded{% endif %}">{{ body_html | safe }}</div>
         {% else %}
             <div id="email-content" class="email-content-plain">
                 <pre class="email-body">{{ body | safe }}</pre>

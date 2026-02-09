@@ -176,18 +176,18 @@ class HtmlSanitizer:
             logger.warning("Failed to start HTML sanitizer: %s", e)
             self._kill_process()
 
-    def sanitize(self, html: str) -> str:
+    def sanitize(self, html: str) -> tuple[str, bool]:
         """Sanitize HTML content using DOMPurify.
 
         Args:
             html: Raw HTML string to sanitize.
 
         Returns:
-            Sanitized HTML string. Returns original HTML if sanitizer
-            is unavailable or on error.
+            Tuple of (sanitized HTML string, needs_padding bool).
+            Returns (original HTML, True) if sanitizer is unavailable or on error.
         """
         if not self._available or self._process is None:
-            return html
+            return html, True
 
         with self._lock:
             self._request_id += 1
@@ -209,14 +209,14 @@ class HtmlSanitizer:
                             "HTML sanitization timed out after %.1fs", self._timeout
                         )
                         self._restart()
-                        return html
+                        return html, True
 
                     line = self._process.stdout.readline()
                     if not line:
                         # Process died
                         logger.warning("HTML sanitizer process died unexpectedly")
                         self._restart()
-                        return html
+                        return html, True
 
                     try:
                         response = json.loads(line)
@@ -229,20 +229,21 @@ class HtmlSanitizer:
                             logger.warning(
                                 "DOMPurify error: %s", response["error"]
                             )
-                            return html
+                            return html, True
                         result_html = response.get("html", html)
+                        needs_padding = response.get("needsPadding", True)
                         if self._verbose:
                             elapsed_ms = (time.monotonic() - _t0) * 1000
                             print(
                                 f"[verbose] Sanitized {input_len:,} chars → {len(result_html):,} chars in {elapsed_ms:.1f}ms",
                                 flush=True,
                             )
-                        return result_html
+                        return result_html, needs_padding
 
             except (BrokenPipeError, OSError) as e:
                 logger.warning("Sanitizer communication error: %s", e)
                 self._restart()
-                return html
+                return html, True
 
     def _restart(self) -> None:
         """Restart the worker process after a failure."""
