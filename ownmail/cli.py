@@ -336,6 +336,44 @@ def cmd_sources_list(config: dict) -> None:
         print(f"  - {name}: {source_type} ({account})")
 
 
+def cmd_reset_sync(
+    archive: EmailArchive,
+    config: dict,
+    source_name: Optional[str] = None
+) -> None:
+    """Reset sync state to force a full re-sync.
+
+    Args:
+        archive: EmailArchive instance
+        config: Configuration dictionary
+        source_name: Specific source to reset (None = all)
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Reset Sync State")
+    print("=" * 50 + "\n")
+
+    sources = get_sources(config)
+
+    if source_name:
+        source = get_source_by_name(config, source_name)
+        if not source:
+            print(f"❌ Error: Source '{source_name}' not found in config")
+            sys.exit(1)
+        sources = [source]
+
+    if not sources:
+        print("No sources configured.")
+        return
+
+    for source in sources:
+        account = source["account"]
+        archive.db.delete_sync_state(account, "history_id")
+        print(f"✓ Reset sync state for {account}")
+
+    print("\nNext backup will do a full sync (checking all messages).")
+    print("Already downloaded emails will be skipped.")
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -466,6 +504,13 @@ Examples:
     )
     sync_check_parser.add_argument("--verbose", "-v", action="store_true", help="Show full differences")
 
+    # reset-sync command
+    subparsers.add_parser(
+        "reset-sync",
+        help="Reset sync state to force full re-download",
+        description="Clear the sync state for all sources, forcing the next backup to do a full sync.",
+    )
+
     # db-check command
     db_check_parser = subparsers.add_parser(
         "db-check",
@@ -545,6 +590,8 @@ Examples:
             elif args.command == "sync-check":
                 from ownmail.commands import cmd_sync_check
                 cmd_sync_check(archive, args.source, args.verbose)
+            elif args.command == "reset-sync":
+                cmd_reset_sync(archive, config, args.source)
             elif args.command == "db-check":
                 from ownmail.commands import cmd_db_check
                 cmd_db_check(archive, args.fix, args.verbose)
