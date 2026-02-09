@@ -130,8 +130,8 @@ ownmail setup --method oauth
 4. APIs & Services → Credentials → Create Credentials → OAuth client ID
 5. Application type: Desktop app → Create
 6. Download the JSON file
-7. Run: `ownmail setup --method oauth --credentials-file ~/Downloads/credentials.json`
-8. Delete the JSON file after import
+7. Run: `ownmail setup --method oauth`
+8. When prompted, enter the path to the downloaded JSON file (or paste its contents)
 
 </details>
 
