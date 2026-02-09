@@ -527,15 +527,11 @@ def cmd_download(
             continue
 
 
-def cmd_search(archive: EmailArchive, query: str, source_name: Optional[str] = None, limit: int = 50) -> None:
+def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
     """Search archived emails."""
     print(f"\nSearching for: {query}\n")
 
-    # If source specified, get the account email for filtering
-    account = None
-    # TODO: filter by source name -> account
-
-    results = archive.search(query, account=account, limit=limit)
+    results = archive.search(query, limit=limit)
 
     if not results:
         print("No results found.")
@@ -675,12 +671,6 @@ Examples:
     )
 
     parser.add_argument(
-        "--source",
-        type=str,
-        help="Source name to operate on (default: all sources)",
-    )
-
-    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Show detailed progress output",
@@ -706,6 +696,7 @@ Examples:
         help="Download new emails",
         description="Download new emails and index them for search.",
     )
+    download_parser.add_argument("--source", type=str, help="Source name to operate on (default: all sources)")
     download_parser.add_argument(
         "--since",
         type=str,
@@ -727,10 +718,11 @@ Examples:
     search_parser.add_argument("--limit", type=int, default=50, help="Maximum results")
 
     # stats command
-    subparsers.add_parser(
+    stats_parser = subparsers.add_parser(
         "stats",
         help="Show archive statistics",
     )
+    stats_parser.add_argument("--source", type=str, help="Source name to show stats for (default: all sources)")
 
     # rebuild command
     rebuild_parser = subparsers.add_parser(
@@ -760,21 +752,24 @@ Examples:
         help="Compare local archive with server to find missing emails",
         description="Compare your local archive with what's on the server. Shows emails that exist on the server but haven't been downloaded yet, and local emails that were deleted from the server.",
     )
+    sync_check_parser.add_argument("--source", type=str, help="Source name to check (default: all sources)")
     sync_check_parser.add_argument("--verbose", "-v", action="store_true", help=argparse.SUPPRESS)
 
     # reset-sync command
-    subparsers.add_parser(
+    reset_sync_parser = subparsers.add_parser(
         "reset-sync",
         help="Reset sync state to force full re-download",
         description="Clear the sync state for all sources, forcing the next download to do a full sync.",
     )
+    reset_sync_parser.add_argument("--source", type=str, help="Source name to reset (default: all sources)")
 
     # update-labels command
-    subparsers.add_parser(
+    update_labels_parser = subparsers.add_parser(
         "update-labels",
         help="Fetch current labels from server for existing emails",
         description="Fetch current Gmail labels from the server and update the database for already-downloaded emails.",
     )
+    update_labels_parser.add_argument("--source", type=str, help="Source name to update (default: all sources)")
 
     # list-unknown command
     unknown_parser = subparsers.add_parser(
@@ -839,7 +834,7 @@ Examples:
     try:
         if args.command == "setup":
             keychain = KeychainStorage()
-            cmd_setup(keychain, config, config_path, args.source, getattr(args, 'method', None))
+            cmd_setup(keychain, config, config_path, method=getattr(args, 'method', None))
 
         elif args.command == "sources":
             if args.sources_cmd == "list":
@@ -853,7 +848,7 @@ Examples:
             if args.command == "download":
                 cmd_download(archive, config, args.source, args.since, args.until, args.verbose)
             elif args.command == "search":
-                cmd_search(archive, args.query, args.source, args.limit)
+                cmd_search(archive, args.query, limit=args.limit)
             elif args.command == "stats":
                 cmd_stats(archive, config, args.source)
             elif args.command == "rebuild":
