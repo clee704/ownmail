@@ -248,3 +248,25 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "<html>" in result or "<html" in result
         assert "<body>" in result or "<body" in result
         assert "Hello" in result
+
+    def test_scopes_css_selectors(self):
+        """Test that CSS selectors are scoped under #email-content."""
+        html = '<style>.header { color: red; } p { margin: 0; }</style><p>Text</p>'
+        result = self.sanitizer.sanitize(html)
+        assert "#email-content .header" in result
+        assert "#email-content p" in result
+        assert "Text" in result
+
+    def test_scopes_body_selector_to_email_content(self):
+        """Test that body {} becomes #email-content {}."""
+        html = '<html><head><style>body { font-size: 14px; }</style></head><body><p>Hi</p></body></html>'
+        result = self.sanitizer.sanitize(html)
+        assert "#email-content" in result
+        assert "font-size" in result
+
+    def test_scopes_css_in_media_query(self):
+        """Test that selectors inside @media are also scoped."""
+        html = '<style>@media (max-width: 600px) { .col { width: 100%; } }</style><div class="col">X</div>'
+        result = self.sanitizer.sanitize(html)
+        assert "@media" in result
+        assert "#email-content .col" in result

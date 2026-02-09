@@ -70,75 +70,16 @@
         </div>
         <script>
         var senderEmail = "{{ sender_email }}";
-        var DEBUG_RESIZE = false;
-        var lastContentHeight = 0;
-
-        // Use body.scrollHeight only to avoid feedback loop
-        // (documentElement.scrollHeight can reflect the iframe's own height)
-        function setIframeHeight(iframe, doc, caller) {
-            var bodyH = doc.body ? doc.body.scrollHeight : 0;
-            var currentH = iframe.style.height;
-            if (DEBUG_RESIZE) {
-                console.log('[setIframeHeight] caller:', caller, '| body.scrollHeight:', bodyH, '| lastContentHeight:', lastContentHeight, '| current iframe height:', currentH);
-            }
-            // Only resize if content height actually changed (avoids feedback loop)
-            if (bodyH > 0 && bodyH !== lastContentHeight) {
-                lastContentHeight = bodyH;
-                iframe.style.height = (bodyH + 30) + 'px';
-                if (DEBUG_RESIZE) console.log('[setIframeHeight] -> set to:', (bodyH + 30) + 'px');
-            } else {
-                if (DEBUG_RESIZE) console.log('[setIframeHeight] -> skipped (no change or h <= 0)');
-            }
-        }
 
         function loadImages(skipTextUpdate) {
-            if (DEBUG_RESIZE) console.log('[loadImages] called, skipTextUpdate:', skipTextUpdate);
-            var iframe = document.getElementById('email-frame');
-            if (!iframe) {
-                if (DEBUG_RESIZE) console.log('[loadImages] no iframe found, returning');
-                return;
-            }
+            var container = document.getElementById('email-content');
+            if (!container) return;
 
-            var doc = iframe.contentDocument;
-            if (!doc) {
-                if (DEBUG_RESIZE) console.log('[loadImages] no contentDocument, returning');
-                return;
-            }
-
-            var imgs = Array.from(doc.querySelectorAll('img[data-src]'));
-            if (DEBUG_RESIZE) console.log('[loadImages] found', imgs.length, 'images with data-src');
-
-            imgs.forEach(function(img, idx) {
-                var src = img.getAttribute('data-src');
-                if (DEBUG_RESIZE) console.log('[loadImages] img', idx, 'src:', src);
-
-                var onDone = function(evt) {
-                    if (DEBUG_RESIZE) console.log('[loadImages] img', idx, 'onDone fired, event:', evt ? evt.type : 'manual (complete)', '| img.complete:', img.complete, '| naturalWidth:', img.naturalWidth, '| naturalHeight:', img.naturalHeight);
-                    // Wait a frame so layout has actually updated
-                    requestAnimationFrame(function() { setIframeHeight(iframe, doc, 'img-' + idx + '-' + (evt ? evt.type : 'complete')); });
-                    img.removeEventListener('load', onDone);
-                    img.removeEventListener('error', onDone);
-                };
-
-                // Attach listeners BEFORE setting src (to catch cached images)
-                img.addEventListener('load', onDone);
-                img.addEventListener('error', onDone); // still resize if broken image affects layout
-
-                img.src = src;
+            var imgs = Array.from(container.querySelectorAll('img[data-src]'));
+            imgs.forEach(function(img) {
+                img.src = img.getAttribute('data-src');
                 img.removeAttribute('data-src');
-
-                // If already complete (cached), load may not fire
-                if (img.complete) {
-                    if (DEBUG_RESIZE) console.log('[loadImages] img', idx, 'already complete (cached)');
-                    onDone(null);
-                }
             });
-
-            // One more resize after kicking off loads
-            if (DEBUG_RESIZE) console.log('[loadImages] scheduling fallback resizes');
-            requestAnimationFrame(function() { setIframeHeight(iframe, doc, 'loadImages-raf'); });
-            setTimeout(function() { setIframeHeight(iframe, doc, 'loadImages-500ms'); }, 500);
-            setTimeout(function() { setIframeHeight(iframe, doc, 'loadImages-1500ms'); }, 1500);
 
             // Hide the load button and update text, but keep trust option visible
             document.getElementById('load-images-btn').style.display = 'none';
@@ -180,96 +121,7 @@
         {% endif %}
 
         {% if body_html %}
-            <iframe id="email-frame" class="email-body-html" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ body_html | e }}"></iframe>
-            <script>
-            // Debug flag (may already be defined by image loading script)
-            if (typeof DEBUG_RESIZE === 'undefined') var DEBUG_RESIZE = false;
-
-            // Track last content height to avoid feedback loops (may already be defined)
-            if (typeof lastContentHeight === 'undefined') var lastContentHeight = 0;
-
-            // Robust height calculation - use body.scrollHeight only to avoid feedback loop
-            // (documentElement.scrollHeight can reflect the iframe's own height)
-            if (typeof setIframeHeight === 'undefined') {
-                function setIframeHeight(iframe, doc, caller) {
-                    var bodyH = doc.body ? doc.body.scrollHeight : 0;
-                    var currentH = iframe.style.height;
-                    if (DEBUG_RESIZE) {
-                        console.log('[setIframeHeight] caller:', caller, '| body.scrollHeight:', bodyH, '| lastContentHeight:', lastContentHeight, '| current iframe height:', currentH);
-                    }
-                    // Only resize if content height actually changed (avoids feedback loop)
-                    if (bodyH > 0 && bodyH !== lastContentHeight) {
-                        lastContentHeight = bodyH;
-                        iframe.style.height = (bodyH + 30) + 'px';
-                        if (DEBUG_RESIZE) console.log('[setIframeHeight] -> set to:', (bodyH + 30) + 'px');
-                    } else {
-                        if (DEBUG_RESIZE) console.log('[setIframeHeight] -> skipped (no change or h <= 0)');
-                    }
-                }
-            }
-
-            function resizeIframe() {
-                if (DEBUG_RESIZE) console.log('[resizeIframe] called');
-                var iframe = document.getElementById('email-frame');
-                try {
-                    var doc = iframe.contentDocument;
-                    if (doc) {
-                        requestAnimationFrame(function() { setIframeHeight(iframe, doc, 'resizeIframe-raf'); });
-                    } else {
-                        if (DEBUG_RESIZE) console.log('[resizeIframe] no contentDocument');
-                    }
-                } catch(e) {
-                    if (DEBUG_RESIZE) console.log('[resizeIframe] error:', e);
-                }
-            }
-
-            function setupResizeObserver(iframe) {
-                if (DEBUG_RESIZE) console.log('[setupResizeObserver] called');
-                try {
-                    var doc = iframe.contentDocument;
-                    if (!doc || !doc.documentElement) {
-                        if (DEBUG_RESIZE) console.log('[setupResizeObserver] no doc or documentElement, returning');
-                        return;
-                    }
-
-                    var ro = new ResizeObserver(function(entries) {
-                        if (DEBUG_RESIZE) console.log('[ResizeObserver] triggered, entries:', entries.length);
-                        setIframeHeight(iframe, doc, 'ResizeObserver');
-                    });
-                    // Only observe body - observing documentElement causes feedback loop
-                    if (doc.body) {
-                        ro.observe(doc.body);
-                        if (DEBUG_RESIZE) console.log('[setupResizeObserver] observing body');
-                    }
-                } catch(e) {
-                    if (DEBUG_RESIZE) console.log('[setupResizeObserver] error:', e);
-                }
-            }
-
-            function initIframe() {
-                if (DEBUG_RESIZE) console.log('[initIframe] called');
-                var iframe = document.getElementById('email-frame');
-                resizeIframe();
-                setupResizeObserver(iframe);
-                setTimeout(function() { if (DEBUG_RESIZE) console.log('[initIframe] 500ms timeout'); resizeIframe(); }, 500);
-                setTimeout(function() { if (DEBUG_RESIZE) console.log('[initIframe] 1500ms timeout'); resizeIframe(); }, 1500);
-            }
-
-            (function() {
-                var iframe = document.getElementById('email-frame');
-                // Check if iframe is already loaded (srcdoc can load synchronously)
-                if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
-                    if (DEBUG_RESIZE) console.log('[init] iframe already loaded, calling initIframe immediately');
-                    initIframe();
-                } else {
-                    if (DEBUG_RESIZE) console.log('[init] iframe not ready, attaching onload handler');
-                    iframe.onload = function() {
-                        if (DEBUG_RESIZE) console.log('[iframe.onload] fired');
-                        initIframe();
-                    };
-                }
-            })();
-            </script>
+            <div id="email-content">{{ body_html | safe }}</div>
         {% else %}
             <pre class="email-body">{{ body | safe }}</pre>
         {% endif %}

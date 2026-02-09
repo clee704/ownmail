@@ -7,6 +7,7 @@ import pytest
 
 from ownmail.web import (
     LRUCache,
+    _extract_body_content,
     _extract_snippet,
     _format_size,
     block_external_images,
@@ -1041,4 +1042,46 @@ Content-Type: text/html
             assert response.status_code == 200
             # Should NOT show blocking banner
             assert b"Images are blocked" not in response.data or b"trusted" in response.data.lower()
+
+
+class TestExtractBodyContent:
+    """Tests for _extract_body_content function."""
+
+    def test_full_html_document(self):
+        """Extract body from full HTML document."""
+        html = "<html><head><title>Hi</title></head><body><p>Hello</p></body></html>"
+        result = _extract_body_content(html)
+        assert "<p>Hello</p>" in result
+        assert "<html>" not in result
+        assert "<head>" not in result
+        assert "<body>" not in result
+
+    def test_preserves_style_tags(self):
+        """Style tags from head should be preserved."""
+        html = '<html><head><style>.red { color: red; }</style></head><body><p class="red">Hi</p></body></html>'
+        result = _extract_body_content(html)
+        assert "<style>" in result
+        assert "color: red" in result
+        assert '<p class="red">Hi</p>' in result
+
+    def test_fragment_passthrough(self):
+        """HTML fragments without body tag pass through."""
+        html = "<p>Just a paragraph</p>"
+        result = _extract_body_content(html)
+        assert "<p>Just a paragraph</p>" in result
+
+    def test_empty_html(self):
+        """Empty string returns empty."""
+        assert _extract_body_content("") == ""
+
+    def test_none_html(self):
+        """None returns None."""
+        assert _extract_body_content(None) is None
+
+    def test_strips_html_wrapper(self):
+        """Strip html/head wrappers from fragments without body."""
+        html = "<html><head></head><p>Content</p></html>"
+        result = _extract_body_content(html)
+        assert "<p>Content</p>" in result
+        assert "<html>" not in result
 

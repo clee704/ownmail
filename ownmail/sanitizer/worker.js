@@ -39,12 +39,99 @@ const PURIFY_CONFIG = {
   ALLOW_DATA_ATTR: true,
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|data):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
 
-  // Keep the full document structure (html/head/body) if present
+  // Keep the full document structure so we can extract body content later
   WHOLE_DOCUMENT: true,
   // Return string, not DOM node
   RETURN_DOM: false,
   RETURN_DOM_FRAGMENT: false,
 };
+
+/**
+ * Scope CSS selectors under #email-content to prevent email styles
+ * from leaking into the host page. Handles:
+ * - Simple selectors: .foo → #email-content .foo
+ * - body/html selectors: body { ... } → #email-content { ... }
+ * - @media blocks: recursively scopes inner rules
+ * - @font-face, @keyframes: left unchanged
+ */
+function scopeCSS(css) {
+  // Process @media blocks: scope the rules inside them
+  css = css.replace(/@media\s+[^{]+\{([\s\S]*?)\}\s*\}/gi, (match) => {
+    // Find the opening brace of the @media block
+    const braceIdx = match.indexOf("{");
+    const mediaQuery = match.substring(0, braceIdx + 1);
+    // Extract inner content (everything between outer braces)
+    let inner = match.substring(braceIdx + 1);
+    // Remove the trailing "}"
+    inner = inner.substring(0, inner.lastIndexOf("}"));
+    // Scope the inner rules
+    inner = scopeRules(inner);
+    return mediaQuery + inner + "}";
+  });
+
+  // Scope top-level rules (outside @media)
+  // First, temporarily replace @media blocks to avoid double-processing
+  const mediaBlocks = [];
+  let temp = css.replace(/@media\s+[^{]+\{[\s\S]*?\}\s*\}/gi, (match) => {
+    mediaBlocks.push(match);
+    return `/*__MEDIA_${mediaBlocks.length - 1}__*/`;
+  });
+
+  // Also preserve @font-face and @keyframes blocks
+  const preservedBlocks = [];
+  temp = temp.replace(/@(?:font-face|keyframes|-webkit-keyframes)\s+[^{]*\{[\s\S]*?\}\s*\}/gi, (match) => {
+    preservedBlocks.push(match);
+    return `/*__PRESERVED_${preservedBlocks.length - 1}__*/`;
+  });
+
+  temp = scopeRules(temp);
+
+  // Restore preserved blocks
+  preservedBlocks.forEach((block, i) => {
+    temp = temp.replace(`/*__PRESERVED_${i}__*/`, block);
+  });
+
+  // Restore @media blocks
+  mediaBlocks.forEach((block, i) => {
+    temp = temp.replace(`/*__MEDIA_${i}__*/`, block);
+  });
+
+  return temp;
+}
+
+/**
+ * Scope individual CSS rules by prefixing selectors with #email-content.
+ */
+function scopeRules(css) {
+  return css.replace(
+    /([^{}@/][^{}]*?)\s*\{/g,
+    (match, selectorGroup) => {
+      // Skip if it looks like a comment or already scoped
+      if (selectorGroup.trim().startsWith("/*") || selectorGroup.includes("#email-content")) {
+        return match;
+      }
+      const scoped = selectorGroup
+        .split(",")
+        .map((sel) => {
+          sel = sel.trim();
+          if (!sel) return sel;
+          // Replace html/body selectors with #email-content
+          if (/^(html|body)$/i.test(sel)) {
+            return "#email-content";
+          }
+          // Replace html/body prefix: "body .foo" → "#email-content .foo"
+          sel = sel.replace(/^(html|body)\s+/i, "#email-content ");
+          // If not already scoped, prefix
+          if (!sel.startsWith("#email-content")) {
+            sel = "#email-content " + sel;
+          }
+          return sel;
+        })
+        .join(", ");
+      return scoped + " {";
+    }
+  );
+}
 
 /**
  * Hook: sanitize CSS in style attributes and <style> tags.
@@ -81,10 +168,12 @@ function sanitizeCSS(css) {
   return css;
 }
 
-// Hook into DOMPurify to sanitize CSS
+// Hook into DOMPurify to sanitize and scope CSS
 purify.addHook("uponSanitizeElement", (node, data) => {
   if (data.tagName === "style" && node.textContent) {
-    node.textContent = sanitizeCSS(node.textContent);
+    let css = sanitizeCSS(node.textContent);
+    css = scopeCSS(css);
+    node.textContent = css;
   }
 });
 
