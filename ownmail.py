@@ -187,7 +187,7 @@ class ArchiveDatabase:
 
     def __init__(self, archive_dir: Path):
         self.archive_dir = archive_dir
-        self.db_path = archive_dir / "archive.db"
+        self.db_path = archive_dir / "ownmail.db"
         archive_dir.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -374,72 +374,132 @@ class ArchiveDatabase:
 
 
 class EmailParser:
-    """Parse .eml files for indexing."""
+    """Parse .eml files for indexing. Handles malformed emails gracefully."""
+
+    @staticmethod
+    def _sanitize_header(value: str) -> str:
+        """Remove CR/LF and other problematic chars from header values."""
+        if not value:
+            return ""
+        # Replace CR/LF with space, collapse multiple spaces
+        result = value.replace("\r", " ").replace("\n", " ")
+        result = re.sub(r'\s+', ' ', result)
+        return result.strip()
+
+    @staticmethod
+    def _safe_get_header(msg, header_name: str) -> str:
+        """Safely extract a header, handling encoding errors."""
+        try:
+            val = msg.get(header_name, "") or ""
+            return EmailParser._sanitize_header(str(val))
+        except Exception:
+            # If header parsing fails completely, try raw access
+            try:
+                val = msg.get(header_name, defects=[]) or ""
+                return EmailParser._sanitize_header(str(val))
+            except Exception:
+                return ""
+
+    @staticmethod
+    def _safe_get_content(part) -> str:
+        """Safely extract content from a message part."""
+        try:
+            payload = part.get_content()
+            if isinstance(payload, str):
+                return payload
+            elif isinstance(payload, bytes):
+                # Try common encodings
+                for encoding in ['utf-8', 'euc-kr', 'cp949', 'iso-8859-1']:
+                    try:
+                        return payload.decode(encoding)
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+                return payload.decode('utf-8', errors='replace')
+        except Exception:
+            # Last resort: try get_payload
+            try:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    return payload.decode('utf-8', errors='replace')
+            except Exception:
+                pass
+        return ""
 
     @staticmethod
     def parse_file(filepath: Path) -> dict:
         """Parse an .eml file and extract searchable content."""
-        with open(filepath, "rb") as f:
-            msg = email.message_from_binary_file(f, policy=email_policy)
+        try:
+            with open(filepath, "rb") as f:
+                msg = email.message_from_binary_file(f, policy=email_policy)
+        except Exception as e:
+            # If even parsing fails, return minimal info
+            return {
+                "subject": "",
+                "sender": "",
+                "recipients": "",
+                "date_str": "",
+                "body": f"[Parse error: {e}]",
+                "attachments": "",
+            }
 
-        # Extract headers
-        subject = msg.get("Subject", "") or ""
-        sender = msg.get("From", "") or ""
+        # Extract headers safely
+        subject = EmailParser._safe_get_header(msg, "Subject")
+        sender = EmailParser._safe_get_header(msg, "From")
         
         # Combine all recipient fields
         recipients = []
         for header in ["To", "Cc", "Bcc"]:
-            val = msg.get(header, "")
+            val = EmailParser._safe_get_header(msg, header)
             if val:
                 recipients.append(val)
         recipients_str = ", ".join(recipients)
         
-        date_str = msg.get("Date", "") or ""
+        date_str = EmailParser._safe_get_header(msg, "Date")
         
         # Extract body text
         body_parts = []
         attachments = []
         
-        if msg.is_multipart():
-            for part in msg.walk():
-                content_type = part.get_content_type()
-                content_disposition = str(part.get("Content-Disposition", ""))
-                
-                # Get attachment filenames
-                if "attachment" in content_disposition:
-                    filename = part.get_filename()
-                    if filename:
-                        attachments.append(filename)
-                
-                # Extract text content
-                if content_type == "text/plain":
+        try:
+            if msg.is_multipart():
+                for part in msg.walk():
                     try:
-                        payload = part.get_content()
-                        if isinstance(payload, str):
-                            body_parts.append(payload)
-                    except:
-                        pass
-                elif content_type == "text/html" and not body_parts:
-                    # Only use HTML if no plain text
-                    try:
-                        payload = part.get_content()
-                        if isinstance(payload, str):
-                            # Strip HTML tags for indexing
-                            text = re.sub(r'<[^>]+>', ' ', payload)
-                            text = re.sub(r'\s+', ' ', text)
-                            body_parts.append(text)
-                    except:
-                        pass
-        else:
-            try:
-                payload = msg.get_content()
-                if isinstance(payload, str):
+                        content_type = part.get_content_type()
+                        content_disposition = str(part.get("Content-Disposition", ""))
+                        
+                        # Get attachment filenames
+                        if "attachment" in content_disposition:
+                            try:
+                                filename = part.get_filename()
+                                if filename:
+                                    attachments.append(EmailParser._sanitize_header(filename))
+                            except Exception:
+                                pass
+                        
+                        # Extract text content
+                        if content_type == "text/plain":
+                            text = EmailParser._safe_get_content(part)
+                            if text:
+                                body_parts.append(text)
+                        elif content_type == "text/html" and not body_parts:
+                            # Only use HTML if no plain text
+                            text = EmailParser._safe_get_content(part)
+                            if text:
+                                # Strip HTML tags for indexing
+                                text = re.sub(r'<[^>]+>', ' ', text)
+                                text = re.sub(r'\s+', ' ', text)
+                                body_parts.append(text)
+                    except Exception:
+                        continue
+            else:
+                text = EmailParser._safe_get_content(msg)
+                if text:
                     if msg.get_content_type() == "text/html":
-                        payload = re.sub(r'<[^>]+>', ' ', payload)
-                        payload = re.sub(r'\s+', ' ', payload)
-                    body_parts.append(payload)
-            except:
-                pass
+                        text = re.sub(r'<[^>]+>', ' ', text)
+                        text = re.sub(r'\s+', ' ', text)
+                    body_parts.append(text)
+        except Exception:
+            pass
 
         return {
             "subject": subject,
@@ -939,20 +999,74 @@ class GmailArchive:
             print(f"\n❌ Error: {e}")
             sys.exit(1)
 
-    def cmd_reindex(self) -> None:
-        """Rebuild the search index."""
+    def cmd_reindex(self, file_path: Optional[Path] = None, pattern: Optional[str] = None, clear: bool = True) -> None:
+        """Rebuild the search index.
+        
+        Args:
+            file_path: Index only this specific file
+            pattern: Index only files matching this glob pattern (e.g., "2024/09/*")
+            clear: Whether to clear the existing index first (default: True for full reindex)
+        """
         print("\n" + "=" * 50)
         print("ownmail - Reindex")
         print("=" * 50 + "\n")
 
-        print("Clearing existing index...")
-        self.db.clear_index()
+        # Single file mode
+        if file_path:
+            if not file_path.exists():
+                print(f"File not found: {file_path}")
+                return
+            
+            # Find message_id for this file
+            rel_path = None
+            try:
+                rel_path = file_path.relative_to(self.archive_dir)
+            except ValueError:
+                # file_path might be absolute from different base
+                pass
+            
+            if rel_path:
+                with sqlite3.connect(self.db.db_path) as conn:
+                    result = conn.execute(
+                        "SELECT message_id FROM emails WHERE filename = ?",
+                        (str(rel_path),)
+                    ).fetchone()
+                    if result:
+                        msg_id = result[0]
+                        print(f"Indexing: {file_path.name}")
+                        if self.index_email(msg_id, file_path):
+                            print("✓ Indexed successfully")
+                        else:
+                            print("✗ Failed to index")
+                        return
+            
+            # If not in DB, use filename as message_id
+            print(f"Indexing: {file_path.name}")
+            if self.index_email(file_path.stem, file_path):
+                print("✓ Indexed successfully")
+            else:
+                print("✗ Failed to index")
+            return
 
-        # Get all downloaded emails
+        # Pattern mode or full reindex
+        if clear and not pattern:
+            print("Clearing existing index...")
+            self.db.clear_index()
+
+        # Get emails to index
         with sqlite3.connect(self.db.db_path) as conn:
-            emails = conn.execute(
-                "SELECT message_id, filename FROM emails"
-            ).fetchall()
+            if pattern:
+                # Use LIKE for pattern matching
+                like_pattern = pattern.replace("*", "%").replace("?", "_")
+                emails = conn.execute(
+                    "SELECT message_id, filename FROM emails WHERE filename LIKE ?",
+                    (f"emails/{like_pattern}",)
+                ).fetchall()
+                print(f"Pattern '{pattern}' matched {len(emails)} emails")
+            else:
+                emails = conn.execute(
+                    "SELECT message_id, filename FROM emails"
+                ).fetchall()
 
         if not emails:
             print("No emails to index.")
@@ -1304,7 +1418,10 @@ Examples:
   %(prog)s search "invoice from:amazon"   Search emails
   %(prog)s search "subject:meeting"        Search by subject
   %(prog)s stats                           Show statistics
-  %(prog)s reindex                         Rebuild search index
+  %(prog)s reindex                         Rebuild entire search index
+  %(prog)s reindex --file path/to/email.eml   Reindex single file
+  %(prog)s reindex --pattern "2024/09/*"      Reindex September 2024 only
+  %(prog)s reindex --pattern "2024/*" --no-clear  Add 2024 to existing index
   %(prog)s add-labels                      Add Gmail labels to existing emails
   %(prog)s verify                          Verify integrity of downloaded emails
   %(prog)s verify --verbose                Show full list of issues
@@ -1359,7 +1476,22 @@ Config file (config.yaml):
     subparsers.add_parser("stats", help="Show archive statistics")
 
     # reindex command
-    subparsers.add_parser("reindex", help="Rebuild the search index")
+    reindex_parser = subparsers.add_parser("reindex", help="Rebuild the search index")
+    reindex_parser.add_argument(
+        "--file",
+        type=Path,
+        help="Index only this specific .eml file",
+    )
+    reindex_parser.add_argument(
+        "--pattern",
+        type=str,
+        help="Index only files matching this pattern (e.g., '2024/09/*' or '2024/*')",
+    )
+    reindex_parser.add_argument(
+        "--no-clear",
+        action="store_true",
+        help="Don't clear the existing index first (for incremental updates)",
+    )
 
     # add-labels command
     subparsers.add_parser("add-labels", help="Add Gmail labels to existing emails")
@@ -1412,7 +1544,11 @@ Config file (config.yaml):
         elif args.command == "stats":
             archive.cmd_stats()
         elif args.command == "reindex":
-            archive.cmd_reindex()
+            archive.cmd_reindex(
+                file_path=args.file,
+                pattern=args.pattern,
+                clear=not args.no_clear
+            )
         elif args.command == "add-labels":
             archive.cmd_add_labels()
         elif args.command == "verify":

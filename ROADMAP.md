@@ -27,7 +27,7 @@
 
 ```
 /Volumes/Secure/ownmail/
-├── archive.db                    # Global index (all accounts)
+├── ownmail.db                    # Global index (all accounts)
 ├── accounts/
 │   ├── alice@gmail.com/
 │   │   └── emails/
@@ -225,14 +225,9 @@ ownmail web --port 8080
 
 Items not yet scheduled:
 
-### Multi-Platform Credential Storage
+### Headless Server Support
 
-Support Windows and Linux credential stores.
-
-- [ ] Abstract credential storage into a `CredentialStore` interface
-- [ ] Windows Credential Manager (via `keyring`)
-- [ ] Linux Secret Service / libsecret (via `keyring`)
-- [ ] Encrypted file fallback (for headless servers)
+Encrypted file fallback for servers without a desktop keyring.
 
 ### Email Export
 
@@ -257,7 +252,42 @@ ownmail schedule --interval daily
 
 ### Encryption at Rest
 
-Encrypt individual .eml files (for non-encrypted volumes).
+For users who can't use an encrypted volume, encrypt both emails and database.
+
+**Config:**
+
+```yaml
+encrypt_at_rest: true  # Default: false
+# Encryption key stored in system keychain under "ownmail/encryption-key"
+```
+
+Note: This setting only applies to **future downloads** and new database files. Use `ownmail encrypt` to convert an existing archive. The program handles mixed encrypted/unencrypted emails transparently (detects per-file).
+
+**Scope:**
+
+| Component | Encryption Method |
+|-----------|------------------|
+| `.eml` files | AES-256-GCM per file |
+| `ownmail.db` | Decrypt on startup → temp file → re-encrypt on exit |
+
+**Commands:**
+
+```bash
+# Convert existing archive to encrypted
+ownmail encrypt
+
+# Convert back to unencrypted
+ownmail decrypt
+```
+
+**Considerations:**
+
+- ~200-600ms startup/shutdown overhead for database (acceptable for <200MB)
+- Existing commands (verify, rehash, reindex, search) work transparently
+- Crash recovery: cleanup decrypted temp files on next startup
+- Key rotation: future enhancement
+
+**Alternative:** Use an encrypted volume (macOS APFS, Linux LUKS, Windows BitLocker) — simpler and already recommended.
 
 ### Statistics & Analytics
 
