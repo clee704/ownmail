@@ -503,40 +503,45 @@ def _linkify(text: str) -> str:
     lines = text.split('\n')
     result_lines = []
 
+    colors = ['#58a6c9', '#7ee787', '#f0a855', '#d2a8ff']
+    bar_width = 2
+    gap = 6
+
+    prev_was_quote = False
     for line in lines:
-        # HTML-escape first
         escaped = html.escape(line)
 
         # Check for quote markers (>, >>, etc.)
         quote_match = QUOTE_RE.match(escaped)
         if quote_match:
-            # Count quote depth (number of > characters)
-            quote_prefix = quote_match.group(0)
-            depth = quote_prefix.count('&gt;')
-            # Style based on depth (cycle through colors) - teal, green, orange, purple
-            colors = ['#58a6c9', '#7ee787', '#f0a855', '#d2a8ff']
+            depth = quote_match.group(0).count('&gt;')
             rest = escaped[quote_match.end():]
             rest = _linkify_line(rest)
-            # Create multiple vertical bars using linear-gradient
-            # Each bar is 2px wide with 6px gap
-            bar_width = 2
-            gap = 6
+
+            # Build border-left for each level using nested spans
+            padding = depth * (bar_width + gap) + 4
+            # Negative margin to connect with previous quote line's bars
+            margin_top = '-2px' if prev_was_quote else '0'
+            # Build the colored bars using linear-gradient (vertical)
             stops = []
             for i in range(depth):
                 start = i * (bar_width + gap)
                 end = start + bar_width
                 color = colors[i % len(colors)]
                 stops.append(f'{color} {start}px, {color} {end}px')
-                if i < depth - 1:
-                    stops.append(f'transparent {end}px, transparent {start + bar_width + gap}px')
-            total_width = depth * (bar_width + gap)
-            gradient = f'linear-gradient(to right, {", ".join(stops)}, transparent {total_width - gap}px)'
-            padding_left = total_width + 4
+                stops.append(f'transparent {end}px, transparent {end + gap}px')
+
+            gradient = f'linear-gradient(to right, {", ".join(stops)})'
             result_lines.append(
                 f'<div class="quote-line" style="background: {gradient}; '
-                f'background-repeat: no-repeat; padding-left: {padding_left}px; margin: 0;">{rest}</div>'
+                f'background-repeat: repeat-y; padding-left: {padding}px; '
+                f'margin-top: {margin_top}; padding-top: 2px; padding-bottom: 2px; '
+                f'min-height: 1.2em;">{rest or "&nbsp;"}</div>'
             )
+            prev_was_quote = True
             continue
+
+        prev_was_quote = False
 
         # Check for header lines (From:, Subject:, etc.)
         header_match = HEADER_RE.match(escaped)
