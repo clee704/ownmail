@@ -1803,7 +1803,20 @@ Config file (config.yaml):
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # setup command
-    setup_parser = subparsers.add_parser("setup", help="Configure OAuth credentials")
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Configure OAuth credentials",
+        description="Set up Gmail API OAuth credentials for the first time.",
+        epilog="""
+Examples:
+  ownmail setup                              Interactive setup (paste JSON)
+  ownmail setup --credentials-file creds.json   Import from file
+
+After setup, you can delete the credentials JSON file.
+Credentials are stored securely in your system keychain.
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     setup_parser.add_argument(
         "--credentials-file",
         type=Path,
@@ -1811,10 +1824,42 @@ Config file (config.yaml):
     )
 
     # backup command
-    subparsers.add_parser("backup", help="Download new emails from Gmail")
+    subparsers.add_parser(
+        "backup",
+        help="Download new emails from Gmail",
+        description="Download new emails from Gmail and index them for search.",
+        epilog="""
+Emails are saved as .eml files organized by year/month.
+Progress is saved automatically - safe to Ctrl-C and resume.
+Uses incremental sync to only download new emails.
+
+Examples:
+  ownmail backup
+  ownmail backup --archive-dir /Volumes/Secure/ownmail
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     # search command
-    search_parser = subparsers.add_parser("search", help="Search archived emails")
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Search archived emails",
+        description="Full-text search across all downloaded emails.",
+        epilog="""
+Supported search prefixes:
+  from:       Search by sender (e.g., from:amazon)
+  to:         Search by recipient
+  subject:    Search in subject line only
+  attachment: Search by attachment filename
+
+Examples:
+  ownmail search "invoice"
+  ownmail search "from:amazon subject:order"
+  ownmail search "attachment:pdf"
+  ownmail search "meeting" --limit 100
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     search_parser.add_argument(
         "query",
         help="Search query (supports from:, to:, subject:, attachment: prefixes)",
@@ -1827,10 +1872,37 @@ Config file (config.yaml):
     )
 
     # stats command
-    subparsers.add_parser("stats", help="Show archive statistics")
+    subparsers.add_parser(
+        "stats",
+        help="Show archive statistics",
+        description="Display statistics about your email archive.",
+        epilog="""
+Shows:
+  - Total number of emails downloaded
+  - Number of emails indexed for search
+  - Date range of backups
+  - Disk space used
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     # reindex command
-    reindex_parser = subparsers.add_parser("reindex", help="Rebuild the search index")
+    reindex_parser = subparsers.add_parser(
+        "reindex",
+        help="Rebuild the search index",
+        description="Rebuild the full-text search index from email files.",
+        epilog="""
+By default, only indexes emails that have changed (based on content hash).
+This makes reindex resumable - safe to Ctrl-C and run again to continue.
+
+Examples:
+  ownmail reindex                    Index new/changed emails only
+  ownmail reindex --force            Reindex everything from scratch
+  ownmail reindex --file email.eml   Reindex a single file
+  ownmail reindex --pattern "2024/*" Reindex all of 2024
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     reindex_parser.add_argument(
         "--file",
         type=Path,
@@ -1853,10 +1925,37 @@ Config file (config.yaml):
     )
 
     # add-labels command
-    subparsers.add_parser("add-labels", help="Add Gmail labels to existing emails")
+    subparsers.add_parser(
+        "add-labels",
+        help="Add Gmail labels to existing emails",
+        description="Fetch Gmail labels and add them to existing downloaded emails.",
+        epilog="""
+Adds X-Gmail-Labels header to .eml files that don't have it.
+Useful if you downloaded emails before label support was added.
+
+Labels are stored in the email file itself, so they're preserved
+even if you import the emails into another email client.
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     # verify command
-    verify_parser = subparsers.add_parser("verify", help="Verify integrity of downloaded emails")
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Verify integrity of downloaded emails",
+        description="Verify that downloaded emails haven't been corrupted.",
+        epilog="""
+Checks:
+  - Files exist on disk for all indexed emails
+  - SHA256 hash matches the stored hash (detects corruption)
+  - No orphaned files on disk (not in index)
+
+Examples:
+  ownmail verify              Quick summary
+  ownmail verify --verbose    Show all issues in detail
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     verify_parser.add_argument(
         "--verbose", "-v",
         action="store_true",
@@ -1864,10 +1963,38 @@ Config file (config.yaml):
     )
 
     # rehash command
-    subparsers.add_parser("rehash", help="Compute hashes for emails without them")
+    subparsers.add_parser(
+        "rehash",
+        help="Compute hashes for emails without them",
+        description="Compute SHA256 content hashes for emails that don't have them.",
+        epilog="""
+Hashes are used for:
+  - Integrity verification (detect corruption)
+  - Tracking which emails have been indexed
+  - Detecting file changes for re-indexing
+
+Run this if you have old emails without hashes (from before
+hash support was added).
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
     # sync-check command
-    sync_check_parser = subparsers.add_parser("sync-check", help="Compare local archive with Gmail server")
+    sync_check_parser = subparsers.add_parser(
+        "sync-check",
+        help="Compare local archive with Gmail server",
+        description="Compare your local archive with what's on the Gmail server.",
+        epilog="""
+Shows:
+  - Emails on Gmail but not downloaded locally
+  - Emails downloaded locally but deleted from Gmail
+
+Examples:
+  ownmail sync-check              Quick summary
+  ownmail sync-check --verbose    Show all differences
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sync_check_parser.add_argument(
         "--verbose", "-v",
         action="store_true",
@@ -1875,7 +2002,24 @@ Config file (config.yaml):
     )
 
     # db-check command
-    db_check_parser = subparsers.add_parser("db-check", help="Check database integrity and fix issues")
+    db_check_parser = subparsers.add_parser(
+        "db-check",
+        help="Check database integrity and fix issues",
+        description="Check the database for integrity issues and optionally fix them.",
+        epilog="""
+Checks for:
+  - Duplicate FTS entries (fixable with --fix)
+  - Orphaned FTS entries (fixable with --fix)
+  - Missing FTS entries (run 'reindex' to fix)
+  - Hash mismatches (run 'reindex' to fix)
+
+Examples:
+  ownmail db-check              Check only, report issues
+  ownmail db-check --fix        Check and fix what can be fixed
+  ownmail db-check -v           Show detailed issue list
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     db_check_parser.add_argument(
         "--fix",
         action="store_true",
