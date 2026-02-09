@@ -95,21 +95,22 @@ def cmd_reindex(
     if force:
         with sqlite3.connect(db_path) as conn:
             if like_pattern:
-                count = conn.execute(
-                    "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
-                    (like_pattern,)
-                ).fetchone()[0]
-                print(f"Force mode: will reindex {count} matching emails")
+                print(f"Force mode: resetting index state for matching emails...", end="", flush=True)
                 conn.execute(
                     "UPDATE emails SET indexed_hash = NULL WHERE filename LIKE ?",
                     (like_pattern,)
                 )
+                count = conn.total_changes
+                print(f" {count} emails")
             else:
-                print("Force mode: will reindex all emails")
+                print("Force mode: resetting index state for all emails...", end="", flush=True)
                 conn.execute("UPDATE emails SET indexed_hash = NULL")
+                count = conn.total_changes
+                print(f" {count} emails")
             conn.commit()
 
     # Get emails to index (where indexed_hash != content_hash or either is NULL)
+    print("Finding emails to index...", end="", flush=True)
     with sqlite3.connect(db_path) as conn:
         if like_pattern:
             emails = conn.execute(
@@ -123,7 +124,7 @@ def cmd_reindex(
                 "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
                 (like_pattern,)
             ).fetchone()[0]
-            print(f"Pattern '{pattern}': {len(emails)} need indexing (of {total_matching} matching)")
+            print(f" {len(emails)} of {total_matching} matching '{pattern}'")
         else:
             emails = conn.execute(
                 """SELECT message_id, filename, content_hash, indexed_hash
@@ -132,17 +133,18 @@ def cmd_reindex(
             ).fetchall()
             total_emails = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
             already_indexed = total_emails - len(emails)
+            print(f" {len(emails)} emails")
             if already_indexed > 0:
-                print(f"Skipping {already_indexed} already-indexed emails")
+                print(f"  (skipping {already_indexed} already-indexed)")
 
     if not emails:
-        print("All emails are already indexed. Use --force to reindex everything.")
+        print("\nAll emails are already indexed. Use --force to reindex everything.")
         return
 
     # Track IDs that need old FTS entries deleted (already indexed, being re-indexed)
     reindex_ids = [msg_id for msg_id, _, _, indexed_hash in emails if indexed_hash is not None]
 
-    print(f"Indexing {len(emails)} emails...")
+    print(f"\nIndexing {len(emails)} emails...")
     if reindex_ids:
         print(f"  ({len(reindex_ids)} will be re-indexed)")
     print("(Press Ctrl-C to pause - progress is saved, run again to resume)\n")
