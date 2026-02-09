@@ -483,7 +483,10 @@ a:hover { text-decoration: underline; }
     }
     .ownmail-header {
         padding: 0 10px;
+        flex-wrap: wrap;
     }
+    .ownmail-header h1 { width: 100%; }
+    .ownmail-header-right { margin-left: auto; }
     .ownmail-stats { font-size: 0.85em; }
     .ownmail-sticky-header {
         padding: 8px 10px 5px 10px;
@@ -507,8 +510,11 @@ a:hover { text-decoration: underline; }
         flex-shrink: 0;
     }
     .ownmail-results-header {
-        padding: 0;
+        padding: 0 10px;
+        flex-wrap: wrap;
     }
+    .ownmail-results-header p { width: 100%; }
+    .ownmail-results-header .ownmail-pagination { margin-left: auto; }
     .ownmail-email-list,
     .ownmail-email-detail,
     .ownmail-help-page,
