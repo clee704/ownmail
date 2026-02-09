@@ -301,8 +301,8 @@ class GmailProvider(EmailProvider):
                 batch.execute()
                 break  # Success, exit retry loop
             except HttpError as e:
-                if e.resp.status == 429 and attempt < max_retries - 1:
-                    # Rate limited, wait and retry entire batch
+                if e.resp.status in (429, 503) and attempt < max_retries - 1:
+                    # Rate limited (429) or service unavailable (503), wait and retry
                     time.sleep(retry_delay)
                     retry_delay *= 2  # Exponential backoff
                     results.clear()  # Clear partial results
