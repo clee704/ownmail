@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - ownmail{% endblock %}
+
+{% block content %}
+    <div class="ownmail-settings-page">
+        <h2>Settings</h2>
+        <p class="ownmail-settings-config-path">Config: <code>{{ config_path }}</code></p>
+
+        <form method="POST" action="/settings" class="ownmail-settings-form">
+            <fieldset class="ownmail-settings-section">
+                <legend>Appearance</legend>
+
+                <div class="ownmail-settings-field">
+                    <label>Theme</label>
+                    <div class="ownmail-settings-theme-options">
+                        <label class="ownmail-settings-radio">
+                            <input type="radio" name="theme" value="auto" id="theme-auto">
+                            Auto (follow system)
+                        </label>
+                        <label class="ownmail-settings-radio">
+                            <input type="radio" name="theme" value="light" id="theme-light">
+                            Light
+                        </label>
+                        <label class="ownmail-settings-radio">
+                            <input type="radio" name="theme" value="dark" id="theme-dark">
+                            Dark
+                        </label>
+                    </div>
+                    <p class="ownmail-settings-hint">Theme preference is stored in your browser.</p>
+                </div>
+
+                <div class="ownmail-settings-field">
+                    <label for="date_format">Date format</label>
+                    <input type="text" name="date_format" id="date_format"
+                           value="{{ settings.date_format or '' }}"
+                           placeholder="e.g. %b %d, %Y (leave blank for auto)">
+                    <p class="ownmail-settings-hint">Python strftime format. Leave blank for automatic (e.g. "Jan 26" for current year, "2023/12/15" for older).</p>
+                </div>
+            </fieldset>
+
+            <fieldset class="ownmail-settings-section">
+                <legend>Display</legend>
+
+                <div class="ownmail-settings-field">
+                    <label for="page_size">Results per page</label>
+                    <input type="number" name="page_size" id="page_size"
+                           value="{{ settings.page_size }}" min="1" max="500">
+                </div>
+
+                <div class="ownmail-settings-field ownmail-settings-checkbox">
+                    <label>
+                        <input type="checkbox" name="block_images" id="block_images"
+                               {{ 'checked' if settings.block_images }}>
+                        Block external images by default
+                    </label>
+                    <p class="ownmail-settings-hint">Images from trusted senders are always shown.</p>
+                </div>
+
+                <div class="ownmail-settings-field ownmail-settings-checkbox">
+                    <label>
+                        <input type="checkbox" name="auto_scale" id="auto_scale"
+                               {{ 'checked' if settings.auto_scale }}>
+                        Auto-scale wide emails to fit viewport
+                    </label>
+                </div>
+            </fieldset>
+
+            <fieldset class="ownmail-settings-section">
+                <legend>Trusted Senders</legend>
+                <div class="ownmail-settings-field">
+                    <label for="trusted_senders">Trusted sender emails (one per line)</label>
+                    <textarea name="trusted_senders" id="trusted_senders" rows="8"
+                              placeholder="user@example.com">{{ settings.trusted_senders | join('\n') }}</textarea>
+                    <p class="ownmail-settings-hint">Images from these senders are always loaded, even when image blocking is on.</p>
+                </div>
+            </fieldset>
+
+            <div class="ownmail-settings-actions">
+                <button type="submit" class="ownmail-settings-save">Save Settings</button>
+                <a href="/" class="ownmail-settings-cancel">Cancel</a>
+            </div>
+        </form>
+    </div>
+
+    <script>
+    // Theme radios are client-side only (localStorage), not submitted with form
+    (function() {
+        var pref = localStorage.getItem('ownmail-theme') || 'auto';
+        var radio = document.getElementById('theme-' + pref);
+        if (radio) radio.checked = true;
+
+        // Update localStorage when theme radio changes
+        document.querySelectorAll('input[name="theme"]').forEach(function(r) {
+            r.addEventListener('change', function() {
+                localStorage.setItem('ownmail-theme', this.value);
+                applyTheme();
+            });
+        });
+    })();
+    </script>
+{% endblock %}

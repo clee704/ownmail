@@ -61,7 +61,7 @@
             {% endif %}
         </div>
 
-        <div class="ownmail-email-content-area{% if supports_dark %} ownmail-email-dark{% endif %}">
+        <div class="ownmail-email-content-area" data-supports-dark="{{ 'true' if supports_dark else 'false' }}">
         {% if images_blocked and has_external_images %}
         <div class="ownmail-image-banner" id="ownmail-image-banner" data-has-banner="true">
             <span class="ownmail-image-banner-text" id="ownmail-image-banner-text">🖼️ External images are blocked for security.</span>
@@ -214,6 +214,20 @@ function toggleEmailMenu(event) {
     const dropdown = document.getElementById('ownmail-email-menu-dropdown');
     dropdown.classList.toggle('ownmail-show');
 }
+
+// Called by base.html theme system whenever site theme changes
+function updateEmailDarkMode(siteIsDark) {
+    var area = document.querySelector('.ownmail-email-content-area');
+    if (!area) return;
+    var supportsDark = area.getAttribute('data-supports-dark') === 'true';
+    area.classList.toggle('ownmail-email-dark', siteIsDark && supportsDark);
+}
+// Apply on load
+(function() {
+    var pref = localStorage.getItem('ownmail-theme') || 'auto';
+    var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    updateEmailDarkMode(dark);
+})();
 
 // Close dropdown when clicking outside
 document.addEventListener('click', function(event) {

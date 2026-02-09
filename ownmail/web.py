@@ -1469,6 +1469,98 @@ def create_app(
 
         abort(404)
 
+    @app.route("/settings", methods=["GET"])
+    def settings_page():
+        """Show settings page with current configuration."""
+        config_path = app.config.get("config_path")
+        config_data = {}
+        if config_path:
+            try:
+                with open(config_path) as f:
+                    import yaml
+
+                    config_data = yaml.safe_load(f) or {}
+            except Exception:
+                pass
+
+        web_config = config_data.get("web", {})
+        current = {
+            "page_size": web_config.get("page_size", 20),
+            "block_images": web_config.get("block_images", False),
+            "auto_scale": web_config.get("auto_scale", True),
+            "date_format": web_config.get("date_format", ""),
+            "trusted_senders": web_config.get("trusted_senders", []),
+        }
+        return render_template(
+            "settings.html",
+            settings=current,
+            stats=get_stats(),
+            config_path=config_path or "(not set)",
+        )
+
+    @app.route("/settings", methods=["POST"])
+    def save_settings():
+        """Save settings to config.yaml and update in-memory config."""
+        import yaml
+
+        config_path = app.config.get("config_path")
+        if not config_path:
+            return redirect("/settings")
+
+        try:
+            with open(config_path) as f:
+                config_data = yaml.safe_load(f) or {}
+        except Exception:
+            config_data = {}
+
+        web_config = config_data.setdefault("web", {})
+
+        # Update settings from form
+        try:
+            page_size = int(request.form.get("page_size", 20))
+            if page_size < 1:
+                page_size = 1
+            elif page_size > 500:
+                page_size = 500
+        except (ValueError, TypeError):
+            page_size = 20
+        web_config["page_size"] = page_size
+        app.config["page_size"] = page_size
+
+        block_images = request.form.get("block_images") == "on"
+        web_config["block_images"] = block_images
+        app.config["block_images"] = block_images
+
+        auto_scale = request.form.get("auto_scale") == "on"
+        web_config["auto_scale"] = auto_scale
+        app.config["auto_scale"] = auto_scale
+
+        date_format = request.form.get("date_format", "").strip()
+        web_config["date_format"] = date_format if date_format else None
+        if date_format:
+            app.config["date_format"] = date_format
+        else:
+            app.config["date_format"] = None
+
+        # Trusted senders: textarea, one per line
+        trusted_raw = request.form.get("trusted_senders", "")
+        trusted_list = [
+            s.strip().lower()
+            for s in trusted_raw.splitlines()
+            if s.strip()
+        ]
+        web_config["trusted_senders"] = trusted_list
+        app.config["trusted_senders"] = set(trusted_list)
+
+        try:
+            with open(config_path, "w") as f:
+                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+        except Exception as e:
+            if verbose:
+                print(f"[verbose] Error saving settings: {e}", flush=True)
+
+        return redirect("/settings")
+
     @app.route("/trust-sender", methods=["POST"])
     def trust_sender():
         """Add a sender to the trusted senders list in config.yaml."""

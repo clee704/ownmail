@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ownmail{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script>
+    // Apply theme immediately to prevent flash of wrong theme
+    (function() {
+        var pref = localStorage.getItem('ownmail-theme') || 'auto';
+        var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('ownmail-dark');
+    })();
+    </script>
 </head>
 <body>
     <div class="ownmail-loading-overlay" id="ownmail-loading-overlay">
@@ -12,10 +20,56 @@
     </div>
     <div class="ownmail-header">
         <h1><a href="/">📭 ownmail</a></h1>
-        <span class="ownmail-stats">{{ stats.total_emails | default(0) | int }} emails archived &bull; <a href="/help">Search help</a></span>
+        <div class="ownmail-header-right">
+            <span class="ownmail-stats">{{ stats.total_emails | default(0) | int }} emails archived &bull; <a href="/help">Search help</a> &bull; <a href="/settings">⚙️</a></span>
+            <button class="ownmail-theme-toggle" id="ownmail-theme-toggle" onclick="toggleTheme()" title="Toggle theme"><span class="ownmail-theme-current">🌙</span><span class="ownmail-theme-next">☀️</span></button>
+        </div>
     </div>
     {% block content %}{% endblock %}
     <script>
+    // Theme: reads localStorage preference (auto/light/dark)
+    function isDarkMode() {
+        var pref = localStorage.getItem('ownmail-theme') || 'auto';
+        return pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+    function applyTheme() {
+        var dark = isDarkMode();
+        document.documentElement.classList.toggle('ownmail-dark', dark);
+        updateThemeIcon(dark);
+        if (typeof updateEmailDarkMode === 'function') updateEmailDarkMode(dark);
+    }
+    function updateThemeIcon(dark) {
+        var btn = document.getElementById('ownmail-theme-toggle');
+        if (!btn) return;
+        var current = btn.querySelector('.ownmail-theme-current');
+        var next = btn.querySelector('.ownmail-theme-next');
+        if (!current || !next) return;
+        current.textContent = dark ? '🌙' : '☀️';
+        next.textContent = dark ? '☀️' : '🌙';
+        btn.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+    function toggleTheme() {
+        var dark = isDarkMode();
+        // Explicit override: set to opposite of current
+        localStorage.setItem('ownmail-theme', dark ? 'light' : 'dark');
+        applyTheme();
+        // Suppress hover swap until mouse leaves, so the icon
+        // correctly reflects the new state instead of previewing next
+        var btn = document.getElementById('ownmail-theme-toggle');
+        if (btn) {
+            btn.classList.add('ownmail-theme-locked');
+            btn.addEventListener('mouseleave', function unlock() {
+                btn.classList.remove('ownmail-theme-locked');
+                btn.removeEventListener('mouseleave', unlock);
+            });
+        }
+    }
+    // Listen for OS theme changes (matters when pref is 'auto')
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+        applyTheme();
+    });
+    applyTheme();
+
     function showLoading(event) {
         // Don't show loading overlay for cmd+click or ctrl+click (new tab)
         if (event && (event.metaKey || event.ctrlKey)) {
