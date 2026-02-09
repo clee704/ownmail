@@ -8,7 +8,6 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import BatchHttpRequest
 
 from ownmail.providers.base import EmailProvider
 
@@ -261,8 +260,8 @@ class GmailProvider(EmailProvider):
                 except Exception as e:
                     results[request_id] = (None, [], str(e))
 
-        # Create batch request
-        batch = BatchHttpRequest(callback=callback)
+        # Create batch request with Gmail-specific batch URI
+        batch = self._service.new_batch_http_request(callback=callback)
 
         for msg_id in msg_ids[:BATCH_SIZE]:
             # Request raw format with labelIds included
