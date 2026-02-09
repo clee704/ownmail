@@ -9,6 +9,7 @@ If Node.js is not available, the web server refuses to start.
 
 from __future__ import annotations
 
+import html as html_module
 import json
 import logging
 import os
@@ -186,7 +187,7 @@ class HtmlSanitizer:
             Returns (original HTML, True, False) if sanitizer is unavailable or on error.
         """
         if not self._available or self._process is None:
-            return html, True, False
+            return html_module.escape(html), True, False
 
         with self._lock:
             self._request_id += 1
@@ -208,14 +209,14 @@ class HtmlSanitizer:
                             "HTML sanitization timed out after %.1fs", self._timeout
                         )
                         self._restart()
-                        return html, True, False
+                        return html_module.escape(html), True, False
 
                     line = self._process.stdout.readline()
                     if not line:
                         # Process died
                         logger.warning("HTML sanitizer process died unexpectedly")
                         self._restart()
-                        return html, True, False
+                        return html_module.escape(html), True, False
 
                     try:
                         response = json.loads(line)
@@ -228,7 +229,7 @@ class HtmlSanitizer:
                             logger.warning(
                                 "DOMPurify error: %s", response["error"]
                             )
-                            return html, True, False
+                            return html_module.escape(html), True, False
                         result_html = response.get("html", html)
                         needs_padding = response.get("needsPadding", True)
                         supports_dark = response.get("supportsDarkMode", False)
@@ -243,7 +244,7 @@ class HtmlSanitizer:
             except (BrokenPipeError, OSError) as e:
                 logger.warning("Sanitizer communication error: %s", e)
                 self._restart()
-                return html, True, False
+                return html_module.escape(html), True, False
 
     def _restart(self) -> None:
         """Restart the worker process after a failure."""

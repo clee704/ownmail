@@ -928,6 +928,23 @@ def create_app(
     def inject_brand():
         return {"brand_name": app.config["brand_name"]}
 
+    # CSRF protection: validate Origin/Referer on POST requests
+    @app.before_request
+    def csrf_check():
+        if request.method == "POST":
+            origin = request.headers.get("Origin") or ""
+            referer = request.headers.get("Referer") or ""
+            # Accept if Origin or Referer starts with our own URL
+            # (flask test client sends neither, so allow empty for tests)
+            if not origin and not referer:
+                return  # Allow (e.g., curl, test client)
+            host_url = request.host_url.rstrip("/")
+            if origin and origin.rstrip("/") == host_url:
+                return
+            if referer and referer.startswith(host_url):
+                return
+            abort(403)
+
     # Cache for stats (refreshed every 60 seconds)
     stats_cache = {"value": None, "time": 0}
 
@@ -1431,7 +1448,9 @@ def create_app(
             abort(404)
 
         filename = email_info[1]
-        filepath = archive.archive_dir / filename
+        filepath = (archive.archive_dir / filename).resolve()
+        if not filepath.is_relative_to(archive.archive_dir.resolve()):
+            abort(404)
 
         if not filepath.exists():
             abort(404)
@@ -1477,7 +1496,9 @@ def create_app(
             abort(404)
 
         filename = email_info[1]
-        filepath = archive.archive_dir / filename
+        filepath = (archive.archive_dir / filename).resolve()
+        if not filepath.is_relative_to(archive.archive_dir.resolve()):
+            abort(404)
 
         if not filepath.exists():
             abort(404)
@@ -1494,7 +1515,9 @@ def create_app(
             abort(404)
 
         filename = email_info[1]
-        filepath = archive.archive_dir / filename
+        filepath = (archive.archive_dir / filename).resolve()
+        if not filepath.is_relative_to(archive.archive_dir.resolve()):
+            abort(404)
 
         if not filepath.exists():
             abort(404)
@@ -1513,14 +1536,10 @@ def create_app(
                     att_data = part.get_payload(decode=True)
                     content_type = part.get_content_type()
 
-                    # Create temp file and send
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                        tmp.write(att_data)
-                        tmp_path = tmp.name
-
+                    # Send directly from memory
+                    import io
                     return send_file(
-                        tmp_path,
+                        io.BytesIO(att_data),
                         mimetype=content_type,
                         as_attachment=True,
                         download_name=att_filename,
@@ -1629,6 +1648,8 @@ def create_app(
         """Add a sender to the trusted senders list in config.yaml."""
         sender_email = request.form.get("email", "").strip().lower()
         redirect_to = request.form.get("redirect", "/")
+        if not redirect_to.startswith("/"):
+            redirect_to = "/"
 
         if not sender_email:
             return redirect(redirect_to)
@@ -1769,6 +1790,15 @@ def run_server(
     print(f"\n🌐 {brand_name} web interface")
     print(f"   Running at: http://{host}:{port}")
     print(f"   Page size: {page_size}")
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        print("\n   ⚠️  WARNING: Binding to non-localhost address!")
+        print("   Your email archive will be accessible to anyone on the network.")
+        print("   Consider using --host 127.0.0.1 instead.\n")
+    if debug and host not in ("127.0.0.1", "localhost", "::1"):
+        print("   ERROR: --debug cannot be used with non-localhost --host")
+        print("   The Werkzeug debugger allows remote code execution.")
+        sanitizer.stop()
+        return
     if verbose:
         print("   Verbose logging enabled")
     if block_images:

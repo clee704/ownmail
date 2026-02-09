@@ -75,7 +75,7 @@
         {% endif %}
         {% if has_external_images %}
         <script>
-        var senderEmail = "{{ sender_email }}";
+        var senderEmail = {{ sender_email | tojson }};
 
         function hideBanner() {
             var banner = document.getElementById('ownmail-image-banner');
