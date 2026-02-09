@@ -347,19 +347,41 @@ def _extract_snippet(msg: email.message.Message, max_len: int = 150) -> str:
                     payload = part.get_payload(decode=True)
                     if payload:
                         text = _decode_text_body(payload, part.get_content_charset())
-                        # Clean up whitespace
-                        text = " ".join(text.split())
+                        # Clean up whitespace and invisible Unicode characters
+                        text = _clean_snippet_text(text)
                         return text[:max_len] + "..." if len(text) > max_len else text
         else:
             if msg.get_content_type() == "text/plain":
                 payload = msg.get_payload(decode=True)
                 if payload:
                     text = _decode_text_body(payload, msg.get_content_charset())
-                    text = " ".join(text.split())
+                    text = _clean_snippet_text(text)
                     return text[:max_len] + "..." if len(text) > max_len else text
     except Exception:
         pass
     return ""
+
+
+def _clean_snippet_text(text: str) -> str:
+    """Clean up text for snippet display.
+
+    Removes invisible Unicode characters often used by email marketers
+    as preheader padding (ZWNJ, ZWJ, ZWSP, etc.).
+    """
+    # Remove zero-width and invisible characters
+    # U+200B Zero Width Space
+    # U+200C Zero Width Non-Joiner (ZWNJ) - common in marketing emails
+    # U+200D Zero Width Joiner (ZWJ)
+    # U+FEFF Byte Order Mark / Zero Width No-Break Space
+    # U+00AD Soft Hyphen
+    # U+2060 Word Joiner
+    invisible_chars = '\u200b\u200c\u200d\ufeff\u00ad\u2060'
+    for char in invisible_chars:
+        text = text.replace(char, '')
+
+    # Collapse whitespace
+    text = " ".join(text.split())
+    return text
 
 
 def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
@@ -838,6 +860,7 @@ def create_app(
                         # FTS snippet may have garbled Korean text
                         body = parsed.get("body", "")
                         if body:
+                            body = _clean_snippet_text(body)
                             snippet = body[:150] + "..." if len(body) > 150 else body
                     except Exception:
                         # Fall back to FTS values if file parsing fails
