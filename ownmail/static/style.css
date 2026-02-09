@@ -244,6 +244,8 @@ header h1 a { color: inherit; text-decoration: none; }
     display: block;
 }
 .email-body { white-space: pre-wrap; font-family: inherit; margin: 0; line-height: 1.6; padding: 15px; }
+.email-body a { color: #0066cc; text-decoration: none; }
+.email-body a:hover { text-decoration: underline; }
 .email-body-html { width: 100%; border: none; min-height: 300px; }
 .attachments { margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
 .attachments h4 { margin: 0 0 10px 0; font-size: 0.95em; }
@@ -453,6 +455,7 @@ header h1 a { color: inherit; text-decoration: none; }
         display: flow-root;
     }
     .email-body { color: #e0e0e0; }
+    .email-body a { color: #6cb6ff; }
     .clickable-header { color: #6cb6ff; }
     .label {
         background: #1e3a5f;
