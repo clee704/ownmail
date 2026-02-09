@@ -84,8 +84,8 @@
             // Only resize if content height actually changed (avoids feedback loop)
             if (bodyH > 0 && bodyH !== lastContentHeight) {
                 lastContentHeight = bodyH;
-                iframe.style.height = (bodyH + 20) + 'px';
-                if (DEBUG_RESIZE) console.log('[setIframeHeight] -> set to:', (bodyH + 20) + 'px');
+                iframe.style.height = (bodyH + 30) + 'px';
+                if (DEBUG_RESIZE) console.log('[setIframeHeight] -> set to:', (bodyH + 30) + 'px');
             } else {
                 if (DEBUG_RESIZE) console.log('[setIframeHeight] -> skipped (no change or h <= 0)');
             }
@@ -200,8 +200,8 @@
                     // Only resize if content height actually changed (avoids feedback loop)
                     if (bodyH > 0 && bodyH !== lastContentHeight) {
                         lastContentHeight = bodyH;
-                        iframe.style.height = (bodyH + 20) + 'px';
-                        if (DEBUG_RESIZE) console.log('[setIframeHeight] -> set to:', (bodyH + 20) + 'px');
+                        iframe.style.height = (bodyH + 30) + 'px';
+                        if (DEBUG_RESIZE) console.log('[setIframeHeight] -> set to:', (bodyH + 30) + 'px');
                     } else {
                         if (DEBUG_RESIZE) console.log('[setIframeHeight] -> skipped (no change or h <= 0)');
                     }
