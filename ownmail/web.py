@@ -1052,12 +1052,22 @@ def create_app(
             if has_own_styles:
                 # Email has CSS - keep it light mode (emails assume light background)
                 base_styles = '''<style>
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; color: #333; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 1px 15px;
+  margin: 0;
+  background: #fff;
+  color: #333;
+}
 </style>'''
             else:
                 # Plain email without CSS - can apply dark mode safely
                 base_styles = '''<style>
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 1px 15px;
+  margin: 0;
+}
 @media (prefers-color-scheme: dark) {
   body { background: #242424; color: #e0e0e0; }
   a { color: #6cb6ff; }
