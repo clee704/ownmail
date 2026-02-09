@@ -195,6 +195,60 @@ class EmailParser:
             return ""
 
     @staticmethod
+    def _normalize_date(date_str: str) -> str:
+        """Normalize a date string to a standard format.
+
+        Handles:
+        - Korean/garbled weekday names
+        - Numeric month format (DD M YYYY instead of DD Mon YYYY)
+        """
+        if not date_str:
+            return ""
+
+        from datetime import datetime
+
+        # Try standard parsing first
+        try:
+            parsed_date = email.utils.parsedate_to_datetime(date_str)
+            return parsed_date.strftime("%a, %d %b %Y %H:%M:%S %z")
+        except Exception:
+            pass
+
+        # Remove non-ASCII prefix (Korean/garbled weekday)
+        cleaned = re.sub(r'^[^\x00-\x7F]+,?\s*', '', date_str)
+
+        # Try parsing the cleaned version
+        try:
+            parsed_date = email.utils.parsedate_to_datetime(cleaned)
+            return parsed_date.strftime("%a, %d %b %Y %H:%M:%S %z")
+        except Exception:
+            pass
+
+        # Try parsing numeric month format: "DD M YYYY HH:MM:SS +ZZZZ"
+        # Pattern: day month(1-12) year hour:min:sec timezone
+        match = re.match(
+            r'(\d{1,2})\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([+-]\d{4})?',
+            cleaned
+        )
+        if match:
+            day, month, year, hour, minute, second = [int(x) for x in match.groups()[:6]]
+            tz_str = match.group(7) or "+0000"
+            try:
+                # Parse timezone offset
+                tz_sign = 1 if tz_str[0] == '+' else -1
+                tz_hours = int(tz_str[1:3])
+                tz_mins = int(tz_str[3:5])
+                from datetime import timezone, timedelta
+                tz = timezone(timedelta(hours=tz_sign * tz_hours, minutes=tz_sign * tz_mins))
+                dt = datetime(year, month, day, hour, minute, second, tzinfo=tz)
+                return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
+            except Exception:
+                pass
+
+        # Return original if all parsing fails
+        return date_str
+
+    @staticmethod
     def _safe_get_content(part) -> str:
         """Safely extract content from a message part."""
         try:
@@ -271,13 +325,9 @@ class EmailParser:
                 recipients.append(val)
         recipients_str = ", ".join(recipients)
 
-        date_str = EmailParser._safe_get_header(msg, "Date")
+        date_str = EmailParser._safe_get_header(msg, "Date", raw_content=raw_content)
         # Try to parse and normalize the date to avoid garbled weekday names
-        try:
-            parsed_date = email.utils.parsedate_to_datetime(date_str)
-            date_str = parsed_date.strftime("%a, %d %b %Y %H:%M:%S %z")
-        except Exception:
-            pass  # Keep original if parsing fails
+        date_str = EmailParser._normalize_date(date_str)
 
         # Extract body text
         body_parts = []
