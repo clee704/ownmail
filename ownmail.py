@@ -266,9 +266,17 @@ class ArchiveDatabase:
             results = conn.execute("SELECT message_id FROM emails").fetchall()
             return {row[0] for row in results}
 
-    def mark_downloaded(self, message_id: str, filename: str, content_hash: str = None) -> None:
-        """Mark a message as downloaded."""
-        with sqlite3.connect(self.db_path) as conn:
+    def mark_downloaded(self, message_id: str, filename: str, content_hash: str = None, conn: sqlite3.Connection = None) -> None:
+        """Mark a message as downloaded.
+
+        Args:
+            conn: Optional existing connection (for batching). If None, creates one and commits.
+        """
+        should_close = conn is None
+        if conn is None:
+            conn = sqlite3.connect(self.db_path)
+
+        try:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO emails
@@ -277,7 +285,11 @@ class ArchiveDatabase:
                 """,
                 (message_id, filename, datetime.now().isoformat(), content_hash),
             )
-            conn.commit()
+            if should_close:
+                conn.commit()
+        finally:
+            if should_close:
+                conn.close()
 
     def index_email(
         self,
@@ -726,8 +738,12 @@ class GmailArchive:
 
         return raw_data[:first_newline + 2] + header_line + raw_data[first_newline + 2:]
 
-    def download_message(self, message_id: str, include_labels: bool = None) -> Optional[Path]:
-        """Download a single message and save it atomically."""
+    def download_message(self, message_id: str, include_labels: bool = None, db_conn: sqlite3.Connection = None) -> Optional[Path]:
+        """Download a single message and save it atomically.
+
+        Args:
+            db_conn: Optional database connection for batching. If None, creates one.
+        """
         if include_labels is None:
             include_labels = self.include_labels
 
@@ -782,7 +798,7 @@ class GmailArchive:
             content_hash = hashlib.sha256(raw_data).hexdigest()
 
             rel_path = str(filepath.relative_to(self.archive_dir))
-            self.db.mark_downloaded(message_id=message_id, filename=rel_path, content_hash=content_hash)
+            self.db.mark_downloaded(message_id=message_id, filename=rel_path, content_hash=content_hash, conn=db_conn)
 
             return filepath
 
@@ -901,6 +917,9 @@ class GmailArchive:
         success_count = 0
         error_count = 0
         interrupted = False
+        start_time = time.time()
+        last_commit_count = 0
+        COMMIT_INTERVAL = 10  # Commit every N emails (lower than reindex since download is slower)
 
         # Handle Ctrl-C gracefully
         def signal_handler(signum, frame):
@@ -914,13 +933,18 @@ class GmailArchive:
 
         original_handler = signal.signal(signal.SIGINT, signal_handler)
 
+        # Use a shared connection for batching
+        self._batch_conn = sqlite3.connect(self.db.db_path)
+        self._batch_conn.execute("PRAGMA journal_mode = WAL")
+        self._batch_conn.execute("PRAGMA synchronous = NORMAL")
+
         try:
             for i, msg_id in enumerate(new_message_ids, 1):
                 if interrupted:
                     break
 
-                print(f"  [{i}/{len(new_message_ids)}] Downloading...                    ", end="\r")
-                filepath = self.download_message(msg_id)
+                print(f"\r\033[K  [{i}/{len(new_message_ids)}] Downloading...", end="", flush=True)
+                filepath = self.download_message(msg_id, db_conn=self._batch_conn)
                 if filepath:
                     # Show file size for progress visibility
                     size_bytes = filepath.stat().st_size
@@ -930,13 +954,39 @@ class GmailArchive:
                         size_str = f"{size_bytes / 1_000:.0f}KB"
                     else:
                         size_str = f"{size_bytes}B"
-                    print(f"  [{i}/{len(new_message_ids)}] {size_str:>7} - indexing...   ", end="\r")
-                    self.index_email(msg_id, filepath)
+                    print(f"\r\033[K  [{i}/{len(new_message_ids)}] {size_str:>7} - indexing...", end="", flush=True)
+                    self.index_email(msg_id, filepath, skip_delete=True)
                     success_count += 1
+
+                    # Commit periodically
+                    if success_count - last_commit_count >= COMMIT_INTERVAL:
+                        self._batch_conn.commit()
+                        last_commit_count = success_count
+
+                    # Calculate and show progress stats
+                    elapsed = time.time() - start_time
+                    rate = success_count / elapsed if elapsed > 0 else 0
+                    remaining = len(new_message_ids) - i
+                    eta = remaining / rate if rate > 0 else 0
+
+                    # Format ETA
+                    if i < 3:
+                        eta_str = "..."
+                    elif eta > 3600:
+                        eta_str = f"{eta/3600:.1f}h"
+                    elif eta > 60:
+                        eta_str = f"{eta/60:.0f}m"
+                    else:
+                        eta_str = f"{eta:.0f}s"
+
+                    print(f"\r\033[K  [{i}/{len(new_message_ids)}] {rate:.1f}/s | ETA {eta_str:>5} | {size_str:>7}", end="", flush=True)
                 else:
                     error_count += 1
         finally:
-            # Restore original signal handler
+            # Commit any remaining and close
+            self._batch_conn.commit()
+            self._batch_conn.close()
+            self._batch_conn = None
             signal.signal(signal.SIGINT, original_handler)
 
         # Only update history_id if backup completed fully (not interrupted)
@@ -1643,7 +1693,7 @@ class GmailArchive:
                     """)
                     conn.commit()
                     issues_fixed += len(duplicates)
-                    print(f" done")
+                    print(" done")
                     print(f"  ✓ Fixed {len(duplicates)} duplicates")
             else:
                 print("  ✓ No duplicate FTS entries")
