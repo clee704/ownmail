@@ -55,7 +55,7 @@
             {% if labels %}
             <div class="ownmail-labels">
                 {% for label in labels %}
-                <a href="/search?q=label:{{ label | urlencode }}&sort=date_desc" class="ownmail-label ownmail-clickable-label" onclick="showLoading(event)">{{ label }}</a>
+                <a href="/search?q=label:%22{{ label | urlencode }}%22&sort=date_desc" class="ownmail-label ownmail-clickable-label" onclick="showLoading(event)">{{ label }}</a>
                 {% endfor %}
             </div>
             {% endif %}
