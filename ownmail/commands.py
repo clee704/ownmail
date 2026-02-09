@@ -294,12 +294,12 @@ def _index_email_for_reindex(
         body = parsed["body"]
         snippet = body[:200] + "..." if len(body) > 200 else body
 
-        # Preserve existing labels from DB (labels are not stored in .eml files)
-        existing = conn.execute(
-            "SELECT labels FROM emails WHERE email_id = ?",
+        # Preserve existing labels from email_labels table
+        existing_labels_rows = conn.execute(
+            "SELECT el.label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid WHERE e.email_id = ?",
             (email_id,)
-        ).fetchone()
-        labels = (existing[0] if existing and existing[0] else "")
+        ).fetchall()
+        labels_list = [row[0] for row in existing_labels_rows]
         recipients = parsed["recipients"]
 
         # Extract email addresses from recipients for normalized table
@@ -317,7 +317,6 @@ def _index_email_for_reindex(
                 sender = ?,
                 recipients = ?,
                 date_str = ?,
-                labels = ?,
                 snippet = ?,
                 indexed_hash = ?,
                 content_hash = COALESCE(content_hash, ?),
@@ -326,7 +325,7 @@ def _index_email_for_reindex(
             RETURNING rowid
             """,
             (parsed["subject"], parsed["sender"], recipients,
-             parsed["date_str"], labels, snippet,
+             parsed["date_str"], snippet,
              content_hash, content_hash, has_attachments, email_id)
         ).fetchone()
 
@@ -362,8 +361,8 @@ def _index_email_for_reindex(
             email_date = email_date_row[0] if email_date_row else None
 
             conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
-            if labels:
-                for label in labels.split(','):
+            if labels_list:
+                for label in labels_list:
                     label = label.strip()
                     if label:
                         conn.execute(
@@ -853,7 +852,11 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
     # Get all downloaded emails for this account that don't have labels yet
     with sqlite3.connect(archive.db.db_path) as conn:
         emails = conn.execute(
-            "SELECT email_id, provider_id FROM emails WHERE (account = ? OR account IS NULL) AND (labels IS NULL OR labels = '')",
+            """SELECT e.email_id, e.provider_id FROM emails e
+               WHERE (e.account = ? OR e.account IS NULL)
+               AND NOT EXISTS (
+                   SELECT 1 FROM email_labels el WHERE el.email_rowid = e.rowid
+               )""",
             (account,)
         ).fetchall()
 
@@ -893,25 +896,22 @@ def _update_labels_imap(
                 skip_count += 1
                 continue
 
-            conn.execute(
-                "UPDATE emails SET labels = ? WHERE email_id = ?",
-                (folder, email_id),
-            )
-
-            # Update email_labels normalized table
             row = conn.execute(
                 "SELECT rowid, email_date FROM emails WHERE email_id = ?",
                 (email_id,),
             ).fetchone()
-            if row:
-                rowid, email_date = row
-                conn.execute(
-                    "DELETE FROM email_labels WHERE email_rowid = ?", (rowid,)
-                )
-                conn.execute(
-                    "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                    (rowid, folder, email_date),
-                )
+            if not row:
+                skip_count += 1
+                continue
+            rowid, email_date = row
+
+            conn.execute(
+                "DELETE FROM email_labels WHERE email_rowid = ?", (rowid,)
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                (rowid, folder, email_date),
+            )
 
             success_count += 1
 
@@ -965,28 +965,24 @@ def _update_labels_gmail(
                         skip_count += 1
                         continue
 
-                    labels_str = ", ".join(labels)
-                    conn.execute(
-                        "UPDATE emails SET labels = ? WHERE email_id = ?",
-                        (labels_str, email_id)
-                    )
-
-                    # Update email_labels normalized table
                     row = conn.execute(
                         "SELECT rowid, email_date FROM emails WHERE email_id = ?",
                         (email_id,),
                     ).fetchone()
-                    if row:
-                        rowid, email_date = row
+                    if not row:
+                        skip_count += 1
+                        continue
+                    rowid, email_date = row
+
+                    conn.execute(
+                        "DELETE FROM email_labels WHERE email_rowid = ?",
+                        (rowid,),
+                    )
+                    for label in labels:
                         conn.execute(
-                            "DELETE FROM email_labels WHERE email_rowid = ?",
-                            (rowid,),
+                            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                            (rowid, label, email_date),
                         )
-                        for label in labels:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                                (rowid, label, email_date),
-                            )
 
                     success_count += 1
 

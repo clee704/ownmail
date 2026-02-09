@@ -720,11 +720,17 @@ class TestCmdUpdateLabels:
         }
         archive = EmailArchive(temp_dir, config)
 
-        # Add to database with labels already set
+        # Add to database with labels already set (in email_labels table)
         email_id = _eid("test123", "test@gmail.com")
         archive.db.mark_downloaded(email_id, "test123", "emails/test.eml", content_hash="abc", account="test@gmail.com")
-        with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("UPDATE emails SET labels = 'INBOX' WHERE email_id = ?", (email_id,))
+        conn = sqlite3.connect(archive.db.db_path)
+        rowid = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (email_id,)).fetchone()[0]
+        conn.execute(
+            "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+            (rowid, "INBOX", None)
+        )
+        conn.commit()
+        conn.close()
 
         cmd_update_labels(archive)
 
@@ -758,12 +764,14 @@ class TestCmdUpdateLabels:
         captured = capsys.readouterr()
         assert "Updated: 2" in captured.out
 
-        # Verify labels in database
+        # Verify labels in email_labels table
         with sqlite3.connect(archive.db.db_path) as conn:
-            row1 = conn.execute("SELECT labels FROM emails WHERE email_id = ?", (eid1,)).fetchone()
-            row2 = conn.execute("SELECT labels FROM emails WHERE email_id = ?", (eid2,)).fetchone()
-        assert row1[0] == "INBOX"
-        assert row2[0] == "[Gmail]/Sent Mail"
+            rowid1 = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (eid1,)).fetchone()[0]
+            rowid2 = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (eid2,)).fetchone()[0]
+            label1 = conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid1,)).fetchone()
+            label2 = conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid2,)).fetchone()
+        assert label1[0] == "INBOX"
+        assert label2[0] == "[Gmail]/Sent Mail"
 
     def test_update_labels_imap_updates_email_labels_table(self, temp_dir, capsys):
         """Test update-labels for IMAP also populates email_labels normalized table."""

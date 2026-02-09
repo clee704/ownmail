@@ -1185,11 +1185,13 @@ def create_app(
                 abort(404)
 
             filename = email_info[1]  # filename is second column
-            db_labels_str = email_info[5]  # labels is sixth column
             filepath = archive.archive_dir / filename
 
             if not filepath.exists():
                 abort(404)
+
+            # Get labels from email_labels table
+            labels = archive.db.get_labels_for_email(email_id)
 
             # Parse email using EmailParser for proper Korean charset handling
             if verbose:
@@ -1201,9 +1203,6 @@ def create_app(
             sender = parsed.get("sender", "")
             recipients = parsed.get("recipients", "")
             date = parsed.get("date_str", "")
-            # Labels come from DB (works for both IMAP and Gmail API)
-            labels_str = db_labels_str or ""
-            labels = [lbl.strip() for lbl in labels_str.split(",") if lbl.strip()]
 
             # Ensure MIME-encoded headers are fully decoded
             # Parser may return partially decoded or raw MIME strings
