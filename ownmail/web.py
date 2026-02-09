@@ -198,6 +198,51 @@ def _extract_attachment_filename(part) -> str:
     return "attachment"
 
 
+def _extract_body_content(html: str) -> str:
+    """Extract body content from a full HTML document for direct embedding.
+
+    Strips <html>, <head>, <body> wrappers and extracts just the content
+    that goes inside the email container div. Preserves <style> tags
+    from <head> so scoped CSS still applies.
+
+    Args:
+        html: Full HTML document or fragment
+
+    Returns:
+        Body content suitable for direct embedding in a div
+    """
+    if not html:
+        return html
+
+    # Extract <style> tags from anywhere (they may be in <head>)
+    styles = []
+    style_pattern = re.compile(r'<style[^>]*>[\s\S]*?</style>', re.IGNORECASE)
+    for match in style_pattern.finditer(html):
+        styles.append(match.group())
+
+    # Try to extract body content
+    body_match = re.search(
+        r'<body[^>]*>(.*)</body>',
+        html,
+        re.IGNORECASE | re.DOTALL
+    )
+    if body_match:
+        content = body_match.group(1)
+    else:
+        # No <body> tag — might be a fragment, use as-is
+        # Strip <html> and <head> wrappers if present
+        content = re.sub(r'</?html[^>]*>', '', html, flags=re.IGNORECASE)
+        content = re.sub(r'<head[^>]*>[\s\S]*?</head>', '', content, flags=re.IGNORECASE)
+
+    # Remove any <style> tags already in content (we'll prepend all styles)
+    content_without_styles = style_pattern.sub('', content)
+
+    # Prepend all collected styles
+    if styles:
+        return '\n'.join(styles) + '\n' + content_without_styles
+    return content_without_styles
+
+
 def _fix_mojibake_filename(filename: str) -> str:
     """Fix mojibake in attachment filenames.
 
@@ -1270,78 +1315,10 @@ def create_app(
         if body_html and images_blocked:
             body_html, has_external_images = block_external_images(body_html)
 
-        # Make all links in email open in new tab (prevents X-Frame-Options issues)
-        # Also inject base styles for consistent rendering
+        # Extract just the body content for direct embedding
+        # (strip <html>, <head>, <body> wrappers since we embed into our page)
         if body_html:
-            # Determine if we should apply dark mode to email content
-            # Check if email already has dark mode support
-            html_lower = body_html.lower()
-            has_dark_mode_support = 'prefers-color-scheme' in html_lower or 'color-scheme' in html_lower
-
-            # Check if email has explicit background colors that would conflict with dark mode
-            # (bgcolor attribute, background-color CSS, or <style> blocks with colors)
-            has_explicit_colors = (
-                'bgcolor' in html_lower or
-                'background-color' in html_lower or
-                'background:' in html_lower or
-                ('<style' in html_lower and ('color:' in html_lower or '#' in html_lower))
-            )
-
-            if has_dark_mode_support:
-                # Email handles dark mode itself - just add font
-                base_styles = '''<style>
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  padding: 0;
-  margin: 15px;
-}
-</style>'''
-            elif has_explicit_colors:
-                # Email has colors but no dark mode support - force light mode
-                base_styles = '''<style>
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  padding: 0;
-  margin: 15px;
-  background: #fff;
-  color: #333;
-}
-</style>'''
-            else:
-                # Plain email or layout-only styles - can apply dark mode safely
-                base_styles = '''<style>
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  padding: 0;
-  margin: 15px;
-}
-@media (prefers-color-scheme: dark) {
-  body { background: #242424; color: #e0e0e0; }
-  a { color: #6cb6ff; }
-}
-</style>'''
-            # Inject <base target="_blank"> to make all links open in new tab
-            if '<head>' in body_html.lower():
-                # Insert after <head> tag
-                body_html = re.sub(
-                    r'(<head[^>]*>)',
-                    r'\1<base target="_blank">' + base_styles,
-                    body_html,
-                    count=1,
-                    flags=re.IGNORECASE
-                )
-            elif '<html' in body_html.lower():
-                # Insert after <html> tag
-                body_html = re.sub(
-                    r'(<html[^>]*>)',
-                    r'\1<head><base target="_blank">' + base_styles + '</head>',
-                    body_html,
-                    count=1,
-                    flags=re.IGNORECASE
-                )
-            else:
-                # Prepend to body
-                body_html = '<base target="_blank">' + base_styles + body_html
+            body_html = _extract_body_content(body_html)
 
         # Get back URL if user came from search
         back_url = get_back_to_search_url()
