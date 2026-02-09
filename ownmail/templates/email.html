@@ -271,7 +271,7 @@
             })();
             </script>
         {% else %}
-            <pre class="email-body">{{ body }}</pre>
+            <pre class="email-body">{{ body | safe }}</pre>
         {% endif %}
         </div>
 

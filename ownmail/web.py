@@ -3,6 +3,7 @@
 import base64
 import email
 import email.header
+import html
 import os
 import re
 import time
@@ -451,6 +452,51 @@ def _try_decode(payload: bytes, encoding: str) -> str | None:
     except (UnicodeDecodeError, LookupError):
         pass
     return None
+
+
+# Regex patterns for linkifying plain text
+URL_RE = re.compile(
+    r'(https?://[^\s<>"\')\]]+)',
+    re.IGNORECASE
+)
+EMAIL_RE = re.compile(
+    r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
+)
+
+
+def _linkify(text: str) -> str:
+    """Convert URLs and email addresses in plain text to clickable links.
+
+    Args:
+        text: Plain text content
+
+    Returns:
+        HTML with URLs and emails converted to <a> tags
+    """
+    # First, HTML-escape the text to prevent XSS
+    escaped = html.escape(text)
+
+    # Replace URLs with links (must do before emails since URLs may contain @)
+    escaped = URL_RE.sub(r'<a href="\1" target="_blank">\1</a>', escaped)
+
+    # Replace email addresses with mailto links
+    # But not if they're already inside an href (from URL linking)
+    def replace_email(match):
+        email_addr = match.group(1)
+        # Check if this email is inside an href attribute
+        start = match.start()
+        # Look back to see if we're inside href="..."
+        preceding = escaped[:start]
+        # If the last href= is closer than the last > or ", we're inside a tag
+        last_href = preceding.rfind('href="')
+        last_close = max(preceding.rfind('>'), preceding.rfind('"'))
+        if last_href > last_close:
+            return email_addr  # Don't linkify, we're inside href
+        return f'<a href="mailto:{email_addr}">{email_addr}</a>'
+
+    escaped = EMAIL_RE.sub(replace_email, escaped)
+
+    return escaped
 
 
 def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
@@ -1231,6 +1277,9 @@ body {
         # Get back URL if user came from search
         back_url = get_back_to_search_url()
 
+        # Linkify plain text body for clickable URLs and emails
+        body_linkified = _linkify(email_data["body"]) if email_data["body"] else ""
+
         return render_template(
             "email.html",
             stats=stats,
@@ -1243,7 +1292,7 @@ body {
             recipients_parsed=recipients_parsed,
             date=email_data["date"],
             labels=email_data["labels"],
-            body=email_data["body"],
+            body=body_linkified,
             body_html=body_html,
             attachments=email_data["attachments"],
             images_blocked=images_blocked,
