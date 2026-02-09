@@ -62,17 +62,6 @@ The web UI is functional (Flask + Jinja, search, email detail, attachment downlo
 
 ---
 
-## Later — Outlook / Microsoft 365
-
-**Goal**: Add Outlook support via Microsoft Graph API.
-
-- OAuth2 via Azure AD app registration.
-- Folders instead of labels (mapped to `X-Outlook-Folders` header).
-- Create `providers/outlook.py` using `msal` library.
-- Handle Outlook-specific quirks (conversation threading, etc.).
-
----
-
 ## Backlog
 
 Items not yet scheduled:
@@ -88,12 +77,6 @@ ownmail export --format pdf --query "from:important@example.com"
 
 Detect duplicate emails across accounts/imports (same `content_hash`). `ownmail dedup` command. Cross-folder dedup within IMAP is already handled by the IMAP provider.
 
-### Scheduled Backups
-
-```bash
-ownmail schedule --interval daily  # Generate launchd/cron config
-```
-
 ### Headless Server Support
 
 Encrypted file fallback for servers without a desktop keyring.
@@ -101,12 +84,6 @@ Encrypted file fallback for servers without a desktop keyring.
 ### Encryption at Rest
 
 Encrypt `.eml` files (AES-256-GCM per file) and database. `ownmail encrypt` / `ownmail decrypt` commands. Key in system keychain. Mixed encrypted/unencrypted handled transparently. Alternative: use OS-level encrypted volumes (APFS, LUKS, BitLocker).
-
-### Statistics & Analytics
-
-```bash
-ownmail stats --detailed  # Top senders, emails per month, attachment sizes
-```
 
 ---
 
