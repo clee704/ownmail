@@ -9,7 +9,7 @@ ownmail - Backup
 ==================================================
 
 ✓ Authenticated with Gmail API
-Archive location: /Volumes/Secure/emails
+Archive location: /Volumes/Secure/ownmail
 Previously backed up: 12,847 emails
 
 Checking for new emails...
@@ -39,7 +39,7 @@ pipx install ownmail
 ownmail setup
 
 # 2. Backup your emails
-ownmail backup --archive-dir /Volumes/Secure/emails
+ownmail backup --archive-dir /Volumes/Secure/ownmail
 
 # 3. Search
 ownmail search "invoice from:amazon"
@@ -80,14 +80,14 @@ ownmail setup --credentials-file ~/Downloads/credentials.json
 rm ~/Downloads/credentials.json  # Delete after import!
 ```
 
-Credentials are stored in macOS Keychain, never on the filesystem.
+Credentials are stored in your system keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service), never on the filesystem.
 
 ## Config File
 
 Create `config.yaml` in your working directory:
 
 ```yaml
-archive_dir: /Volumes/Secure/emails
+archive_dir: /Volumes/Secure/ownmail
 include_labels: true
 ```
 
@@ -103,7 +103,7 @@ ownmail search "attachment:pdf"
 ## Storage Layout
 
 ```
-/Volumes/Secure/emails/
+/Volumes/Secure/ownmail/
 ├── archive.db              # SQLite (tracking + search index)
 └── emails/
     ├── 2024/
@@ -152,17 +152,17 @@ Backup Paused!
 
 | What | Where |
 |------|-------|
-| OAuth credentials | macOS Keychain |
+| OAuth credentials | System keychain (macOS/Windows/Linux) |
 | Emails & search index | Your chosen directory |
 
 Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
 
 ## Roadmap
 
+- [ ] Multiple accounts
 - [ ] Outlook/Microsoft 365 support
 - [ ] Generic IMAP support
 - [ ] Web UI for self-hosted access
-- [ ] Linux keyring support
 
 ## License
 

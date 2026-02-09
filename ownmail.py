@@ -1300,7 +1300,7 @@ Examples:
   %(prog)s setup                           First-time credential setup
   %(prog)s setup --credentials-file creds.json
   %(prog)s backup                          Download new emails
-  %(prog)s backup --archive-dir /Volumes/Secure/emails
+  %(prog)s backup --archive-dir /Volumes/Secure/ownmail
   %(prog)s search "invoice from:amazon"   Search emails
   %(prog)s search "subject:meeting"        Search by subject
   %(prog)s stats                           Show statistics
@@ -1312,7 +1312,7 @@ Examples:
   %(prog)s sync-check                      Compare local archive with server
 
 Config file (config.yaml):
-    archive_dir: /Volumes/Secure/emails
+    archive_dir: /Volumes/Secure/ownmail
     include_labels: true
         """,
     )

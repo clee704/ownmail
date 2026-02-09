@@ -13,50 +13,26 @@
 - [x] Full-text search (SQLite FTS5)
 - [x] Gmail labels as X-Gmail-Labels header
 - [x] Integrity verification (SHA256 hashes)
-- [x] macOS Keychain credential storage
+- [x] Secure credential storage (macOS/Windows/Linux via keyring)
 - [x] Resumable backups (Ctrl-C safe)
 - [x] Config file support
 
 ---
 
-## v0.2.0 — Multi-Platform Credential Storage
-
-**Goal**: Support Windows and Linux in addition to macOS.
-
-### Tasks
-
-- [ ] Abstract credential storage into a `CredentialStore` interface
-- [ ] Implement backends:
-  - [x] macOS Keychain (current, via `keyring`)
-  - [ ] Windows Credential Manager (via `keyring`)
-  - [ ] Linux Secret Service / libsecret (via `keyring`)
-  - [ ] Encrypted file fallback (for headless servers)
-- [ ] Auto-detect platform and select appropriate backend
-- [ ] Add `--credential-store` CLI option to override
-
-### Notes
-
-The `keyring` library already supports multiple backends. Main work is:
-1. Testing on each platform
-2. Handling the encrypted file fallback for headless Linux servers
-3. Documenting platform-specific setup
-
----
-
-## v0.3.0 — Multiple Accounts
+## v0.2.0 — Multiple Accounts
 
 **Goal**: Support backing up multiple email accounts to the same archive.
 
 ### Directory Structure
 
 ```
-/Volumes/Secure/emails/
+/Volumes/Secure/ownmail/
 ├── archive.db                    # Global index (all accounts)
 ├── accounts/
 │   ├── alice@gmail.com/
 │   │   └── emails/
 │   │       └── 2024/...
-│   ├── bob@outlook.com/
+│   ├── bob@gmail.com/
 │   │   └── emails/
 │   │       └── 2024/...
 │   └── work@company.com/
@@ -64,18 +40,16 @@ The `keyring` library already supports multiple backends. Main work is:
 │           └── 2024/...
 ```
 
-### Config Structure (v0.3)
+### Config Structure (v0.2)
 
 ```yaml
 # Global settings
-archive_dir: /Volumes/Secure/emails
+archive_dir: /Volumes/Secure/ownmail
 
 # Provider defaults
 providers:
   gmail:
     include_labels: true
-  outlook:
-    include_categories: true
 
 # Accounts
 accounts:
@@ -86,9 +60,6 @@ accounts:
   - provider: gmail
     address: work@company.com
     include_labels: false  # override provider default
-    
-  - provider: outlook
-    address: bob@outlook.com
 ```
 
 ### CLI Changes
@@ -125,7 +96,7 @@ CREATE INDEX idx_emails_account ON emails(account);
 
 ---
 
-## v0.4.0 — Additional Email Providers
+## v0.3.0 — Additional Email Providers
 
 **Goal**: Support email services beyond Gmail.
 
@@ -168,10 +139,27 @@ class OutlookProvider(EmailProvider): ...
 class IMAPProvider(EmailProvider): ...
 ```
 
-### IMAP Provider Config
+### Config with Multiple Providers
 
 ```yaml
+archive_dir: /Volumes/Secure/ownmail
+
+providers:
+  gmail:
+    include_labels: true
+  outlook:
+    include_categories: true
+  imap:
+    # IMAP-specific defaults
+
 accounts:
+  - provider: gmail
+    address: alice@gmail.com
+
+  - provider: outlook
+    address: bob@outlook.com
+    include_labels: false  # override provider default
+
   - provider: imap
     address: me@example.com
     imap_server: imap.example.com
@@ -181,7 +169,7 @@ accounts:
 
 ---
 
-## v0.5.0 — Web UI
+## v0.4.0 — Web UI
 
 **Goal**: Self-hosted web interface to browse and search your email archive.
 
@@ -233,7 +221,18 @@ ownmail web --port 8080
 
 ---
 
-## Future Ideas
+## Backlog
+
+Items not yet scheduled:
+
+### Multi-Platform Credential Storage
+
+Support Windows and Linux credential stores.
+
+- [ ] Abstract credential storage into a `CredentialStore` interface
+- [ ] Windows Credential Manager (via `keyring`)
+- [ ] Linux Secret Service / libsecret (via `keyring`)
+- [ ] Encrypted file fallback (for headless servers)
 
 ### Email Export
 
@@ -265,6 +264,14 @@ Encrypt individual .eml files (for non-encrypted volumes).
 ```bash
 ownmail stats --detailed
 # Top senders, emails per month, attachment sizes, etc.
+```
+
+### Optional Attachment Download
+
+Config option to skip downloading attachments for smaller backups:
+
+```yaml
+include_attachments: false  # Default: true
 ```
 
 ---
