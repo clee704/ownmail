@@ -258,7 +258,7 @@ header h1 a:hover { text-decoration: none; }
     word-wrap: break-word;
     padding: 15px;
 }
-.email-body { font-family: inherit; margin: 0; line-height: 1.6; padding: 15px; }
+.email-body { font-family: inherit; margin: 0; line-height: 1.6; }
 .email-body a { color: #0066cc; text-decoration: none; }
 .email-body a:hover { text-decoration: underline; }
 .email-body .email-header-label { font-weight: 600; color: #666; }
