@@ -53,3 +53,10 @@ Examples:
 - `fix: use NOT IN instead of LEFT JOIN for FTS5 performance`
 - `docs: add detailed help messages for all commands`
 - `test: add unit tests for EmailParser`
+
+## Git Best Practices (AI-specific)
+
+- **Keep commits self-contained** — each commit should be logically independent
+- **Don't mix unrelated changes** — separate bug fixes, features, and refactors into different commits
+- **Avoid `git add -A`** — it can stage unrelated files. Always examine repo state with `git status` before adding files
+- **Stage files explicitly** — use `git add <file>` for specific files you've changed
