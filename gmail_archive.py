@@ -207,9 +207,16 @@ class ArchiveDatabase:
                 CREATE TABLE IF NOT EXISTS emails (
                     message_id TEXT PRIMARY KEY,
                     filename TEXT,
-                    downloaded_at TEXT
+                    downloaded_at TEXT,
+                    content_hash TEXT
                 )
             """)
+            
+            # Migration: add content_hash column if missing (for existing DBs)
+            try:
+                conn.execute("ALTER TABLE emails ADD COLUMN content_hash TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             
             # Sync state for incremental backup
             conn.execute("""
@@ -266,16 +273,16 @@ class ArchiveDatabase:
             results = conn.execute("SELECT message_id FROM emails").fetchall()
             return {row[0] for row in results}
 
-    def mark_downloaded(self, message_id: str, filename: str) -> None:
+    def mark_downloaded(self, message_id: str, filename: str, content_hash: str = None) -> None:
         """Mark a message as downloaded."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO emails 
-                (message_id, filename, downloaded_at)
-                VALUES (?, ?, ?)
+                (message_id, filename, downloaded_at, content_hash)
+                VALUES (?, ?, ?, ?)
                 """,
-                (message_id, filename, datetime.now().isoformat()),
+                (message_id, filename, datetime.now().isoformat(), content_hash),
             )
             conn.commit()
 
@@ -455,12 +462,16 @@ class EmailParser:
 class GmailArchive:
     """Main Gmail archive class."""
 
-    def __init__(self, archive_dir: Path):
+    def __init__(self, archive_dir: Path, config: Dict[str, Any] = None):
         self.archive_dir = archive_dir
         self.emails_dir = archive_dir / "emails"
         self.keychain = KeychainStorage(KEYCHAIN_SERVICE)
         self.db = ArchiveDatabase(archive_dir)
         self.service = None
+        self.config = config or {}
+        
+        # Config options with defaults
+        self.include_labels = self.config.get("include_labels", True)
 
     def authenticate(self) -> None:
         """Authenticate with Gmail API using OAuth2."""
@@ -574,9 +585,75 @@ class GmailArchive:
         print(f"  Found {len(all_ids)} total messages")
         return all_ids
 
-    def download_message(self, message_id: str) -> Optional[Path]:
-        """Download a single message and save it atomically."""
+    def _get_labels_for_message(self, message_id: str) -> List[str]:
+        """Fetch Gmail labels for a message."""
         try:
+            message = (
+                self.service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="metadata", metadataHeaders=[])
+                .execute()
+            )
+            label_ids = message.get("labelIds", [])
+            
+            # Convert label IDs to readable names
+            # System labels are like INBOX, SENT, IMPORTANT, etc.
+            # User labels need to be looked up (cached)
+            return self._resolve_label_names(label_ids)
+        except HttpError:
+            return []
+
+    def _resolve_label_names(self, label_ids: List[str]) -> List[str]:
+        """Convert label IDs to human-readable names."""
+        # Cache labels on first use
+        if not hasattr(self, "_label_cache"):
+            self._label_cache = {}
+            try:
+                result = self.service.users().labels().list(userId="me").execute()
+                for label in result.get("labels", []):
+                    self._label_cache[label["id"]] = label["name"]
+            except HttpError:
+                pass
+        
+        names = []
+        for lid in label_ids:
+            if lid in self._label_cache:
+                names.append(self._label_cache[lid])
+            else:
+                # Fallback to ID if not found
+                names.append(lid)
+        return names
+
+    def _inject_labels(self, message_id: str, raw_data: bytes) -> bytes:
+        """Inject X-Gmail-Labels header into raw email data."""
+        labels = self._get_labels_for_message(message_id)
+        if not labels:
+            return raw_data
+        
+        # Create the header line
+        labels_str = ", ".join(labels)
+        header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode("utf-8")
+        
+        # Insert after the first line (usually "Received:" or similar)
+        # Find the first \r\n and insert after it
+        first_newline = raw_data.find(b"\r\n")
+        if first_newline == -1:
+            first_newline = raw_data.find(b"\n")
+            if first_newline == -1:
+                return raw_data
+            # Use \n style
+            header_line = f"X-Gmail-Labels: {labels_str}\n".encode("utf-8")
+            return raw_data[:first_newline + 1] + header_line + raw_data[first_newline + 1:]
+        
+        return raw_data[:first_newline + 2] + header_line + raw_data[first_newline + 2:]
+
+    def download_message(self, message_id: str, include_labels: bool = None) -> Optional[Path]:
+        """Download a single message and save it atomically."""
+        if include_labels is None:
+            include_labels = self.include_labels
+            
+        try:
+            # Fetch raw email
             message = (
                 self.service.users()
                 .messages()
@@ -585,6 +662,11 @@ class GmailArchive:
             )
 
             raw_data = base64.urlsafe_b64decode(message["raw"])
+            
+            # Fetch labels if enabled
+            if include_labels:
+                raw_data = self._inject_labels(message_id, raw_data)
+
             email_msg = email.message_from_bytes(raw_data)
             date_str = email_msg.get("Date", "")
 
@@ -617,8 +699,11 @@ class GmailArchive:
                     os.unlink(temp_path)
                 raise
 
+            # Compute content hash for integrity verification
+            content_hash = hashlib.sha256(raw_data).hexdigest()
+
             rel_path = str(filepath.relative_to(self.archive_dir))
-            self.db.mark_downloaded(message_id=message_id, filename=rel_path)
+            self.db.mark_downloaded(message_id=message_id, filename=rel_path, content_hash=content_hash)
 
             return filepath
 
@@ -698,9 +783,18 @@ class GmailArchive:
                 if interrupted:
                     break
 
-                print(f"  [{i}/{len(new_message_ids)}] Downloading and indexing...", end="\r")
+                print(f"  [{i}/{len(new_message_ids)}] Downloading...                    ", end="\r")
                 filepath = self.download_message(msg_id)
                 if filepath:
+                    # Show file size for progress visibility
+                    size_bytes = filepath.stat().st_size
+                    if size_bytes > 1_000_000:
+                        size_str = f"{size_bytes / 1_000_000:.1f}MB"
+                    elif size_bytes > 1_000:
+                        size_str = f"{size_bytes / 1_000:.0f}KB"
+                    else:
+                        size_str = f"{size_bytes}B"
+                    print(f"  [{i}/{len(new_message_ids)}] {size_str:>7} - indexing...   ", end="\r")
                     self.index_email(msg_id, filepath)
                     success_count += 1
                 else:
@@ -895,6 +989,313 @@ class GmailArchive:
             print(f"  Errors: {error_count}")
         print("-" * 50 + "\n")
 
+    def cmd_add_labels(self) -> None:
+        """Add Gmail labels to existing downloaded emails."""
+        print("\n" + "=" * 50)
+        print("Gmail Archive - Add Labels")
+        print("=" * 50 + "\n")
+
+        self.authenticate()
+
+        # Get all downloaded emails
+        with sqlite3.connect(self.db.db_path) as conn:
+            emails = conn.execute(
+                "SELECT message_id, filename FROM emails"
+            ).fetchall()
+
+        if not emails:
+            print("No emails to process.")
+            return
+
+        print(f"Adding labels to {len(emails)} emails...")
+        print("(Press Ctrl-C to stop - already processed files are saved)\n")
+
+        success_count = 0
+        skip_count = 0
+        error_count = 0
+        interrupted = False
+
+        def signal_handler(signum, frame):
+            nonlocal interrupted
+            if interrupted:
+                print("\n\nForce quit.")
+                sys.exit(1)
+            interrupted = True
+            print("\n\n⏸ Stopping after current email... (Ctrl-C again to force quit)")
+
+        original_handler = signal.signal(signal.SIGINT, signal_handler)
+
+        try:
+            for i, (msg_id, filename) in enumerate(emails, 1):
+                if interrupted:
+                    break
+
+                filepath = self.archive_dir / filename
+                if not filepath.exists():
+                    error_count += 1
+                    continue
+
+                # Check if already has labels
+                with open(filepath, "rb") as f:
+                    first_bytes = f.read(1000)
+                    if b"X-Gmail-Labels:" in first_bytes:
+                        skip_count += 1
+                        continue
+
+                print(f"  [{i}/{len(emails)}] Fetching labels...", end="\r")
+
+                try:
+                    # Get labels for this message
+                    labels = self._get_labels_for_message(msg_id)
+                    if not labels:
+                        skip_count += 1
+                        continue
+
+                    # Read existing email
+                    with open(filepath, "rb") as f:
+                        raw_data = f.read()
+
+                    # Inject labels header
+                    labels_str = ", ".join(labels)
+                    header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode("utf-8")
+
+                    first_newline = raw_data.find(b"\r\n")
+                    if first_newline == -1:
+                        first_newline = raw_data.find(b"\n")
+                        if first_newline != -1:
+                            header_line = f"X-Gmail-Labels: {labels_str}\n".encode("utf-8")
+                            new_data = raw_data[:first_newline + 1] + header_line + raw_data[first_newline + 1:]
+                        else:
+                            skip_count += 1
+                            continue
+                    else:
+                        new_data = raw_data[:first_newline + 2] + header_line + raw_data[first_newline + 2:]
+
+                    # Atomic write
+                    fd, temp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
+                    try:
+                        os.write(fd, new_data)
+                        os.close(fd)
+                        os.rename(temp_path, filepath)
+                        success_count += 1
+                    except:
+                        os.close(fd)
+                        if os.path.exists(temp_path):
+                            os.unlink(temp_path)
+                        raise
+
+                except HttpError as e:
+                    print(f"\n  Error processing {msg_id}: {e}")
+                    error_count += 1
+
+        finally:
+            signal.signal(signal.SIGINT, original_handler)
+
+        print("\n" + "-" * 50)
+        if interrupted:
+            print("Add Labels Paused!")
+        else:
+            print("Add Labels Complete!")
+        print(f"  Updated: {success_count} emails")
+        print(f"  Skipped (already had labels or no labels): {skip_count}")
+        if error_count > 0:
+            print(f"  Errors: {error_count}")
+        print("-" * 50 + "\n")
+
+    def _print_file_list(self, files: list, label: str, verbose: bool, max_show: int = 5) -> None:
+        """Helper to print a list of files with truncation unless verbose."""
+        if not files:
+            return
+        print(f"  {label}: {len(files)}")
+        show_count = len(files) if verbose else min(len(files), max_show)
+        for f in files[:show_count]:
+            print(f"      {f}")
+        if not verbose and len(files) > max_show:
+            print(f"      ... and {len(files) - max_show} more (use --verbose to show all)")
+
+    def cmd_verify(self, verbose: bool = False) -> None:
+        """Verify integrity of downloaded emails against stored hashes."""
+        print("\n" + "=" * 50)
+        print("Gmail Archive - Verify Integrity")
+        print("=" * 50 + "\n")
+
+        # Get all downloaded emails with hashes
+        with sqlite3.connect(self.db.db_path) as conn:
+            emails = conn.execute(
+                "SELECT message_id, filename, content_hash FROM emails"
+            ).fetchall()
+
+        if not emails:
+            print("No emails to verify.")
+            return
+
+        total = len(emails)
+        ok_count = 0
+        missing_count = 0
+        corrupted_count = 0
+        no_hash_count = 0
+        corrupted_files = []
+        missing_files = []
+        indexed_files = set()
+
+        print(f"Verifying {total} indexed emails...\n")
+
+        for i, (msg_id, filename, stored_hash) in enumerate(emails, 1):
+            print(f"  [{i}/{total}] Verifying indexed...", end="\r")
+            
+            indexed_files.add(filename)
+            filepath = self.archive_dir / filename
+            
+            if not filepath.exists():
+                missing_count += 1
+                missing_files.append(filename)
+                continue
+            
+            if not stored_hash:
+                no_hash_count += 1
+                continue
+            
+            # Compute current hash
+            with open(filepath, "rb") as f:
+                current_hash = hashlib.sha256(f.read()).hexdigest()
+            
+            if current_hash == stored_hash:
+                ok_count += 1
+            else:
+                corrupted_count += 1
+                corrupted_files.append(filename)
+
+        # Check for orphaned files (on disk but not in index)
+        print(f"\n  Scanning for orphaned files...", end="\r")
+        orphaned_files = []
+        for eml_file in self.emails_dir.rglob("*.eml"):
+            rel_path = str(eml_file.relative_to(self.archive_dir))
+            if rel_path not in indexed_files:
+                orphaned_files.append(rel_path)
+
+        print("\n" + "-" * 50)
+        print("Verification Complete!")
+        print(f"  ✓ OK: {ok_count}")
+        if no_hash_count > 0:
+            print(f"  ? No hash stored: {no_hash_count} (run 'rehash' to compute)")
+        self._print_file_list(missing_files, "✗ In index but missing from disk", verbose)
+        self._print_file_list(orphaned_files, "? On disk but not in index", verbose)
+        self._print_file_list(corrupted_files, "✗ CORRUPTED (hash mismatch)", verbose)
+        
+        if missing_count == 0 and corrupted_count == 0 and len(orphaned_files) == 0 and no_hash_count == 0:
+            print("\n  ✓ All files verified successfully!")
+        print("-" * 50 + "\n")
+
+    def cmd_rehash(self) -> None:
+        """Compute and store hashes for emails that don't have them."""
+        print("\n" + "=" * 50)
+        print("Gmail Archive - Compute Hashes")
+        print("=" * 50 + "\n")
+
+        # Get emails without hashes
+        with sqlite3.connect(self.db.db_path) as conn:
+            emails = conn.execute(
+                "SELECT message_id, filename FROM emails WHERE content_hash IS NULL"
+            ).fetchall()
+
+        if not emails:
+            print("All emails already have hashes.")
+            return
+
+        print(f"Computing hashes for {len(emails)} emails...\n")
+
+        success_count = 0
+        error_count = 0
+
+        for i, (msg_id, filename) in enumerate(emails, 1):
+            print(f"  [{i}/{len(emails)}] Hashing...", end="\r")
+            
+            filepath = self.archive_dir / filename
+            
+            if not filepath.exists():
+                error_count += 1
+                continue
+            
+            with open(filepath, "rb") as f:
+                content_hash = hashlib.sha256(f.read()).hexdigest()
+            
+            with sqlite3.connect(self.db.db_path) as conn:
+                conn.execute(
+                    "UPDATE emails SET content_hash = ? WHERE message_id = ?",
+                    (content_hash, msg_id)
+                )
+                conn.commit()
+            
+            success_count += 1
+
+        print("\n" + "-" * 50)
+        print("Rehash Complete!")
+        print(f"  Hashed: {success_count} emails")
+        if error_count > 0:
+            print(f"  Errors (missing files): {error_count}")
+        print("-" * 50 + "\n")
+
+    def cmd_sync_check(self, verbose: bool = False) -> None:
+        """Compare local archive with Gmail server."""
+        print("\n" + "=" * 50)
+        print("Gmail Archive - Sync Check")
+        print("=" * 50 + "\n")
+
+        self.authenticate()
+
+        # Get all message IDs from Gmail
+        print("Fetching message IDs from Gmail...")
+        gmail_ids = set(self._get_all_message_ids())
+
+        # Get all local message IDs
+        local_ids = self.db.get_downloaded_ids()
+
+        print(f"\nGmail: {len(gmail_ids)} emails")
+        print(f"Local: {len(local_ids)} emails\n")
+
+        # Find differences
+        on_gmail_not_local = gmail_ids - local_ids
+        on_local_not_gmail = local_ids - gmail_ids
+        in_sync = gmail_ids & local_ids
+
+        print("-" * 50)
+        print("Sync Check Complete!")
+        print(f"  ✓ In sync: {len(in_sync)}")
+        
+        # For displaying, we need filenames for local-only, but message IDs for gmail-only
+        if on_gmail_not_local:
+            print(f"  ↓ On Gmail but not local: {len(on_gmail_not_local)}")
+            show_count = len(on_gmail_not_local) if verbose else min(len(on_gmail_not_local), 5)
+            for msg_id in list(on_gmail_not_local)[:show_count]:
+                print(f"      {msg_id}")
+            if not verbose and len(on_gmail_not_local) > 5:
+                print(f"      ... and {len(on_gmail_not_local) - 5} more (use --verbose to show all)")
+            print(f"\n  Run 'backup' to download these emails.")
+        
+        if on_local_not_gmail:
+            # Get filenames for these
+            with sqlite3.connect(self.db.db_path) as conn:
+                local_only_files = []
+                for msg_id in on_local_not_gmail:
+                    result = conn.execute(
+                        "SELECT filename FROM emails WHERE message_id = ?", (msg_id,)
+                    ).fetchone()
+                    if result:
+                        local_only_files.append(f"{result[0]} ({msg_id})")
+                    else:
+                        local_only_files.append(msg_id)
+            
+            print(f"  ✗ On local but not on Gmail (deleted from server?): {len(on_local_not_gmail)}")
+            show_count = len(local_only_files) if verbose else min(len(local_only_files), 5)
+            for f in local_only_files[:show_count]:
+                print(f"      {f}")
+            if not verbose and len(local_only_files) > 5:
+                print(f"      ... and {len(local_only_files) - 5} more (use --verbose to show all)")
+        
+        if not on_gmail_not_local and not on_local_not_gmail:
+            print("\n  ✓ Local archive is fully in sync with Gmail!")
+        print("-" * 50 + "\n")
+
 
 def main():
     """Main entry point."""
@@ -911,11 +1312,17 @@ Examples:
   %(prog)s search "subject:meeting"        Search by subject
   %(prog)s stats                           Show statistics
   %(prog)s reindex                         Rebuild search index
+  %(prog)s add-labels                      Add Gmail labels to existing emails
+  %(prog)s verify                          Verify integrity of downloaded emails
+  %(prog)s verify --verbose                Show full list of issues
+  %(prog)s rehash                          Compute hashes for emails without them
+  %(prog)s sync-check                      Compare local archive with Gmail server
 
 Config file:
   Create a config.yaml in the current directory:
   
     archive_dir: /Volumes/My Passport Encrypted/Emails
+    include_labels: true
         """,
     )
 
@@ -963,6 +1370,28 @@ Config file:
     # reindex command
     subparsers.add_parser("reindex", help="Rebuild the search index")
 
+    # add-labels command
+    subparsers.add_parser("add-labels", help="Add Gmail labels to existing emails")
+
+    # verify command
+    verify_parser = subparsers.add_parser("verify", help="Verify integrity of downloaded emails")
+    verify_parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show full list of issues instead of truncated",
+    )
+
+    # rehash command
+    subparsers.add_parser("rehash", help="Compute hashes for emails without them")
+
+    # sync-check command
+    sync_check_parser = subparsers.add_parser("sync-check", help="Compare local archive with Gmail server")
+    sync_check_parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show full list of differences instead of truncated",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -981,7 +1410,7 @@ Config file:
         archive_dir = DEFAULT_ARCHIVE_DIR
 
     try:
-        archive = GmailArchive(archive_dir)
+        archive = GmailArchive(archive_dir, config)
 
         if args.command == "setup":
             archive.cmd_setup(args.credentials_file)
@@ -993,6 +1422,14 @@ Config file:
             archive.cmd_stats()
         elif args.command == "reindex":
             archive.cmd_reindex()
+        elif args.command == "add-labels":
+            archive.cmd_add_labels()
+        elif args.command == "verify":
+            archive.cmd_verify(verbose=args.verbose)
+        elif args.command == "rehash":
+            archive.cmd_rehash()
+        elif args.command == "sync-check":
+            archive.cmd_sync_check(verbose=args.verbose)
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
