@@ -34,6 +34,7 @@ import argparse
 import re
 import signal
 import tempfile
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
@@ -189,6 +190,11 @@ class ArchiveDatabase:
         self.archive_dir = archive_dir
         self.db_path = archive_dir / "ownmail.db"
         archive_dir.mkdir(parents=True, exist_ok=True)
+        
+        is_new_db = not self.db_path.exists()
+        if is_new_db:
+            print(f"Creating new database: {self.db_path}")
+        
         self._init_db()
 
     def _init_db(self) -> None:
@@ -204,18 +210,6 @@ class ArchiveDatabase:
                     indexed_hash TEXT
                 )
             """)
-            
-            # Migration: add content_hash column if missing (for existing DBs)
-            try:
-                conn.execute("ALTER TABLE emails ADD COLUMN content_hash TEXT")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
-            
-            # Migration: add indexed_hash column if missing (for existing DBs)
-            try:
-                conn.execute("ALTER TABLE emails ADD COLUMN indexed_hash TEXT")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
             
             # Sync state for incremental backup
             conn.execute("""
@@ -294,11 +288,23 @@ class ArchiveDatabase:
         date_str: str,
         body: str,
         attachments: str,
+        conn: sqlite3.Connection = None,
+        skip_delete: bool = False,
     ) -> None:
-        """Add email to full-text search index."""
-        with sqlite3.connect(self.db_path) as conn:
-            # Remove existing entry if any
-            conn.execute("DELETE FROM emails_fts WHERE message_id = ?", (message_id,))
+        """Add email to full-text search index.
+        
+        Args:
+            conn: Optional existing connection (for batching). If None, creates one and commits.
+            skip_delete: If True, skip the DELETE (for new emails that aren't in the index yet).
+        """
+        should_close = conn is None
+        if conn is None:
+            conn = sqlite3.connect(self.db_path)
+        
+        try:
+            # Remove existing entry if any (skip for new emails - DELETE is slow on FTS)
+            if not skip_delete:
+                conn.execute("DELETE FROM emails_fts WHERE message_id = ?", (message_id,))
             # Insert new entry
             conn.execute(
                 """
@@ -308,7 +314,11 @@ class ArchiveDatabase:
                 """,
                 (message_id, subject, sender, recipients, date_str, body, attachments),
             )
-            conn.commit()
+            if should_close:
+                conn.commit()
+        finally:
+            if should_close:
+                conn.close()
 
     def is_indexed(self, message_id: str) -> bool:
         """Check if a message is in the search index."""
@@ -433,11 +443,21 @@ class EmailParser:
         return ""
 
     @staticmethod
-    def parse_file(filepath: Path) -> dict:
-        """Parse an .eml file and extract searchable content."""
+    def parse_file(filepath: Path = None, content: bytes = None) -> dict:
+        """Parse an .eml file and extract searchable content.
+        
+        Args:
+            filepath: Path to .eml file (reads from disk)
+            content: Raw email bytes (avoids disk read if already loaded)
+        """
         try:
-            with open(filepath, "rb") as f:
-                msg = email.message_from_binary_file(f, policy=email_policy)
+            if content is not None:
+                msg = email.message_from_bytes(content, policy=email_policy)
+            elif filepath is not None:
+                with open(filepath, "rb") as f:
+                    msg = email.message_from_binary_file(f, policy=email_policy)
+            else:
+                raise ValueError("Must provide filepath or content")
         except Exception as e:
             # If even parsing fails, return minimal info
             return {
@@ -770,29 +790,42 @@ class GmailArchive:
             print(f"\n  Error downloading {message_id}: {e}")
             return None
 
-    def index_email(self, message_id: str, filepath: Path, update_hash: bool = True) -> bool:
+    def index_email(self, message_id: str, filepath: Path, update_hash: bool = True, debug: bool = False, skip_delete: bool = False) -> bool:
         """Index an email for full-text search.
         
         Args:
             message_id: The message ID
             filepath: Path to the .eml file
             update_hash: If True, also compute and update content_hash and indexed_hash
+            debug: If True, print timing information
+            skip_delete: If True, skip DELETE before INSERT (for new emails not yet in FTS)
         
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Read file content for both parsing and hashing
+            t0 = time.time()
+            
+            # Read file content once for both parsing and hashing
             with open(filepath, "rb") as f:
                 content = f.read()
+            t_read = time.time() - t0
             
             # Compute hash
+            t0 = time.time()
             new_hash = hashlib.sha256(content).hexdigest() if update_hash else None
+            t_hash = time.time() - t0
             
-            # Parse email
-            parsed = EmailParser.parse_file(filepath)
+            # Parse email (using already-loaded content)
+            t0 = time.time()
+            parsed = EmailParser.parse_file(content=content)
+            t_parse = time.time() - t0
+            
+            # Use shared connection if available (for batching)
+            conn = getattr(self, '_batch_conn', None)
             
             # Index in FTS
+            t0 = time.time()
             self.db.index_email(
                 message_id=message_id,
                 subject=parsed["subject"],
@@ -801,16 +834,31 @@ class GmailArchive:
                 date_str=parsed["date_str"],
                 body=parsed["body"],
                 attachments=parsed["attachments"],
+                conn=conn,
+                skip_delete=skip_delete,
             )
+            t_fts = time.time() - t0
             
-            # Update hashes
+            # Update hashes (use shared connection if available)
+            t0 = time.time()
             if update_hash and new_hash:
-                with sqlite3.connect(self.db.db_path) as conn:
+                if conn:
                     conn.execute(
                         "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE message_id = ?",
                         (new_hash, new_hash, message_id)
                     )
-                    conn.commit()
+                else:
+                    with sqlite3.connect(self.db.db_path) as c:
+                        c.execute(
+                            "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE message_id = ?",
+                            (new_hash, new_hash, message_id)
+                        )
+                        c.commit()
+            t_update = time.time() - t0
+            
+            if debug:
+                total = t_read + t_hash + t_parse + t_fts + t_update
+                print(f"\n    DEBUG: read={t_read*1000:.0f}ms hash={t_hash*1000:.0f}ms parse={t_parse*1000:.0f}ms fts={t_fts*1000:.0f}ms update={t_update*1000:.0f}ms TOTAL={total*1000:.0f}ms")
             
             return True
         except Exception as e:
@@ -1035,7 +1083,7 @@ class GmailArchive:
             print(f"\n❌ Error: {e}")
             sys.exit(1)
 
-    def cmd_reindex(self, file_path: Optional[Path] = None, pattern: Optional[str] = None, force: bool = False) -> None:
+    def cmd_reindex(self, file_path: Optional[Path] = None, pattern: Optional[str] = None, force: bool = False, debug: bool = False) -> None:
         """Rebuild the search index.
         
         By default, only indexes emails that have changed (content_hash != indexed_hash).
@@ -1045,7 +1093,9 @@ class GmailArchive:
             file_path: Index only this specific file
             pattern: Index only files matching this glob pattern (e.g., "2024/09/*")
             force: If True, reindex all emails regardless of indexed_hash
+            debug: If True, show timing info for each email
         """
+        self._debug = debug
         print("\n" + "=" * 50)
         print("ownmail - Reindex")
         print("=" * 50 + "\n")
@@ -1126,13 +1176,22 @@ class GmailArchive:
             print("All emails are already indexed. Use --force to reindex everything.")
             return
 
+        # Track IDs that need old FTS entries deleted (already indexed, being re-indexed)
+        reindex_ids = [msg_id for msg_id, _, _, indexed_hash in emails if indexed_hash is not None]
+        
         print(f"Indexing {len(emails)} emails...")
+        if reindex_ids:
+            print(f"  ({len(reindex_ids)} will be re-indexed)")
         print("(Press Ctrl-C to pause - progress is saved, run again to resume)\n")
 
         success_count = 0
         skip_count = 0
         error_count = 0
         interrupted = False
+        start_time = time.time()
+        last_commit_count = 0
+        COMMIT_INTERVAL = 50  # Commit every N emails
+        successfully_reindexed = []  # Track which re-indexed emails succeeded (need old entry deleted)
 
         def signal_handler(signum, frame):
             nonlocal interrupted
@@ -1141,33 +1200,93 @@ class GmailArchive:
 
         original_handler = signal.signal(signal.SIGINT, signal_handler)
 
+        # Use a shared connection for batching (much faster on slow disks)
+        self._batch_conn = sqlite3.connect(self.db.db_path)
+        # WAL mode is faster for writes and crash-safe
+        self._batch_conn.execute("PRAGMA journal_mode = WAL")
+        self._batch_conn.execute("PRAGMA synchronous = NORMAL")
+        
         try:
             for i, (msg_id, filename, content_hash, indexed_hash) in enumerate(emails, 1):
                 if interrupted:
                     break
-                    
-                print(f"  [{i}/{len(emails)}] Indexing...", end="\r")
+                
                 filepath = self.archive_dir / filename
-                if filepath.exists():
-                    if self.index_email(msg_id, filepath, update_hash=True):
-                        success_count += 1
-                    else:
-                        error_count += 1
+                short_name = Path(filename).name[:40]
+                
+                # Show what we're working on
+                print(f"\r\033[K  [{i}/{len(emails)}] {short_name}", end="", flush=True)
+                
+                if not filepath.exists():
+                    error_count += 1
+                    continue
+                
+                # Always skip DELETE - we handle it in batch upfront
+                if self.index_email(msg_id, filepath, update_hash=True, debug=self._debug, skip_delete=True):
+                    success_count += 1
+                    # Track re-indexed emails that need old FTS entry deleted
+                    if indexed_hash is not None:
+                        successfully_reindexed.append(msg_id)
                 else:
                     error_count += 1
+                
+                # Commit periodically to save progress
+                if success_count - last_commit_count >= COMMIT_INTERVAL:
+                    self._batch_conn.commit()
+                    last_commit_count = success_count
+                
+                # Calculate and show progress stats after processing
+                elapsed = time.time() - start_time
+                rate = success_count / elapsed if elapsed > 0 else 0
+                remaining = len(emails) - i
+                eta = remaining / rate if rate > 0 else 0
+                
+                # Format ETA (show "..." for first few to get stable estimate)
+                if i < 5:
+                    eta_str = "..."
+                elif eta > 3600:
+                    eta_str = f"{eta/3600:.1f}h"
+                elif eta > 60:
+                    eta_str = f"{eta/60:.0f}m"
+                else:
+                    eta_str = f"{eta:.0f}s"
+                
+                # Update progress line
+                print(f"\r\033[K  [{i}/{len(emails)}] {rate:.1f}/s | ETA {eta_str:>5} | {short_name}", end="", flush=True)
         finally:
+            # Commit any remaining inserts
+            self._batch_conn.commit()
+            
+            # Delete old FTS entries for successfully re-indexed emails (batch delete at end)
+            if successfully_reindexed:
+                print(f"\n  Cleaning up {len(successfully_reindexed)} old FTS entries...", end="", flush=True)
+                t0 = time.time()
+                # FTS5 creates rowid, old entries have lower rowid than new ones
+                # Delete entries where message_id matches but rowid is not the max for that message_id
+                for msg_id in successfully_reindexed:
+                    self._batch_conn.execute("""
+                        DELETE FROM emails_fts WHERE message_id = ? AND rowid < (
+                            SELECT MAX(rowid) FROM emails_fts WHERE message_id = ?
+                        )
+                    """, (msg_id, msg_id))
+                self._batch_conn.commit()
+                print(f" done ({time.time()-t0:.1f}s)")
+            
+            self._batch_conn.close()
+            self._batch_conn = None
             signal.signal(signal.SIGINT, original_handler)
 
+        elapsed_total = time.time() - start_time
         print("\n" + "-" * 50)
         if interrupted:
             remaining = len(emails) - success_count - error_count
             print("Reindex Paused!")
-            print(f"  Indexed: {success_count} emails")
+            print(f"  Indexed: {success_count} emails in {elapsed_total:.1f}s")
             print(f"  Remaining: {remaining} emails")
             print("\n  Run 'ownmail reindex' again to resume.")
         else:
             print("Reindex Complete!")
-            print(f"  Indexed: {success_count} emails")
+            print(f"  Indexed: {success_count} emails in {elapsed_total:.1f}s")
         if error_count > 0:
             print(f"  Errors: {error_count}")
         print("-" * 50 + "\n")
@@ -1569,6 +1688,11 @@ Config file (config.yaml):
         action="store_true",
         help="Reindex all emails, even if already indexed",
     )
+    reindex_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show timing debug info for each email",
+    )
 
     # add-labels command
     subparsers.add_parser("add-labels", help="Add Gmail labels to existing emails")
@@ -1624,7 +1748,8 @@ Config file (config.yaml):
             archive.cmd_reindex(
                 file_path=args.file,
                 pattern=args.pattern,
-                force=args.force
+                force=args.force,
+                debug=args.debug
             )
         elif args.command == "add-labels":
             archive.cmd_add_labels()
