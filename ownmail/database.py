@@ -77,6 +77,13 @@ class ArchiveDatabase:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
+            # Add has_attachments flag for fast attachment filtering
+            # (FTS is contentless so we can't query attachment column directly)
+            try:
+                conn.execute("ALTER TABLE emails ADD COLUMN has_attachments INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Sync state for incremental backup (per-account)
             # Key format: "<account>/<key>" e.g., "alice@gmail.com/history_id"
             conn.execute("""
@@ -386,6 +393,9 @@ class ArchiveDatabase:
             sender_email = self._extract_email(sender)
             recipient_emails = self._normalize_recipients(recipients)
 
+            # Check if email has attachments (non-empty attachments string)
+            has_attachments = 1 if attachments and attachments.strip() else 0
+
             # Update metadata in emails table
             conn.execute(
                 """
@@ -397,10 +407,11 @@ class ArchiveDatabase:
                     labels = ?,
                     snippet = ?,
                     sender_email = ?,
-                    recipient_emails = ?
+                    recipient_emails = ?,
+                    has_attachments = ?
                 WHERE message_id = ?
                 """,
-                (subject, sender, recipients, date_str, labels, snippet, sender_email, recipient_emails, message_id)
+                (subject, sender, recipients, date_str, labels, snippet, sender_email, recipient_emails, has_attachments, message_id)
             )
 
             # Update normalized recipients table for fast lookups
@@ -498,19 +509,26 @@ class ArchiveDatabase:
                 params.append(account)
 
             # Add WHERE clauses from parsed query
-            # Handle the special __RECIPIENT_EMAIL__ and __NOT_RECIPIENT_EMAIL__ markers
+            # Handle special markers that need custom handling
             recipient_email_filter = None
             not_recipient_email_filter = None
-            for i, clause in enumerate(parsed.where_clauses):
+            param_idx = 0
+
+            for clause in parsed.where_clauses:
                 if clause == "__RECIPIENT_EMAIL__":
                     # This is a recipient email filter - needs JOIN
-                    recipient_email_filter = parsed.params[i]
+                    recipient_email_filter = parsed.params[param_idx]
+                    param_idx += 1
                 elif clause == "__NOT_RECIPIENT_EMAIL__":
                     # This is a negated recipient email filter - needs NOT EXISTS
-                    not_recipient_email_filter = parsed.params[i]
+                    not_recipient_email_filter = parsed.params[param_idx]
+                    param_idx += 1
                 else:
                     where_clauses.append(clause)
-                    params.append(parsed.params[i])
+                    # Only consume a param if the clause uses one (has ?)
+                    if '?' in clause:
+                        params.append(parsed.params[param_idx])
+                        param_idx += 1
 
             # Add negated recipient email filter as a WHERE clause
             if not_recipient_email_filter:

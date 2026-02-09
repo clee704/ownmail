@@ -446,19 +446,20 @@ def parse_query(query: str) -> ParsedQuery:
                 params.append(normalized)
 
             elif field == 'has' and value == 'attachment':
-                # Emails with attachments - use FTS or check attachments column
+                # Emails with attachments - use has_attachments column in emails table
                 if negated:
-                    where_clauses.append("(e.attachments IS NULL OR e.attachments = '')")
+                    where_clauses.append("e.has_attachments = 0")
                 else:
-                    where_clauses.append("e.attachments IS NOT NULL AND e.attachments != ''")
+                    where_clauses.append("e.has_attachments = 1")
 
             elif field == 'attachment':
                 # Filter by attachment filename/type (e.g., attachment:pdf)
+                # Use FTS column search since attachments only in emails_fts
+                escaped = _escape_fts5_value(value)
                 if negated:
-                    where_clauses.append("(e.attachments IS NULL OR e.attachments NOT LIKE ?)")
+                    fts_parts.append(f'NOT attachments:{escaped}')
                 else:
-                    where_clauses.append("e.attachments LIKE ?")
-                params.append(f"%{value}%")
+                    fts_parts.append(f'attachments:{escaped}')
 
     # Build final FTS query
     fts_query = ' '.join(fts_parts)

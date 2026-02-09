@@ -392,24 +392,22 @@ class TestParseQuery:
         assert "Invalid date" in result.error
 
     def test_has_attachment(self):
-        """Test has:attachment filter."""
+        """Test has:attachment filter uses has_attachments column."""
         result = parse_query("has:attachment")
         assert result.error is None
-        assert "e.attachments IS NOT NULL" in result.where_clauses[0]
+        assert "e.has_attachments = 1" in result.where_clauses
 
     def test_attachment_type_filter(self):
-        """Test attachment:type filters by attachment filename."""
+        """Test attachment:type uses FTS column search."""
         result = parse_query("attachment:pdf")
         assert result.error is None
-        assert "e.attachments LIKE ?" in result.where_clauses
-        assert "%pdf%" in result.params
+        assert "attachments:pdf" in result.fts_query
 
     def test_negated_attachment_type_filter(self):
-        """Test -attachment:type excludes attachment type."""
+        """Test -attachment:type uses FTS NOT."""
         result = parse_query("-attachment:exe")
         assert result.error is None
-        assert "(e.attachments IS NULL OR e.attachments NOT LIKE ?)" in result.where_clauses
-        assert "%exe%" in result.params
+        assert "NOT attachments:exe" in result.fts_query
 
     def test_prefix_matching(self):
         """Test prefix matching with * stays unquoted."""
@@ -464,10 +462,10 @@ class TestParseQuery:
         assert "%spam%" in result.params
 
     def test_negated_has_attachment(self):
-        """Test -has:attachment excludes attachments."""
+        """Test -has:attachment uses has_attachments column."""
         result = parse_query("-has:attachment")
         assert result.error is None
-        assert "(e.attachments IS NULL OR e.attachments = '')" in result.where_clauses
+        assert "e.has_attachments = 0" in result.where_clauses
 
     def test_negated_phrase(self):
         """Test -"phrase" generates FTS NOT with quotes."""
