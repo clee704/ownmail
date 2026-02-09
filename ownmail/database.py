@@ -128,18 +128,21 @@ class ArchiveDatabase:
             # Normalized labels table for fast label lookups
             # LIKE '%INBOX%' on labels column requires full table scan
             # This table allows indexed exact-match lookups
+            # Includes email_date for sorting without touching emails table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS email_labels (
                     email_rowid INTEGER,
                     label TEXT,
+                    email_date TEXT,
                     PRIMARY KEY (email_rowid, label)
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_email_labels_label ON email_labels(label)")
-            # Compound index for (label, email_date) to speed up sorted label queries
+            # Covering index for (label, email_date DESC) to speed up sorted label queries
+            # This allows ORDER BY email_date DESC without touching emails table
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_email_labels_label_date
-                ON email_labels(label, email_rowid)
+                ON email_labels(label, email_date DESC, email_rowid)
             """)
 
             # Indexes for fast queries
@@ -394,7 +397,7 @@ class ArchiveDatabase:
         try:
             # Check if already indexed BEFORE updating (for FTS delete logic)
             row = conn.execute(
-                "SELECT rowid, subject FROM emails WHERE message_id = ?",
+                "SELECT rowid, subject, email_date FROM emails WHERE message_id = ?",
                 (message_id,)
             ).fetchone()
             if not row:
@@ -405,6 +408,7 @@ class ArchiveDatabase:
 
             rowid = row[0]
             was_indexed = row[1] is not None  # Had subject before
+            email_date = row[2]  # For email_labels table
 
             # Extract email addresses for indexed lookups
             sender_email = self._extract_email(sender)
@@ -453,8 +457,8 @@ class ArchiveDatabase:
                     label = label.strip()
                     if label:
                         conn.execute(
-                            "INSERT OR IGNORE INTO email_labels (email_rowid, label) VALUES (?, ?)",
-                            (rowid, label)
+                            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                            (rowid, label, email_date)
                         )
 
             # Update FTS (contentless mode - we manage manually)
@@ -619,6 +623,11 @@ class ArchiveDatabase:
                     extra_joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
                     extra_where.append("el.label = ?")
                     extra_params.append(label_filter)
+                    # Use el.email_date for sorting to leverage covering index
+                    if order_by == "e.email_date DESC":
+                        order_by = "el.email_date DESC"
+                    elif order_by == "e.email_date ASC":
+                        order_by = "el.email_date ASC"
 
                 if recipient_email_filter:
                     extra_joins.append("JOIN email_recipients er ON er.email_rowid = e.rowid")
@@ -681,6 +690,11 @@ class ArchiveDatabase:
                     joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
                     where_clauses.insert(0, "el.label = ?")
                     filter_params.append(label_filter)
+                    # Use el.email_date for sorting to leverage covering index
+                    if "email_date DESC" in order_by:
+                        order_by = "el.email_date DESC"
+                    elif "email_date ASC" in order_by:
+                        order_by = "el.email_date ASC"
 
                 join_sql = " ".join(joins)
                 where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"

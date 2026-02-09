@@ -355,14 +355,20 @@ def _index_email_for_reindex(
                         )
             
             # Populate email_labels normalized table
+            # Get email_date from emails table for the covering index
+            email_date_row = conn.execute(
+                "SELECT email_date FROM emails WHERE rowid = ?", (rowid,)
+            ).fetchone()
+            email_date = email_date_row[0] if email_date_row else None
+            
             conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
             if labels:
                 for label in labels.split(','):
                     label = label.strip()
                     if label:
                         conn.execute(
-                            "INSERT OR IGNORE INTO email_labels (email_rowid, label) VALUES (?, ?)",
-                            (rowid, label)
+                            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                            (rowid, label, email_date)
                         )
 
         return True
