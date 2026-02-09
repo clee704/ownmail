@@ -1,0 +1,64 @@
+# ownmail example configuration
+# Copy this file to config.yaml and adjust to your needs.
+# All fields below are optional unless marked as required.
+
+# Directory where email .eml files are stored.
+# Default: ./archive
+archive_root: /path/to/emails
+
+# Optional: store the database (ownmail.db) in a separate directory.
+# Useful when emails live on a NAS/external drive but you want
+# the database on a fast local SSD for snappy search.
+# Default: same as archive_root
+# db_dir: /path/to/fast/local/storage
+
+# ─── Email Sources ────────────────────────────────────────────
+
+sources:
+  # Gmail via API (recommended)
+  - name: personal                        # unique name for this source
+    type: gmail_api                        # required
+    account: you@gmail.com                 # required: Gmail address
+    auth:
+      secret_ref: keychain:oauth-token/you@gmail.com  # required
+    include_labels: true                   # fetch Gmail labels (default: true)
+
+  # You can add multiple sources:
+  # - name: work
+  #   type: gmail_api
+  #   account: you@company.com
+  #   auth:
+  #     secret_ref: keychain:oauth-token/you@company.com
+  #   include_labels: true
+
+# ─── Web Interface ────────────────────────────────────────────
+
+web:
+  # Number of search results per page (1-500).
+  # Default: 20
+  page_size: 50
+
+  # Block external images in emails by default (for privacy/security).
+  # Images from trusted_senders are always shown.
+  # Default: false
+  block_images: true
+
+  # Scale down wide HTML emails to fit the viewport.
+  # Default: true
+  auto_scale: true
+
+  # Custom branding name shown in the header and page titles.
+  # Default: ownmail
+  # brand_name: My Mail Archive
+
+  # Date display format (Python strftime).
+  # Leave blank for automatic: "Jan 26" for current year, "2025/12/15" for older.
+  # Default: auto
+  # date_format: '%b %d, %Y'
+
+  # Email addresses whose images are always loaded,
+  # even when block_images is on. One per line.
+  # Default: []
+  trusted_senders:
+    - noreply@example.com
+    - billing@example.com
