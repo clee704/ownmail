@@ -1680,27 +1680,43 @@ class TestCliSetupErrors:
 class TestParserSafeGetHeaderDefects:
     """Test parser _safe_get_header with defects parameter."""
 
-    def test_safe_get_header_first_except_then_defects(self):
-        """Test fallback path using defects parameter."""
+    def test_safe_get_header_exception_returns_empty(self):
+        """Test that exceptions in header parsing return empty string."""
         from email.message import EmailMessage
 
         from ownmail.parser import EmailParser
 
         msg = EmailMessage()
 
-        # Create a mock that raises on first call but works on second
-        call_count = [0]
-
         def mock_get(header_name, *args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1 and 'defects' not in kwargs:
-                raise Exception("First call fails")
-            return "fallback_value"
+            raise Exception("Parse error")
 
         with patch.object(msg, 'get', mock_get):
             result = EmailParser._safe_get_header(msg, "Subject")
 
-        assert result == "fallback_value"
+        # When msg.get raises, we return empty string (or try raw extraction if available)
+        assert result == ""
+
+    def test_safe_get_header_with_replacement_chars_uses_raw(self):
+        """Test that headers with replacement chars fall back to raw extraction."""
+        from email.message import EmailMessage
+
+        from ownmail.parser import EmailParser
+
+        msg = EmailMessage()
+        # Simulate a corrupted header with replacement character
+        msg['Subject'] = 'Hello \ufffd World'
+
+        # Without raw_content, we get the decoded result with replacement char
+        result = EmailParser._safe_get_header(msg, "Subject")
+        assert 'Hello' in result
+
+        # With raw_content containing raw Korean bytes (cp949 encoded), we should get Korean text
+        korean_subject = '한글'.encode('cp949')  # b'\xc7\xd1\xb1\xdb'
+        raw_content = b'Subject: ' + korean_subject + b'\r\n\r\nBody'
+        result_with_raw = EmailParser._safe_get_header(msg, "Subject", raw_content=raw_content)
+        # The raw extraction should decode the Korean
+        assert result_with_raw == '한글'
 
 
 class TestArchiveSyncStateUpdate:
