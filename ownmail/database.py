@@ -82,6 +82,12 @@ class ArchiveDatabase:
                 ON emails(account)
             """)
 
+            # Index for indexed_hash queries (for stats)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_emails_indexed_hash
+                ON emails(indexed_hash)
+            """)
+
             conn.commit()
 
     # -------------------------------------------------------------------------
@@ -333,6 +339,26 @@ class ArchiveDatabase:
     # Statistics
     # -------------------------------------------------------------------------
 
+    def get_email_count(self, account: str = None) -> int:
+        """Get quick email count for an account.
+
+        This is faster than get_stats() for just displaying counts.
+
+        Args:
+            account: Filter to specific account (optional)
+
+        Returns:
+            Number of emails
+        """
+        with sqlite3.connect(self.db_path, timeout=5.0) as conn:
+            if account:
+                return conn.execute(
+                    "SELECT COUNT(*) FROM emails WHERE account = ?",
+                    (account,)
+                ).fetchone()[0]
+            else:
+                return conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
+
     def get_stats(self, account: str = None) -> dict:
         """Get archive statistics.
 
@@ -342,7 +368,7 @@ class ArchiveDatabase:
         Returns:
             Dictionary with total_emails, indexed_emails, oldest_backup, newest_backup
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=5.0) as conn:
             if account:
                 # Single query for all stats
                 row = conn.execute(

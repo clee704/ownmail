@@ -222,12 +222,12 @@ def cmd_backup(
                 print("[verbose] Authenticating...", flush=True)
             provider.authenticate()
 
-            # Get stats before backup
+            # Get email count (fast query)
             if verbose:
-                print("[verbose] Getting archive stats...", flush=True)
-            stats = archive.db.get_stats(account)
+                print("[verbose] Getting email count...", flush=True)
+            email_count = archive.db.get_email_count(account)
             print(f"Archive location: {archive.archive_dir}", flush=True)
-            print(f"Previously backed up: {stats['total_emails']} emails", flush=True)
+            print(f"Previously backed up: {email_count:,} emails", flush=True)
 
             # Show date filter if specified
             if since or until:
@@ -244,7 +244,7 @@ def cmd_backup(
             result = archive.backup(provider, since=since, until=until, verbose=verbose)
 
             # Print summary
-            total = stats["total_emails"] + result["success_count"]
+            total = email_count + result["success_count"]
             print("\n" + "-" * 50)
             if result["interrupted"]:
                 print("Backup Paused!")
@@ -255,7 +255,7 @@ def cmd_backup(
                 print(f"  Downloaded: {result['success_count']} emails")
             if result["error_count"] > 0:
                 print(f"  Errors: {result['error_count']}")
-            print(f"  Total archived: {total} emails")
+            print(f"  Total archived: {total:,} emails")
             print("-" * 50 + "\n")
 
         elif source_type == "imap":
