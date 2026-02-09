@@ -545,19 +545,19 @@ def _linkify(text: str) -> str:
             rest = escaped[header_match.end():]
             rest = _linkify_line(rest)
             result_lines.append(
-                f'<span class="email-header-label">{label}:</span> {rest}'
+                f'<div><span class="email-header-label">{label}:</span> {rest}</div>'
             )
             continue
 
-        # Regular line - just linkify
-        result_lines.append(_linkify_line(escaped))
+        # Regular line - wrap in div
+        result_lines.append(f'<div>{_linkify_line(escaped) or "&nbsp;"}</div>')
 
     # Close any remaining quote levels
     while current_depth > 0:
         result_lines.append('</div>')
         current_depth -= 1
 
-    return '\n'.join(result_lines)
+    return ''.join(result_lines)
 
 
 def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
