@@ -119,7 +119,7 @@ class TestFullTextSearch:
             attachments="",
         )
 
-        results = db.search("invoice")
+        results = db.search("invoice", include_unknown=True)
         assert len(results) == 1
         assert results[0][0] == "msg1"
 
@@ -139,14 +139,14 @@ class TestFullTextSearch:
         )
 
         # The search converts from: to sender:
-        results = db.search("from:john")
+        results = db.search("from:john", include_unknown=True)
         assert len(results) == 1
 
     def test_search_no_results(self, temp_dir):
         """Test search with no matches."""
         db = ArchiveDatabase(temp_dir)
 
-        results = db.search("nonexistent query xyz123")
+        results = db.search("nonexistent query xyz123", include_unknown=True)
         assert results == []
 
     def test_clear_index(self, temp_dir):
@@ -277,7 +277,7 @@ class TestSearchSorting:
         db.index_email("msg1", "Test", "from", "to", "date", "body", "")
         db.index_email("msg2", "Test", "from", "to", "date", "body", "")
 
-        results = db.search("test", sort="date_desc")
+        results = db.search("test", sort="date_desc", include_unknown=True)
 
         assert len(results) == 2
         # Newest first
@@ -293,7 +293,7 @@ class TestSearchSorting:
         db.index_email("msg1", "Test", "from", "to", "date", "body", "")
         db.index_email("msg2", "Test", "from", "to", "date", "body", "")
 
-        results = db.search("test", sort="date_asc")
+        results = db.search("test", sort="date_asc", include_unknown=True)
 
         assert len(results) == 2
         # Oldest first
@@ -313,7 +313,7 @@ class TestSearchDateFilters:
         db.index_email("msg1", "Test", "from", "to", "date", "body", "")
         db.index_email("msg2", "Test", "from", "to", "date", "body", "")
 
-        results = db.search("test after:2024-02-01")
+        results = db.search("test after:2024-02-01", include_unknown=True)
 
         # Only msg2 is after 2024-02-01
         assert len(results) == 1
@@ -328,7 +328,7 @@ class TestSearchDateFilters:
         db.index_email("msg1", "Test", "from", "to", "date", "body", "")
         db.index_email("msg2", "Test", "from", "to", "date", "body", "")
 
-        results = db.search("test before:2024-02-01")
+        results = db.search("test before:2024-02-01", include_unknown=True)
 
         # Only msg1 is before 2024-02-01
         assert len(results) == 1
@@ -347,7 +347,7 @@ class TestSearchLabelFilter:
         db.index_email("msg1", "Test1", "from", "to", "date", "body", "", labels="INBOX,IMPORTANT")
         db.index_email("msg2", "Test2", "from", "to", "date", "body", "", labels="INBOX")
 
-        results = db.search("label:IMPORTANT")
+        results = db.search("label:IMPORTANT", include_unknown=True)
 
         assert len(results) == 1
         assert results[0][0] == "msg1"
@@ -361,7 +361,7 @@ class TestSearchLabelFilter:
         db.index_email("msg1", "Invoice", "from", "to", "date", "body", "", labels="IMPORTANT")
         db.index_email("msg2", "Invoice", "from", "to", "date", "body", "", labels="INBOX")
 
-        results = db.search("invoice label:IMPORTANT")
+        results = db.search("invoice label:IMPORTANT", include_unknown=True)
 
         assert len(results) == 1
         assert results[0][0] == "msg1"
@@ -411,9 +411,9 @@ class TestSearchWithAccount:
         db.index_email("msg1", "Invoice Alice", "From", "To", "Date", "Body", "")
         db.index_email("msg2", "Invoice Bob", "From", "To", "Date", "Body", "")
 
-        results_alice = db.search("invoice", account="alice@gmail.com")
-        results_bob = db.search("invoice", account="bob@gmail.com")
-        results_all = db.search("invoice")
+        results_alice = db.search("invoice", account="alice@gmail.com", include_unknown=True)
+        results_bob = db.search("invoice", account="bob@gmail.com", include_unknown=True)
+        results_all = db.search("invoice", include_unknown=True)
 
         assert len(results_alice) == 1
         assert results_alice[0][0] == "msg1"

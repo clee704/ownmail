@@ -44,7 +44,8 @@ class ArchiveDatabase:
                     content_hash TEXT,
                     indexed_hash TEXT,
                     account TEXT,
-                    labels TEXT
+                    labels TEXT,
+                    email_date TEXT
                 )
             """)
 
@@ -57,6 +58,12 @@ class ArchiveDatabase:
             # Add labels column if missing (migration for label search optimization)
             try:
                 conn.execute("ALTER TABLE emails ADD COLUMN labels TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
+            # Add email_date column if missing (migration for proper date filtering)
+            try:
+                conn.execute("ALTER TABLE emails ADD COLUMN email_date TEXT")
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
@@ -105,6 +112,12 @@ class ArchiveDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_emails_labels
                 ON emails(labels)
+            """)
+
+            # Index for email_date (for date sorting and filtering)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_emails_date
+                ON emails(email_date)
             """)
 
             conn.commit()
@@ -240,7 +253,8 @@ class ArchiveDatabase:
         filename: str,
         content_hash: str = None,
         account: str = None,
-        conn: sqlite3.Connection = None
+        conn: sqlite3.Connection = None,
+        email_date: str = None,
     ) -> None:
         """Mark a message as downloaded.
 
@@ -250,6 +264,7 @@ class ArchiveDatabase:
             content_hash: SHA256 hash of file content
             account: Email address
             conn: Optional existing connection (for batching)
+            email_date: Parsed email date in ISO format (YYYY-MM-DDTHH:MM:SS)
         """
         should_close = conn is None
         if conn is None:
@@ -259,10 +274,10 @@ class ArchiveDatabase:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO emails
-                (message_id, filename, downloaded_at, content_hash, account)
-                VALUES (?, ?, ?, ?, ?)
+                (message_id, filename, downloaded_at, content_hash, account, email_date)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (message_id, filename, datetime.now().isoformat(), content_hash, account)
+                (message_id, filename, datetime.now().isoformat(), content_hash, account, email_date)
             )
             if should_close:
                 conn.commit()
@@ -332,7 +347,15 @@ class ArchiveDatabase:
             ).fetchone()
             return result is not None
 
-    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance") -> List[Tuple]:
+    def search(
+        self,
+        query: str,
+        account: str = None,
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "relevance",
+        include_unknown: bool = False,
+    ) -> List[Tuple]:
         """Search emails using FTS5.
 
         Args:
@@ -341,6 +364,7 @@ class ArchiveDatabase:
             limit: Maximum results
             offset: Number of results to skip (for pagination)
             sort: Sort order - 'relevance', 'date_desc', or 'date_asc'
+            include_unknown: Include emails in unknown/ folder (default: False)
 
         Returns:
             List of tuples: (message_id, filename, subject, sender, date_str, snippet)
@@ -360,6 +384,10 @@ class ArchiveDatabase:
             # Build WHERE clause for special filters
             where_clauses = []
             params = []
+
+            # Exclude emails in unknown/ folder unless explicitly requested
+            if not include_unknown:
+                where_clauses.append("e.email_date IS NOT NULL")
 
             if fts_query.strip():
                 where_clauses.append("emails_fts MATCH ?")
@@ -397,6 +425,9 @@ class ArchiveDatabase:
 
                 email_clauses = []
                 email_params = []
+                # Exclude emails without parsed dates unless explicitly requested
+                if not include_unknown:
+                    email_clauses.append("email_date IS NOT NULL")
                 if account:
                     email_clauses.append("account = ?")
                     email_params.append(account)
@@ -441,6 +472,9 @@ class ArchiveDatabase:
 
                 email_clauses = []
                 email_params = []
+                # Exclude emails without parsed dates unless explicitly requested
+                if not include_unknown:
+                    email_clauses.append("email_date IS NOT NULL")
                 if account:
                     email_clauses.append("account = ?")
                     email_params.append(account)
@@ -482,16 +516,15 @@ class ArchiveDatabase:
                     email_params
                 ).fetchall()
             elif sort in ("date_desc", "date_asc"):
-                # For date-sorted FTS queries: use ORDER BY on filename (which has index)
-                # and filter with FTS EXISTS check. This allows LIMIT/OFFSET to work
-                # incrementally without fetching all matches.
-                fts_clauses = ["emails_fts MATCH ?"]
-                fts_params: list = [fts_query]
-                fts_where = " AND ".join(fts_clauses)
+                # For date-sorted FTS queries: first get FTS matches, then sort by date
+                # This is faster than EXISTS because FTS search is done once upfront
 
                 # Build emails table WHERE clause
                 email_clauses = []
                 email_params: list = []
+                # Exclude emails without parsed dates unless explicitly requested
+                if not include_unknown:
+                    email_clauses.append("e.email_date IS NOT NULL")
                 if account:
                     email_clauses.append("e.account = ?")
                     email_params.append(account)
@@ -513,11 +546,11 @@ class ArchiveDatabase:
                     email_params.append(f"%{filters['label']}%")
                 email_where = " AND ".join(email_clauses) if email_clauses else "1=1"
 
-                # Combine params: email filters, then FTS filters, then limit/offset
-                all_params = email_params + fts_params + [limit, offset]
+                # Use JOIN instead of EXISTS - SQLite can optimize this better
+                # FTS query + params come first, then email params, then limit/offset
+                all_params = [fts_query] + email_params + [limit, offset]
 
-                # Use subquery with ORDER BY on indexed column, filter via EXISTS
-                # SQLite can use idx_emails_filename for the ORDER BY, making pagination fast
+                # JOIN FTS matches with emails table, sort by filename
                 results = conn.execute(
                     f"""
                     SELECT
@@ -527,12 +560,10 @@ class ArchiveDatabase:
                         '' as sender,
                         '' as date_str,
                         '' as snippet
-                    FROM emails e
-                    WHERE {email_where}
-                      AND EXISTS (
-                          SELECT 1 FROM emails_fts f
-                          WHERE f.message_id = e.message_id AND {fts_where}
-                      )
+                    FROM emails_fts f
+                    JOIN emails e ON e.message_id = f.message_id
+                    WHERE f.emails_fts MATCH ?
+                      AND {email_where}
                     ORDER BY e.filename {"DESC" if sort == "date_desc" else "ASC"}
                     LIMIT ? OFFSET ?
                     """,

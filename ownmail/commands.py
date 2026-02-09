@@ -549,6 +549,8 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
     - Missing FTS entries (in emails but not in FTS)
     - indexed_hash mismatches
     """
+    import time
+
     print("\n" + "=" * 50)
     print("ownmail - Database Check")
     print("=" * 50 + "\n")
@@ -558,14 +560,36 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
     db_path = archive.db.db_path
 
     with sqlite3.connect(db_path) as conn:
+        # First, load all the IDs we need (this is faster than complex SQL on FTS)
+        print("Loading message IDs from database...", flush=True)
+
+        print("  FTS table...", end="", flush=True)
+        start = time.time()
+        # Get all message_ids from FTS (including duplicates to count them)
+        fts_all_ids = [row[0] for row in conn.execute(
+            "SELECT message_id FROM emails_fts"
+        )]
+        print(f" {len(fts_all_ids)} entries ({time.time() - start:.1f}s)")
+
+        print("  emails table...", end="", flush=True)
+        start = time.time()
+        email_ids = {row[0] for row in conn.execute(
+            "SELECT message_id FROM emails"
+        )}
+        print(f" {len(email_ids)} entries ({time.time() - start:.1f}s)")
+
+        # Build FTS ID set and count duplicates
+        fts_ids = set()
+        fts_counts: dict = {}
+        for msg_id in fts_all_ids:
+            fts_ids.add(msg_id)
+            fts_counts[msg_id] = fts_counts.get(msg_id, 0) + 1
+
         # 1. Check for duplicate FTS entries
-        print("Checking for duplicate FTS entries...")
-        duplicates = conn.execute("""
-            SELECT message_id, COUNT(*) as cnt
-            FROM emails_fts
-            GROUP BY message_id
-            HAVING cnt > 1
-        """).fetchall()
+        print("\nChecking for duplicate FTS entries...", end="", flush=True)
+        start = time.time()
+        duplicates = [(msg_id, cnt) for msg_id, cnt in fts_counts.items() if cnt > 1]
+        print(f" ({time.time() - start:.1f}s)")
 
         if duplicates:
             issues_found += len(duplicates)
@@ -592,19 +616,17 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
             print("  ✓ No duplicate FTS entries")
 
         # 2. Check for orphaned FTS entries (in FTS but not in emails)
-        print("\nChecking for orphaned FTS entries...")
-        orphaned_fts = conn.execute("""
-            SELECT DISTINCT message_id
-            FROM emails_fts
-            WHERE message_id NOT IN (SELECT message_id FROM emails)
-        """).fetchall()
+        # Already have fts_ids and email_ids loaded above
+        print("\nChecking for orphaned FTS entries...", end="", flush=True)
+        start = time.time()
+        orphaned_ids = fts_ids - email_ids
+        print(f" ({time.time() - start:.1f}s)")
 
-        if orphaned_fts:
-            orphaned_ids = [row[0] for row in orphaned_fts]
+        if orphaned_ids:
             issues_found += len(orphaned_ids)
             print(f"  ✗ Found {len(orphaned_ids)} FTS entries with no matching email record")
             if verbose:
-                for msg_id in orphaned_ids[:10]:
+                for msg_id in list(orphaned_ids)[:10]:
                     print(f"      {msg_id}")
                 if len(orphaned_ids) > 10:
                     print(f"      ... and {len(orphaned_ids) - 10} more")
@@ -620,27 +642,31 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
             print("  ✓ No orphaned FTS entries")
 
         # 3. Check for missing FTS entries (in emails but not in FTS)
-        print("\nChecking for missing FTS entries...")
-        missing_fts = conn.execute("""
-            SELECT message_id, filename
-            FROM emails
-            WHERE message_id NOT IN (SELECT DISTINCT message_id FROM emails_fts)
-        """).fetchall()
+        print("\nChecking for missing FTS entries...", end="", flush=True)
+        start = time.time()
+        missing_ids = email_ids - fts_ids
+        print(f" ({time.time() - start:.1f}s)")
 
-        if missing_fts:
-            issues_found += len(missing_fts)
-            print(f"  ✗ Found {len(missing_fts)} emails not in search index")
+        if missing_ids:
+            issues_found += len(missing_ids)
+            print(f"  ✗ Found {len(missing_ids)} emails not in search index")
             if verbose:
-                for _, filename in missing_fts[:10]:
-                    print(f"      {filename}")
-                if len(missing_fts) > 10:
-                    print(f"      ... and {len(missing_fts) - 10} more")
+                # Get filenames for display
+                for msg_id in list(missing_ids)[:10]:
+                    row = conn.execute(
+                        "SELECT filename FROM emails WHERE message_id = ?", (msg_id,)
+                    ).fetchone()
+                    if row:
+                        print(f"      {row[0]}")
+                if len(missing_ids) > 10:
+                    print(f"      ... and {len(missing_ids) - 10} more")
             print("  → Run 'ownmail reindex' to index these emails")
         else:
             print("  ✓ All emails are in search index")
 
         # 4. Check indexed_hash vs content_hash mismatches
-        print("\nChecking for index hash mismatches...")
+        print("\nChecking for index hash mismatches...", end="", flush=True)
+        start = time.time()
         hash_mismatches = conn.execute("""
             SELECT message_id, filename
             FROM emails
@@ -648,6 +674,7 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
               AND indexed_hash IS NOT NULL
               AND content_hash != indexed_hash
         """).fetchall()
+        print(f" ({time.time() - start:.1f}s)")
 
         if hash_mismatches:
             issues_found += len(hash_mismatches)
@@ -662,13 +689,15 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
             print("  ✓ All indexed emails are up to date")
 
         # 5. Check for NULL hashes
-        print("\nChecking for missing hashes...")
+        print("\nChecking for missing hashes...", end="", flush=True)
+        start = time.time()
         null_content_hash = conn.execute(
             "SELECT COUNT(*) FROM emails WHERE content_hash IS NULL"
         ).fetchone()[0]
         null_indexed_hash = conn.execute(
             "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NULL"
         ).fetchone()[0]
+        print(f" ({time.time() - start:.1f}s)")
 
         if null_content_hash > 0:
             print(f"  ? {null_content_hash} emails without content_hash")
@@ -851,3 +880,226 @@ def _print_file_list(files: list, label: str, verbose: bool, max_show: int = 5) 
         print(f"      {f}")
     if not verbose and len(files) > max_show:
         print(f"      ... and {len(files) - max_show} more (use --verbose to show all)")
+
+
+def cmd_list_unknown(
+    archive: EmailArchive,
+    verbose: bool = False,
+) -> None:
+    """List emails in the unknown/ folder (emails with unparseable dates).
+
+    These emails couldn't have their date extracted during backup, so they
+    were placed in the unknown/ folder. Use this command to identify them
+    for manual inspection or reprocessing.
+
+    Args:
+        archive: EmailArchive instance
+        verbose: Show full file paths and additional details
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Unknown Emails")
+    print("=" * 50 + "\n")
+
+    db_path = archive.db.db_path
+
+    with sqlite3.connect(db_path) as conn:
+        results = conn.execute(
+            """
+            SELECT message_id, filename, account
+            FROM emails
+            WHERE email_date IS NULL
+            ORDER BY account, filename
+            """
+        ).fetchall()
+
+    if not results:
+        print("✓ No emails with unparseable dates")
+        return
+
+    print(f"Found {len(results)} emails with unparseable dates:\n")
+
+    # Group by account
+    by_account = {}
+    for msg_id, filename, account in results:
+        account = account or "(legacy)"
+        if account not in by_account:
+            by_account[account] = []
+        by_account[account].append((msg_id, filename))
+
+    for account, emails in sorted(by_account.items()):
+        print(f"  {account}: {len(emails)} emails")
+        if verbose:
+            for _msg_id, filename in emails:
+                print(f"    - {filename}")
+                # Try to extract date from email file
+                filepath = archive.archive_dir / filename
+                if filepath.exists():
+                    try:
+                        import email
+                        with open(filepath, "rb") as f:
+                            msg = email.message_from_binary_file(f)
+                        date_header = msg.get("Date", "")
+                        subject = msg.get("Subject", "")[:50]
+                        print(f"      Date header: {date_header}")
+                        print(f"      Subject: {subject}...")
+                    except Exception as e:
+                        print(f"      Error reading: {e}")
+        print()
+
+    print("-" * 50)
+    print("These emails have unparseable Date headers.")
+    print("They are excluded from search results by default.")
+    print("To include them, use: search --include-unknown")
+    print("-" * 50 + "\n")
+
+
+def cmd_populate_dates(
+    archive: EmailArchive,
+    verbose: bool = False,
+) -> None:
+    """Populate email_date column for emails that don't have it set.
+
+    This extracts the date from each email file and stores it in the database
+    for faster date-based filtering and sorting.
+
+    Args:
+        archive: EmailArchive instance
+        verbose: Show progress for each email
+    """
+    import email
+    import email.utils
+    import signal
+    from concurrent.futures import ThreadPoolExecutor
+
+    print("\n" + "=" * 50)
+    print("ownmail - Populate Email Dates")
+    print("=" * 50 + "\n")
+
+    db_path = archive.db.db_path
+
+    with sqlite3.connect(db_path) as conn:
+        # Find emails without email_date
+        results = conn.execute(
+            """
+            SELECT message_id, filename
+            FROM emails
+            WHERE email_date IS NULL
+            """
+        ).fetchall()
+
+    if not results:
+        print("✓ All emails already have dates populated")
+        return
+
+    print(f"Found {len(results)} emails without dates\n")
+    print("Press Ctrl-C to stop (progress will be saved)\n")
+
+    # Flag for graceful shutdown
+    shutdown_requested = False
+
+    def signal_handler(signum, frame):
+        nonlocal shutdown_requested
+        if shutdown_requested:
+            print("\n\nForce quit...")
+            raise SystemExit(1)
+        shutdown_requested = True
+        print("\n\n⏸ Stopping after current batch...")
+
+    # Install signal handler
+    old_handler = signal.signal(signal.SIGINT, signal_handler)
+
+    def extract_date(msg_id: str, filename: str) -> tuple:
+        """Extract date from a single email file. Returns (email_date, msg_id, error)."""
+        filepath = archive.archive_dir / filename
+        email_date = None
+        error = None
+
+        if filepath.exists():
+            try:
+                with open(filepath, "rb") as f:
+                    # Read just headers (first 16KB should be enough)
+                    content = f.read(16384)
+                msg = email.message_from_bytes(content)
+                date_str = msg.get("Date", "")
+                if date_str:
+                    parsed = email.utils.parsedate_to_datetime(date_str)
+                    email_date = parsed.isoformat()
+            except Exception as e:
+                error = str(e)
+        else:
+            error = "File not found"
+
+        return (email_date, msg_id, error)
+
+    success_count = 0
+    error_count = 0
+    null_count = 0
+    batch_size = 100  # Process in smaller chunks for responsiveness
+    total = len(results)
+    processed = 0
+
+    try:
+        # Process in batches so we can check shutdown flag between batches
+        with sqlite3.connect(db_path) as conn:
+            for batch_start in range(0, total, batch_size):
+                if shutdown_requested:
+                    break
+
+                batch = results[batch_start:batch_start + batch_size]
+                updates = []
+
+                # Use ThreadPoolExecutor for parallel I/O within each batch
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    futures = [
+                        executor.submit(extract_date, msg_id, filename)
+                        for msg_id, filename in batch
+                    ]
+
+                    for future in futures:
+                        if shutdown_requested:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            break
+
+                        email_date, msg_id, error = future.result()
+                        processed += 1
+
+                        if error:
+                            if verbose:
+                                print(f"    Error: {error}")
+                            error_count += 1
+
+                        updates.append((email_date, msg_id))
+
+                        if email_date:
+                            success_count += 1
+                        else:
+                            null_count += 1
+
+                # Commit this batch
+                if updates:
+                    conn.executemany(
+                        "UPDATE emails SET email_date = ? WHERE message_id = ?",
+                        updates
+                    )
+                    conn.commit()
+
+                # Progress update
+                print(f"  [{processed}/{total}] Processing...")
+
+    finally:
+        # Restore original signal handler
+        signal.signal(signal.SIGINT, old_handler)
+
+    print("\n" + "-" * 50)
+    if shutdown_requested:
+        print("Populate Dates Paused!")
+        print(f"  Processed: {processed} emails")
+        print(f"  Remaining: {total - processed} emails")
+        print("\n  Run 'populate-dates' again to resume.")
+    else:
+        print("Populate Dates Complete!")
+        print(f"  Updated with date: {success_count} emails")
+        print(f"  No parseable date: {null_count} emails")
+        if error_count > 0:
+            print(f"  Errors: {error_count}")
+    print("-" * 50 + "\n")
