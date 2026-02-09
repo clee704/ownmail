@@ -397,19 +397,12 @@ class ArchiveDatabase:
                 where_clauses.append("e.account = ?")
                 params.append(account)
 
-            # Date filters - normalize path to /emails/YYYY/MM/YYYYMMDD for comparison
-            # Works with both old (emails/...) and new (accounts/.../emails/...) paths
-            # CASE: if contains /emails/, extract from there; else prepend / to old format
-            date_path_expr = (
-                "CASE WHEN instr(e.filename, '/emails/') > 0 "
-                "THEN substr(e.filename, instr(e.filename, '/emails/')) "
-                "ELSE '/' || e.filename END"
-            )
+            # Date filters - use indexed email_date column
             if filters.get("after"):
-                where_clauses.append(f"({date_path_expr}) >= ?")
+                where_clauses.append("e.email_date >= ?")
                 params.append(filters["after"])
             if filters.get("before"):
-                where_clauses.append(f"({date_path_expr}) < ?")
+                where_clauses.append("e.email_date < ?")
                 params.append(filters["before"])
 
             # Label filter uses indexed labels column on emails table
@@ -431,17 +424,12 @@ class ArchiveDatabase:
                 if account:
                     email_clauses.append("account = ?")
                     email_params.append(account)
-                # Date path normalization: old format emails/... -> /emails/...
-                date_path_expr = (
-                    "CASE WHEN instr(filename, '/emails/') > 0 "
-                    "THEN substr(filename, instr(filename, '/emails/')) "
-                    "ELSE '/' || filename END"
-                )
+                # Date filters - use indexed email_date column
                 if filters.get("after"):
-                    email_clauses.append(f"({date_path_expr}) >= ?")
+                    email_clauses.append("email_date >= ?")
                     email_params.append(filters["after"])
                 if filters.get("before"):
-                    email_clauses.append(f"({date_path_expr}) < ?")
+                    email_clauses.append("email_date < ?")
                     email_params.append(filters["before"])
 
                 email_where = " AND ".join(email_clauses) if email_clauses else "1=1"
@@ -478,17 +466,12 @@ class ArchiveDatabase:
                 if account:
                     email_clauses.append("account = ?")
                     email_params.append(account)
-                # Date path normalization: old format emails/... -> /emails/...
-                date_path_expr = (
-                    "CASE WHEN instr(filename, '/emails/') > 0 "
-                    "THEN substr(filename, instr(filename, '/emails/')) "
-                    "ELSE '/' || filename END"
-                )
+                # Date filters - use indexed email_date column
                 if filters.get("after"):
-                    email_clauses.append(f"({date_path_expr}) >= ?")
+                    email_clauses.append("email_date >= ?")
                     email_params.append(filters["after"])
                 if filters.get("before"):
-                    email_clauses.append(f"({date_path_expr}) < ?")
+                    email_clauses.append("email_date < ?")
                     email_params.append(filters["before"])
                 if filters.get("label"):
                     email_clauses.append("labels LIKE ?")
@@ -528,17 +511,12 @@ class ArchiveDatabase:
                 if account:
                     email_clauses.append("e.account = ?")
                     email_params.append(account)
-                # Date path normalization: old format emails/... -> /emails/...
-                date_path_expr = (
-                    "CASE WHEN instr(e.filename, '/emails/') > 0 "
-                    "THEN substr(e.filename, instr(e.filename, '/emails/')) "
-                    "ELSE '/' || e.filename END"
-                )
+                # Date filters - use indexed email_date column
                 if filters.get("after"):
-                    email_clauses.append(f"({date_path_expr}) >= ?")
+                    email_clauses.append("e.email_date >= ?")
                     email_params.append(filters["after"])
                 if filters.get("before"):
-                    email_clauses.append(f"({date_path_expr}) < ?")
+                    email_clauses.append("e.email_date < ?")
                     email_params.append(filters["before"])
                 # Use indexed labels column instead of FTS body LIKE
                 if filters.get("label"):
@@ -609,18 +587,18 @@ class ArchiveDatabase:
         before_match = re.search(r'\bbefore:(\d{4}-?\d{2}-?\d{2})\b', query)
         if before_match:
             date_str = before_match.group(1).replace("-", "")
-            # Convert to path format that works with substr extraction: /emails/YYYY/MM/YYYYMMDD
-            year, month = date_str[:4], date_str[4:6]
-            filters["before"] = f"/emails/{year}/{month}/{date_str}"
+            # Convert to ISO 8601 format for email_date column comparison
+            year, month, day = date_str[:4], date_str[4:6], date_str[6:8]
+            filters["before"] = f"{year}-{month}-{day}"
             query = query[:before_match.start()] + query[before_match.end():]
 
         # Extract after:YYYY-MM-DD or after:YYYYMMDD
         after_match = re.search(r'\bafter:(\d{4}-?\d{2}-?\d{2})\b', query)
         if after_match:
             date_str = after_match.group(1).replace("-", "")
-            # Convert to path format that works with substr extraction: /emails/YYYY/MM/YYYYMMDD
-            year, month = date_str[:4], date_str[4:6]
-            filters["after"] = f"/emails/{year}/{month}/{date_str}"
+            # Convert to ISO 8601 format for email_date column comparison
+            year, month, day = date_str[:4], date_str[4:6], date_str[6:8]
+            filters["after"] = f"{year}-{month}-{day}"
             query = query[:after_match.start()] + query[after_match.end():]
 
         # Extract label:xxx or tag:xxx
