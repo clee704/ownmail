@@ -62,7 +62,7 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | **Search engine** | Xapian (tag-based, very fast) | SQLite FTS5 (good enough for most archives) |
 | **Reading email** | Emacs, Vim, mutt, or other frontends | Built-in web UI |
 | **Providers** | IMAP only | IMAP + Gmail API (OAuth, batch downloads) |
-| **Integrity** | — | SHA256 hashes, `verify --fix` |
+| **Integrity checking** | — | Detects corrupted or missing files |
 | **Philosophy** | Power-user toolkit, compose your workflow | Opinionated single tool — backup, search, done |
 
 **Choose mbsync + notmuch** if you already live in Emacs/mutt and want maximum flexibility.
