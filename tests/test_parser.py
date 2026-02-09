@@ -356,6 +356,33 @@ test"""
         result = EmailParser._safe_get_content(msg)
         assert isinstance(result, str)
 
+    def test_safe_get_content_strips_embedded_mime_headers(self):
+        """Test that embedded MIME headers in body text are stripped."""
+        import email
+        # Simulate USPS-style email where body starts with MIME headers
+        content = (
+            b"Content-Type: text/plain; charset=\"utf-8\"\r\n"
+            b"Content-Transfer-Encoding: quoted-printable\r\n\r\n"
+            b"Content-Type: text/plain; charset=3DUTF-8\r\n"
+            b"Content-Transfer-Encoding: 7bit\r\n\r\n"
+            b"Informed Delivery(TM)"
+        )
+        msg = email.message_from_bytes(content)
+        result = EmailParser._safe_get_content(msg)
+        assert "Content-Type" not in result
+        assert "Informed Delivery" in result
+
+    def test_strip_embedded_mime_headers_preserves_normal_text(self):
+        """Test that normal text starting with 'Content' is not stripped."""
+        result = EmailParser._strip_embedded_mime_headers("Content is king in marketing")
+        assert result == "Content is king in marketing"
+
+    def test_strip_embedded_mime_headers_strips_multiple(self):
+        """Test stripping multiple embedded MIME headers."""
+        text = "Content-Type: text/html\nContent-Transfer-Encoding: base64\nContent-Disposition: inline\n\nActual body"
+        result = EmailParser._strip_embedded_mime_headers(text)
+        assert result == "Actual body"
+
 
 class TestParseWithAttachments:
     """Tests for attachment parsing."""
