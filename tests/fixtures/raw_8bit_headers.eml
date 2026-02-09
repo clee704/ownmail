@@ -1,0 +1,8 @@
+From: 보내는사람 <sender@example.com>
+To: recipient@example.com
+Subject: 테스트 제목입니다
+Date: Fri, 20 Feb 2004 16:45:00 +0900
+Message-ID: <raw-8bit@example.com>
+Content-Type: text/plain; charset=euc-kr
+
+Raw 8-bit headers from old Korean mail clients.

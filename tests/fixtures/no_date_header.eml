@@ -1,0 +1,8 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: No Date Header
+Received: from mail.example.com by mx.example.com; Sun, 21 Jan 2024 14:00:00 +0000
+Message-ID: <no-date@example.com>
+Content-Type: text/plain; charset=utf-8
+
+This email has no Date header. The parser should extract date from Received.

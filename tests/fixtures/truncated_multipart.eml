@@ -1,0 +1,15 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Truncated Multipart
+Date: Mon, 22 Jan 2024 09:00:00 +0000
+Message-ID: <truncated@example.com>
+Content-Type: multipart/mixed; boundary="BOUNDARY123"
+
+--BOUNDARY123
+Content-Type: text/plain
+
+First part is complete.
+--BOUNDARY123
+Content-Type: text/plain
+
+Second part is trun

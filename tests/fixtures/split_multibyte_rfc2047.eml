@@ -1,0 +1,8 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: =?euc-kr?B?xw==?= =?euc-kr?B?0bHb?= Test
+Date: Thu, 10 Oct 2010 10:10:10 +0900
+Message-ID: <split-multibyte@example.com>
+Content-Type: text/plain; charset=utf-8
+
+This email has a subject with a Korean character split across RFC 2047 encoded-word boundaries.

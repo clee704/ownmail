@@ -1,0 +1,8 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Unknown Charset Test
+Date: Sat, 1 Mar 2003 08:00:00 +0900
+Message-ID: <unknown-charset@example.com>
+Content-Type: text/plain; charset="unknown-8bit"
+
+알 수 없는 문자셋으로 선언된 이메일입니다.

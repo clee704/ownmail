@@ -1,0 +1,8 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Korean Weekday Test
+Date: ¿ù¿äÀÏ, 15 Jan 2024 10:30:00 +0900
+Message-ID: <korean-weekday@example.com>
+Content-Type: text/plain; charset=utf-8
+
+Email with Korean weekday name in Date header.
