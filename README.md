@@ -188,6 +188,12 @@ Backup Paused!
 
 Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
 
+### HTML Sanitization
+
+When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify](https://github.com/cure53/DOMPurify) running in a Node.js sidecar process. This strips `<script>` tags, event handlers, dangerous CSS (`@import`, `expression()`), and other XSS vectors before the content reaches your browser.
+
+**Requires [Node.js](https://nodejs.org) (v18+).** Dependencies are installed automatically on first run. If Node.js is not available, the web UI still works — the iframe sandbox provides baseline protection.
+
 ## Roadmap
 
 - [ ] Multiple accounts

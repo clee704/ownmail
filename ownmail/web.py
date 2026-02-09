@@ -1249,6 +1249,14 @@ def create_app(
                 # cid references can appear as "cid:xxx" in src attributes
                 body_html = body_html.replace(f'cid:{cid}', data_uri)
 
+        # Sanitize HTML/CSS using DOMPurify sidecar (if available)
+        if body_html:
+            sanitizer = app.config.get("sanitizer")
+            if sanitizer:
+                if verbose:
+                    print(f"[verbose] Sanitizing HTML ({len(body_html):,} chars)...", flush=True)
+                body_html = sanitizer.sanitize(body_html)
+
         # Parse sender and recipients for clickable links
         sender_name, sender_email = parse_email_address(email_data["sender"])
         recipients_parsed = parse_recipients(email_data["recipients"])
@@ -1602,6 +1610,13 @@ def run_server(
         date_format=date_format,
     )
 
+    # Start HTML sanitizer sidecar (DOMPurify via Node.js)
+    from ownmail.sanitizer import HtmlSanitizer
+
+    sanitizer = HtmlSanitizer(verbose=verbose)
+    sanitizer.start()
+    app.config["sanitizer"] = sanitizer
+
     print("\n🌐 ownmail web interface")
     print(f"   Running at: http://{host}:{port}")
     print(f"   Page size: {page_size}")
@@ -1611,6 +1626,13 @@ def run_server(
         print("   External images blocked by default")
     if trusted_senders:
         print(f"   Trusted senders: {len(trusted_senders)}")
+    if sanitizer.available:
+        print("   HTML sanitization enabled (DOMPurify)")
+    else:
+        print("   HTML sanitization disabled (install Node.js to enable)")
     print("   Press Ctrl+C to stop\n")
 
-    app.run(host=host, port=port, debug=debug)
+    try:
+        app.run(host=host, port=port, debug=debug)
+    finally:
+        sanitizer.stop()
