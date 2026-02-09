@@ -517,17 +517,24 @@ def _linkify(text: str) -> str:
             colors = ['#58a6c9', '#7ee787', '#f0a855', '#d2a8ff']
             rest = escaped[quote_match.end():]
             rest = _linkify_line(rest)
-            # Create multiple vertical bars using box-shadow
-            shadows = []
+            # Create multiple vertical bars using linear-gradient
+            # Each bar is 2px wide with 6px gap
+            bar_width = 2
+            gap = 6
+            stops = []
             for i in range(depth):
-                # Each bar is 2px wide, offset by 10px per level
-                offset = i * 10
-                shadows.append(f'{offset}px 0 0 0 {colors[i % len(colors)]}')
-            shadow_style = ', '.join(shadows)
-            padding_left = depth * 10 + 6
+                start = i * (bar_width + gap)
+                end = start + bar_width
+                color = colors[i % len(colors)]
+                stops.append(f'{color} {start}px, {color} {end}px')
+                if i < depth - 1:
+                    stops.append(f'transparent {end}px, transparent {start + bar_width + gap}px')
+            total_width = depth * (bar_width + gap)
+            gradient = f'linear-gradient(to right, {", ".join(stops)}, transparent {total_width - gap}px)'
+            padding_left = total_width + 4
             result_lines.append(
-                f'<div class="quote-line" style="box-shadow: inset {shadow_style}; '
-                f'padding-left: {padding_left}px; margin: 0;">{rest}</div>'
+                f'<div class="quote-line" style="background: {gradient}; '
+                f'background-repeat: no-repeat; padding-left: {padding_left}px; margin: 0;">{rest}</div>'
             )
             continue
 
