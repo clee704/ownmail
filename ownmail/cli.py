@@ -624,7 +624,18 @@ Examples:
                 web_config = config.get("web", {})
                 block_images = args.block_images or web_config.get("block_images", False)
                 page_size = web_config.get("page_size", 20)
-                run_server(serve_archive, args.host, args.port, args.debug, args.verbose, block_images, page_size)
+                trusted_senders = web_config.get("trusted_senders", [])
+                run_server(
+                    serve_archive,
+                    args.host,
+                    args.port,
+                    args.debug,
+                    args.verbose,
+                    block_images,
+                    page_size,
+                    trusted_senders,
+                    config_path,
+                )
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
