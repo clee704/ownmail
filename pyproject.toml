@@ -113,8 +113,9 @@ exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
+    "@abstractmethod",
 ]
 # Coverage barrier - fail if coverage drops below this percentage
-fail_under = 85
+fail_under = 90
 show_missing = true
 skip_covered = false
