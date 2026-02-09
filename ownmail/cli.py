@@ -615,7 +615,7 @@ Examples:
                     print("❌ Flask is required for the web interface.")
                     print("   Install with: pip install ownmail[web]")
                     sys.exit(1)
-                run_server(archive, args.host, args.port, args.debug)
+                run_server(archive, args.host, args.port, args.debug, args.verbose)
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")

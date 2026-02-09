@@ -1,23 +1,54 @@
 """Web interface for browsing and searching the email archive."""
 
 import email
+import time
 
-from flask import Flask, abort, render_template_string, request, send_file
+from flask import Flask, abort, g, render_template_string, request, send_file
 
 from ownmail.archive import EmailArchive
 
 
-def create_app(archive: EmailArchive) -> Flask:
+def create_app(archive: EmailArchive, verbose: bool = False) -> Flask:
     """Create the Flask application.
 
     Args:
         archive: EmailArchive instance
+        verbose: Enable request timing logs
 
     Returns:
         Flask application
     """
     app = Flask(__name__)
     app.config["archive"] = archive
+    app.config["verbose"] = verbose
+
+    # Cache for stats (refreshed every 60 seconds)
+    stats_cache = {"value": None, "time": 0}
+
+    def get_cached_stats():
+        """Get stats with caching to avoid slow DB queries on every request."""
+        now = time.time()
+        if stats_cache["value"] is None or now - stats_cache["time"] > 60:
+            if verbose:
+                print("[verbose] Refreshing stats cache...", flush=True)
+            start = time.time()
+            stats_cache["value"] = archive.db.get_stats()
+            stats_cache["time"] = now
+            if verbose:
+                print(f"[verbose] Stats query took {time.time()-start:.2f}s", flush=True)
+        return stats_cache["value"]
+
+    if verbose:
+        @app.before_request
+        def before_request():
+            g.start_time = time.time()
+
+        @app.after_request
+        def after_request(response):
+            if hasattr(g, "start_time"):
+                elapsed = time.time() - g.start_time
+                print(f"[{request.method}] {request.path} - {elapsed:.2f}s", flush=True)
+            return response
 
     # HTML Templates
     BASE_TEMPLATE = """
@@ -221,19 +252,24 @@ def create_app(archive: EmailArchive) -> Flask:
 
     @app.route("/")
     def index():
-        stats = archive.db.get_stats()
+        stats = get_cached_stats()
         return render_template_string(SEARCH_TEMPLATE, stats=stats, query="", results=None)
 
     @app.route("/search")
     def search():
         query = request.args.get("q", "").strip()
-        stats = archive.db.get_stats()
+        stats = get_cached_stats()
 
         if not query:
             return render_template_string(SEARCH_TEMPLATE, stats=stats, query="", results=None)
 
         # Search
+        if verbose:
+            print(f"[verbose] Searching for: {query}", flush=True)
+            start = time.time()
         raw_results = archive.search(query, limit=100)
+        if verbose:
+            print(f"[verbose] Search took {time.time()-start:.2f}s, {len(raw_results)} results", flush=True)
 
         # Format results
         results = []
@@ -401,6 +437,7 @@ def run_server(
     host: str = "127.0.0.1",
     port: int = 8080,
     debug: bool = False,
+    verbose: bool = False,
 ) -> None:
     """Run the web server.
 
@@ -409,11 +446,14 @@ def run_server(
         host: Host to bind to
         port: Port to listen on
         debug: Enable debug mode
+        verbose: Enable request timing logs
     """
-    app = create_app(archive)
+    app = create_app(archive, verbose=verbose)
 
     print("\n🌐 ownmail web interface")
     print(f"   Running at: http://{host}:{port}")
+    if verbose:
+        print("   Verbose logging enabled")
     print("   Press Ctrl+C to stop\n")
 
     app.run(host=host, port=port, debug=debug)
