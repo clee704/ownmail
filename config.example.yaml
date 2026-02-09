@@ -52,10 +52,18 @@ web:
   # Default: ownmail
   # brand_name: My Mail Archive
 
-  # Date display format (Python strftime).
-  # Leave blank for automatic: "Jan 26" for current year, "2025/12/15" for older.
-  # Default: auto
+  # Timezone for displaying email dates.
+  # Uses IANA timezone names (e.g., America/New_York, Asia/Tokyo).
+  # Default: server local timezone
+  # timezone: America/New_York
+
+  # Date format for search results (Python strftime).
+  # Default: %b %d, %Y (e.g., "Jan 26, 2025")
   # date_format: '%b %d, %Y'
+
+  # Date format for the message detail view (Python strftime).
+  # Default: %a, %d %b %Y %H:%M:%S (e.g., "Tue, 27 Jan 2026 07:16:05")
+  # detail_date_format: '%a, %d %b %Y %H:%M:%S'
 
   # Email addresses whose images are always loaded,
   # even when block_images is on. One per line.

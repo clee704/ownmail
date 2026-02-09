@@ -75,7 +75,7 @@ ownmail export --format pdf --query "from:important@example.com"
 
 ### Deduplication
 
-~~Detect duplicate emails across accounts/imports (same `content_hash`). `ownmail dedup` command.~~ Cross-folder dedup within IMAP is handled by the IMAP provider. Content-hash dedup during backup skips duplicate downloads. `verify --fix` detects and cleans up duplicates in the archive. A standalone `ownmail dedup` command may be added later if needed.
+~~Detect duplicate emails across accounts/imports (same `content_hash`). `ownmail dedup` command.~~ Cross-folder dedup within IMAP is handled by the IMAP provider. Content-hash dedup during download skips duplicate emails. `verify --fix` detects and cleans up duplicates in the archive. A standalone `ownmail dedup` command may be added later if needed.
 
 ### Headless Server Support
 
