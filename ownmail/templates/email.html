@@ -239,6 +239,35 @@ function updateEmailDarkMode(siteIsDark) {
     if (!area) return;
     var supportsDark = area.getAttribute('data-supports-dark') === 'true';
     area.classList.toggle('ownmail-email-dark', siteIsDark && supportsDark);
+
+    // Override @media (prefers-color-scheme: dark) blocks in email CSS
+    // so they follow the ownmail theme, not the OS preference.
+    if (!supportsDark) return;
+    var content = document.getElementById('ownmail-email-content');
+    if (!content) return;
+    var styles = content.querySelectorAll('style');
+    for (var i = 0; i < styles.length; i++) {
+        var el = styles[i];
+        // Save original CSS on first call
+        if (!el.hasAttribute('data-original-css')) {
+            el.setAttribute('data-original-css', el.textContent);
+        }
+        var original = el.getAttribute('data-original-css');
+        if (original.indexOf('prefers-color-scheme') === -1) continue;
+        if (siteIsDark) {
+            // Dark mode: unwrap @media dark blocks so rules always apply
+            el.textContent = original.replace(
+                /@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}/gi,
+                '$1'
+            );
+        } else {
+            // Light mode: remove @media dark blocks entirely
+            el.textContent = original.replace(
+                /@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gi,
+                ''
+            );
+        }
+    }
 }
 // Apply on load
 (function() {
