@@ -14,6 +14,7 @@ body {
         background: #1a1a1a;
         color: #e0e0e0;
     }
+    header h1 a { color: #e0e0e0; }
     .stats { color: #999; }
     .stats a { color: #6cb6ff; }
     .sticky-header { background: #1a1a1a; }
@@ -28,14 +29,17 @@ body {
         border-color: #444;
         color: #e0e0e0;
     }
+    .results-header { color: #999; }
     .email-list, .email-detail, .help-page {
         background: #242424;
         border-color: #333;
     }
-    .email-item { border-bottom-color: #333; }
-    .email-item:hover { background: #2d2d2d; }
+    .email-row { border-bottom-color: #333; }
+    .email-row:hover { background: #2d2d2d; }
+    .email-sender { color: #e0e0e0; }
     .email-subject { color: #e0e0e0; }
-    .email-snippet { color: #999; }
+    .email-snippet { color: #888; }
+    .email-snippet::before { color: #888; }
     .email-date { color: #888; }
     .email-header { border-bottom-color: #333; }
     .email-header-label { color: #999; }
@@ -48,19 +52,35 @@ body {
     .attachments { border-top-color: #333; }
     .attachment-item { border-bottom-color: #333; }
     .attachment-item a { color: #6cb6ff; }
+    .help { color: #999; }
+    .help code { background: #2d2d2d; }
+    .help a { color: #6cb6ff; }
+    .help-page h3 { color: #e0e0e0; }
     .help-table td { border-bottom-color: #333; }
     .help-table td:first-child { background: #2d2d2d; }
+    .search-error {
+        background: #3d2020;
+        border-color: #5c3030;
+        color: #ff8080;
+    }
+    .search-error code { background: #4d2525; }
+    .no-results { color: #999; }
     .image-banner {
         background: #3d3520;
         border-color: #665c3d;
     }
     .pagination { border-top-color: #333; }
     .pagination a { color: #6cb6ff; }
+    .pagination .current { color: #999; }
+    .pagination-bottom { color: #999; }
     .loading-overlay { background: rgba(0, 0, 0, 0.8); }
     .loading-spinner { border-color: #333; border-top-color: #6cb6ff; }
+    .email-menu-btn span { background: #999; }
+    .email-menu-btn:hover { background: #3d3d3d; }
     .email-menu-dropdown {
         background: #2d2d2d;
         border-color: #444;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.4);
     }
     .email-menu-dropdown a { color: #e0e0e0; }
     .email-menu-dropdown a:hover { background: #3d3d3d; }
