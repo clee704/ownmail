@@ -251,7 +251,7 @@ def create_app(
         * { box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 1200px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 20px;
             background: #f5f5f5;
@@ -335,6 +335,15 @@ def create_app(
         .back-link { margin-bottom: 15px; }
         .back-link a { color: #0066cc; }
         .no-results { color: #666; text-align: center; padding: 40px; }
+        .search-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .search-error p { margin: 10px 0 0 0; font-size: 0.9em; }
         .attachments { margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
         .attachments h4 { margin: 0 0 10px 0; }
         .attachment-list { list-style: none; padding: 0; }
@@ -534,9 +543,14 @@ def create_app(
     </div>
 
     {% if query %}
-        {% if results %}
+        {% if search_error %}
+            <div class="search-error">
+                <strong>Search error:</strong> {{ search_error }}
+                <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
+            </div>
+        {% elif results %}
             <div class="results-header">
-                <p>Showing {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %}</p>
+                <p>Showing {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %} (took {{ "%.2f"|format(search_time) }}s)</p>
                 {% if has_prev or has_more %}
                 <div class="pagination">
                     {% if has_prev %}
@@ -758,6 +772,7 @@ def create_app(
 
     @app.route("/search")
     def search():
+        search_start = time.time()
         query = request.args.get("q", "").strip()
         page = request.args.get("page", 1, type=int)
         sort = request.args.get("sort", "relevance")
@@ -779,18 +794,28 @@ def create_app(
             if verbose:
                 print(f"[verbose] Search cache HIT for: {query} (page {page}, sort {sort})", flush=True)
             raw_results = cached
+            search_error = None
         else:
             if verbose:
                 print(f"[verbose] Searching for: {query} (page {page}, offset {offset}, sort {sort})", flush=True)
                 start = time.time()
 
             # Fetch per_page + 1 to know if there are more results
-            raw_results = archive.search(query, limit=per_page + 1, offset=offset, sort=sort)
-            if verbose:
+            try:
+                raw_results = archive.search(query, limit=per_page + 1, offset=offset, sort=sort)
+                search_error = None
+            except Exception as e:
+                raw_results = []
+                search_error = str(e)
+                if verbose:
+                    print(f"[verbose] Search error: {e}", flush=True)
+
+            if verbose and not search_error:
                 print(f"[verbose] Search took {time.time()-start:.2f}s, {len(raw_results)} results", flush=True)
 
-            # Cache the results
-            search_cache.set(cache_key, raw_results)
+            # Cache the results (only if successful)
+            if not search_error:
+                search_cache.set(cache_key, raw_results)
 
         # Check if there are more results
         has_more = len(raw_results) > per_page
@@ -829,6 +854,7 @@ def create_app(
                 "snippet": snippet,
             })
 
+        search_time = time.time() - search_start
         return render_template_string(
             SEARCH_TEMPLATE,
             stats=stats,
@@ -839,6 +865,8 @@ def create_app(
             start_idx=offset,
             has_more=has_more,
             has_prev=page > 1,
+            search_time=search_time,
+            search_error=search_error,
         )
 
     @app.route("/email/<message_id>")
@@ -898,7 +926,7 @@ def create_app(
 
                     if "attachment" in content_disposition:
                         # Attachment
-                        att_filename = part.get_filename() or "attachment"
+                        att_filename = decode_header(part.get_filename() or "") or "attachment"
                         size = len(part.get_payload(decode=True) or b"")
                         attachments.append({
                             "filename": att_filename,
@@ -1016,7 +1044,7 @@ def create_app(
             if "attachment" in content_disposition:
                 if attachment_idx == index:
                     # Found the attachment
-                    att_filename = part.get_filename() or "attachment"
+                    att_filename = decode_header(part.get_filename() or "") or "attachment"
                     att_data = part.get_payload(decode=True)
                     content_type = part.get_content_type()
 
