@@ -2,6 +2,7 @@
 
 import runpy
 import sys
+import warnings
 from unittest.mock import patch
 
 
@@ -20,9 +21,11 @@ class TestMainModule:
         with patch.object(sys, 'argv', ['ownmail', '--help']):
             with patch('ownmail.cli.main') as mock_main:
                 mock_main.side_effect = SystemExit(0)
-                try:
-                    runpy.run_module('ownmail', run_name='__main__')
-                except SystemExit:
-                    pass
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    try:
+                        runpy.run_module('ownmail', run_name='__main__')
+                    except SystemExit:
+                        pass
                 # Should have tried to call main
                 mock_main.assert_called_once()
