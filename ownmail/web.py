@@ -1043,13 +1043,18 @@ def create_app(
             body_html, has_external_images = block_external_images(body_html)
 
         # Make all links in email open in new tab (prevents X-Frame-Options issues)
+        # Also inject base styles for consistent rendering
         if body_html:
+            # Base styles to inject - sans-serif font for better readability
+            base_styles = '''<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+</style>'''
             # Inject <base target="_blank"> to make all links open in new tab
             if '<head>' in body_html.lower():
                 # Insert after <head> tag
                 body_html = re.sub(
                     r'(<head[^>]*>)',
-                    r'\1<base target="_blank">',
+                    r'\1<base target="_blank">' + base_styles,
                     body_html,
                     count=1,
                     flags=re.IGNORECASE
@@ -1058,14 +1063,14 @@ def create_app(
                 # Insert after <html> tag
                 body_html = re.sub(
                     r'(<html[^>]*>)',
-                    r'\1<head><base target="_blank"></head>',
+                    r'\1<head><base target="_blank">' + base_styles + '</head>',
                     body_html,
                     count=1,
                     flags=re.IGNORECASE
                 )
             else:
                 # Prepend to body
-                body_html = '<base target="_blank">' + body_html
+                body_html = '<base target="_blank">' + base_styles + body_html
 
         # Get back URL if user came from search
         back_url = get_back_to_search_url()
