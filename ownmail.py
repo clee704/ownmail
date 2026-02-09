@@ -1650,16 +1650,15 @@ class GmailArchive:
 
             # 2. Check for orphaned FTS entries (in FTS but not in emails)
             print("\nChecking for orphaned FTS entries...")
+            # Use NOT IN instead of LEFT JOIN for better performance with FTS5
             orphaned_fts = conn.execute("""
-                SELECT f.message_id
-                FROM emails_fts f
-                LEFT JOIN emails e ON f.message_id = e.message_id
-                WHERE e.message_id IS NULL
+                SELECT DISTINCT message_id
+                FROM emails_fts
+                WHERE message_id NOT IN (SELECT message_id FROM emails)
             """).fetchall()
 
             if orphaned_fts:
-                # Get unique message_ids
-                orphaned_ids = list({row[0] for row in orphaned_fts})
+                orphaned_ids = [row[0] for row in orphaned_fts]
                 issues_found += len(orphaned_ids)
                 print(f"  ✗ Found {len(orphaned_ids)} FTS entries with no matching email record")
                 if verbose:
@@ -1680,11 +1679,11 @@ class GmailArchive:
 
             # 3. Check for missing FTS entries (in emails but not in FTS)
             print("\nChecking for missing FTS entries...")
+            # Use NOT IN instead of LEFT JOIN for better performance with FTS5
             missing_fts = conn.execute("""
-                SELECT e.message_id, e.filename
-                FROM emails e
-                LEFT JOIN emails_fts f ON e.message_id = f.message_id
-                WHERE f.message_id IS NULL
+                SELECT message_id, filename
+                FROM emails
+                WHERE message_id NOT IN (SELECT DISTINCT message_id FROM emails_fts)
             """).fetchall()
 
             if missing_fts:
