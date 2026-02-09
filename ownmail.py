@@ -23,22 +23,22 @@ Usage:
     ownmail stats
 """
 
-import os
-import sys
-import json
-import base64
-import sqlite3
-import hashlib
-import email
 import argparse
+import base64
+import email
+import hashlib
+import json
+import os
 import re
 import signal
+import sqlite3
+import sys
 import tempfile
 import time
-from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Tuple, Dict, Any
 from email.policy import default as email_policy
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 # Optional YAML support
 try:
@@ -50,8 +50,8 @@ except ImportError:
 # Third-party imports
 try:
     import keyring
-    from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
@@ -76,14 +76,14 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """
     Load configuration from YAML file.
-    
+
     Search order:
     1. Explicit --config path
     2. ./config.yaml (current working directory)
     3. Script directory config.yaml
     """
     search_paths = []
-    
+
     if config_path:
         search_paths.append(config_path)
     else:
@@ -91,7 +91,7 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
         search_paths.append(Path.cwd() / DEFAULT_CONFIG_FILENAME)
         # Then script directory
         search_paths.append(SCRIPT_DIR / DEFAULT_CONFIG_FILENAME)
-    
+
     for path in search_paths:
         if path.exists():
             if not HAS_YAML:
@@ -99,12 +99,12 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
                 print("Install with: pip install pyyaml")
                 print("Continuing without config file...\n")
                 return {}
-            
-            with open(path, "r") as f:
+
+            with open(path) as f:
                 config = yaml.safe_load(f) or {}
                 print(f"Loaded config from: {path}")
                 return config
-    
+
     return {}
 
 
@@ -122,8 +122,8 @@ class KeychainStorage:
             if "installed" not in data and "web" not in data:
                 raise ValueError("Invalid credentials format")
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON: {e}")
-        
+            raise ValueError(f"Invalid JSON: {e}") from e
+
         keyring.set_password(self.service, KEYCHAIN_ACCOUNT_CREDENTIALS, credentials_json)
 
     def load_client_credentials(self) -> Optional[str]:
@@ -190,11 +190,11 @@ class ArchiveDatabase:
         self.archive_dir = archive_dir
         self.db_path = archive_dir / "ownmail.db"
         archive_dir.mkdir(parents=True, exist_ok=True)
-        
+
         is_new_db = not self.db_path.exists()
         if is_new_db:
             print(f"Creating new database: {self.db_path}")
-        
+
         self._init_db()
 
     def _init_db(self) -> None:
@@ -210,7 +210,7 @@ class ArchiveDatabase:
                     indexed_hash TEXT
                 )
             """)
-            
+
             # Sync state for incremental backup
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sync_state (
@@ -218,7 +218,7 @@ class ArchiveDatabase:
                     value TEXT
                 )
             """)
-            
+
             # Full-text search index using FTS5
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS emails_fts USING fts5(
@@ -232,7 +232,7 @@ class ArchiveDatabase:
                     tokenize='porter unicode61'
                 )
             """)
-            
+
             conn.commit()
 
     def get_history_id(self) -> Optional[str]:
@@ -271,7 +271,7 @@ class ArchiveDatabase:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO emails 
+                INSERT OR REPLACE INTO emails
                 (message_id, filename, downloaded_at, content_hash)
                 VALUES (?, ?, ?, ?)
                 """,
@@ -292,7 +292,7 @@ class ArchiveDatabase:
         skip_delete: bool = False,
     ) -> None:
         """Add email to full-text search index.
-        
+
         Args:
             conn: Optional existing connection (for batching). If None, creates one and commits.
             skip_delete: If True, skip the DELETE (for new emails that aren't in the index yet).
@@ -300,7 +300,7 @@ class ArchiveDatabase:
         should_close = conn is None
         if conn is None:
             conn = sqlite3.connect(self.db_path)
-        
+
         try:
             # Remove existing entry if any (skip for new emails - DELETE is slow on FTS)
             if not skip_delete:
@@ -308,7 +308,7 @@ class ArchiveDatabase:
             # Insert new entry
             conn.execute(
                 """
-                INSERT INTO emails_fts 
+                INSERT INTO emails_fts
                 (message_id, subject, sender, recipients, date_str, body, attachments)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -334,10 +334,10 @@ class ArchiveDatabase:
             # Use FTS5 MATCH syntax
             # Support field-specific queries like from:, subject:, etc.
             fts_query = self._convert_query(query)
-            
+
             results = conn.execute(
                 """
-                SELECT 
+                SELECT
                     e.message_id,
                     e.filename,
                     f.subject,
@@ -367,7 +367,7 @@ class ArchiveDatabase:
         with sqlite3.connect(self.db_path) as conn:
             email_count = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
             indexed_count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
-            
+
             # Get date range
             oldest = conn.execute(
                 "SELECT MIN(downloaded_at) FROM emails"
@@ -375,7 +375,7 @@ class ArchiveDatabase:
             newest = conn.execute(
                 "SELECT MAX(downloaded_at) FROM emails"
             ).fetchone()[0]
-            
+
             return {
                 "total_emails": email_count,
                 "indexed_emails": indexed_count,
@@ -445,7 +445,7 @@ class EmailParser:
     @staticmethod
     def parse_file(filepath: Path = None, content: bytes = None) -> dict:
         """Parse an .eml file and extract searchable content.
-        
+
         Args:
             filepath: Path to .eml file (reads from disk)
             content: Raw email bytes (avoids disk read if already loaded)
@@ -472,7 +472,7 @@ class EmailParser:
         # Extract headers safely
         subject = EmailParser._safe_get_header(msg, "Subject")
         sender = EmailParser._safe_get_header(msg, "From")
-        
+
         # Combine all recipient fields
         recipients = []
         for header in ["To", "Cc", "Bcc"]:
@@ -480,20 +480,20 @@ class EmailParser:
             if val:
                 recipients.append(val)
         recipients_str = ", ".join(recipients)
-        
+
         date_str = EmailParser._safe_get_header(msg, "Date")
-        
+
         # Extract body text
         body_parts = []
         attachments = []
-        
+
         try:
             if msg.is_multipart():
                 for part in msg.walk():
                     try:
                         content_type = part.get_content_type()
                         content_disposition = str(part.get("Content-Disposition", ""))
-                        
+
                         # Get attachment filenames
                         if "attachment" in content_disposition:
                             try:
@@ -502,7 +502,7 @@ class EmailParser:
                                     attachments.append(EmailParser._sanitize_header(filename))
                             except Exception:
                                 pass
-                        
+
                         # Extract text content
                         if content_type == "text/plain":
                             text = EmailParser._safe_get_content(part)
@@ -548,7 +548,7 @@ class GmailArchive:
         self.db = ArchiveDatabase(archive_dir)
         self.service = None
         self.config = config or {}
-        
+
         # Config options with defaults
         self.include_labels = self.config.get("include_labels", True)
 
@@ -674,7 +674,7 @@ class GmailArchive:
                 .execute()
             )
             label_ids = message.get("labelIds", [])
-            
+
             # Convert label IDs to readable names
             # System labels are like INBOX, SENT, IMPORTANT, etc.
             # User labels need to be looked up (cached)
@@ -693,7 +693,7 @@ class GmailArchive:
                     self._label_cache[label["id"]] = label["name"]
             except HttpError:
                 pass
-        
+
         names = []
         for lid in label_ids:
             if lid in self._label_cache:
@@ -708,11 +708,11 @@ class GmailArchive:
         labels = self._get_labels_for_message(message_id)
         if not labels:
             return raw_data
-        
+
         # Create the header line
         labels_str = ", ".join(labels)
-        header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode("utf-8")
-        
+        header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode()
+
         # Insert after the first line (usually "Received:" or similar)
         # Find the first \r\n and insert after it
         first_newline = raw_data.find(b"\r\n")
@@ -721,16 +721,16 @@ class GmailArchive:
             if first_newline == -1:
                 return raw_data
             # Use \n style
-            header_line = f"X-Gmail-Labels: {labels_str}\n".encode("utf-8")
+            header_line = f"X-Gmail-Labels: {labels_str}\n".encode()
             return raw_data[:first_newline + 1] + header_line + raw_data[first_newline + 1:]
-        
+
         return raw_data[:first_newline + 2] + header_line + raw_data[first_newline + 2:]
 
     def download_message(self, message_id: str, include_labels: bool = None) -> Optional[Path]:
         """Download a single message and save it atomically."""
         if include_labels is None:
             include_labels = self.include_labels
-            
+
         try:
             # Fetch raw email
             message = (
@@ -741,7 +741,7 @@ class GmailArchive:
             )
 
             raw_data = base64.urlsafe_b64decode(message["raw"])
-            
+
             # Fetch labels if enabled
             if include_labels:
                 raw_data = self._inject_labels(message_id, raw_data)
@@ -754,7 +754,7 @@ class GmailArchive:
                 msg_date = parsedate_to_datetime(date_str)
                 date_prefix = msg_date.strftime("%Y%m%d_%H%M%S")
                 year_month = msg_date.strftime("%Y/%m")
-            except:
+            except Exception:
                 date_prefix = "unknown"
                 year_month = "unknown"
 
@@ -792,38 +792,38 @@ class GmailArchive:
 
     def index_email(self, message_id: str, filepath: Path, update_hash: bool = True, debug: bool = False, skip_delete: bool = False) -> bool:
         """Index an email for full-text search.
-        
+
         Args:
             message_id: The message ID
             filepath: Path to the .eml file
             update_hash: If True, also compute and update content_hash and indexed_hash
             debug: If True, print timing information
             skip_delete: If True, skip DELETE before INSERT (for new emails not yet in FTS)
-        
+
         Returns:
             True if successful, False otherwise
         """
         try:
             t0 = time.time()
-            
+
             # Read file content once for both parsing and hashing
             with open(filepath, "rb") as f:
                 content = f.read()
             t_read = time.time() - t0
-            
+
             # Compute hash
             t0 = time.time()
             new_hash = hashlib.sha256(content).hexdigest() if update_hash else None
             t_hash = time.time() - t0
-            
+
             # Parse email (using already-loaded content)
             t0 = time.time()
             parsed = EmailParser.parse_file(content=content)
             t_parse = time.time() - t0
-            
+
             # Use shared connection if available (for batching)
             conn = getattr(self, '_batch_conn', None)
-            
+
             # Index in FTS
             t0 = time.time()
             self.db.index_email(
@@ -838,7 +838,7 @@ class GmailArchive:
                 skip_delete=skip_delete,
             )
             t_fts = time.time() - t0
-            
+
             # Update hashes (use shared connection if available)
             t0 = time.time()
             if update_hash and new_hash:
@@ -855,11 +855,11 @@ class GmailArchive:
                         )
                         c.commit()
             t_update = time.time() - t0
-            
+
             if debug:
                 total = t_read + t_hash + t_parse + t_fts + t_update
                 print(f"\n    DEBUG: read={t_read*1000:.0f}ms hash={t_hash*1000:.0f}ms parse={t_parse*1000:.0f}ms fts={t_fts*1000:.0f}ms update={t_update*1000:.0f}ms TOTAL={total*1000:.0f}ms")
-            
+
             return True
         except Exception as e:
             print(f"\n  Error indexing {filepath}: {e}")
@@ -973,7 +973,7 @@ class GmailArchive:
         print(f"Found {len(results)} results:\n")
         print("-" * 70)
 
-        for msg_id, filename, subject, sender, date_str, snippet in results:
+        for _msg_id, filename, subject, sender, date_str, snippet in results:
             print(f"From: {sender}")
             print(f"Date: {date_str}")
             print(f"Subject: {subject}")
@@ -994,7 +994,7 @@ class GmailArchive:
         print(f"\nArchive location: {self.archive_dir}")
         print(f"Total emails: {stats['total_emails']}")
         print(f"Indexed for search: {stats['indexed_emails']}")
-        
+
         if stats['oldest_backup']:
             print(f"First backup: {stats['oldest_backup']}")
         if stats['newest_backup']:
@@ -1036,10 +1036,10 @@ class GmailArchive:
             if not credentials_file.exists():
                 print(f"❌ File not found: {credentials_file}")
                 sys.exit(1)
-            
-            with open(credentials_file, "r") as f:
+
+            with open(credentials_file) as f:
                 credentials_json = f.read()
-            
+
             print(f"Importing credentials from: {credentials_file}")
         else:
             # Prompt for paste
@@ -1054,7 +1054,7 @@ class GmailArchive:
             print("Paste the contents of the downloaded JSON file below.")
             print("(Paste the JSON, then press Enter twice to finish)")
             print("")
-            
+
             lines = []
             empty_count = 0
             while empty_count < 1:
@@ -1067,14 +1067,14 @@ class GmailArchive:
                         lines.append(line)
                 except EOFError:
                     break
-            
+
             credentials_json = "\n".join(lines)
 
         try:
             self.keychain.save_client_credentials(credentials_json)
             print("\n✓ OAuth credentials saved to macOS Keychain")
             print("\nYou can now run: ownmail backup")
-            
+
             # Remind user to delete the source file if imported from file
             if credentials_file:
                 print(f"\n⚠ Remember to securely delete: {credentials_file}")
@@ -1085,10 +1085,10 @@ class GmailArchive:
 
     def cmd_reindex(self, file_path: Optional[Path] = None, pattern: Optional[str] = None, force: bool = False, debug: bool = False) -> None:
         """Rebuild the search index.
-        
+
         By default, only indexes emails that have changed (content_hash != indexed_hash).
         This makes reindex resumable - if cancelled, just run again to continue.
-        
+
         Args:
             file_path: Index only this specific file
             pattern: Index only files matching this glob pattern (e.g., "2024/09/*")
@@ -1105,7 +1105,7 @@ class GmailArchive:
             if not file_path.exists():
                 print(f"File not found: {file_path}")
                 return
-            
+
             # Find message_id for this file
             rel_path = None
             try:
@@ -1113,7 +1113,7 @@ class GmailArchive:
             except ValueError:
                 # file_path might be absolute from different base
                 pass
-            
+
             if rel_path:
                 with sqlite3.connect(self.db.db_path) as conn:
                     result = conn.execute(
@@ -1128,7 +1128,7 @@ class GmailArchive:
                         else:
                             print("✗ Failed to index")
                         return
-            
+
             # If not in DB, use filename as message_id
             print(f"Indexing: {file_path.name}")
             if self.index_email(file_path.stem, file_path):
@@ -1150,9 +1150,9 @@ class GmailArchive:
                 # Use LIKE for pattern matching
                 like_pattern = pattern.replace("*", "%").replace("?", "_")
                 emails = conn.execute(
-                    """SELECT message_id, filename, content_hash, indexed_hash 
-                       FROM emails 
-                       WHERE filename LIKE ? 
+                    """SELECT message_id, filename, content_hash, indexed_hash
+                       FROM emails
+                       WHERE filename LIKE ?
                        AND (indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash)""",
                     (f"emails/{like_pattern}",)
                 ).fetchall()
@@ -1163,8 +1163,8 @@ class GmailArchive:
                 print(f"Pattern '{pattern}': {len(emails)} need indexing (of {total_matching} matching)")
             else:
                 emails = conn.execute(
-                    """SELECT message_id, filename, content_hash, indexed_hash 
-                       FROM emails 
+                    """SELECT message_id, filename, content_hash, indexed_hash
+                       FROM emails
                        WHERE indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash"""
                 ).fetchall()
                 total_emails = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
@@ -1178,14 +1178,13 @@ class GmailArchive:
 
         # Track IDs that need old FTS entries deleted (already indexed, being re-indexed)
         reindex_ids = [msg_id for msg_id, _, _, indexed_hash in emails if indexed_hash is not None]
-        
+
         print(f"Indexing {len(emails)} emails...")
         if reindex_ids:
             print(f"  ({len(reindex_ids)} will be re-indexed)")
         print("(Press Ctrl-C to pause - progress is saved, run again to resume)\n")
 
         success_count = 0
-        skip_count = 0
         error_count = 0
         interrupted = False
         start_time = time.time()
@@ -1205,22 +1204,22 @@ class GmailArchive:
         # WAL mode is faster for writes and crash-safe
         self._batch_conn.execute("PRAGMA journal_mode = WAL")
         self._batch_conn.execute("PRAGMA synchronous = NORMAL")
-        
+
         try:
-            for i, (msg_id, filename, content_hash, indexed_hash) in enumerate(emails, 1):
+            for i, (msg_id, filename, _content_hash, indexed_hash) in enumerate(emails, 1):
                 if interrupted:
                     break
-                
+
                 filepath = self.archive_dir / filename
                 short_name = Path(filename).name[:40]
-                
+
                 # Show what we're working on
                 print(f"\r\033[K  [{i}/{len(emails)}] {short_name}", end="", flush=True)
-                
+
                 if not filepath.exists():
                     error_count += 1
                     continue
-                
+
                 # Always skip DELETE - we handle it in batch upfront
                 if self.index_email(msg_id, filepath, update_hash=True, debug=self._debug, skip_delete=True):
                     success_count += 1
@@ -1229,18 +1228,18 @@ class GmailArchive:
                         successfully_reindexed.append(msg_id)
                 else:
                     error_count += 1
-                
+
                 # Commit periodically to save progress
                 if success_count - last_commit_count >= COMMIT_INTERVAL:
                     self._batch_conn.commit()
                     last_commit_count = success_count
-                
+
                 # Calculate and show progress stats after processing
                 elapsed = time.time() - start_time
                 rate = success_count / elapsed if elapsed > 0 else 0
                 remaining = len(emails) - i
                 eta = remaining / rate if rate > 0 else 0
-                
+
                 # Format ETA (show "..." for first few to get stable estimate)
                 if i < 5:
                     eta_str = "..."
@@ -1250,13 +1249,13 @@ class GmailArchive:
                     eta_str = f"{eta/60:.0f}m"
                 else:
                     eta_str = f"{eta:.0f}s"
-                
+
                 # Update progress line
                 print(f"\r\033[K  [{i}/{len(emails)}] {rate:.1f}/s | ETA {eta_str:>5} | {short_name}", end="", flush=True)
         finally:
             # Commit any remaining inserts
             self._batch_conn.commit()
-            
+
             # Delete old FTS entries for successfully re-indexed emails (batch delete at end)
             if successfully_reindexed:
                 print(f"\n  Cleaning up {len(successfully_reindexed)} old FTS entries...", end="", flush=True)
@@ -1271,7 +1270,7 @@ class GmailArchive:
                     """, (msg_id, msg_id))
                 self._batch_conn.commit()
                 print(f" done ({time.time()-t0:.1f}s)")
-            
+
             self._batch_conn.close()
             self._batch_conn = None
             signal.signal(signal.SIGINT, original_handler)
@@ -1359,13 +1358,13 @@ class GmailArchive:
 
                     # Inject labels header
                     labels_str = ", ".join(labels)
-                    header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode("utf-8")
+                    header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode()
 
                     first_newline = raw_data.find(b"\r\n")
                     if first_newline == -1:
                         first_newline = raw_data.find(b"\n")
                         if first_newline != -1:
-                            header_line = f"X-Gmail-Labels: {labels_str}\n".encode("utf-8")
+                            header_line = f"X-Gmail-Labels: {labels_str}\n".encode()
                             new_data = raw_data[:first_newline + 1] + header_line + raw_data[first_newline + 1:]
                         else:
                             skip_count += 1
@@ -1442,25 +1441,25 @@ class GmailArchive:
 
         print(f"Verifying {total} indexed emails...\n")
 
-        for i, (msg_id, filename, stored_hash) in enumerate(emails, 1):
+        for i, (_msg_id, filename, stored_hash) in enumerate(emails, 1):
             print(f"  [{i}/{total}] Verifying indexed...", end="\r")
-            
+
             indexed_files.add(filename)
             filepath = self.archive_dir / filename
-            
+
             if not filepath.exists():
                 missing_count += 1
                 missing_files.append(filename)
                 continue
-            
+
             if not stored_hash:
                 no_hash_count += 1
                 continue
-            
+
             # Compute current hash
             with open(filepath, "rb") as f:
                 current_hash = hashlib.sha256(f.read()).hexdigest()
-            
+
             if current_hash == stored_hash:
                 ok_count += 1
             else:
@@ -1468,7 +1467,7 @@ class GmailArchive:
                 corrupted_files.append(filename)
 
         # Check for orphaned files (on disk but not in index)
-        print(f"\n  Scanning for orphaned files...", end="\r")
+        print("\n  Scanning for orphaned files...", end="\r")
         orphaned_files = []
         for eml_file in self.emails_dir.rglob("*.eml"):
             rel_path = str(eml_file.relative_to(self.archive_dir))
@@ -1483,7 +1482,7 @@ class GmailArchive:
         self._print_file_list(missing_files, "✗ In index but missing from disk", verbose)
         self._print_file_list(orphaned_files, "? On disk but not in index", verbose)
         self._print_file_list(corrupted_files, "✗ CORRUPTED (hash mismatch)", verbose)
-        
+
         if missing_count == 0 and corrupted_count == 0 and len(orphaned_files) == 0 and no_hash_count == 0:
             print("\n  ✓ All files verified successfully!")
         print("-" * 50 + "\n")
@@ -1511,23 +1510,23 @@ class GmailArchive:
 
         for i, (msg_id, filename) in enumerate(emails, 1):
             print(f"  [{i}/{len(emails)}] Hashing...", end="\r")
-            
+
             filepath = self.archive_dir / filename
-            
+
             if not filepath.exists():
                 error_count += 1
                 continue
-            
+
             with open(filepath, "rb") as f:
                 content_hash = hashlib.sha256(f.read()).hexdigest()
-            
+
             with sqlite3.connect(self.db.db_path) as conn:
                 conn.execute(
                     "UPDATE emails SET content_hash = ? WHERE message_id = ?",
                     (content_hash, msg_id)
                 )
                 conn.commit()
-            
+
             success_count += 1
 
         print("\n" + "-" * 50)
@@ -1563,7 +1562,7 @@ class GmailArchive:
         print("-" * 50)
         print("Sync Check Complete!")
         print(f"  ✓ In sync: {len(in_sync)}")
-        
+
         # For displaying, we need filenames for local-only, but message IDs for gmail-only
         if on_gmail_not_local:
             print(f"  ↓ On Gmail but not local: {len(on_gmail_not_local)}")
@@ -1572,8 +1571,8 @@ class GmailArchive:
                 print(f"      {msg_id}")
             if not verbose and len(on_gmail_not_local) > 5:
                 print(f"      ... and {len(on_gmail_not_local) - 5} more (use --verbose to show all)")
-            print(f"\n  Run 'backup' to download these emails.")
-        
+            print("\n  Run 'backup' to download these emails.")
+
         if on_local_not_gmail:
             # Get filenames for these
             with sqlite3.connect(self.db.db_path) as conn:
@@ -1586,21 +1585,21 @@ class GmailArchive:
                         local_only_files.append(f"{result[0]} ({msg_id})")
                     else:
                         local_only_files.append(msg_id)
-            
+
             print(f"  ✗ On local but not on Gmail (deleted from server?): {len(on_local_not_gmail)}")
             show_count = len(local_only_files) if verbose else min(len(local_only_files), 5)
             for f in local_only_files[:show_count]:
                 print(f"      {f}")
             if not verbose and len(local_only_files) > 5:
                 print(f"      ... and {len(local_only_files) - 5} more (use --verbose to show all)")
-        
+
         if not on_gmail_not_local and not on_local_not_gmail:
             print("\n  ✓ Local archive is fully in sync with Gmail!")
         print("-" * 50 + "\n")
 
     def cmd_db_check(self, fix: bool = False, verbose: bool = False) -> None:
         """Check database integrity and optionally fix issues.
-        
+
         Checks for:
         - Duplicate FTS entries (same message_id multiple times)
         - Orphaned FTS entries (in FTS but not in emails table)
@@ -1618,12 +1617,12 @@ class GmailArchive:
             # 1. Check for duplicate FTS entries
             print("Checking for duplicate FTS entries...")
             duplicates = conn.execute("""
-                SELECT message_id, COUNT(*) as cnt 
-                FROM emails_fts 
-                GROUP BY message_id 
+                SELECT message_id, COUNT(*) as cnt
+                FROM emails_fts
+                GROUP BY message_id
                 HAVING cnt > 1
             """).fetchall()
-            
+
             if duplicates:
                 issues_found += len(duplicates)
                 print(f"  ✗ Found {len(duplicates)} message_ids with duplicate FTS entries")
@@ -1632,13 +1631,13 @@ class GmailArchive:
                         print(f"      {msg_id}: {cnt} entries")
                     if len(duplicates) > 10:
                         print(f"      ... and {len(duplicates) - 10} more")
-                
+
                 if fix:
                     print("  Fixing: keeping only newest entry for each...")
-                    for msg_id, cnt in duplicates:
+                    for msg_id, _ in duplicates:
                         # Keep only the row with the highest rowid
                         conn.execute("""
-                            DELETE FROM emails_fts 
+                            DELETE FROM emails_fts
                             WHERE message_id = ? AND rowid < (
                                 SELECT MAX(rowid) FROM emails_fts WHERE message_id = ?
                             )
@@ -1652,15 +1651,15 @@ class GmailArchive:
             # 2. Check for orphaned FTS entries (in FTS but not in emails)
             print("\nChecking for orphaned FTS entries...")
             orphaned_fts = conn.execute("""
-                SELECT f.message_id 
+                SELECT f.message_id
                 FROM emails_fts f
                 LEFT JOIN emails e ON f.message_id = e.message_id
                 WHERE e.message_id IS NULL
             """).fetchall()
-            
+
             if orphaned_fts:
                 # Get unique message_ids
-                orphaned_ids = list(set(row[0] for row in orphaned_fts))
+                orphaned_ids = list({row[0] for row in orphaned_fts})
                 issues_found += len(orphaned_ids)
                 print(f"  ✗ Found {len(orphaned_ids)} FTS entries with no matching email record")
                 if verbose:
@@ -1668,7 +1667,7 @@ class GmailArchive:
                         print(f"      {msg_id}")
                     if len(orphaned_ids) > 10:
                         print(f"      ... and {len(orphaned_ids) - 10} more")
-                
+
                 if fix:
                     print("  Fixing: removing orphaned FTS entries...")
                     for msg_id in orphaned_ids:
@@ -1687,12 +1686,12 @@ class GmailArchive:
                 LEFT JOIN emails_fts f ON e.message_id = f.message_id
                 WHERE f.message_id IS NULL
             """).fetchall()
-            
+
             if missing_fts:
                 issues_found += len(missing_fts)
                 print(f"  ✗ Found {len(missing_fts)} emails not in search index")
                 if verbose:
-                    for msg_id, filename in missing_fts[:10]:
+                    for _, filename in missing_fts[:10]:
                         print(f"      {filename}")
                     if len(missing_fts) > 10:
                         print(f"      ... and {len(missing_fts) - 10} more")
@@ -1705,16 +1704,16 @@ class GmailArchive:
             hash_mismatches = conn.execute("""
                 SELECT message_id, filename
                 FROM emails
-                WHERE content_hash IS NOT NULL 
-                  AND indexed_hash IS NOT NULL 
+                WHERE content_hash IS NOT NULL
+                  AND indexed_hash IS NOT NULL
                   AND content_hash != indexed_hash
             """).fetchall()
-            
+
             if hash_mismatches:
                 issues_found += len(hash_mismatches)
                 print(f"  ✗ Found {len(hash_mismatches)} emails where index is out of date")
                 if verbose:
-                    for msg_id, filename in hash_mismatches[:10]:
+                    for _, filename in hash_mismatches[:10]:
                         print(f"      {filename}")
                     if len(hash_mismatches) > 10:
                         print(f"      ... and {len(hash_mismatches) - 10} more")
@@ -1730,7 +1729,7 @@ class GmailArchive:
             null_indexed_hash = conn.execute(
                 "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NULL"
             ).fetchone()[0]
-            
+
             if null_content_hash > 0:
                 print(f"  ? {null_content_hash} emails without content_hash")
                 print("  → Run 'ownmail rehash' to compute")
@@ -1799,7 +1798,7 @@ Config file (config.yaml):
     parser.add_argument(
         "--archive-dir",
         type=Path,
-        help=f"Directory to store emails and database",
+        help="Directory to store emails and database",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
