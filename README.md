@@ -2,6 +2,8 @@
 
 **Own your mail.** A file-based email backup and search tool. Your emails, your files, your drive.
 
+> **Note:** ownmail is a backup tool, not an email client. It downloads and archives your emails for safekeeping and search — it doesn't send, receive, or manage your inbox. For that, keep using Gmail, Outlook, or your favorite mail app.
+
 ```
 $ ownmail backup
 
