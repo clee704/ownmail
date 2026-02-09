@@ -40,6 +40,7 @@ a:hover { text-decoration: underline; }
 .ownmail-stats { color: #666; font-size: 0.9em; }
 .ownmail-stats a { color: #0066cc; text-decoration: none; }
 .ownmail-stats a:hover { text-decoration: underline; }
+.ownmail-icon-link:hover { text-decoration: none !important; }
 .ownmail-sticky-header {
     position: sticky;
     top: 0;
