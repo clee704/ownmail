@@ -74,6 +74,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::ResourceWarning",
+]
 
 # Ruff linter configuration
 [tool.ruff]
@@ -121,7 +124,6 @@ exclude_lines = [
     "@abstractmethod",
 ]
 # Coverage barrier - fail if coverage drops below this percentage
-# Lowered from 90% to 75% after adding web.py (UI code harder to unit test)
-fail_under = 75
+fail_under = 80
 show_missing = true
 skip_covered = false
