@@ -108,8 +108,6 @@ perf: batch FTS deletes at end of reindex for 10x speedup
 - Use imperative mood: "add feature" not "added feature"
 - Keep first line under 72 characters
 - Add body for complex changes explaining why, not just what
-- **Keep commits self-contained** — each commit should be logically independent
-- **Don't mix unrelated changes** — separate bug fixes, features, and refactors into different commits
 
 ## Database Migrations
 
@@ -152,6 +150,7 @@ conn.execute("INSERT OR REPLACE INTO sync_state VALUES ('schema_version', '2')")
 4. Add tests for new functionality
 5. Ensure all tests pass
 6. Submit a PR with a clear description
+7. **Keep PRs self-contained** — each PR should be logically independent and focused on one change
 
 ## Philosophy Reminders
 
