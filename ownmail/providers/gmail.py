@@ -101,6 +101,8 @@ class GmailProvider(EmailProvider):
             query_parts.append(f"before:{until.replace('-', '/')}")
         query = " ".join(query_parts) if query_parts else None
 
+        print("  Querying Gmail API...", end="\r", flush=True)
+
         while True:
             request_args = {
                 "userId": "me",
@@ -119,7 +121,7 @@ class GmailProvider(EmailProvider):
 
             if "messages" in response:
                 all_ids.extend([msg["id"] for msg in response["messages"]])
-                print(f"  Found {len(all_ids)} messages...", end="\r")
+                print(f"  Found {len(all_ids)} messages...", end="\r", flush=True)
 
             page_token = response.get("nextPageToken")
             if not page_token:
