@@ -71,19 +71,18 @@
             <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
         </div>
     {% elif results %}
-            <ul class="email-list">
+            <table class="email-table">
             {% for result in results %}
-                <li class="email-item">
-                    <a href="/email/{{ result.message_id }}">
-                        <div class="email-subject">{{ result.subject or '(No subject)' }}</div>
-                        <div class="email-meta">
-                            From: {{ result.sender }} &bull; {{ result.date_str }}
-                        </div>
-                        <div class="email-snippet">{{ result.snippet }}</div>
-                    </a>
-                </li>
+                <tr onclick="window.location='/email/{{ result.message_id }}'">
+                    <td class="email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</td>
+                    <td class="email-content">
+                        <span class="email-subject">{{ result.subject or '(No subject)' }}</span>
+                        {% if result.snippet %}<span class="email-snippet">{{ result.snippet }}</span>{% endif %}
+                    </td>
+                    <td class="email-date">{{ result.date_short }}</td>
+                </tr>
             {% endfor %}
-            </ul>
+            </table>
             {% if has_prev or has_more %}
             <div class="pagination pagination-bottom">
                 {% if has_prev %}
