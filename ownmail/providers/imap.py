@@ -17,7 +17,7 @@ from ownmail.providers.base import EmailProvider
 
 # Default IMAP settings
 DEFAULT_PORT = 993  # IMAPS
-FETCH_BATCH_SIZE = 50  # UIDs per FETCH command (headers)
+FETCH_BATCH_SIZE = 500  # UIDs per FETCH command (headers)
 FETCH_BODY_BATCH_SIZE = 25  # UIDs per FETCH command (full messages)
 FOLDER_BATCH_DELAY = 0.1  # Seconds between folder scans
 
@@ -205,20 +205,99 @@ class ImapProvider(EmailProvider):
         except Exception:
             return None
 
+    def _is_gmail(self) -> bool:
+        """Check if this is a Gmail IMAP connection."""
+        return self._host == GMAIL_IMAP_HOST
+
+    def _get_all_mail_folder(self, folders: List[str]) -> Optional[str]:
+        """Find the [Gmail]/All Mail folder if it exists."""
+        for f in folders:
+            if f in ("[Gmail]/All Mail", "[Gmail]/Tous les messages",
+                     "[Gmail]/Alle Nachrichten", "[Gmail]/Toda la correspondencia"):
+                return f
+        return None
+
     def get_all_message_ids(
         self, since: Optional[str] = None, until: Optional[str] = None
     ) -> List[str]:
         """Scan all folders and return deduplicated message identifiers.
 
-        Each identifier is "folder:uid" for the first folder where a message
-        appears. Messages appearing in multiple folders are deduplicated by
-        Message-ID header; all folder names are tracked for labels.
+        For Gmail: uses [Gmail]/All Mail as sole download source (it contains
+        every message). Other folders are scanned only for label mapping.
+
+        For other IMAP servers: scans all folders with Message-ID deduplication.
 
         Returns:
             List of "folder:uid" strings (one per unique message)
         """
         folders = self._list_folders()
         print(f"  Found {len(folders)} folders to scan", flush=True)
+
+        all_mail = self._get_all_mail_folder(folders) if self._is_gmail() else None
+        if all_mail:
+            return self._scan_gmail(folders, all_mail, since, until)
+        else:
+            return self._scan_standard(folders, since, until)
+
+    def _scan_gmail(
+        self,
+        folders: List[str],
+        all_mail: str,
+        since: Optional[str],
+        until: Optional[str],
+    ) -> List[str]:
+        """Gmail-optimized scan: use [Gmail]/All Mail as sole download source.
+
+        [Gmail]/All Mail contains every message, so no dedup is needed.
+        Other folders are scanned for label mapping only (Message-ID headers
+        fetched from smaller folders, not from All Mail).
+        """
+        # Phase 1: Get all UIDs from All Mail (just SEARCH, no header fetch)
+        print(f"  Scanning: {all_mail}...\033[K", end="\r", flush=True)
+        all_mail_uids = self._get_folder_uids(all_mail)
+
+        if since or until:
+            all_mail_uids = self._filter_uids_by_date(all_mail, all_mail_uids, since, until)
+
+        all_ids = [f"{all_mail}:{uid}" for uid in all_mail_uids]
+
+        # Phase 2: Scan other folders for label mapping
+        # Build message_id -> [folders] from smaller folders
+        message_id_to_folders: Dict[str, List[str]] = {}
+        other_folders = [f for f in folders if f != all_mail]
+        total_label_msgs = 0
+
+        for folder in other_folders:
+            print(f"  Scanning labels: {folder}...\033[K", end="\r", flush=True)
+            uids = self._get_folder_uids(folder)
+            if not uids:
+                continue
+            if since or until:
+                uids = self._filter_uids_by_date(folder, uids, since, until)
+                if not uids:
+                    continue
+
+            msg_id_map = self._get_message_ids_for_uids(folder, uids)
+            for _uid, msg_id in msg_id_map.items():
+                message_id_to_folders.setdefault(msg_id, []).append(folder)
+            total_label_msgs += len(uids)
+            time.sleep(FOLDER_BATCH_DELAY)
+
+        # Store for label enrichment during download
+        self._message_id_to_folders = message_id_to_folders
+        self._folder_lookup = {}
+        self._seen_map = {}
+
+        print(f"  Found {len(all_ids)} messages ({total_label_msgs} label entries from {len(other_folders)} folders)")
+        return all_ids
+
+    def _scan_standard(
+        self,
+        folders: List[str],
+        since: Optional[str],
+        until: Optional[str],
+    ) -> List[str]:
+        """Standard IMAP scan with Message-ID deduplication across folders."""
 
         # Phase 1: Scan all folders for UIDs and Message-IDs
         # message_id -> {"primary": "folder:uid", "folders": ["folder1", ...]}
@@ -354,8 +433,13 @@ class ImapProvider(EmailProvider):
         new_ids = []
         new_state = {}
 
-        # For dedup across folders
+        # Gmail optimization: only check [Gmail]/All Mail for new messages
+        all_mail = self._get_all_mail_folder(folders) if self._is_gmail() else None
+
+        # For dedup across folders (standard path only)
         seen: Dict[str, Dict] = {}
+        # For Gmail label mapping
+        message_id_to_folders: Dict[str, List[str]] = {}
 
         for folder in folders:
             print(f"  Checking: {folder}...\033[K", end="\r", flush=True)
@@ -391,22 +475,32 @@ class ImapProvider(EmailProvider):
                 all_uids = [uid for uid in all_uids if uid > old_max_uid]
 
             if all_uids:
-                # Dedup by Message-ID
-                msg_id_map = self._get_message_ids_for_uids(folder, all_uids)
+                if all_mail and folder == all_mail:
+                    # Gmail: All Mail UIDs are download candidates, no header fetch needed
+                    for uid in all_uids:
+                        new_ids.append(f"{all_mail}:{uid}")
+                elif all_mail:
+                    # Gmail: other folders just contribute labels
+                    msg_id_map = self._get_message_ids_for_uids(folder, all_uids)
+                    for _uid, msg_id in msg_id_map.items():
+                        message_id_to_folders.setdefault(msg_id, []).append(folder)
+                else:
+                    # Standard IMAP: dedup by Message-ID
+                    msg_id_map = self._get_message_ids_for_uids(folder, all_uids)
 
-                for uid in all_uids:
-                    msg_id = msg_id_map.get(uid)
-                    composite_id = f"{folder}:{uid}"
+                    for uid in all_uids:
+                        msg_id = msg_id_map.get(uid)
+                        composite_id = f"{folder}:{uid}"
 
-                    if msg_id and msg_id in seen:
-                        seen[msg_id]["folders"].append(folder)
-                    else:
-                        if msg_id:
-                            seen[msg_id] = {
-                                "primary": composite_id,
-                                "folders": [folder],
-                            }
-                        new_ids.append(composite_id)
+                        if msg_id and msg_id in seen:
+                            seen[msg_id]["folders"].append(folder)
+                        else:
+                            if msg_id:
+                                seen[msg_id] = {
+                                    "primary": composite_id,
+                                    "folders": [folder],
+                                }
+                            new_ids.append(composite_id)
 
             # Update state for this folder
             current_uids = self._get_folder_uids(folder)
@@ -418,17 +512,22 @@ class ImapProvider(EmailProvider):
 
             time.sleep(FOLDER_BATCH_DELAY)
 
-        # Store dedup info
-        self._seen_map = seen
-        self._folder_lookup = {}
-        for _msg_id_val, info in seen.items():
-            self._folder_lookup[info["primary"]] = info["folders"]
+        # Store dedup/label info
+        if all_mail:
+            self._message_id_to_folders = message_id_to_folders
+            self._folder_lookup = {}
+            self._seen_map = {}
+        else:
+            self._seen_map = seen
+            self._folder_lookup = {}
+            for _msg_id_val, info in seen.items():
+                self._folder_lookup[info["primary"]] = info["folders"]
 
-        total_dupes = sum(
-            len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1
-        )
-        if total_dupes > 0:
-            print(f"  ({total_dupes} duplicates across folders)")
+            total_dupes = sum(
+                len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1
+            )
+            if total_dupes > 0:
+                print(f"  ({total_dupes} duplicates across folders)")
 
         return new_ids, json.dumps(new_state)
 
@@ -444,6 +543,31 @@ class ImapProvider(EmailProvider):
         except Exception:
             pass
         return None
+
+    def _get_labels_for_downloaded(self, composite_id: str, raw_data: bytes, folder: str) -> List[str]:
+        """Determine labels for a downloaded message.
+
+        For standard IMAP: uses _folder_lookup from dedup scan.
+        For Gmail optimized path: extracts Message-ID from raw email
+        and looks up which other folders contain it.
+        """
+        # Standard path: folder lookup populated during dedup scan
+        folder_lookup = getattr(self, "_folder_lookup", {})
+        if composite_id in folder_lookup:
+            return folder_lookup[composite_id]
+
+        # Gmail optimized path: look up Message-ID from raw email content
+        msg_id_to_folders = getattr(self, "_message_id_to_folders", None)
+        if msg_id_to_folders:
+            try:
+                msg = email.message_from_bytes(raw_data)
+                message_id = msg.get("Message-ID", "").strip()
+                if message_id and message_id in msg_id_to_folders:
+                    return [folder] + msg_id_to_folders[message_id]
+            except Exception:
+                pass
+
+        return [folder]
 
     def download_message(self, msg_id: str) -> Tuple[bytes, List[str]]:
         """Download a message by its composite ID (folder:uid).
@@ -475,8 +599,8 @@ class ImapProvider(EmailProvider):
         if raw_data is None:
             raise RuntimeError(f"No message data for {msg_id}")
 
-        # Labels = all folders this message appears in (from dedup scan)
-        labels = getattr(self, "_folder_lookup", {}).get(msg_id, [folder])
+        # Labels = all folders this message appears in
+        labels = self._get_labels_for_downloaded(msg_id, raw_data, folder)
 
         return raw_data, labels
 
@@ -539,10 +663,7 @@ class ImapProvider(EmailProvider):
                             uid = int(uid_match.group(1))
                             mid = uid_map.get(uid)
                             if mid:
-                                labels = getattr(self, "_folder_lookup", {}).get(
-                                    mid, [folder]
-                                )
-                                results[mid] = (item[1], labels, None)
+                                results[mid] = (item[1], None, None)  # labels resolved below
                                 fetched_uids.add(uid)
 
                 # Mark any missing UIDs as errors
@@ -551,6 +672,12 @@ class ImapProvider(EmailProvider):
                         results.setdefault(
                             mid, (None, [], f"No data for UID {uid}")
                         )
+
+        # Resolve labels for successfully downloaded messages
+        for mid, (raw_data, labels, _error) in list(results.items()):
+            if raw_data is not None and labels is None:
+                folder = mid.rsplit(":", 1)[0]
+                results[mid] = (raw_data, self._get_labels_for_downloaded(mid, raw_data, folder), None)
 
         return results
 
