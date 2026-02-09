@@ -371,6 +371,19 @@ class ArchiveDatabase:
             conn.execute("DELETE FROM sync_state WHERE key = ?", (state_key,))
             conn.commit()
 
+    def delete_account_sync_state(self, account: str) -> None:
+        """Delete all sync state for an account.
+
+        This forces a full re-sync on the next backup.
+
+        Args:
+            account: Email address
+        """
+        prefix = f"{account}/"
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM sync_state WHERE key LIKE ?", (prefix + "%",))
+            conn.commit()
+
     # Legacy methods for backward compatibility
     def get_history_id(self, account: str = None) -> Optional[str]:
         """Get Gmail history ID for an account."""

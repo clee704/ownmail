@@ -546,11 +546,23 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
             _print_file_list(missing_files, "✗ Missing from disk", verbose)
             if fix:
                 with sqlite3.connect(db_path) as conn:
+                    # Collect affected accounts before deleting
+                    affected_accounts = set()
                     for eid in missing_email_ids:
+                        row = conn.execute(
+                            "SELECT account FROM emails WHERE email_id = ?", (eid,)
+                        ).fetchone()
+                        if row and row[0]:
+                            affected_accounts.add(row[0])
                         conn.execute("DELETE FROM emails WHERE email_id = ?", (eid,))
                     conn.commit()
+                # Reset sync state so next backup re-discovers deleted messages
+                for account in affected_accounts:
+                    archive.db.delete_account_sync_state(account)
                 issues_fixed += 1
                 print(f"    → Removed {missing_count} stale DB entries")
+                if affected_accounts:
+                    print(f"    → Reset sync state for {len(affected_accounts)} account(s) (next backup will do a full sync)")
         if len(orphaned_files) > 0:
             issues_found += 1
             _print_file_list(orphaned_files, "? On disk but not indexed", verbose)

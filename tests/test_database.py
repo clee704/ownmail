@@ -301,6 +301,24 @@ class TestPerAccountOperations:
         assert db.get_sync_state("alice@gmail.com", "history_id") == "alice_history"
         assert db.get_sync_state("bob@gmail.com", "history_id") == "bob_history"
 
+    def test_delete_account_sync_state(self, temp_dir):
+        """Test deleting all sync state for an account."""
+        db = ArchiveDatabase(temp_dir)
+
+        # Set multiple keys for two accounts
+        db.set_sync_state("alice@gmail.com", "history_id", "alice_history")
+        db.set_sync_state("alice@gmail.com", "sync_state", "alice_sync")
+        db.set_sync_state("bob@gmail.com", "history_id", "bob_history")
+
+        # Delete all sync state for alice
+        db.delete_account_sync_state("alice@gmail.com")
+
+        # Alice's state should be gone
+        assert db.get_sync_state("alice@gmail.com", "history_id") is None
+        assert db.get_sync_state("alice@gmail.com", "sync_state") is None
+        # Bob's state should be untouched
+        assert db.get_sync_state("bob@gmail.com", "history_id") == "bob_history"
+
     def test_get_downloaded_ids_per_account(self, temp_dir):
         """Test getting downloaded IDs filtered by account."""
         db = ArchiveDatabase(temp_dir)
