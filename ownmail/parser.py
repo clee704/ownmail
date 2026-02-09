@@ -6,6 +6,19 @@ import re
 from email.policy import default as email_policy
 from pathlib import Path
 
+# Regex to extract charset from HTML meta tag
+HTML_CHARSET_RE = re.compile(
+    r'<meta[^>]+charset\s*=\s*["\']?([a-zA-Z0-9_-]+)',
+    re.IGNORECASE,
+)
+
+# Charset aliases for Korean encodings
+CHARSET_ALIASES = {
+    "ks_c_5601-1987": "cp949",
+    "euc-kr": "euc-kr",
+    "euc_kr": "euc-kr",
+}
+
 
 class EmailParser:
     """Parse .eml files for indexing. Handles malformed emails gracefully."""
@@ -294,10 +307,35 @@ class EmailParser:
     def _safe_get_content(part) -> str:
         """Safely extract content from a message part."""
         try:
-            payload = part.get_content()
-            if isinstance(payload, str):
-                return payload
-            elif isinstance(payload, bytes):
+            # First, try to get raw bytes and decode with proper charset
+            payload = part.get_payload(decode=True)
+            if payload and isinstance(payload, bytes):
+                # Check header charset first
+                header_charset = part.get_content_charset()
+                if header_charset:
+                    charset = CHARSET_ALIASES.get(header_charset.lower(), header_charset)
+                    try:
+                        return payload.decode(charset, errors='replace')
+                    except (LookupError, UnicodeDecodeError):
+                        pass
+
+                # For HTML, try to extract charset from meta tag
+                content_type = part.get_content_type()
+                if content_type == "text/html":
+                    try:
+                        # Use latin-1 to preserve raw bytes for regex search
+                        raw_html = payload.decode("latin-1")
+                        match = HTML_CHARSET_RE.search(raw_html[:2048])
+                        if match:
+                            meta_charset = match.group(1).lower()
+                            charset = CHARSET_ALIASES.get(meta_charset, meta_charset)
+                            try:
+                                return payload.decode(charset, errors='replace')
+                            except (LookupError, UnicodeDecodeError):
+                                pass
+                    except Exception:
+                        pass
+
                 # Try common encodings
                 for encoding in ['utf-8', 'euc-kr', 'cp949', 'iso-8859-1']:
                     try:
@@ -305,14 +343,13 @@ class EmailParser:
                     except (UnicodeDecodeError, LookupError):
                         continue
                 return payload.decode('utf-8', errors='replace')
+
+            # Fallback to get_content() for non-bytes
+            payload = part.get_content()
+            if isinstance(payload, str):
+                return payload
         except Exception:
-            # Last resort: try get_payload
-            try:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    return payload.decode('utf-8', errors='replace')
-            except Exception:
-                pass
+            pass
         return ""
 
     @staticmethod

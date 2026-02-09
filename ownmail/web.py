@@ -16,6 +16,20 @@ EXTERNAL_IMAGE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Regex to extract charset from HTML meta tag
+# Matches: <meta charset="euc-kr"> or <meta http-equiv="Content-Type" content="text/html; charset=euc-kr">
+HTML_CHARSET_RE = re.compile(
+    r'<meta[^>]+charset\s*=\s*["\']?([a-zA-Z0-9_-]+)',
+    re.IGNORECASE,
+)
+
+# Charset aliases for Korean encodings
+CHARSET_ALIASES = {
+    "ks_c_5601-1987": "cp949",
+    "euc-kr": "euc-kr",
+    "euc_kr": "euc-kr",
+}
+
 
 def decode_header(value) -> str:
     """Decode MIME encoded header (RFC 2047).
@@ -82,6 +96,44 @@ def _extract_snippet(msg: email.message.Message, max_len: int = 150) -> str:
     except Exception:
         pass
     return ""
+
+
+def _decode_html_body(payload: bytes, header_charset: str | None) -> str:
+    """Decode HTML body with charset detection from meta tag fallback.
+
+    Args:
+        payload: Raw bytes of HTML content
+        header_charset: Charset from Content-Type header (may be None)
+
+    Returns:
+        Decoded HTML string
+    """
+    # If header specifies charset, use it (with alias mapping)
+    if header_charset:
+        charset = CHARSET_ALIASES.get(header_charset.lower(), header_charset)
+        try:
+            return payload.decode(charset, errors="replace")
+        except (LookupError, UnicodeDecodeError):
+            pass
+
+    # No header charset - try to detect from HTML meta tag
+    # First, do a quick ASCII-safe decode to find the meta tag
+    try:
+        # Use latin-1 which maps bytes 1:1 to preserve raw bytes for regex
+        raw_html = payload.decode("latin-1")
+        match = HTML_CHARSET_RE.search(raw_html[:2048])  # Only check first 2KB
+        if match:
+            meta_charset = match.group(1).lower()
+            charset = CHARSET_ALIASES.get(meta_charset, meta_charset)
+            try:
+                return payload.decode(charset, errors="replace")
+            except (LookupError, UnicodeDecodeError):
+                pass
+    except Exception:
+        pass
+
+    # Fallback to utf-8
+    return payload.decode("utf-8", errors="replace")
 
 
 def block_external_images(html: str) -> tuple[str, bool]:
@@ -866,6 +918,10 @@ def create_app(
             </ul>
         </div>
         {% endif %}
+
+        <div class="email-actions" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+            <a href="/raw/{{ message_id }}" class="btn-secondary" style="display: inline-block; padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; text-decoration: none; color: #333; font-size: 13px;">📄 View Original (.eml)</a>
+        </div>
     </div>
     <div class="back-link"><a href="javascript:history.back()">&larr; Back to search</a></div>
 {% endblock %}"""
@@ -968,9 +1024,10 @@ def create_app(
                         sender = parsed.get("sender", "")
                         date_str = parsed.get("date_str", "")
 
-                        # Extract snippet from body if not provided by FTS
-                        if not snippet:
-                            body = parsed.get("body", "")
+                        # Always extract snippet from parsed body for correct encoding
+                        # FTS snippet may have garbled Korean text
+                        body = parsed.get("body", "")
+                        if body:
                             snippet = body[:150] + "..." if len(body) > 150 else body
                     except Exception:
                         # Fall back to FTS values if file parsing fails
@@ -1075,24 +1132,22 @@ def create_app(
                     elif content_type == "text/html" and not body_html:
                         payload = part.get_payload(decode=True)
                         if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            try:
-                                body_html = payload.decode(charset, errors="replace")
-                            except Exception:
-                                body_html = payload.decode("utf-8", errors="replace")
+                            # Use helper that can extract charset from HTML meta tag
+                            body_html = _decode_html_body(payload, part.get_content_charset())
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    charset = msg.get_content_charset() or "utf-8"
                     content_type = msg.get_content_type()
-                    try:
-                        decoded = payload.decode(charset, errors="replace")
-                    except Exception:
-                        decoded = payload.decode("utf-8", errors="replace")
+                    header_charset = msg.get_content_charset()
                     if content_type == "text/html":
-                        body_html = decoded
+                        # Use helper that can extract charset from HTML meta tag
+                        body_html = _decode_html_body(payload, header_charset)
                     else:
-                        body = decoded
+                        charset = header_charset or "utf-8"
+                        try:
+                            body = payload.decode(charset, errors="replace")
+                        except Exception:
+                            body = payload.decode("utf-8", errors="replace")
 
             # Prefer HTML over plain text for better formatting
             # (we already block external images for privacy)
@@ -1151,6 +1206,26 @@ def create_app(
             images_blocked=images_blocked,
             has_external_images=has_external_images,
             sender_is_trusted=sender_is_trusted,
+        )
+
+    @app.route("/raw/<message_id>")
+    def view_raw(message_id: str):
+        """Serve the original .eml file."""
+        email_info = archive.db.get_email_by_id(message_id)
+        if not email_info:
+            abort(404)
+
+        filename = email_info[1]
+        filepath = archive.archive_dir / filename
+
+        if not filepath.exists():
+            abort(404)
+
+        # Serve as text/plain for viewing in browser
+        return send_file(
+            filepath,
+            mimetype="text/plain; charset=utf-8",
+            as_attachment=False,
         )
 
     @app.route("/attachment/<message_id>/<int:index>")
