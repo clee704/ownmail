@@ -1029,23 +1029,22 @@ def create_app(
             if not filepath.exists():
                 abort(404)
 
-            # Parse email
+            # Parse email using EmailParser for proper Korean charset handling
             if verbose:
                 start = time.time()
+
+            # Use EmailParser for headers (handles Korean charset properly)
+            parsed = EmailParser.parse_file(filepath=filepath)
+            subject = parsed.get("subject") or "(No subject)"
+            sender = parsed.get("sender", "")
+            recipients = parsed.get("recipients", "")
+            date = parsed.get("date_str", "")
+            labels_str = parsed.get("labels", "")
+            labels = [lbl.strip() for lbl in labels_str.split(",") if lbl.strip()]
+
+            # For body and attachments, we still need to parse the message
             with open(filepath, "rb") as f:
                 msg = email.message_from_binary_file(f)
-
-            # Decode MIME-encoded headers
-            subject = decode_header(msg.get("Subject", "")) or "(No subject)"
-            sender = decode_header(msg.get("From", ""))
-            recipients = decode_header(msg.get("To", ""))
-            date = msg.get("Date", "")
-
-            # Get labels from X-Gmail-Labels header
-            labels = []
-            gmail_labels = msg.get("X-Gmail-Labels", "")
-            if gmail_labels:
-                labels = [lbl.strip() for lbl in gmail_labels.split(",")]
 
             # Extract body
             body = ""
