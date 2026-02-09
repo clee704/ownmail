@@ -7,7 +7,7 @@ from typing import Optional
 
 from ownmail import __version__
 from ownmail.archive import EmailArchive
-from ownmail.config import get_archive_dir, load_config
+from ownmail.config import get_archive_root, get_source_by_name, get_sources, load_config, parse_secret_ref
 from ownmail.keychain import KeychainStorage
 from ownmail.providers.gmail import GmailProvider
 
@@ -16,11 +16,19 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 DEFAULT_ARCHIVE_DIR = SCRIPT_DIR.parent / "archive"
 
 
-def cmd_setup(keychain: KeychainStorage, credentials_file: Optional[Path] = None) -> None:
-    """Set up OAuth credentials."""
+def cmd_setup(keychain: KeychainStorage, source_name: str = None, credentials_file: Optional[Path] = None) -> None:
+    """Set up OAuth credentials for a source."""
     print("\n" + "=" * 50)
     print("ownmail - Setup")
     print("=" * 50 + "\n")
+
+    # Determine keychain key name
+    if source_name:
+        keychain_key = f"{source_name}_token"
+    else:
+        keychain_key = "default_gmail_token"
+        print("Tip: Use --source <name> to set up a specific source from config.yaml")
+        print()
 
     if credentials_file:
         # Import from file
@@ -67,86 +75,113 @@ def cmd_setup(keychain: KeychainStorage, credentials_file: Optional[Path] = None
 
         print("\n✓ OAuth credentials saved to system keychain")
 
-    print("\nSetup complete! Run 'ownmail backup' to start backing up your emails.")
+    print(f"\nKeychain key: {keychain_key}")
+    print("\nAdd this to your config.yaml:")
+    print(f"""
+sources:
+  - name: {source_name or 'gmail_personal'}
+    type: gmail_api
+    account: your@gmail.com
+    auth:
+      secret_ref: keychain:{keychain_key}
+""")
+    print("Then run 'ownmail backup' to start backing up your emails.")
 
 
-def cmd_backup(archive: EmailArchive, account: Optional[str] = None) -> None:
-    """Run backup for one or all accounts."""
+def cmd_backup(archive: EmailArchive, config: dict, source_name: Optional[str] = None) -> None:
+    """Run backup for one or all sources."""
     print("\n" + "=" * 50)
     print("ownmail - Backup")
     print("=" * 50 + "\n")
 
-    # For now, we support single Gmail account (v0.1 compatibility)
-    # Multi-account will be added when config support is complete
-
+    sources = get_sources(config)
     keychain = archive.keychain
 
-    # Determine account email
-    if not account:
-        # Try to get from stored token
-        # For v0.1 compatibility, check legacy token first
-        legacy_token = keychain.load_legacy_token()
-        if legacy_token:
-            # We don't know the email from legacy token, prompt user
-            print("Note: Migrating from single-account mode.")
-            print("Please enter your Gmail address for this archive:")
-            account = input("Email: ").strip()
-            if not account:
-                print("❌ Error: Email address required")
-                sys.exit(1)
-        else:
-            print("❌ Error: No account configured. Run 'ownmail setup' first.")
+    if not sources:
+        # No sources configured - use legacy single-account mode
+        print("No sources configured in config.yaml.")
+        print("Run 'ownmail setup' first, then add sources to config.yaml")
+        sys.exit(1)
+
+    # Filter to specific source if requested
+    if source_name:
+        source = get_source_by_name(config, source_name)
+        if not source:
+            print(f"❌ Error: Source '{source_name}' not found in config")
             sys.exit(1)
+        sources = [source]
 
-    # Check for Gmail credentials
-    client_creds = keychain.load_client_credentials("gmail")
-    if not client_creds:
-        # Try legacy location
-        client_creds = keychain.load_legacy_client_credentials()
-        if client_creds:
-            # Migrate to new location
-            keychain.save_client_credentials("gmail", client_creds)
+    for source in sources:
+        name = source["name"]
+        source_type = source["type"]
+        account = source["account"]
+
+        print(f"Source: {name} ({account})")
+
+        if source_type == "gmail_api":
+            # Parse auth
+            auth = source.get("auth", {})
+            secret_ref = auth.get("secret_ref", "")
+
+            if not secret_ref:
+                print(f"❌ Error: Source '{name}' missing auth.secret_ref")
+                continue
+
+            try:
+                parse_secret_ref(secret_ref)  # Validate format
+            except ValueError as e:
+                print(f"❌ Error: {e}")
+                continue
+
+            # Create provider
+            provider = GmailProvider(
+                account=account,
+                keychain=keychain,
+                include_labels=source.get("include_labels", True),
+            )
+
+            # Authenticate
+            provider.authenticate()
+
+            # Get stats before backup
+            stats = archive.db.get_stats(account)
+            print(f"Archive location: {archive.archive_dir}")
+            print(f"Previously backed up: {stats['total_emails']} emails")
+
+            # Run backup
+            result = archive.backup(provider)
+
+            # Print summary
+            total = stats["total_emails"] + result["success_count"]
+            print("\n" + "-" * 50)
+            if result["interrupted"]:
+                print("Backup Paused!")
+                print(f"  Downloaded: {result['success_count']} emails")
+                print("\n  Run 'backup' again to resume.")
+            else:
+                print("Backup Complete!")
+                print(f"  Downloaded: {result['success_count']} emails")
+            if result["error_count"] > 0:
+                print(f"  Errors: {result['error_count']}")
+            print(f"  Total archived: {total} emails")
+            print("-" * 50 + "\n")
+
+        elif source_type == "imap":
+            print("  IMAP support coming soon!")
+            continue
+
         else:
-            print("❌ Error: No OAuth credentials found. Run 'ownmail setup' first.")
-            sys.exit(1)
-
-    # Create provider
-    provider = GmailProvider(
-        account=account,
-        keychain=keychain,
-        include_labels=True,  # TODO: get from config
-    )
-
-    # Authenticate
-    provider.authenticate()
-
-    # Get stats before backup
-    stats = archive.db.get_stats(account)
-    print(f"Archive location: {archive.archive_dir}")
-    print(f"Previously backed up: {stats['total_emails']} emails")
-
-    # Run backup
-    result = archive.backup(provider)
-
-    # Print summary
-    total = stats["total_emails"] + result["success_count"]
-    print("\n" + "-" * 50)
-    if result["interrupted"]:
-        print("Backup Paused!")
-        print(f"  Downloaded: {result['success_count']} emails")
-        print("\n  Run 'backup' again to resume.")
-    else:
-        print("Backup Complete!")
-        print(f"  Downloaded: {result['success_count']} emails")
-    if result["error_count"] > 0:
-        print(f"  Errors: {result['error_count']}")
-    print(f"  Total archived: {total} emails")
-    print("-" * 50 + "\n")
+            print(f"  Unknown source type: {source_type}")
+            continue
 
 
-def cmd_search(archive: EmailArchive, query: str, account: Optional[str] = None, limit: int = 50) -> None:
+def cmd_search(archive: EmailArchive, query: str, source_name: Optional[str] = None, limit: int = 50) -> None:
     """Search archived emails."""
     print(f"\nSearching for: {query}\n")
+
+    # If source specified, get the account email for filtering
+    account = None
+    # TODO: filter by source name -> account
 
     results = archive.search(query, account=account, limit=limit)
 
@@ -165,30 +200,48 @@ def cmd_search(archive: EmailArchive, query: str, account: Optional[str] = None,
         print()
 
 
-def cmd_stats(archive: EmailArchive, account: Optional[str] = None) -> None:
+def cmd_stats(archive: EmailArchive, config: dict, source_name: Optional[str] = None) -> None:
     """Show archive statistics."""
     print("\n" + "=" * 50)
     print("ownmail - Statistics")
     print("=" * 50 + "\n")
 
-    stats = archive.db.get_stats(account)
-
     print(f"Archive location: {archive.archive_dir}")
-    print(f"Total emails: {stats['total_emails']}")
-    print(f"Indexed for search: {stats['indexed_emails']}")
 
-    if stats["oldest_backup"]:
-        print(f"Oldest backup: {stats['oldest_backup']}")
-    if stats["newest_backup"]:
-        print(f"Newest backup: {stats['newest_backup']}")
+    # Show per-source stats
+    sources = get_sources(config)
+    if sources:
+        for source in sources:
+            name = source["name"]
+            account = source["account"]
+            stats = archive.db.get_stats(account)
+            print(f"\n{name} ({account}):")
+            print(f"  Total emails: {stats['total_emails']}")
+            if stats["oldest_backup"]:
+                print(f"  Oldest backup: {stats['oldest_backup']}")
+            if stats["newest_backup"]:
+                print(f"  Newest backup: {stats['newest_backup']}")
+    else:
+        stats = archive.db.get_stats()
+        print(f"Total emails: {stats['total_emails']}")
+        print(f"Indexed for search: {stats['indexed_emails']}")
 
-    # Show per-account breakdown if multiple accounts
-    accounts = archive.db.get_accounts()
-    if len(accounts) > 1:
-        print("\nPer-account breakdown:")
-        counts = archive.db.get_email_count_by_account()
-        for acct, count in counts.items():
-            print(f"  {acct}: {count} emails")
+
+def cmd_sources_list(config: dict) -> None:
+    """List configured sources."""
+    sources = get_sources(config)
+
+    if not sources:
+        print("\nNo sources configured.")
+        print("Run 'ownmail setup' and add sources to config.yaml")
+        return
+
+    print("\nConfigured sources:")
+    for source in sources:
+        name = source.get("name", "(unnamed)")
+        source_type = source.get("type", "?")
+        account = source.get("account", "?")
+        print(f"  - {name}: {source_type} ({account})")
 
 
 def main():
@@ -203,8 +256,10 @@ Version: {__version__}
 Examples:
   %(prog)s setup                           First-time credential setup
   %(prog)s backup                          Download new emails
+  %(prog)s backup --source gmail_personal  Backup specific source
   %(prog)s search "invoice from:amazon"   Search emails
   %(prog)s stats                           Show statistics
+  %(prog)s sources list                    List configured sources
         """,
     )
 
@@ -221,15 +276,16 @@ Examples:
     )
 
     parser.add_argument(
-        "--archive-dir",
+        "--archive-root",
         type=Path,
+        dest="archive_root",
         help="Directory to store emails and database",
     )
 
     parser.add_argument(
-        "--account",
+        "--source",
         type=str,
-        help="Email account to operate on (default: all accounts)",
+        help="Source name to operate on (default: all sources)",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -268,13 +324,13 @@ Examples:
         help="Show archive statistics",
     )
 
-    # accounts command (new for v0.2)
-    accounts_parser = subparsers.add_parser(
-        "accounts",
-        help="Manage email accounts",
+    # sources command
+    sources_parser = subparsers.add_parser(
+        "sources",
+        help="Manage email sources",
     )
-    accounts_sub = accounts_parser.add_subparsers(dest="accounts_cmd")
-    accounts_sub.add_parser("list", help="List configured accounts")
+    sources_sub = sources_parser.add_subparsers(dest="sources_cmd")
+    sources_sub.add_parser("list", help="List configured sources")
 
     args = parser.parse_args()
 
@@ -285,40 +341,32 @@ Examples:
     # Load config
     config = load_config(args.config, SCRIPT_DIR)
 
-    # Determine archive_dir
-    if args.archive_dir:
-        archive_dir = args.archive_dir
+    # Determine archive_root
+    if args.archive_root:
+        archive_root = args.archive_root
     else:
-        archive_dir = get_archive_dir(config, DEFAULT_ARCHIVE_DIR)
+        archive_root = get_archive_root(config, DEFAULT_ARCHIVE_DIR)
 
     try:
         if args.command == "setup":
             keychain = KeychainStorage()
-            cmd_setup(keychain, args.credentials_file)
+            cmd_setup(keychain, args.source, args.credentials_file)
 
-        elif args.command == "accounts":
-            if args.accounts_cmd == "list":
-                archive = EmailArchive(archive_dir, config)
-                accounts = archive.db.get_accounts()
-                if accounts:
-                    print("\nConfigured accounts:")
-                    for acct in accounts:
-                        print(f"  - {acct}")
-                else:
-                    print("\nNo accounts configured yet.")
-                    print("Run 'ownmail backup' to set up your first account.")
+        elif args.command == "sources":
+            if args.sources_cmd == "list":
+                cmd_sources_list(config)
             else:
-                accounts_parser.print_help()
+                sources_parser.print_help()
 
         else:
-            archive = EmailArchive(archive_dir, config)
+            archive = EmailArchive(archive_root, config)
 
             if args.command == "backup":
-                cmd_backup(archive, args.account)
+                cmd_backup(archive, config, args.source)
             elif args.command == "search":
-                cmd_search(archive, args.query, args.account, args.limit)
+                cmd_search(archive, args.query, args.source, args.limit)
             elif args.command == "stats":
-                cmd_stats(archive, args.account)
+                cmd_stats(archive, config, args.source)
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
