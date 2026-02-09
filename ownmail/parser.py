@@ -412,7 +412,7 @@ class EmailParser:
                 tz_mins = int(tz_str[2:4])
 
             try:
-                from datetime import timezone, timedelta
+                from datetime import timedelta, timezone
                 tz = timezone(timedelta(hours=tz_sign * tz_hours, minutes=tz_sign * tz_mins))
                 dt = datetime(year, month, day, hour, minute, second, tzinfo=tz)
                 return dt.strftime("%a, %d %b %Y %H:%M:%S %z")
