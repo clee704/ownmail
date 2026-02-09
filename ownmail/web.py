@@ -32,6 +32,93 @@ CHARSET_ALIASES = {
     "euc_kr": "euc-kr",
 }
 
+# Regex to extract RFC 2231 encoded filename parts (filename*0*=charset''value)
+RFC2231_FILENAME_RE = re.compile(rb"filename\*(\d+)\*?=([^;\r\n]+)", re.IGNORECASE)
+
+
+def _extract_attachment_filename(part) -> str:
+    """Extract attachment filename with proper charset handling.
+
+    Python's email library can corrupt non-ASCII filenames that aren't
+    properly MIME-encoded. This function extracts the raw bytes from
+    the part and decodes them properly, handling RFC 2231 encoding.
+
+    Args:
+        part: Email MIME part
+
+    Returns:
+        Properly decoded filename, or "attachment" if none found
+    """
+    from urllib.parse import unquote_to_bytes
+
+    # Try to get raw bytes from the part
+    try:
+        raw_part = part.as_bytes()
+
+        # Look for RFC 2231 encoded filename (filename*0*=charset'lang'value)
+        # This handles split filenames like filename*0*=..., filename*1*=...
+        filename_parts = []
+
+        for match in RFC2231_FILENAME_RE.finditer(raw_part):
+            part_num = int(match.group(1))
+            value = match.group(2).strip()
+
+            # First part has charset''value format
+            if b"''" in value:
+                charset_bytes, encoded_value = value.split(b"''", 1)
+                charset = charset_bytes.decode('ascii', errors='ignore').lower()
+                # unknown-8bit is often EUC-KR for Korean emails
+                if charset in ('unknown-8bit', ''):
+                    charset = 'euc-kr'
+            else:
+                # Continuation parts don't have charset prefix
+                encoded_value = value
+                charset = 'euc-kr'
+
+            # URL-decode the value
+            try:
+                decoded_bytes = unquote_to_bytes(encoded_value.decode('ascii'))
+                filename_parts.append((part_num, decoded_bytes, charset))
+            except Exception:
+                continue
+
+        if filename_parts:
+            # Sort by part number and combine
+            filename_parts.sort(key=lambda x: x[0])
+            combined = b''.join(p[1] for p in filename_parts)
+            charset = filename_parts[0][2]  # Use charset from first part
+
+            # Try the specified charset first, then fallbacks
+            for enc in [charset, 'euc-kr', 'cp949', 'utf-8', 'gb2312', 'shift_jis']:
+                try:
+                    decoded = combined.decode(enc)
+                    # Validate it has readable CJK content
+                    if any('\uAC00' <= c <= '\uD7AF' or  # Hangul
+                           '\u4E00' <= c <= '\u9FFF' or  # CJK
+                           '\u3040' <= c <= '\u30FF'     # Japanese
+                           for c in decoded):
+                        return decoded
+                    # If no CJK but decoded without errors, use it
+                    if enc in ['utf-8', charset]:
+                        return decoded
+                except (UnicodeDecodeError, LookupError):
+                    continue
+
+    except Exception:
+        pass
+
+    # Fall back to standard get_filename() with mojibake fix
+    filename = part.get_filename()
+    if filename:
+        # Check for replacement characters (corruption)
+        if '\ufffd' not in filename:
+            fixed = _fix_mojibake_filename(filename)
+            if fixed:
+                return fixed
+        return filename
+
+    return "attachment"
+
 
 def _fix_mojibake_filename(filename: str) -> str:
     """Fix mojibake in attachment filenames.
@@ -753,10 +840,8 @@ def create_app(
                     content_disposition = str(part.get("Content-Disposition", ""))
 
                     if "attachment" in content_disposition:
-                        # Attachment - decode_header for MIME, _fix_mojibake for raw bytes
-                        att_filename = part.get_filename() or ""
-                        att_filename = decode_header(att_filename)
-                        att_filename = _fix_mojibake_filename(att_filename) or "attachment"
+                        # Extract filename with proper charset handling
+                        att_filename = _extract_attachment_filename(part)
                         size = len(part.get_payload(decode=True) or b"")
                         attachments.append({
                             "filename": att_filename,
@@ -907,10 +992,8 @@ def create_app(
             content_disposition = str(part.get("Content-Disposition", ""))
             if "attachment" in content_disposition:
                 if attachment_idx == index:
-                    # Found the attachment - decode_header for MIME, _fix_mojibake for raw bytes
-                    att_filename = part.get_filename() or ""
-                    att_filename = decode_header(att_filename)
-                    att_filename = _fix_mojibake_filename(att_filename) or "attachment"
+                    # Extract filename with proper charset handling
+                    att_filename = _extract_attachment_filename(part)
                     att_data = part.get_payload(decode=True)
                     content_type = part.get_content_type()
 
