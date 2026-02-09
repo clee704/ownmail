@@ -91,49 +91,50 @@ def cmd_reindex(
     if pattern:
         like_pattern = "%" + pattern.replace("*", "%").replace("?", "_") + "%"
 
-    # Force mode: clear indexed_hash so matching emails are re-indexed
-    if force:
-        with sqlite3.connect(db_path) as conn:
-            if like_pattern:
-                print(f"Force mode: resetting index state for matching emails...", end="", flush=True)
-                conn.execute(
-                    "UPDATE emails SET indexed_hash = NULL WHERE filename LIKE ?",
-                    (like_pattern,)
-                )
-                count = conn.total_changes
-                print(f" {count} emails")
-            else:
-                print("Force mode: resetting index state for all emails...", end="", flush=True)
-                conn.execute("UPDATE emails SET indexed_hash = NULL")
-                count = conn.total_changes
-                print(f" {count} emails")
-            conn.commit()
-
-    # Get emails to index (where indexed_hash != content_hash or either is NULL)
+    # Get emails to index
+    t0 = time.time()
     print("Finding emails to index...", end="", flush=True)
     with sqlite3.connect(db_path) as conn:
         if like_pattern:
-            emails = conn.execute(
-                """SELECT message_id, filename, content_hash, indexed_hash
-                   FROM emails
-                   WHERE filename LIKE ?
-                   AND (indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash)""",
-                (like_pattern,)
-            ).fetchall()
-            total_matching = conn.execute(
-                "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
-                (like_pattern,)
-            ).fetchone()[0]
-            print(f" {len(emails)} of {total_matching} matching '{pattern}'")
+            if force:
+                # Force mode: select ALL matching emails regardless of indexed state
+                emails = conn.execute(
+                    """SELECT message_id, filename, content_hash, indexed_hash
+                       FROM emails
+                       WHERE filename LIKE ?""",
+                    (like_pattern,)
+                ).fetchall()
+                print(f" {len(emails)} matching '{pattern}' (force) ({time.time()-t0:.1f}s)")
+            else:
+                emails = conn.execute(
+                    """SELECT message_id, filename, content_hash, indexed_hash
+                       FROM emails
+                       WHERE filename LIKE ?
+                       AND (indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash)""",
+                    (like_pattern,)
+                ).fetchall()
+                total_matching = conn.execute(
+                    "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
+                    (like_pattern,)
+                ).fetchone()[0]
+                print(f" {len(emails)} of {total_matching} matching '{pattern}' ({time.time()-t0:.1f}s)")
         else:
-            emails = conn.execute(
-                """SELECT message_id, filename, content_hash, indexed_hash
+            if force:
+                # Force mode: select ALL emails
+                emails = conn.execute(
+                    """SELECT message_id, filename, content_hash, indexed_hash
+                       FROM emails"""
+                ).fetchall()
+                print(f" {len(emails)} emails (force) ({time.time()-t0:.1f}s)")
+            else:
+                emails = conn.execute(
+                    """SELECT message_id, filename, content_hash, indexed_hash
                    FROM emails
                    WHERE indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash"""
             ).fetchall()
             total_emails = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
             already_indexed = total_emails - len(emails)
-            print(f" {len(emails)} emails")
+            print(f" {len(emails)} emails ({time.time()-t0:.1f}s)")
             if already_indexed > 0:
                 print(f"  (skipping {already_indexed} already-indexed)")
 
@@ -141,12 +142,23 @@ def cmd_reindex(
         print("\nAll emails are already indexed. Use --force to reindex everything.")
         return
 
-    # Track IDs that need old FTS entries deleted (already indexed, being re-indexed)
-    reindex_ids = [msg_id for msg_id, _, _, indexed_hash in emails if indexed_hash is not None]
+    # Get message_ids that already have FTS entries (need cleanup after re-indexing)
+    t0 = time.time()
+    print("Checking for existing FTS entries...", end="", flush=True)
+    email_ids = [msg_id for msg_id, _, _, _ in emails]
+    with sqlite3.connect(db_path) as conn:
+        placeholders = ",".join("?" * len(email_ids))
+        existing_fts = set(
+            row[0] for row in conn.execute(
+                f"SELECT DISTINCT message_id FROM emails_fts WHERE message_id IN ({placeholders})",
+                email_ids
+            ).fetchall()
+        )
+    print(f" {len(existing_fts)} found ({time.time()-t0:.1f}s)")
 
     print(f"\nIndexing {len(emails)} emails...")
-    if reindex_ids:
-        print(f"  ({len(reindex_ids)} will be re-indexed)")
+    if existing_fts:
+        print(f"  ({len(existing_fts)} will be re-indexed)")
     print("(Press Ctrl-C to pause - progress is saved, run again to resume)\n")
 
     success_count = 0
@@ -155,7 +167,7 @@ def cmd_reindex(
     start_time = time.time()
     last_commit_count = 0
     COMMIT_INTERVAL = 50  # Commit every N emails
-    successfully_reindexed = []  # Track which re-indexed emails succeeded
+    successfully_reindexed = []  # Track which re-indexed emails succeeded (have existing FTS)
 
     def signal_handler(signum, frame):
         nonlocal interrupted
@@ -166,6 +178,9 @@ def cmd_reindex(
 
     # Use a shared connection for batching (much faster on slow disks)
     batch_conn = sqlite3.connect(db_path)
+
+    # Note max FTS rowid before inserting - anything <= this is "old" and can be deleted
+    max_rowid_before = batch_conn.execute("SELECT MAX(rowid) FROM emails_fts").fetchone()[0] or 0
     # WAL mode is faster for writes and crash-safe
     batch_conn.execute("PRAGMA journal_mode = WAL")
     batch_conn.execute("PRAGMA synchronous = NORMAL")
@@ -189,7 +204,7 @@ def cmd_reindex(
             if _index_email_for_reindex(archive, msg_id, filepath, batch_conn, debug):
                 success_count += 1
                 # Track re-indexed emails that need old FTS entry deleted
-                if indexed_hash is not None:
+                if msg_id in existing_fts:
                     successfully_reindexed.append(msg_id)
             else:
                 error_count += 1
@@ -225,14 +240,14 @@ def cmd_reindex(
         if successfully_reindexed:
             print(f"\n  Cleaning up {len(successfully_reindexed)} old FTS entries...", end="", flush=True)
             t0 = time.time()
-            # FTS5 creates rowid, old entries have lower rowid than new ones
-            # Delete entries where message_id matches but rowid is not the max for that message_id
-            for msg_id in successfully_reindexed:
-                batch_conn.execute("""
-                    DELETE FROM emails_fts WHERE message_id = ? AND rowid < (
-                        SELECT MAX(rowid) FROM emails_fts WHERE message_id = ?
-                    )
-                """, (msg_id, msg_id))
+            # Delete entries that existed before we started inserting (rowid <= max_rowid_before)
+            # This is fast because it's a simple comparison, no subquery
+            placeholders = ",".join("?" * len(successfully_reindexed))
+            batch_conn.execute(f"""
+                DELETE FROM emails_fts
+                WHERE message_id IN ({placeholders})
+                AND rowid <= ?
+            """, successfully_reindexed + [max_rowid_before])
             batch_conn.commit()
             print(f" done ({time.time()-t0:.1f}s)")
 
