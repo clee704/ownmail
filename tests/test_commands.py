@@ -595,7 +595,7 @@ class TestCmdSyncCheck:
         }
         archive = EmailArchive(temp_dir, config)
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.get_all_message_ids.return_value = ["msg1", "msg2", "msg3"]
             mock_provider_class.return_value = mock_provider
@@ -625,7 +625,7 @@ class TestCmdSyncCheck:
         archive.db.mark_downloaded(_eid("msg1", "test@gmail.com"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc", account="test@gmail.com")
         archive.db.mark_downloaded(_eid("msg2", "test@gmail.com"), "msg2", "emails/2024/01/msg2.eml", content_hash="def", account="test@gmail.com")
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.get_all_message_ids.return_value = ["msg1", "msg2"]
             mock_provider_class.return_value = mock_provider
@@ -650,8 +650,6 @@ class TestCmdUpdateLabels:
 
     def test_update_labels_no_emails(self, temp_dir, capsys):
         """Test update-labels with no emails to process."""
-        from unittest.mock import MagicMock, patch
-
         from ownmail.commands import cmd_update_labels
 
         config = {
@@ -664,14 +662,10 @@ class TestCmdUpdateLabels:
         }
         archive = EmailArchive(temp_dir, config)
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
-            mock_provider = MagicMock()
-            mock_provider_class.return_value = mock_provider
-
-            cmd_update_labels(archive)
+        cmd_update_labels(archive)
 
         captured = capsys.readouterr()
-        assert "No emails" in captured.out or "Update Labels" in captured.out
+        assert "No emails" in captured.out
 
     def test_update_labels_with_emails(self, temp_dir, sample_eml_simple, capsys):
         """Test update-labels with emails that need labels."""
@@ -699,7 +693,7 @@ class TestCmdUpdateLabels:
         rel_path = str(email_path.relative_to(temp_dir))
         archive.db.mark_downloaded(_eid("test123", "test@gmail.com"), "test123", rel_path, content_hash="abc", account="test@gmail.com")
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.get_labels_for_message.return_value = ["INBOX", "Work"]
             mock_provider_class.return_value = mock_provider
@@ -708,10 +702,11 @@ class TestCmdUpdateLabels:
 
         captured = capsys.readouterr()
         assert "Update Labels" in captured.out
+        assert "Updated: 1" in captured.out
 
     def test_update_labels_already_has_labels(self, temp_dir, capsys):
         """Test update-labels skips emails with existing labels."""
-        from unittest.mock import MagicMock, patch
+        import sqlite3
 
         from ownmail.commands import cmd_update_labels
 
@@ -725,29 +720,77 @@ class TestCmdUpdateLabels:
         }
         archive = EmailArchive(temp_dir, config)
 
-        # Create email file with labels already
-        emails_dir = temp_dir / "emails" / "2024" / "01"
-        emails_dir.mkdir(parents=True)
-        email_path = emails_dir / "test.eml"
-        email_path.write_bytes(b"""X-Gmail-Labels: INBOX
-From: test@example.com
-Subject: Test
+        # Add to database with labels already set
+        email_id = _eid("test123", "test@gmail.com")
+        archive.db.mark_downloaded(email_id, "test123", "emails/test.eml", content_hash="abc", account="test@gmail.com")
+        with sqlite3.connect(archive.db.db_path) as conn:
+            conn.execute("UPDATE emails SET labels = 'INBOX' WHERE email_id = ?", (email_id,))
 
-Body
-""")
-
-        # Add to database
-        rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded(_eid("test123", "test@gmail.com"), "test123", rel_path, content_hash="abc", account="test@gmail.com")
-
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
-            mock_provider = MagicMock()
-            mock_provider_class.return_value = mock_provider
-
-            cmd_update_labels(archive)
+        cmd_update_labels(archive)
 
         captured = capsys.readouterr()
-        assert "Skipped" in captured.out or "Update Labels" in captured.out
+        assert "No emails need labels" in captured.out
+
+    def test_update_labels_imap_source(self, temp_dir, capsys):
+        """Test update-labels with IMAP source derives labels from provider_id."""
+        import sqlite3
+
+        from ownmail.commands import cmd_update_labels
+
+        config = {
+            "sources": [{
+                "name": "test_imap",
+                "type": "imap",
+                "account": "test@gmail.com",
+                "host": "imap.gmail.com",
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        # Add emails with IMAP-style provider_id (folder:uid)
+        eid1 = _eid("INBOX:100", "test@gmail.com")
+        eid2 = _eid("[Gmail]/Sent Mail:200", "test@gmail.com")
+        archive.db.mark_downloaded(eid1, "INBOX:100", "emails/msg1.eml", content_hash="abc", account="test@gmail.com")
+        archive.db.mark_downloaded(eid2, "[Gmail]/Sent Mail:200", "emails/msg2.eml", content_hash="def", account="test@gmail.com")
+
+        cmd_update_labels(archive)
+
+        captured = capsys.readouterr()
+        assert "Updated: 2" in captured.out
+
+        # Verify labels in database
+        with sqlite3.connect(archive.db.db_path) as conn:
+            row1 = conn.execute("SELECT labels FROM emails WHERE email_id = ?", (eid1,)).fetchone()
+            row2 = conn.execute("SELECT labels FROM emails WHERE email_id = ?", (eid2,)).fetchone()
+        assert row1[0] == "INBOX"
+        assert row2[0] == "[Gmail]/Sent Mail"
+
+    def test_update_labels_imap_updates_email_labels_table(self, temp_dir, capsys):
+        """Test update-labels for IMAP also populates email_labels normalized table."""
+        import sqlite3
+
+        from ownmail.commands import cmd_update_labels
+
+        config = {
+            "sources": [{
+                "name": "test_imap",
+                "type": "imap",
+                "account": "test@gmail.com",
+                "host": "imap.gmail.com",
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        eid = _eid("INBOX:100", "test@gmail.com")
+        archive.db.mark_downloaded(eid, "INBOX:100", "emails/msg1.eml", content_hash="abc", account="test@gmail.com")
+
+        cmd_update_labels(archive)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (eid,)).fetchone()[0]
+            labels = conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,)).fetchall()
+        assert len(labels) == 1
+        assert labels[0][0] == "INBOX"
 
 
 class TestCmdVerifyDatabaseVerbose:
@@ -831,7 +874,7 @@ class TestCmdSyncCheckDifferences:
         }
         archive = EmailArchive(temp_dir, config)
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.get_all_message_ids.return_value = ["msg1", "msg2", "msg3"]
             mock_provider_class.return_value = mock_provider
@@ -861,7 +904,7 @@ class TestCmdSyncCheckDifferences:
         archive.db.mark_downloaded(_eid("local1", "test@gmail.com"), "local1", "emails/2024/01/local1.eml", content_hash="abc", account="test@gmail.com")
         archive.db.mark_downloaded(_eid("local2", "test@gmail.com"), "local2", "emails/2024/01/local2.eml", content_hash="def", account="test@gmail.com")
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.get_all_message_ids.return_value = []  # Gmail is empty
             mock_provider_class.return_value = mock_provider
@@ -887,7 +930,7 @@ class TestCmdSyncCheckDifferences:
         }
         archive = EmailArchive(temp_dir, config)
 
-        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             # More than 5 to trigger truncation unless verbose
             mock_provider.get_all_message_ids.return_value = [f"msg{i}" for i in range(10)]

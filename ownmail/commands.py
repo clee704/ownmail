@@ -4,7 +4,7 @@ This module contains commands for archive maintenance:
 - reindex: Rebuild the full-text search index
 - verify: Verify archive integrity (files, hashes, database)
 - sync_check: Compare local archive with server
-- update_labels: Update Gmail labels from server
+- update_labels: Update labels from server or derive from IMAP folders
 """
 
 import hashlib
@@ -18,7 +18,6 @@ from typing import Optional
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
-from ownmail.providers.gmail import GmailProvider
 
 
 def cmd_reindex(
@@ -738,6 +737,8 @@ def cmd_sync_check(
     print(f"Source: {source['name']} ({account})")
 
     # Create and authenticate provider
+    from ownmail.providers.gmail import GmailProvider
+
     provider = GmailProvider(account=account, keychain=archive.keychain)
     provider.authenticate()
 
@@ -796,7 +797,10 @@ def cmd_sync_check(
 
 
 def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
-    """Fetch current Gmail labels from server and update the database.
+    """Fetch/derive labels and update the database.
+
+    For Gmail API: fetches labels from server via API.
+    For IMAP: derives labels from IMAP folder names (stored in provider_id).
 
     Labels are stored in the database only, not injected into .eml files.
     This keeps .eml files as pure RFC 5322 email as received from the server.
@@ -814,7 +818,7 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
         print("No sources configured. Run 'ownmail setup' first.")
         return
 
-    # Get the first gmail source (or specified source)
+    # Find the source to update
     source = None
     if source_name:
         source = get_source_by_name(config, source_name)
@@ -822,20 +826,12 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
             print(f"❌ Source '{source_name}' not found")
             return
     else:
-        for s in sources:
-            if s.get("type") == "gmail_api":
-                source = s
-                break
-        if not source:
-            print("No Gmail source configured. update-labels currently only supports Gmail.")
-            return
+        # Use the first source (any type)
+        source = sources[0]
 
+    source_type = source.get("type")
     account = source["account"]
     print(f"Source: {source['name']} ({account})")
-
-    # Create and authenticate provider
-    provider = GmailProvider(account=account, keychain=archive.keychain)
-    provider.authenticate()
 
     # Get all downloaded emails for this account that don't have labels yet
     with sqlite3.connect(archive.db.db_path) as conn:
@@ -848,8 +844,80 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
         print("No emails need labels.")
         return
 
+    if source_type == "gmail_api":
+        _update_labels_gmail(archive, account, emails)
+    elif source_type == "imap":
+        _update_labels_imap(archive, account, emails)
+    else:
+        print(f"update-labels is not supported for source type '{source_type}'")
+
+
+def _update_labels_imap(
+    archive: EmailArchive, account: str, emails: list
+) -> None:
+    """Update labels for IMAP emails by extracting folder from provider_id.
+
+    IMAP provider_id format is "folder:uid", so the folder name IS the label.
+    No IMAP connection needed — this is a purely offline operation.
+    """
+    print(f"Deriving labels from IMAP folder names for {len(emails)} emails...")
+
+    success_count = 0
+    skip_count = 0
+
+    with sqlite3.connect(archive.db.db_path) as conn:
+        for email_id, provider_id in emails:
+            if ":" not in provider_id:
+                skip_count += 1
+                continue
+
+            folder = provider_id.rsplit(":", 1)[0]
+            if not folder:
+                skip_count += 1
+                continue
+
+            conn.execute(
+                "UPDATE emails SET labels = ? WHERE email_id = ?",
+                (folder, email_id),
+            )
+
+            # Update email_labels normalized table
+            row = conn.execute(
+                "SELECT rowid, email_date FROM emails WHERE email_id = ?",
+                (email_id,),
+            ).fetchone()
+            if row:
+                rowid, email_date = row
+                conn.execute(
+                    "DELETE FROM email_labels WHERE email_rowid = ?", (rowid,)
+                )
+                conn.execute(
+                    "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                    (rowid, folder, email_date),
+                )
+
+            success_count += 1
+
+    print("\n" + "-" * 50)
+    print("Update Labels Complete!")
+    print(f"  Updated: {success_count} emails")
+    if skip_count > 0:
+        print(f"  Skipped: {skip_count}")
+    print("-" * 50 + "\n")
+
+
+def _update_labels_gmail(
+    archive: EmailArchive, account: str, emails: list
+) -> None:
+    """Update labels for Gmail API emails by fetching from server."""
+    from ownmail.providers.gmail import GmailProvider
+
     print(f"Fetching labels for {len(emails)} emails...")
     print("(Press Ctrl-C to stop - progress is saved)\n")
+
+    # Create and authenticate provider
+    provider = GmailProvider(account=account, keychain=archive.keychain)
+    provider.authenticate()
 
     success_count = 0
     skip_count = 0
@@ -885,6 +953,24 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
                         "UPDATE emails SET labels = ? WHERE email_id = ?",
                         (labels_str, email_id)
                     )
+
+                    # Update email_labels normalized table
+                    row = conn.execute(
+                        "SELECT rowid, email_date FROM emails WHERE email_id = ?",
+                        (email_id,),
+                    ).fetchone()
+                    if row:
+                        rowid, email_date = row
+                        conn.execute(
+                            "DELETE FROM email_labels WHERE email_rowid = ?",
+                            (rowid,),
+                        )
+                        for label in labels:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                                (rowid, label, email_date),
+                            )
+
                     success_count += 1
 
                     # Commit periodically
