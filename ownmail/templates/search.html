@@ -69,13 +69,15 @@
     {% elif results %}
             <ul class="ownmail-email-list">
             {% for result in results %}
-                <li class="ownmail-email-row" onclick="window.location='/email/{{ result.email_id }}'">
-                    <span class="ownmail-email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
-                    <span class="ownmail-email-row-content">
-                        <span class="ownmail-email-subject">{{ result.subject or '(No subject)' }}</span>
-                        {% if result.snippet %}<span class="ownmail-email-snippet">{{ result.snippet }}</span>{% endif %}
-                    </span>
-                    <span class="ownmail-email-date">{{ result.date_short }}</span>
+                <li class="ownmail-email-row">
+                    <a href="/email/{{ result.email_id }}" class="ownmail-email-row-link">
+                        <span class="ownmail-email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
+                        <span class="ownmail-email-row-content">
+                            <span class="ownmail-email-subject">{{ result.subject or '(No subject)' }}</span>
+                            {% if result.snippet %}<span class="ownmail-email-snippet">{{ result.snippet }}</span>{% endif %}
+                        </span>
+                        <span class="ownmail-email-date">{{ result.date_short }}</span>
+                    </a>
                 </li>
             {% endfor %}
             </ul>

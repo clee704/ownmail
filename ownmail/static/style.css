@@ -130,14 +130,19 @@ a:hover { text-decoration: underline; }
     border: 1px solid #ddd;
 }
 .ownmail-email-row {
-    display: flex;
-    align-items: center;
     border-bottom: 1px solid #eee;
-    cursor: pointer;
-    padding: 10px 12px;
 }
 .ownmail-email-row:last-child { border-bottom: none; }
 .ownmail-email-row:hover { background: #f8f9fa; }
+.ownmail-email-row-link {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+.ownmail-email-row-link:hover { text-decoration: none; }
 .ownmail-email-sender {
     flex: 0 0 200px;
     max-width: 200px;
@@ -569,7 +574,7 @@ a:hover { text-decoration: underline; }
     .ownmail-settings-section {
         padding: 12px;
     }
-    .ownmail-email-row {
+    .ownmail-email-row-link {
         display: grid;
         grid-template-columns: 1fr auto;
         grid-template-areas:
@@ -636,6 +641,7 @@ html.ownmail-dark {
     }
     .ownmail-email-row { border-bottom-color: #333; }
     .ownmail-email-row:hover { background: #2d2d2d; }
+    .ownmail-email-row-link { color: inherit; }
     .ownmail-email-sender { color: #e0e0e0; }
     .ownmail-email-subject { color: #e0e0e0; }
     .ownmail-email-snippet { color: #888; }
