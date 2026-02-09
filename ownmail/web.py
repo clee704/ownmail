@@ -2,6 +2,7 @@
 
 import email
 import email.header
+from email.policy import default as email_policy
 import re
 import time
 
@@ -1220,7 +1221,7 @@ def create_app(
 
             # For body and attachments, we still need to parse the message
             with open(filepath, "rb") as f:
-                msg = email.message_from_binary_file(f)
+                msg = email.message_from_binary_file(f, policy=email_policy)
 
             # Extract body
             body = ""
@@ -1356,7 +1357,7 @@ def create_app(
 
         # Parse email and find attachment
         with open(filepath, "rb") as f:
-            msg = email.message_from_binary_file(f)
+            msg = email.message_from_binary_file(f, policy=email_policy)
 
         attachment_idx = 0
         for part in msg.walk():

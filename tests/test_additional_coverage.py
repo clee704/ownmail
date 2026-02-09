@@ -1698,18 +1698,19 @@ class TestParserSafeGetHeaderDefects:
         assert result == ""
 
     def test_safe_get_header_with_replacement_chars_uses_raw(self):
-        """Test that headers with replacement chars fall back to raw extraction."""
+        """Test that headers with many replacement chars fall back to raw extraction."""
         from email.message import EmailMessage
 
         from ownmail.parser import EmailParser
 
         msg = EmailMessage()
-        # Simulate a corrupted header with replacement character
-        msg['Subject'] = 'Hello \ufffd World'
+        # Simulate a severely corrupted header (less than 90% readable)
+        # This will trigger raw extraction
+        msg['Subject'] = '\ufffd\ufffd\ufffd\ufffd'
 
-        # Without raw_content, we get the decoded result with replacement char
+        # Without raw_content, we get the corrupted result
         result = EmailParser._safe_get_header(msg, "Subject")
-        assert 'Hello' in result
+        assert '\ufffd' in result or len(result) == 0
 
         # With raw_content containing raw Korean bytes (cp949 encoded), we should get Korean text
         korean_subject = '한글'.encode('cp949')  # b'\xc7\xd1\xb1\xdb'

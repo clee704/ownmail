@@ -192,8 +192,15 @@ class EmailParser:
         # If already a clean string without encoding issues, return it
         if isinstance(raw_value, str):
             # Check if it looks like it has encoding issues (replacement chars)
-            if '\ufffd' not in raw_value and '�' not in raw_value:
+            has_issues = '\ufffd' in raw_value or '�' in raw_value
+            if not has_issues:
                 return raw_value
+
+            # If mostly readable (90%+), accept minor issues rather than risk corruption
+            if has_issues:
+                readable = sum(1 for c in raw_value if c.isprintable() or c.isspace())
+                if readable / len(raw_value) > 0.9:
+                    return raw_value
 
         try:
             # Try RFC 2047 decoding first
@@ -263,9 +270,22 @@ class EmailParser:
         try:
             val = msg.get(header_name, "") or ""
 
-            # Check for replacement characters BEFORE any processing
+            # Convert header objects to string
+            val_str = str(val) if val else ""
+
+            # Check for replacement characters
+            has_issues = '\ufffd' in val_str
+
+            # If the value is mostly readable (90%+), accept it even with minor issues
+            # This prevents corrupting mostly-good decoded headers
+            # Exclude replacement characters from the "readable" count
+            if has_issues and len(val_str) > 0:
+                readable = sum(1 for c in val_str if (c.isprintable() or c.isspace()) and c != '\ufffd')
+                if readable / len(val_str) > 0.9:
+                    return EmailParser._sanitize_header(val_str)
+
             # If the raw value has encoding corruption, extract directly from bytes
-            if raw_content and isinstance(val, str) and '\ufffd' in val:
+            if raw_content and has_issues:
                 raw_decoded = EmailParser._extract_raw_header(
                     raw_content, header_name, fallback_charset
                 )
