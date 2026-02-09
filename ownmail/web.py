@@ -1324,7 +1324,7 @@ def create_app(
 
     @app.route("/raw/<message_id>")
     def view_raw(message_id: str):
-        """Serve the original .eml file."""
+        """Show the original .eml file with filepath."""
         email_info = archive.db.get_email_by_id(message_id)
         if not email_info:
             abort(404)
@@ -1335,12 +1335,34 @@ def create_app(
         if not filepath.exists():
             abort(404)
 
-        # Serve as text/plain for viewing in browser
-        return send_file(
-            filepath,
-            mimetype="text/plain; charset=utf-8",
-            as_attachment=False,
-        )
+        # Read file content
+        with open(filepath, "rb") as f:
+            content = f.read().decode("utf-8", errors="replace")
+
+        # Render HTML page with filepath and content
+        from markupsafe import escape
+        return f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Raw Email - {escape(filename)}</title>
+    <style>
+        body {{ font-family: monospace; margin: 0; padding: 20px; background: #f5f5f5; }}
+        .filepath {{ background: #fff; padding: 10px 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; word-break: break-all; font-size: 13px; }}
+        .filepath-label {{ color: #666; font-size: 11px; margin-bottom: 5px; }}
+        .content {{ background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; font-size: 12px; line-height: 1.4; overflow-x: auto; }}
+        a {{ color: #0066cc; }}
+    </style>
+</head>
+<body>
+    <div style="margin-bottom: 15px;"><a href="/email/{escape(message_id)}">&larr; Back to email</a></div>
+    <div class="filepath">
+        <div class="filepath-label">File path:</div>
+        {escape(str(filepath))}
+    </div>
+    <div class="content">{escape(content)}</div>
+</body>
+</html>'''
 
     @app.route("/attachment/<message_id>/<int:index>")
     def download_attachment(message_id: str, index: int):
