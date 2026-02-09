@@ -899,9 +899,8 @@ class TestTrustSenderWithConfig:
         """Trust sender should update config.yaml."""
         from unittest.mock import MagicMock
 
-        import yaml
-
         from ownmail.web import create_app
+        from ownmail.yaml_util import load_yaml
 
         # Create config file
         config_path = tmp_path / "config.yaml"
@@ -923,8 +922,7 @@ class TestTrustSenderWithConfig:
             assert b"ok" in response.data
 
             # Check config was updated
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
+            config = load_yaml(config_path)
             assert "newtrust@example.com" in config["web"]["trusted_senders"]
 
     def test_trust_sender_with_actual_redirect(self, tmp_path):
@@ -955,9 +953,8 @@ class TestTrustSenderWithConfig:
         """Untrust sender should update config.yaml."""
         from unittest.mock import MagicMock
 
-        import yaml
-
         from ownmail.web import create_app
+        from ownmail.yaml_util import load_yaml
 
         # Create config file with trusted sender
         config_path = tmp_path / "config.yaml"
@@ -977,8 +974,7 @@ class TestTrustSenderWithConfig:
             assert response.status_code == 200
 
             # Check config was updated
-            with open(config_path) as f:
-                config = yaml.safe_load(f)
+            config = load_yaml(config_path)
             assert "remove@example.com" not in config["web"]["trusted_senders"]
 
 

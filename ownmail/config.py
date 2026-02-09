@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 # Optional YAML support
 try:
-    import yaml
+    from ownmail.yaml_util import load_yaml
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
@@ -42,15 +42,14 @@ def load_config(config_path: Optional[Path] = None, script_dir: Path = None) -> 
     for path in search_paths:
         if path.exists():
             if not HAS_YAML:
-                print(f"Found config file {path} but PyYAML is not installed.")
-                print("Install with: pip install pyyaml")
+                print(f"Found config file {path} but ruamel.yaml is not installed.")
+                print("Install with: pip install ruamel.yaml")
                 print("Continuing without config file...\n")
                 return {}
 
-            with open(path) as f:
-                config = yaml.safe_load(f) or {}
-                print(f"Loaded config from: {path}")
-                return config
+            config = load_yaml(path)
+            print(f"Loaded config from: {path}")
+            return config
 
     return {}
 

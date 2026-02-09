@@ -1483,10 +1483,9 @@ def create_app(
         config_data = {}
         if config_path:
             try:
-                with open(config_path) as f:
-                    import yaml
+                from ownmail.yaml_util import load_yaml
 
-                    config_data = yaml.safe_load(f) or {}
+                config_data = load_yaml(config_path)
             except Exception:
                 pass
 
@@ -1510,15 +1509,14 @@ def create_app(
     @app.route("/settings", methods=["POST"])
     def save_settings():
         """Save settings to config.yaml and update in-memory config."""
-        import yaml
+        from ownmail.yaml_util import load_yaml, save_yaml
 
         config_path = app.config.get("config_path")
         if not config_path:
             return redirect("/settings")
 
         try:
-            with open(config_path) as f:
-                config_data = yaml.safe_load(f) or {}
+            config_data = load_yaml(config_path)
         except Exception:
             config_data = {}
 
@@ -1566,8 +1564,7 @@ def create_app(
         app.config["trusted_senders"] = set(trusted_list)
 
         try:
-            with open(config_path, "w") as f:
-                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+            save_yaml(config_data, config_path)
         except Exception as e:
             if verbose:
                 print(f"[verbose] Error saving settings: {e}", flush=True)
@@ -1591,10 +1588,8 @@ def create_app(
 
         try:
             # Read current config
-            with open(config_path) as f:
-                import yaml
-                config_content = f.read()
-                config_data = yaml.safe_load(config_content) or {}
+            from ownmail.yaml_util import load_yaml, save_yaml
+            config_data = load_yaml(config_path)
 
             # Add to trusted_senders
             web_config = config_data.setdefault("web", {})
@@ -1603,8 +1598,7 @@ def create_app(
                 trusted_list.append(sender_email)
 
                 # Write back
-                with open(config_path, "w") as f:
-                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                save_yaml(config_data, config_path)
 
                 # Update in-memory set
                 app.config["trusted_senders"].add(sender_email)
@@ -1637,9 +1631,8 @@ def create_app(
         if config_path:
             try:
                 # Read current config
-                with open(config_path) as f:
-                    import yaml
-                    config_data = yaml.safe_load(f) or {}
+                from ownmail.yaml_util import load_yaml, save_yaml
+                config_data = load_yaml(config_path)
 
                 # Remove from trusted_senders
                 web_config = config_data.get("web", {})
@@ -1648,8 +1641,7 @@ def create_app(
                     trusted_list.remove(sender_email)
 
                     # Write back
-                    with open(config_path, "w") as f:
-                        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                    save_yaml(config_data, config_path)
 
                     if verbose:
                         print(f"[verbose] Removed trusted sender: {sender_email}", flush=True)
