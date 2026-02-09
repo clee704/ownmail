@@ -271,9 +271,9 @@ class TestSearchSorting:
         """Test search with date descending sort."""
         db = ArchiveDatabase(temp_dir)
 
-        # Filenames determine sort order (YYYYMMDD_HHMMSS)
-        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml")
-        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml")
+        # email_date determines sort order
+        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
+        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
         db.index_email("msg1", "Test", "from", "to", "date", "body", "")
         db.index_email("msg2", "Test", "from", "to", "date", "body", "")
 
@@ -288,8 +288,8 @@ class TestSearchSorting:
         """Test search with date ascending sort."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml")
-        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml")
+        db.mark_downloaded("msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
+        db.mark_downloaded("msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
         db.index_email("msg1", "Test", "from", "to", "date", "body", "")
         db.index_email("msg2", "Test", "from", "to", "date", "body", "")
 

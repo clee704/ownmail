@@ -373,11 +373,11 @@ class ArchiveDatabase:
             # Extract special filters from query
             fts_query, filters = self._parse_query(query)
 
-            # Determine ORDER BY clause
+            # Determine ORDER BY clause - use email_date for proper date sorting
             if sort == "date_desc":
-                order_by = "e.filename DESC"  # Filename starts with YYYYMMDD_HHMMSS
+                order_by = "e.email_date DESC"
             elif sort == "date_asc":
-                order_by = "e.filename ASC"
+                order_by = "e.email_date ASC"
             else:
                 order_by = "rank"  # FTS5 relevance
 
@@ -460,7 +460,7 @@ class ArchiveDatabase:
                         '' as snippet
                     FROM emails
                     WHERE {email_where}
-                    ORDER BY filename {"DESC" if "DESC" in no_fts_order else "ASC"}
+                    ORDER BY email_date {"DESC" if "DESC" in no_fts_order else "ASC"}
                     LIMIT ? OFFSET ?
                     """,
                     email_params
@@ -498,7 +498,7 @@ class ArchiveDatabase:
                 email_params.extend([limit, offset])
 
                 # Query emails table only - web layer fills in subject/sender from file
-                order_col = "filename DESC" if "DESC" in no_fts_order else "filename ASC"
+                order_col = "email_date DESC" if "DESC" in no_fts_order else "email_date ASC"
                 results = conn.execute(
                     f"""
                     SELECT
@@ -564,7 +564,7 @@ class ArchiveDatabase:
                     JOIN emails e ON e.message_id = f.message_id
                     WHERE f.emails_fts MATCH ?
                       AND {email_where}
-                    ORDER BY e.filename {"DESC" if sort == "date_desc" else "ASC"}
+                    ORDER BY e.email_date {"DESC" if sort == "date_desc" else "ASC"}
                     LIMIT ? OFFSET ?
                     """,
                     all_params
