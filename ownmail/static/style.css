@@ -393,6 +393,10 @@ a:hover { text-decoration: underline; }
     border-radius: 5px;
     font-size: 0.95em;
     margin-bottom: 5px;
+    animation: ownmail-fade-out 0.5s ease 3s forwards;
+}
+@keyframes ownmail-fade-out {
+    to { opacity: 0; height: 0; padding: 0; margin: 0; border: 0; overflow: hidden; }
 }
 
 .ownmail-image-banner {
