@@ -162,7 +162,7 @@ class TestGmailTokenStorage:
 class TestImapPasswordStorage:
     """Tests for IMAP password storage."""
 
-    def test_save_imap_password(self, capsys):
+    def test_save_imap_password(self):
         """Test saving IMAP password."""
         with patch("ownmail.keychain.keyring") as mock_keyring:
             storage = KeychainStorage("test-service")
@@ -172,9 +172,6 @@ class TestImapPasswordStorage:
             call_args = mock_keyring.set_password.call_args
             assert call_args[0][1] == "imap-password/alice@company.com"
             assert call_args[0][2] == "secret123"
-
-            captured = capsys.readouterr()
-            assert "alice@company.com" in captured.out
 
     def test_load_imap_password(self):
         """Test loading IMAP password."""

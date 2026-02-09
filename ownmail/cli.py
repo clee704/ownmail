@@ -210,7 +210,7 @@ def _setup_imap(
 
     # Save password to keychain
     keychain.save_imap_password(account_email, password)
-    print("✓ Password saved to system keychain (not stored in any file)")
+    print(f"✓ Password saved to system keychain for {account_email}")
 
     # Get source name
     if not source_name:

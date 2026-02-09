@@ -148,7 +148,6 @@ class KeychainStorage:
         """
         account_key = f"imap-password/{account}"
         keyring.set_password(self.service, account_key, password)
-        print(f"✓ Password saved for {account}")
 
     def load_imap_password(self, account: str) -> Optional[str]:
         """Load IMAP password for an account.
