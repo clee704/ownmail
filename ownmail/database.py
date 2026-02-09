@@ -422,26 +422,45 @@ class ArchiveDatabase:
                     email_params
                 ).fetchall()
             elif not fts_query.strip():
-                # Label filter only - need to go through FTS but no MATCH
-                # "relevance" doesn't apply here either, default to date desc
+                # Label filter only (no FTS search terms) - query emails table directly
+                # Use indexed labels column for fast filtering, skip FTS join entirely
                 no_fts_order = order_by if sort != "relevance" else "e.filename DESC"
-                where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+                email_clauses = []
+                email_params = []
+                if account:
+                    email_clauses.append("account = ?")
+                    email_params.append(account)
+                if filters.get("after"):
+                    email_clauses.append("filename >= ?")
+                    email_params.append(filters["after"])
+                if filters.get("before"):
+                    email_clauses.append("filename < ?")
+                    email_params.append(filters["before"])
+                if filters.get("label"):
+                    email_clauses.append("labels LIKE ?")
+                    email_params.append(f"%{filters['label']}%")
+
+                email_where = " AND ".join(email_clauses) if email_clauses else "1=1"
+                email_params.extend([limit, offset])
+
+                # Query emails table only - web layer fills in subject/sender from file
+                order_col = "filename DESC" if "DESC" in no_fts_order else "filename ASC"
                 results = conn.execute(
                     f"""
                     SELECT
-                        e.message_id,
-                        e.filename,
-                        f.subject,
-                        f.sender,
-                        f.date_str,
+                        message_id,
+                        filename,
+                        '' as subject,
+                        '' as sender,
+                        '' as date_str,
                         '' as snippet
-                    FROM emails e
-                    JOIN emails_fts f ON f.message_id = e.message_id
-                    WHERE {where_sql}
-                    ORDER BY {no_fts_order}
+                    FROM emails
+                    WHERE {email_where}
+                    ORDER BY {order_col}
                     LIMIT ? OFFSET ?
                     """,
-                    params
+                    email_params
                 ).fetchall()
             elif sort in ("date_desc", "date_asc"):
                 # For date-sorted FTS queries: use ORDER BY on filename (which has index)

@@ -286,7 +286,7 @@ def _index_email_for_reindex(
              parsed["date_str"], parsed["body"], parsed["attachments"])
         )
 
-        # Compute content hash if missing and update indexed_hash
+        # Compute content hash if missing and update indexed_hash + labels
         with open(filepath, "rb") as f:
             content = f.read()
         content_hash = hashlib.sha256(content).hexdigest()
@@ -294,10 +294,10 @@ def _index_email_for_reindex(
         conn.execute(
             """
             UPDATE emails
-            SET indexed_hash = ?, content_hash = COALESCE(content_hash, ?)
+            SET indexed_hash = ?, content_hash = COALESCE(content_hash, ?), labels = ?
             WHERE message_id = ?
             """,
-            (content_hash, content_hash, message_id)
+            (content_hash, content_hash, parsed.get("labels", ""), message_id)
         )
 
         return True
