@@ -4,8 +4,7 @@ Provides server-side HTML/CSS sanitization for email content before
 rendering in the browser. Communicates with a long-lived Node.js child
 process over stdin/stdout using newline-delimited JSON.
 
-If Node.js is not available, degrades gracefully — the iframe sandbox
-in the template still provides protection.
+If Node.js is not available, the web server refuses to start.
 """
 
 from __future__ import annotations

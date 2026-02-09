@@ -829,6 +829,18 @@ class LRUCache:
         self.order.append(key)
 
 
+class _PassthroughSanitizer:
+    """No-op sanitizer that returns HTML unchanged. Used in tests."""
+
+    available = True
+
+    def sanitize(self, html: str):
+        return html, True, False
+
+    def stop(self):
+        pass
+
+
 def create_app(
     archive: EmailArchive,
     verbose: bool = False,
@@ -839,6 +851,7 @@ def create_app(
     date_format: str = None,
     auto_scale: bool = True,
     brand_name: str = "ownmail",
+    sanitizer=None,
 ) -> Flask:
     """Create the Flask application.
 
@@ -852,6 +865,7 @@ def create_app(
         date_format: strftime format for dates (default: auto - "Jan 26" or "2025/12/15")
         auto_scale: Scale down wide emails to fit viewport
         brand_name: Custom branding name shown in header
+        sanitizer: HTML sanitizer instance (default: passthrough for tests)
 
     Returns:
         Flask application
@@ -869,6 +883,7 @@ def create_app(
     app.config["date_format"] = date_format  # None = auto
     app.config["auto_scale"] = auto_scale
     app.config["brand_name"] = brand_name
+    app.config["sanitizer"] = sanitizer or _PassthroughSanitizer()
 
     @app.context_processor
     def inject_brand():
@@ -1308,15 +1323,14 @@ def create_app(
                 # cid references can appear as "cid:xxx" in src attributes
                 body_html = body_html.replace(f'cid:{cid}', data_uri)
 
-        # Sanitize HTML/CSS using DOMPurify sidecar (if available)
+        # Sanitize HTML/CSS using DOMPurify sidecar
         needs_padding = True
         supports_dark = False
         if body_html:
-            sanitizer = app.config.get("sanitizer")
-            if sanitizer:
-                if verbose:
-                    print(f"[verbose] Sanitizing HTML ({len(body_html):,} chars)...", flush=True)
-                body_html, needs_padding, supports_dark = sanitizer.sanitize(body_html)
+            sanitizer = app.config["sanitizer"]
+            if verbose:
+                print(f"[verbose] Sanitizing HTML ({len(body_html):,} chars)...", flush=True)
+            body_html, needs_padding, supports_dark = sanitizer.sanitize(body_html)
 
         # Parse sender and recipients for clickable links
         sender_name, sender_email = parse_email_address(email_data["sender"])
@@ -1694,6 +1708,12 @@ def run_server(
         auto_scale: Scale down wide emails to fit viewport
         brand_name: Custom branding name shown in header
     """
+    # Start HTML sanitizer sidecar (DOMPurify via Node.js)
+    from ownmail.sanitizer import HtmlSanitizer
+
+    sanitizer = HtmlSanitizer(verbose=verbose)
+    sanitizer.start()
+
     app = create_app(
         archive,
         verbose=verbose,
@@ -1704,14 +1724,8 @@ def run_server(
         date_format=date_format,
         auto_scale=auto_scale,
         brand_name=brand_name,
+        sanitizer=sanitizer,
     )
-
-    # Start HTML sanitizer sidecar (DOMPurify via Node.js)
-    from ownmail.sanitizer import HtmlSanitizer
-
-    sanitizer = HtmlSanitizer(verbose=verbose)
-    sanitizer.start()
-    app.config["sanitizer"] = sanitizer
 
     print(f"\n🌐 {brand_name} web interface")
     print(f"   Running at: http://{host}:{port}")
@@ -1722,10 +1736,12 @@ def run_server(
         print("   External images blocked by default")
     if trusted_senders:
         print(f"   Trusted senders: {len(trusted_senders)}")
-    if sanitizer.available:
-        print("   HTML sanitization enabled (DOMPurify)")
-    else:
-        print("   HTML sanitization disabled (install Node.js to enable)")
+    if not sanitizer.available:
+        print("\n   ERROR: HTML sanitizer failed to start.")
+        print("   Install Node.js and run: cd ownmail/sanitizer && npm install")
+        print("   Refusing to serve without sanitization.\n")
+        return
+    print("   HTML sanitization enabled (DOMPurify)")
     print("   Press Ctrl+C to stop\n")
 
     try:
