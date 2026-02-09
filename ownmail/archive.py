@@ -369,6 +369,7 @@ class EmailArchive:
                 date_str=parsed["date_str"],
                 body=parsed["body"],
                 attachments=parsed["attachments"],
+                labels=parsed.get("labels", ""),
                 conn=conn,
                 skip_delete=skip_delete,
             )
@@ -383,18 +384,20 @@ class EmailArchive:
     # Search
     # -------------------------------------------------------------------------
 
-    def search(self, query: str, account: str = None, limit: int = 50) -> List:
+    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance") -> List:
         """Search emails.
 
         Args:
             query: Search query
             account: Filter to specific account (optional)
             limit: Maximum results
+            offset: Number of results to skip (for pagination)
+            sort: Sort order - 'relevance', 'date_desc', or 'date_asc'
 
         Returns:
             List of search results
         """
-        return self.db.search(query, account=account, limit=limit)
+        return self.db.search(query, account=account, limit=limit, offset=offset, sort=sort)
 
     # -------------------------------------------------------------------------
     # Helpers
