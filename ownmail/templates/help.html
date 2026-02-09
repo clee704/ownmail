@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Search Help - ownmail{% endblock %}
+
+{% block content %}
+    <div class="back-link"><a href="javascript:history.back()">&larr; Back to search</a></div>
+    <div class="help-page">
+        <h2>Search Syntax</h2>
+
+        <h3>Field Filters</h3>
+        <table class="help-table">
+            <tr><td><code>from:user@example.com</code></td><td>Emails from this address</td></tr>
+            <tr><td><code>to:user@example.com</code></td><td>Emails to this address</td></tr>
+            <tr><td><code>subject:meeting</code></td><td>Emails with "meeting" in subject</td></tr>
+            <tr><td><code>attachment:pdf</code></td><td>Emails with PDF attachments</td></tr>
+            <tr><td><code>label:INBOX</code></td><td>Emails with specific Gmail label</td></tr>
+        </table>
+
+        <h3>Date Filters</h3>
+        <table class="help-table">
+            <tr><td><code>after:2024-01-15</code></td><td>Emails after this date</td></tr>
+            <tr><td><code>before:2024-06-01</code></td><td>Emails before this date</td></tr>
+            <tr><td><code>after:2024-01 before:2024-02</code></td><td>Emails in January 2024</td></tr>
+        </table>
+
+        <h3>Boolean Operators</h3>
+        <table class="help-table">
+            <tr><td><code>apple orange</code></td><td>Both words (implicit AND)</td></tr>
+            <tr><td><code>apple OR orange</code></td><td>Either word</td></tr>
+            <tr><td><code>apple NOT orange</code></td><td>Apple but not orange</td></tr>
+            <tr><td><code>-orange</code></td><td>Exclude word (same as NOT)</td></tr>
+        </table>
+
+        <h3>Phrases &amp; Grouping</h3>
+        <table class="help-table">
+            <tr><td><code>"hello world"</code></td><td>Exact phrase</td></tr>
+            <tr><td><code>(apple OR orange) juice</code></td><td>Grouping with parentheses</td></tr>
+        </table>
+
+        <h3>Prefix Matching</h3>
+        <table class="help-table">
+            <tr><td><code>meet*</code></td><td>Words starting with "meet" (meeting, meets, etc.)</td></tr>
+        </table>
+
+        <h3>Examples</h3>
+        <table class="help-table">
+            <tr><td><code>from:amazon invoice</code></td><td>Invoices from Amazon</td></tr>
+            <tr><td><code>subject:urgent after:2024-01-01</code></td><td>Urgent emails this year</td></tr>
+            <tr><td><code>attachment:pdf report OR invoice</code></td><td>PDFs with report or invoice</td></tr>
+            <tr><td><code>label:IMPORTANT from:boss@work.com</code></td><td>Important emails from boss</td></tr>
+        </table>
+    </div>
+{% endblock %}
