@@ -7,7 +7,7 @@ from pathlib import Path
 from ownmail.archive import EmailArchive
 from ownmail.commands import (
     _print_file_list,
-    cmd_reindex,
+    cmd_rebuild,
     cmd_verify,
 )
 from ownmail.database import ArchiveDatabase
@@ -47,18 +47,18 @@ class TestPrintFileList:
         assert "... and" not in captured.out
 
 
-class TestCmdReindex:
-    """Tests for reindex command."""
+class TestCmdRebuild:
+    """Tests for rebuild command."""
 
-    def test_reindex_empty_database(self, temp_dir, capsys):
-        """Test reindex on empty database."""
+    def test_rebuild_empty_database(self, temp_dir, capsys):
+        """Test rebuild on empty database."""
         archive = EmailArchive(temp_dir, {})
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured = capsys.readouterr()
-        assert "already indexed" in captured.out or "Reindex" in captured.out
+        assert "already indexed" in captured.out or "Rebuild" in captured.out
 
-    def test_reindex_single_file(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindexing a single file."""
+    def test_rebuild_single_file(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuilding a single file."""
         archive = EmailArchive(temp_dir, {})
 
         # Create email file
@@ -71,20 +71,20 @@ class TestCmdReindex:
         rel_path = str(email_path.relative_to(temp_dir))
         archive.db.mark_downloaded(_eid("test123"), "test123", rel_path)
 
-        # Reindex single file
-        cmd_reindex(archive, file_path=email_path)
+        # Rebuild single file
+        cmd_rebuild(archive, file_path=email_path)
         captured = capsys.readouterr()
         assert "Indexed successfully" in captured.out or "Indexing" in captured.out
 
-    def test_reindex_nonexistent_file(self, temp_dir, capsys):
-        """Test reindex with nonexistent file."""
+    def test_rebuild_nonexistent_file(self, temp_dir, capsys):
+        """Test rebuild with nonexistent file."""
         archive = EmailArchive(temp_dir, {})
-        cmd_reindex(archive, file_path=Path("/nonexistent/file.eml"))
+        cmd_rebuild(archive, file_path=Path("/nonexistent/file.eml"))
         captured = capsys.readouterr()
         assert "not found" in captured.out
 
-    def test_reindex_force_mode(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with force flag."""
+    def test_rebuild_force_mode(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with force flag."""
         archive = EmailArchive(temp_dir, {})
 
         # Create and index an email
@@ -102,17 +102,17 @@ class TestCmdReindex:
             conn.commit()
 
         # Without force, should skip
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured = capsys.readouterr()
         assert "already indexed" in captured.out
 
-        # With force, should reindex
-        cmd_reindex(archive, force=True)
+        # With force, should rebuild
+        cmd_rebuild(archive, force=True)
         captured = capsys.readouterr()
         assert "(force)" in captured.out
 
-    def test_reindex_with_pattern(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex with pattern filter."""
+    def test_rebuild_with_pattern(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild with pattern filter."""
         archive = EmailArchive(temp_dir, {})
 
         # Create multiple emails
@@ -125,13 +125,13 @@ class TestCmdReindex:
             rel_path = str(email_path.relative_to(temp_dir))
             archive.db.mark_downloaded(_eid(f"msg_{year}"), f"msg_{year}", rel_path, content_hash=None)
 
-        # Reindex only 2024
-        cmd_reindex(archive, pattern="2024/*")
+        # Rebuild only 2024
+        cmd_rebuild(archive, pattern="2024/*")
         captured = capsys.readouterr()
         assert "matching '2024/*'" in captured.out
 
-    def test_reindex_single_file_not_in_db(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex single file that's not in database."""
+    def test_rebuild_single_file_not_in_db(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild single file that's not in database."""
         archive = EmailArchive(temp_dir, {})
 
         # Create file but don't add to DB
@@ -141,7 +141,7 @@ class TestCmdReindex:
         email_path.write_bytes(sample_eml_simple)
 
         # Index single file - should use filename as message_id
-        cmd_reindex(archive, file_path=email_path)
+        cmd_rebuild(archive, file_path=email_path)
         captured = capsys.readouterr()
         assert "Indexing:" in captured.out
 
@@ -842,11 +842,11 @@ class TestCmdVerifyVerbose:
         assert "test" in captured.out or "Verify" in captured.out
 
 
-class TestCmdReindexDebug:
-    """Tests for reindex debug mode."""
+class TestCmdRebuildDebug:
+    """Tests for rebuild debug mode."""
 
-    def test_reindex_debug_shows_timing(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex --debug shows timing info."""
+    def test_rebuild_debug_shows_timing(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild --debug shows timing info."""
         archive = EmailArchive(temp_dir, {})
 
         # Create email file
@@ -858,10 +858,10 @@ class TestCmdReindexDebug:
         rel_path = str(email_path.relative_to(temp_dir))
         archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=None)
 
-        cmd_reindex(archive, debug=True)
+        cmd_rebuild(archive, debug=True)
         captured = capsys.readouterr()
         # Should complete - debug mode outputs more info
-        assert "Reindex" in captured.out
+        assert "Rebuild" in captured.out
 
 
 class TestCmdSyncCheckDifferences:
@@ -1075,23 +1075,23 @@ class TestCmdSyncCheckDifferences:
         assert "user@company.com" in captured.out
 
 
-class TestCmdReindexEdgeCases:
-    """Additional edge case tests for reindex."""
+class TestCmdRebuildEdgeCases:
+    """Additional edge case tests for rebuild."""
 
-    def test_reindex_with_missing_file_continues(self, temp_dir, capsys):
-        """Test reindex skips missing files and continues."""
+    def test_rebuild_with_missing_file_continues(self, temp_dir, capsys):
+        """Test rebuild skips missing files and continues."""
         archive = EmailArchive(temp_dir, {})
 
         # Add to DB but don't create file
         archive.db.mark_downloaded(_eid("missing123"), "missing123", "emails/2024/01/missing.eml", content_hash=None)
 
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured = capsys.readouterr()
         # Should complete without crashing
-        assert "Reindex" in captured.out
+        assert "Rebuild" in captured.out
 
-    def test_reindex_updates_indexed_hash(self, temp_dir, sample_eml_simple, capsys):
-        """Test reindex updates the indexed_hash after indexing."""
+    def test_rebuild_updates_indexed_hash(self, temp_dir, sample_eml_simple, capsys):
+        """Test rebuild updates the indexed_hash after indexing."""
         import hashlib
         archive = EmailArchive(temp_dir, {})
 
@@ -1105,7 +1105,7 @@ class TestCmdReindexEdgeCases:
         rel_path = str(email_path.relative_to(temp_dir))
         archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash=content_hash)
 
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
 
         # Check indexed_hash was set
         with sqlite3.connect(archive.db.db_path) as conn:
@@ -1334,17 +1334,17 @@ class TestCmdVerifyDedup:
 
 
 # ---------------------------------------------------------------------------
-# Reindex cancel / resume tests
+# Rebuild cancel / resume tests
 # ---------------------------------------------------------------------------
 
 _SAMPLE_EML = (
     b"From: sender@example.com\r\n"
     b"To: recipient@example.com\r\n"
-    b"Subject: Reindex Test\r\n"
+    b"Subject: Rebuild Test\r\n"
     b"Date: Mon, 15 Jan 2024 10:00:00 +0000\r\n"
-    b"Message-ID: <reindex-test@example.com>\r\n"
+    b"Message-ID: <rebuild-test@example.com>\r\n"
     b"\r\n"
-    b"Body content for reindex.\r\n"
+    b"Body content for rebuild.\r\n"
 )
 
 
@@ -1353,7 +1353,7 @@ def _make_email(archive, temp_dir, n, account="test@gmail.com"):
     emails_dir = temp_dir / "sources" / account / "2024" / "01"
     emails_dir.mkdir(parents=True, exist_ok=True)
 
-    content = _SAMPLE_EML.replace(b"Reindex Test", f"Email {n}".encode())
+    content = _SAMPLE_EML.replace(b"Rebuild Test", f"Email {n}".encode())
     content_hash = hashlib.sha256(content).hexdigest()
 
     path = emails_dir / f"email_{n}.eml"
@@ -1365,11 +1365,11 @@ def _make_email(archive, temp_dir, n, account="test@gmail.com"):
     return eid
 
 
-class TestReindexCancel:
-    """Tests for Ctrl-C (SIGINT) cancellation during reindex."""
+class TestRebuildCancel:
+    """Tests for Ctrl-C (SIGINT) cancellation during rebuild."""
 
-    def test_sigint_stops_reindex_gracefully(self, temp_dir, capsys):
-        """SIGINT mid-reindex stops after current email and saves progress."""
+    def test_sigint_stops_rebuild_gracefully(self, temp_dir, capsys):
+        """SIGINT mid-rebuild stops after current email and saves progress."""
         import signal
 
         archive = EmailArchive(temp_dir, {})
@@ -1378,9 +1378,9 @@ class TestReindexCancel:
         for i in range(10):
             _make_email(archive, temp_dir, i)
 
-        # Monkey-patch _index_email_for_reindex to send SIGINT after 3
+        # Monkey-patch _index_email_for_rebuild to send SIGINT after 3
         from ownmail import commands
-        original_fn = commands._index_email_for_reindex
+        original_fn = commands._index_email_for_rebuild
         call_count = 0
 
         def patched_index(arch, email_id, filepath, conn, debug=False):
@@ -1392,18 +1392,18 @@ class TestReindexCancel:
                 os.kill(os.getpid(), signal.SIGINT)
             return result
 
-        commands._index_email_for_reindex = patched_index
+        commands._index_email_for_rebuild = patched_index
         try:
-            cmd_reindex(archive)
+            cmd_rebuild(archive)
         finally:
-            commands._index_email_for_reindex = original_fn
+            commands._index_email_for_rebuild = original_fn
 
         captured = capsys.readouterr()
         assert "Paused" in captured.out
         assert "resume" in captured.out.lower() or "again" in captured.out.lower()
 
-    def test_reindex_resume_skips_indexed(self, temp_dir, capsys):
-        """Second reindex run skips already-indexed emails."""
+    def test_rebuild_resume_skips_indexed(self, temp_dir, capsys):
+        """Second rebuild run skips already-indexed emails."""
         archive = EmailArchive(temp_dir, {})
 
         # Create 5 emails
@@ -1411,17 +1411,17 @@ class TestReindexCancel:
             _make_email(archive, temp_dir, i)
 
         # First run: index all
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured1 = capsys.readouterr()
         assert "5" in captured1.out  # Should show 5 emails
 
         # Second run: nothing to do
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         captured2 = capsys.readouterr()
         assert "already indexed" in captured2.out
 
-    def test_reindex_resume_after_interrupt(self, temp_dir, capsys):
-        """After SIGINT, second reindex picks up where it left off."""
+    def test_rebuild_resume_after_interrupt(self, temp_dir, capsys):
+        """After SIGINT, second rebuild picks up where it left off."""
         import signal
 
         archive = EmailArchive(temp_dir, {})
@@ -1430,7 +1430,7 @@ class TestReindexCancel:
             _make_email(archive, temp_dir, i)
 
         from ownmail import commands
-        original_fn = commands._index_email_for_reindex
+        original_fn = commands._index_email_for_rebuild
         call_count = 0
 
         def patched_index(arch, email_id, filepath, conn, debug=False):
@@ -1442,11 +1442,11 @@ class TestReindexCancel:
                 os.kill(os.getpid(), signal.SIGINT)
             return result
 
-        commands._index_email_for_reindex = patched_index
+        commands._index_email_for_rebuild = patched_index
         try:
-            cmd_reindex(archive)
+            cmd_rebuild(archive)
         finally:
-            commands._index_email_for_reindex = original_fn
+            commands._index_email_for_rebuild = original_fn
 
         captured1 = capsys.readouterr()
         assert "Paused" in captured1.out
@@ -1460,7 +1460,7 @@ class TestReindexCancel:
         assert indexed >= 3  # At least 3 were indexed before SIGINT
 
         # Second run resumes
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         capsys.readouterr()
 
         # After second run, all 8 should be indexed
@@ -1471,8 +1471,8 @@ class TestReindexCancel:
         assert indexed == 8
 
 
-class TestReindexForceMode:
-    """Tests for reindex --force rebuilding FTS from scratch."""
+class TestRebuildForceMode:
+    """Tests for rebuild --force rebuilding FTS from scratch."""
 
     def test_force_rebuilds_fts_table(self, temp_dir, capsys):
         """Force mode drops and rebuilds FTS, re-indexes all emails."""
@@ -1482,15 +1482,15 @@ class TestReindexForceMode:
             _make_email(archive, temp_dir, i)
 
         # First: normal index
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         capsys.readouterr()
 
         with sqlite3.connect(archive.db.db_path) as conn:
             fts_before = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
         assert fts_before == 3
 
-        # Force reindex
-        cmd_reindex(archive, force=True)
+        # Force rebuild
+        cmd_rebuild(archive, force=True)
         captured = capsys.readouterr()
         assert "force" in captured.out.lower() or "Rebuilding" in captured.out
 
@@ -1510,11 +1510,11 @@ class TestReindexForceMode:
         for i in range(3):
             _make_email(archive, temp_dir, i)
 
-        cmd_reindex(archive)
+        cmd_rebuild(archive)
         capsys.readouterr()
 
         # Force with pattern - should NOT drop FTS table
-        cmd_reindex(archive, pattern="email_0", force=True)
+        cmd_rebuild(archive, pattern="email_0", force=True)
         captured = capsys.readouterr()
 
         # Should show pattern matching

@@ -60,13 +60,9 @@
                 <div class="ownmail-settings-field">
                     <label for="timezone">Timezone</label>
                     <select name="timezone" id="timezone">
-                        <option value="">Server default ({{ server_timezone }})</option>
-                        {% for group_name, zones in timezone_groups %}
-                        <optgroup label="{{ group_name }}">
-                            {% for tz in zones %}
-                            <option value="{{ tz.value }}" {{ 'selected' if settings.timezone == tz.value else '' }}>{{ tz.label }}</option>
-                            {% endfor %}
-                        </optgroup>
+                        <option value="">Server default — {{ server_timezone }}</option>
+                        {% for tz in timezone_list %}
+                        <option value="{{ tz.value }}" {{ 'selected' if settings.timezone == tz.value else '' }}>{{ tz.label }}</option>
                         {% endfor %}
                     </select>
                     <p class="ownmail-settings-hint">Timezone for displaying email dates.</p>

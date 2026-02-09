@@ -70,53 +70,86 @@ def _get_server_timezone_name() -> str:
 
 
 # Common IANA timezones grouped by region for the settings dropdown
+# Flat timezone list sorted by UTC offset, following industry standard.
+# Covers all major offsets from UTC-12 to UTC+14 with representative cities.
 COMMON_TIMEZONES = [
-    ("Americas", [
-        "America/New_York",
-        "America/Chicago",
-        "America/Denver",
-        "America/Los_Angeles",
-        "America/Anchorage",
-        "America/Toronto",
-        "America/Vancouver",
-        "America/Mexico_City",
-        "America/Sao_Paulo",
-        "America/Argentina/Buenos_Aires",
-        "Pacific/Honolulu",
-    ]),
-    ("Europe", [
-        "Europe/London",
-        "Europe/Paris",
-        "Europe/Berlin",
-        "Europe/Amsterdam",
-        "Europe/Rome",
-        "Europe/Madrid",
-        "Europe/Zurich",
-        "Europe/Stockholm",
-        "Europe/Moscow",
-        "Europe/Istanbul",
-    ]),
-    ("Asia", [
-        "Asia/Seoul",
-        "Asia/Tokyo",
-        "Asia/Shanghai",
-        "Asia/Hong_Kong",
-        "Asia/Taipei",
-        "Asia/Singapore",
-        "Asia/Bangkok",
-        "Asia/Kolkata",
-        "Asia/Dubai",
-        "Asia/Jakarta",
-    ]),
-    ("Oceania", [
-        "Australia/Sydney",
-        "Australia/Melbourne",
-        "Australia/Perth",
-        "Pacific/Auckland",
-    ]),
-    ("Other", [
-        "UTC",
-    ]),
+    "Pacific/Baker",              # UTC-12:00  Baker Island
+    "Pacific/Pago_Pago",          # UTC-11:00  Pago Pago
+    "Pacific/Honolulu",           # UTC-10:00  Honolulu
+    "America/Anchorage",          # UTC-09:00  Anchorage
+    "America/Los_Angeles",        # UTC-08:00  Los Angeles
+    "America/Vancouver",          # UTC-08:00  Vancouver
+    "America/Denver",             # UTC-07:00  Denver
+    "America/Phoenix",            # UTC-07:00  Phoenix (no DST)
+    "America/Chicago",            # UTC-06:00  Chicago
+    "America/Mexico_City",        # UTC-06:00  Mexico City
+    "America/New_York",           # UTC-05:00  New York
+    "America/Toronto",            # UTC-05:00  Toronto
+    "America/Bogota",             # UTC-05:00  Bogota
+    "America/Lima",               # UTC-05:00  Lima
+    "America/Caracas",            # UTC-04:00  Caracas
+    "America/Santiago",           # UTC-04:00  Santiago
+    "America/Halifax",            # UTC-04:00  Halifax
+    "America/St_Johns",           # UTC-03:30  St. John's
+    "America/Sao_Paulo",          # UTC-03:00  São Paulo
+    "America/Argentina/Buenos_Aires",  # UTC-03:00  Buenos Aires
+    "Atlantic/South_Georgia",     # UTC-02:00  South Georgia
+    "Atlantic/Azores",            # UTC-01:00  Azores
+    "Atlantic/Cape_Verde",        # UTC-01:00  Cape Verde
+    "UTC",                        # UTC+00:00
+    "Europe/London",              # UTC+00:00  London
+    "Africa/Lagos",               # UTC+01:00  Lagos
+    "Europe/Paris",               # UTC+01:00  Paris
+    "Europe/Berlin",              # UTC+01:00  Berlin
+    "Europe/Amsterdam",           # UTC+01:00  Amsterdam
+    "Europe/Rome",                # UTC+01:00  Rome
+    "Europe/Madrid",              # UTC+01:00  Madrid
+    "Europe/Zurich",              # UTC+01:00  Zurich
+    "Europe/Stockholm",           # UTC+01:00  Stockholm
+    "Africa/Cairo",               # UTC+02:00  Cairo
+    "Africa/Johannesburg",        # UTC+02:00  Johannesburg
+    "Europe/Athens",              # UTC+02:00  Athens
+    "Europe/Bucharest",           # UTC+02:00  Bucharest
+    "Europe/Helsinki",            # UTC+02:00  Helsinki
+    "Europe/Kyiv",                # UTC+02:00  Kyiv
+    "Asia/Jerusalem",             # UTC+02:00  Jerusalem
+    "Europe/Istanbul",            # UTC+03:00  Istanbul
+    "Europe/Moscow",              # UTC+03:00  Moscow
+    "Asia/Riyadh",                # UTC+03:00  Riyadh
+    "Africa/Nairobi",             # UTC+03:00  Nairobi
+    "Asia/Baghdad",               # UTC+03:00  Baghdad
+    "Asia/Tehran",                # UTC+03:30  Tehran
+    "Asia/Dubai",                 # UTC+04:00  Dubai
+    "Asia/Baku",                  # UTC+04:00  Baku
+    "Asia/Kabul",                 # UTC+04:30  Kabul
+    "Asia/Karachi",               # UTC+05:00  Karachi
+    "Asia/Tashkent",              # UTC+05:00  Tashkent
+    "Asia/Kolkata",               # UTC+05:30  Kolkata
+    "Asia/Kathmandu",             # UTC+05:45  Kathmandu
+    "Asia/Dhaka",                 # UTC+06:00  Dhaka
+    "Asia/Yangon",                # UTC+06:30  Yangon
+    "Asia/Bangkok",               # UTC+07:00  Bangkok
+    "Asia/Jakarta",               # UTC+07:00  Jakarta
+    "Asia/Ho_Chi_Minh",           # UTC+07:00  Ho Chi Minh City
+    "Asia/Shanghai",              # UTC+08:00  Shanghai
+    "Asia/Hong_Kong",             # UTC+08:00  Hong Kong
+    "Asia/Taipei",                # UTC+08:00  Taipei
+    "Asia/Singapore",             # UTC+08:00  Singapore
+    "Asia/Kuala_Lumpur",          # UTC+08:00  Kuala Lumpur
+    "Asia/Manila",                # UTC+08:00  Manila
+    "Australia/Perth",            # UTC+08:00  Perth
+    "Asia/Seoul",                 # UTC+09:00  Seoul
+    "Asia/Tokyo",                 # UTC+09:00  Tokyo
+    "Australia/Adelaide",         # UTC+09:30  Adelaide
+    "Australia/Sydney",           # UTC+10:00  Sydney
+    "Australia/Melbourne",        # UTC+10:00  Melbourne
+    "Australia/Brisbane",         # UTC+10:00  Brisbane (no DST)
+    "Pacific/Guam",               # UTC+10:00  Guam
+    "Pacific/Noumea",             # UTC+11:00  Noumea
+    "Pacific/Auckland",           # UTC+12:00  Auckland
+    "Pacific/Fiji",               # UTC+12:00  Fiji
+    "Pacific/Tongatapu",          # UTC+13:00  Nuku'alofa
+    "Pacific/Kiritimati",         # UTC+14:00  Kiritimati
 ]
 
 
@@ -134,20 +167,18 @@ def _get_timezone_offset(tz_name: str) -> str:
         return ""
 
 
-def _get_timezone_groups_with_offsets() -> list:
-    """Return COMMON_TIMEZONES with UTC offset labels for the dropdown.
+def _get_timezone_list_with_offsets() -> list:
+    """Return COMMON_TIMEZONES as a flat list with UTC offset labels.
 
     Each zone becomes a dict with 'value' (IANA name) and 'label' (display text).
+    Format: (UTC-05:00) America/New_York
     """
-    groups = []
-    for group_name, zones in COMMON_TIMEZONES:
-        items = []
-        for tz_name in zones:
-            offset = _get_timezone_offset(tz_name)
-            label = f"{tz_name} (UTC{offset})" if offset else tz_name
-            items.append({"value": tz_name, "label": label})
-        groups.append((group_name, items))
-    return groups
+    items = []
+    for tz_name in COMMON_TIMEZONES:
+        offset = _get_timezone_offset(tz_name)
+        label = f"(UTC{offset}) {tz_name}" if offset else tz_name
+        items.append({"value": tz_name, "label": label})
+    return items
 
 
 def _resolve_timezone(tz_name: str | None) -> ZoneInfo | None:
@@ -1773,7 +1804,7 @@ def create_app(
         }
         server_timezone = _get_server_timezone_name()
         server_offset = _get_timezone_offset(server_timezone)
-        server_tz_label = f"{server_timezone} (UTC{server_offset})" if server_offset else server_timezone
+        server_tz_label = f"(UTC{server_offset}) {server_timezone}" if server_offset else server_timezone
         return render_template(
             "settings.html",
             settings=current,
@@ -1781,7 +1812,7 @@ def create_app(
             config_path=config_path or "(not set)",
             saved=request.args.get("saved") == "1",
             server_timezone=server_tz_label,
-            timezone_groups=_get_timezone_groups_with_offsets(),
+            timezone_list=_get_timezone_list_with_offsets(),
         )
 
     @app.route("/settings", methods=["POST"])

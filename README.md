@@ -81,7 +81,7 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | `verify` | Check file integrity (hashes, moved files, orphans, DB health) |
 | `sync-check` | Compare local archive with server to find missing emails |
 | `update-labels` | Update labels on existing emails |
-| `reindex` | Rebuild search index |
+| `rebuild` | Rebuild search index and populate metadata |
 | `reset-sync` | Reset sync state to force full re-download |
 | `sources list` | List configured email sources |
 
