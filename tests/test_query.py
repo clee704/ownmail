@@ -125,6 +125,36 @@ class TestTokenize:
         assert tokens[0].type == TokenType.NEGATION
         assert tokens[0].value == "spam"
 
+    def test_negated_from_filter(self):
+        """Test tokenizing negated from: filter."""
+        tokens, error = _tokenize("-from:alice@example.com")
+        assert error is None
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.FILTER
+        assert tokens[0].field == "from"
+        assert tokens[0].value == "alice@example.com"
+        assert tokens[0].negated is True
+
+    def test_negated_to_filter(self):
+        """Test tokenizing negated to: filter."""
+        tokens, error = _tokenize("-to:bob@example.com")
+        assert error is None
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.FILTER
+        assert tokens[0].field == "to"
+        assert tokens[0].value == "bob@example.com"
+        assert tokens[0].negated is True
+
+    def test_negated_label_filter(self):
+        """Test tokenizing negated label: filter."""
+        tokens, error = _tokenize("-label:spam")
+        assert error is None
+        assert len(tokens) == 1
+        assert tokens[0].type == TokenType.FILTER
+        assert tokens[0].field == "label"
+        assert tokens[0].value == "spam"
+        assert tokens[0].negated is True
+
     def test_or_operator(self):
         """Test tokenizing OR operator."""
         tokens, error = _tokenize("invoice OR receipt")
@@ -342,6 +372,46 @@ class TestParseQuery:
         result = parse_query("-spam")
         assert result.error is None
         assert "NOT spam" in result.fts_query
+
+    def test_negated_from_email_filter(self):
+        """Test -from:email generates != WHERE clause."""
+        result = parse_query("snupo -from:snupo@snupo.org")
+        assert result.error is None
+        assert "snupo" in result.fts_query
+        assert "e.sender_email != ?" in result.where_clauses
+        assert "snupo@snupo.org" in result.params
+
+    def test_negated_from_name_filter(self):
+        """Test -from:name generates FTS NOT."""
+        result = parse_query("-from:alice")
+        assert result.error is None
+        assert "NOT sender:alice" in result.fts_query
+
+    def test_negated_to_email_filter(self):
+        """Test -to:email generates NOT_RECIPIENT_EMAIL marker."""
+        result = parse_query("-to:bob@example.com")
+        assert result.error is None
+        assert "__NOT_RECIPIENT_EMAIL__" in result.where_clauses
+        assert "bob@example.com" in result.params
+
+    def test_negated_subject_filter(self):
+        """Test -subject:word generates FTS NOT."""
+        result = parse_query("-subject:spam")
+        assert result.error is None
+        assert "NOT subject:spam" in result.fts_query
+
+    def test_negated_label_filter(self):
+        """Test -label:name generates NOT LIKE WHERE clause."""
+        result = parse_query("-label:spam")
+        assert result.error is None
+        assert "(e.labels IS NULL OR e.labels NOT LIKE ?)" in result.where_clauses
+        assert "%spam%" in result.params
+
+    def test_negated_has_attachment(self):
+        """Test -has:attachment excludes attachments."""
+        result = parse_query("-has:attachment")
+        assert result.error is None
+        assert "(e.attachments IS NULL OR e.attachments = '')" in result.where_clauses
 
     def test_or_operator(self):
         """Test OR operator."""
