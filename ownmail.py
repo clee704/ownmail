@@ -938,12 +938,21 @@ class GmailArchive:
         self._batch_conn.execute("PRAGMA journal_mode = WAL")
         self._batch_conn.execute("PRAGMA synchronous = NORMAL")
 
+        # Track rate for display during downloads
+        last_rate = 0.0
+        last_eta_str = "..."
+
         try:
             for i, msg_id in enumerate(new_message_ids, 1):
                 if interrupted:
                     break
 
-                print(f"\r\033[K  [{i}/{len(new_message_ids)}] Downloading...", end="", flush=True)
+                # Show stats from previous iteration while downloading
+                if success_count > 0 and last_rate > 0:
+                    print(f"\r\033[K  [{i}/{len(new_message_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | downloading...", end="", flush=True)
+                else:
+                    print(f"\r\033[K  [{i}/{len(new_message_ids)}] downloading...", end="", flush=True)
+
                 filepath = self.download_message(msg_id, db_conn=self._batch_conn)
                 if filepath:
                     # Show file size for progress visibility
@@ -963,23 +972,23 @@ class GmailArchive:
                         self._batch_conn.commit()
                         last_commit_count = success_count
 
-                    # Calculate and show progress stats
+                    # Calculate progress stats
                     elapsed = time.time() - start_time
-                    rate = success_count / elapsed if elapsed > 0 else 0
+                    last_rate = success_count / elapsed if elapsed > 0 else 0
                     remaining = len(new_message_ids) - i
-                    eta = remaining / rate if rate > 0 else 0
+                    eta = remaining / last_rate if last_rate > 0 else 0
 
                     # Format ETA
                     if i < 3:
-                        eta_str = "..."
+                        last_eta_str = "..."
                     elif eta > 3600:
-                        eta_str = f"{eta/3600:.1f}h"
+                        last_eta_str = f"{eta/3600:.1f}h"
                     elif eta > 60:
-                        eta_str = f"{eta/60:.0f}m"
+                        last_eta_str = f"{eta/60:.0f}m"
                     else:
-                        eta_str = f"{eta:.0f}s"
+                        last_eta_str = f"{eta:.0f}s"
 
-                    print(f"\r\033[K  [{i}/{len(new_message_ids)}] {rate:.1f}/s | ETA {eta_str:>5} | {size_str:>7}", end="", flush=True)
+                    print(f"\r\033[K  [{i}/{len(new_message_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | {size_str:>7}", end="", flush=True)
                 else:
                     error_count += 1
         finally:
