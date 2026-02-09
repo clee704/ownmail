@@ -190,6 +190,10 @@ class TestDatabaseStats:
         db.mark_downloaded("msg2", "f2.eml")
         db.index_email("msg1", "Subj", "From", "To", "Date", "Body", "")
 
+        # Also set indexed_hash for msg1 (simulates actual index flow)
+        with sqlite3.connect(db.db_path) as conn:
+            conn.execute("UPDATE emails SET indexed_hash = 'hash1' WHERE message_id = 'msg1'")
+
         stats = db.get_stats()
 
         assert stats["total_emails"] == 2
