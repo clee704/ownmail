@@ -602,6 +602,7 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
 
             if fix:
                 print("  Fixing: keeping only newest entry for each...", end="", flush=True)
+                start = time.time()
                 conn.execute("""
                     DELETE FROM emails_fts
                     WHERE rowid NOT IN (
@@ -610,7 +611,7 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
                 """)
                 conn.commit()
                 issues_fixed += len(duplicates)
-                print(" done")
+                print(f" ({time.time() - start:.1f}s)")
                 print(f"  ✓ Fixed {len(duplicates)} duplicates")
         else:
             print("  ✓ No duplicate FTS entries")
