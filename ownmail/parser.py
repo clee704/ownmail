@@ -269,6 +269,28 @@ class EmailParser:
         return date_str
 
     @staticmethod
+    def _extract_date_from_received(msg) -> str:
+        """Extract date from Received header when Date header is missing."""
+        try:
+            # Get the first (most recent) Received header
+            received = msg.get("Received", "")
+            if not received:
+                return ""
+
+            # Received header format: ... ; <date>
+            if ";" in received:
+                date_part = received.split(";")[-1].strip()
+                # Try to parse it
+                try:
+                    parsed = email.utils.parsedate_to_datetime(date_part)
+                    return parsed.strftime("%a, %d %b %Y %H:%M:%S %z")
+                except Exception:
+                    pass
+            return ""
+        except Exception:
+            return ""
+
+    @staticmethod
     def _safe_get_content(part) -> str:
         """Safely extract content from a message part."""
         try:
@@ -346,6 +368,11 @@ class EmailParser:
         recipients_str = ", ".join(recipients)
 
         date_str = EmailParser._safe_get_header(msg, "Date", raw_content=raw_content)
+
+        # If no Date header, try to extract from Received header
+        if not date_str:
+            date_str = EmailParser._extract_date_from_received(msg)
+
         # Try to parse and normalize the date to avoid garbled weekday names
         date_str = EmailParser._normalize_date(date_str)
 
