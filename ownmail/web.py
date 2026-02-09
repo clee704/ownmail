@@ -668,6 +668,7 @@ def create_app(
     page_size: int = 20,
     trusted_senders: list = None,
     config_path: str = None,
+    date_format: str = None,
 ) -> Flask:
     """Create the Flask application.
 
@@ -678,6 +679,7 @@ def create_app(
         page_size: Number of results per page
         trusted_senders: List of email addresses to always show images from
         config_path: Path to config.yaml for updating trusted senders
+        date_format: strftime format for dates (default: auto - "Jan 26" or "2025/12/15")
 
     Returns:
         Flask application
@@ -691,6 +693,7 @@ def create_app(
     app.config["page_size"] = page_size
     app.config["trusted_senders"] = {s.lower() for s in (trusted_senders or [])}
     app.config["config_path"] = config_path
+    app.config["date_format"] = date_format  # None = auto
 
     # Cache for stats (refreshed every 60 seconds)
     stats_cache = {"value": None, "time": 0}
@@ -888,12 +891,44 @@ def create_app(
                 if not subject:
                     subject = "(No subject)"
 
+            # Extract sender name (without email address)
+            sender_name, _ = parse_email_address(sender) if sender else ("", "")
+            if not sender_name:
+                # Fall back to email address or full sender string
+                sender_name = sender.split('<')[0].strip() if sender else ""
+                if not sender_name and sender:
+                    sender_name = sender
+
+            # Format date as short date
+            date_short = ""
+            if date_str:
+                try:
+                    from datetime import datetime
+                    from email.utils import parsedate_to_datetime
+                    parsed_date = parsedate_to_datetime(date_str)
+                    date_fmt = app.config.get("date_format")
+                    if date_fmt:
+                        # Use configured format
+                        date_short = parsed_date.strftime(date_fmt)
+                    else:
+                        # Auto format: "Jan 26" for this year, "2025/12/15" for other years
+                        now = datetime.now(parsed_date.tzinfo) if parsed_date.tzinfo else datetime.now()
+                        if parsed_date.year == now.year:
+                            date_short = parsed_date.strftime("%b %d")
+                        else:
+                            date_short = parsed_date.strftime("%Y/%m/%d")
+                except Exception:
+                    # Fall back to extracting date part from string
+                    date_short = date_str.split()[0] if date_str else ""
+
             results.append({
                 "message_id": msg_id,
                 "filename": filename,
                 "subject": subject,
                 "sender": sender,
+                "sender_name": sender_name,
                 "date_str": date_str,
+                "date_short": date_short,
                 "snippet": snippet,
             })
 
@@ -1260,6 +1295,7 @@ def run_server(
     page_size: int = 20,
     trusted_senders: list = None,
     config_path: str = None,
+    date_format: str = None,
 ) -> None:
     """Run the web server.
 
@@ -1273,6 +1309,7 @@ def run_server(
         page_size: Number of results per page
         trusted_senders: List of email addresses to always show images from
         config_path: Path to config.yaml for updating trusted senders
+        date_format: strftime format for dates (default: auto)
     """
     app = create_app(
         archive,
@@ -1281,6 +1318,7 @@ def run_server(
         page_size=page_size,
         trusted_senders=trusted_senders,
         config_path=config_path,
+        date_format=date_format,
     )
 
     print("\n🌐 ownmail web interface")
