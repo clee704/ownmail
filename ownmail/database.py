@@ -104,6 +104,18 @@ class ArchiveDatabase:
             # 1. body/attachments are not stored in emails table (too large)
             # 2. Contentless FTS requires explicit insert/delete operations
 
+            # Normalized recipients table for fast recipient lookups
+            # LIKE '%,email,%' on recipient_emails column requires full table scan
+            # This table allows indexed exact-match lookups
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS email_recipients (
+                    email_rowid INTEGER,
+                    recipient_email TEXT,
+                    PRIMARY KEY (email_rowid, recipient_email)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_email_recipients_email ON email_recipients(recipient_email)")
+
             # Indexes for fast queries
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_account ON emails(account)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_indexed_hash ON emails(indexed_hash)")
@@ -389,6 +401,20 @@ class ArchiveDatabase:
                 (subject, sender, recipients, date_str, labels, snippet, sender_email, recipient_emails, message_id)
             )
 
+            # Update normalized recipients table for fast lookups
+            # First delete any existing entries for this email
+            conn.execute("DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,))
+            # Then insert individual recipient emails
+            if recipient_emails:
+                # recipient_emails is in format ",a@b.com,c@d.com,"
+                for email in recipient_emails.strip(',').split(','):
+                    email = email.strip()
+                    if email:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
+                            (rowid, email)
+                        )
+
             # Update FTS (contentless mode - we manage manually)
             if was_indexed:
                 # Delete old FTS entry (contentless FTS requires exact content)
@@ -442,9 +468,14 @@ class ArchiveDatabase:
         Returns:
             List of tuples: (message_id, filename, subject, sender, date_str, snippet)
         """
+        import time
+        _t0 = time.time()
         with sqlite3.connect(self.db_path) as conn:
+            _t1 = time.time()
             # Extract special filters from query
             fts_query, filters = self._parse_query(query)
+            print(f"[db.search] connect: {_t1-_t0:.3f}s, parse_query: {time.time()-_t1:.3f}s", flush=True)
+            print(f"[db.search] fts_query={repr(fts_query)}, filters={filters}", flush=True)
 
             # Build WHERE clause for emails table
             where_clauses = []
@@ -483,14 +514,13 @@ class ArchiveDatabase:
                     # Re-add to fts_query
                     filters["sender_fts"] = sender_val
 
-            # Recipients filter - use exact match on recipient_emails if it's an email address
+            # Recipients filter - use normalized email_recipients table for fast indexed lookup
+            recipient_email_filter = None
             if filters.get("recipients"):
                 recipients_val = filters["recipients"]
                 if '@' in recipients_val:
-                    # Email address - search in normalized recipient_emails (fast with LIKE on indexed column)
-                    # Format: ",a@b.com,c@d.com," so we search for ",email,"
-                    where_clauses.append("e.recipient_emails LIKE ?")
-                    params.append(f"%,{recipients_val.lower()},%")
+                    # Email address - use normalized table with indexed lookup
+                    recipient_email_filter = recipients_val.lower()
                 else:
                     # Name search - will be handled by FTS below
                     filters["recipients_fts"] = recipients_val
@@ -519,11 +549,13 @@ class ArchiveDatabase:
 
             # If there's a text search query, use FTS
             if fts_query.strip():
+                print("[db.search] Using FTS path", flush=True)
                 if sort == "relevance":
                     order_by = "rank"
 
                 # JOIN with FTS using rowid
                 fts_params = [fts_query] + params + [limit, offset]
+                _t2 = time.time()
                 results = conn.execute(
                     f"""
                     SELECT
@@ -542,25 +574,50 @@ class ArchiveDatabase:
                     """,
                     fts_params
                 ).fetchall()
+                print(f"[db.search] FTS query took {time.time()-_t2:.3f}s, {len(results)} results", flush=True)
             else:
+                print("[db.search] Using table-only path", flush=True)
                 # No text search - query emails table only (fast with indexes)
-                params.extend([limit, offset])
-                results = conn.execute(
-                    f"""
-                    SELECT
-                        message_id,
-                        filename,
-                        subject,
-                        sender,
-                        date_str,
-                        snippet
-                    FROM emails e
-                    WHERE {where_sql}
-                    ORDER BY {order_by}
-                    LIMIT ? OFFSET ?
-                    """,
-                    params
-                ).fetchall()
+                _t2 = time.time()
+
+                # Build query - use JOIN with email_recipients if filtering by recipient email
+                if recipient_email_filter:
+                    sql = f"""
+                        SELECT DISTINCT
+                            e.message_id,
+                            e.filename,
+                            e.subject,
+                            e.sender,
+                            e.date_str,
+                            e.snippet
+                        FROM emails e
+                        JOIN email_recipients er ON er.email_rowid = e.rowid
+                        WHERE er.recipient_email = ?
+                          AND {where_sql}
+                        ORDER BY {order_by}
+                        LIMIT ? OFFSET ?
+                        """
+                    query_params = [recipient_email_filter] + params + [limit, offset]
+                else:
+                    sql = f"""
+                        SELECT
+                            message_id,
+                            filename,
+                            subject,
+                            sender,
+                            date_str,
+                            snippet
+                        FROM emails e
+                        WHERE {where_sql}
+                        ORDER BY {order_by}
+                        LIMIT ? OFFSET ?
+                        """
+                    query_params = params + [limit, offset]
+
+                print(f"[db.search] SQL: {sql}", flush=True)
+                print(f"[db.search] params: {query_params}", flush=True)
+                results = conn.execute(sql, query_params).fetchall()
+                print(f"[db.search] Table query took {time.time()-_t2:.3f}s, {len(results)} results", flush=True)
 
             return results
 
