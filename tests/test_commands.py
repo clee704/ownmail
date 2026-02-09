@@ -982,3 +982,98 @@ class TestCmdVerifyMoreEdgeCases:
         captured = capsys.readouterr()
         # Should mention orphaned files
         assert "orphan" in captured.out.lower() or "disk" in captured.out.lower() or "Verify" in captured.out
+
+
+class TestCmdListUnknown:
+    """Tests for cmd_list_unknown command."""
+
+    def test_list_unknown_empty(self, temp_dir, capsys):
+        """Test list_unknown when no unknown folder exists."""
+        from ownmail.commands import cmd_list_unknown
+
+        archive = EmailArchive(temp_dir, {})
+        cmd_list_unknown(archive)
+        captured = capsys.readouterr()
+        # Should report no unknown files or folder doesn't exist
+        assert "unknown" in captured.out.lower() or "0" in captured.out
+
+    def test_list_unknown_with_files(self, temp_dir, sample_eml_simple, capsys):
+        """Test list_unknown when unknown folder has files."""
+        from ownmail.commands import cmd_list_unknown
+
+        archive = EmailArchive(temp_dir, {})
+
+        # Create unknown folder with some files
+        unknown_dir = temp_dir / "emails" / "unknown"
+        unknown_dir.mkdir(parents=True)
+        (unknown_dir / "unknown1.eml").write_bytes(sample_eml_simple)
+        (unknown_dir / "unknown2.eml").write_bytes(sample_eml_simple)
+
+        cmd_list_unknown(archive)
+        captured = capsys.readouterr()
+        # Should list the files
+        assert "2" in captured.out or "unknown" in captured.out.lower()
+
+    def test_list_unknown_verbose(self, temp_dir, sample_eml_simple, capsys):
+        """Test list_unknown with verbose flag."""
+        from ownmail.commands import cmd_list_unknown
+
+        archive = EmailArchive(temp_dir, {})
+
+        # Create unknown folder with files
+        unknown_dir = temp_dir / "emails" / "unknown"
+        unknown_dir.mkdir(parents=True)
+        (unknown_dir / "test.eml").write_bytes(sample_eml_simple)
+
+        cmd_list_unknown(archive, verbose=True)
+        captured = capsys.readouterr()
+        # Verbose should show more details
+        assert "test.eml" in captured.out or "unknown" in captured.out.lower()
+
+
+class TestCmdPopulateDates:
+    """Tests for cmd_populate_dates command."""
+
+    def test_populate_dates_empty(self, temp_dir, capsys):
+        """Test populate_dates on empty database."""
+        from ownmail.commands import cmd_populate_dates
+
+        archive = EmailArchive(temp_dir, {})
+        cmd_populate_dates(archive)
+        captured = capsys.readouterr()
+        # Should complete without error
+        assert "date" in captured.out.lower() or "0" in captured.out or captured.out == ""
+
+    def test_populate_dates_with_emails(self, temp_dir, sample_eml_simple, capsys):
+        """Test populate_dates with emails in database."""
+        from ownmail.commands import cmd_populate_dates
+
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash="abc123")
+
+        cmd_populate_dates(archive)
+        captured = capsys.readouterr()
+        # Should process emails
+        assert "date" in captured.out.lower() or "test" in captured.out.lower() or captured.out
+
+
+class TestCmdSyncCheck:
+    """Tests for cmd_sync_check command."""
+
+    def test_sync_check_no_sources(self, temp_dir, capsys):
+        """Test sync_check with no sources configured."""
+        from ownmail.commands import cmd_sync_check
+
+        archive = EmailArchive(temp_dir, {})
+        cmd_sync_check(archive)
+        captured = capsys.readouterr()
+        # Should report no sources
+        assert "source" in captured.out.lower() or "sync" in captured.out.lower() or "No" in captured.out

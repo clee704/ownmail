@@ -1,0 +1,4 @@
+From: sender@example.com
+
+This email has minimal headers - only From.
+Subject and Date and To are missing.

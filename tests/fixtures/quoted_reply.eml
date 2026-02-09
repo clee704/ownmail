@@ -1,0 +1,20 @@
+From: replier@example.com
+To: original@example.com
+Subject: Re: Test thread
+Date: Mon, 1 Jan 2024 14:00:00 +0000
+Message-ID: <quoted-reply@example.com>
+
+Thanks for your message!
+
+On Mon, 1 Jan 2024 12:00:00 +0000, original@example.com wrote:
+> This is a quoted message.
+> It has multiple lines.
+>
+>> And this is a nested quote from an earlier message.
+>> It goes deeper.
+>>
+>>> Third level quote.
+>
+> Back to first level.
+
+My response continues here.

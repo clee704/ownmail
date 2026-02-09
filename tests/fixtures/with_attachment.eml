@@ -1,0 +1,20 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Email with attachment
+Date: Mon, 1 Jan 2024 12:00:00 +0000
+Message-ID: <with-attachment@example.com>
+Content-Type: multipart/mixed; boundary="attachment-boundary"
+
+--attachment-boundary
+Content-Type: text/plain; charset=utf-8
+
+Please see the attached file.
+
+--attachment-boundary
+Content-Type: text/plain; charset=utf-8; name="test.txt"
+Content-Disposition: attachment; filename="test.txt"
+Content-Transfer-Encoding: base64
+
+SGVsbG8gV29ybGQhIFRoaXMgaXMgYSB0ZXN0IGF0dGFjaG1lbnQu
+
+--attachment-boundary--

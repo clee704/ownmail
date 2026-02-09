@@ -1,0 +1,11 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Quoted Printable Body
+Date: Mon, 1 Jan 2024 12:00:00 +0000
+Message-ID: <quoted-printable@example.com>
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+This line has special characters: caf=C3=A9 and na=C3=AFve.
+This line is very long and will be soft wrapped at the 76 character limit =
+which is standard for quoted-printable encoding in emails.
