@@ -1,7 +1,6 @@
 """Tests for CLI module."""
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -311,8 +310,9 @@ class TestCmdSetup:
 
         config = {}
 
-        # Simulate user input - email first, then source name
+        # Simulate user input - empty path (paste mode), then credentials, then email/source
         inputs = iter([
+            '',  # press Enter to paste credentials
             '{"installed": {"client_id": "test"}}',  # credentials
             '',  # end of paste
             '',
@@ -609,6 +609,7 @@ class TestCmdSetup:
 
         inputs = iter([
             '2',                    # choose OAuth
+            '',                     # press Enter to paste credentials
             '{"installed": {"client_id": "test"}}',  # paste credentials
             '',                     # end of paste
             '',
@@ -631,7 +632,7 @@ class TestCmdSetup:
         assert "OAuth" in captured.out
 
     def test_setup_credentials_file(self, temp_dir, capsys, monkeypatch):
-        """Test setup with --credentials-file flag."""
+        """Test setup with credentials file via interactive prompt."""
         from unittest.mock import MagicMock
 
         from ownmail.cli import cmd_setup
@@ -643,6 +644,7 @@ class TestCmdSetup:
         creds_file.write_text('{"installed": {"client_id": "test"}}')
 
         inputs = iter([
+            str(creds_file),    # path to credentials file
             'test@gmail.com',
             'test_source',
             '',
@@ -657,7 +659,7 @@ class TestCmdSetup:
 
             try:
                 cmd_setup(mock_keychain, {}, None,
-                          credentials_file=creds_file)
+                          method="oauth")
             except (StopIteration, Exception):
                 pass
 
@@ -672,9 +674,11 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = False
 
+        # Provide a nonexistent file path interactively
+        monkeypatch.setattr('builtins.input', lambda _: "/nonexistent/file.json")
+
         with pytest.raises(SystemExit):
             cmd_setup(mock_keychain, {}, None,
-                      credentials_file=Path("/nonexistent/file.json"),
                       method="oauth")
 
     def test_setup_oauth_empty_email_exits(self, temp_dir, capsys, monkeypatch):

@@ -777,7 +777,7 @@ class TestSetupCommand:
                 cmd_setup(mock_keychain, config, None, method="oauth")
 
     def test_setup_cmd_with_credentials_file(self, temp_dir, capsys):
-        """Test cmd_setup with credentials file - token already exists."""
+        """Test cmd_setup with credentials file via interactive prompt - token already exists."""
         from ownmail.cli import cmd_setup
 
         config = {"sources": []}
@@ -785,7 +785,7 @@ class TestSetupCommand:
         creds_file = temp_dir / "credentials.json"
         creds_file.write_text('{"installed": {"client_id": "test", "client_secret": "secret"}}')
 
-        inputs = iter(["user@gmail.com", "test_source", ""])
+        inputs = iter([str(creds_file), "user@gmail.com", "test_source", ""])
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = False
@@ -793,7 +793,7 @@ class TestSetupCommand:
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
             with patch('pathlib.Path.cwd', return_value=temp_dir):
-                cmd_setup(mock_keychain, config, None, credentials_file=creds_file)
+                cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out
@@ -804,8 +804,9 @@ class TestSetupCommand:
 
         config = {"sources": []}
 
-        # Simulate user pasting JSON then entering email, source name, archive root
+        # Simulate user pressing Enter (paste mode), then pasting JSON, then email/source
         inputs = iter([
+            "",   # press Enter to paste credentials
             '{"installed": {"client_id": "test", "client_secret": "secret"}}',
             "",  # First empty line
             "",  # Second empty line to finish JSON input
@@ -1632,7 +1633,7 @@ class TestCliSetupErrors:
 
         with pytest.raises(SystemExit):
             cmd_setup(keychain=mock_keychain, config={}, config_path=None,
-                     source_name=None, credentials_file=None, method="oauth")
+                     source_name=None, method="oauth")
 
     def test_setup_empty_email(self, monkeypatch, capsys):
         """Test setup when email address is empty."""
@@ -1652,7 +1653,7 @@ class TestCliSetupErrors:
 
         with pytest.raises(SystemExit):
             cmd_setup(keychain=mock_keychain, config={}, config_path=None,
-                     source_name=None, credentials_file=None, method="oauth")
+                     source_name=None, method="oauth")
 
         captured = capsys.readouterr()
         assert "Email address required" in captured.out

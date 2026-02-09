@@ -73,7 +73,6 @@ def _get_server_timezone_name() -> str:
 # Flat timezone list sorted by UTC offset, following industry standard.
 # Covers all major offsets from UTC-12 to UTC+14 with representative cities.
 COMMON_TIMEZONES = [
-    "Pacific/Baker",              # UTC-12:00  Baker Island
     "Pacific/Pago_Pago",          # UTC-11:00  Pago Pago
     "Pacific/Honolulu",           # UTC-10:00  Honolulu
     "America/Anchorage",          # UTC-09:00  Anchorage
