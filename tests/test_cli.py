@@ -215,20 +215,6 @@ sources:
         captured = capsys.readouterr()
         assert "Verify" in captured.out
 
-    def test_main_rehash_command(self, temp_dir, capsys, monkeypatch):
-        """Test rehash command via main."""
-        from ownmail.cli import main
-
-        config_path = temp_dir / "config.yaml"
-        config_path.write_text(f"archive_root: {temp_dir}\n")
-        monkeypatch.chdir(temp_dir)
-
-        with patch.object(sys, 'argv', ['ownmail', 'rehash']):
-            main()
-
-        captured = capsys.readouterr()
-        assert "already have hashes" in captured.out or "Compute Hashes" in captured.out
-
 
 class TestCmdBackup:
     """Tests for backup command."""
@@ -517,20 +503,20 @@ class TestMainEdgeCases:
         # Should fail gracefully without sources
         assert "No sources" in captured.out or "Sync Check" in captured.out
 
-    def test_main_add_labels_command(self, temp_dir, capsys, monkeypatch):
-        """Test add-labels command via main."""
+    def test_main_update_labels_command(self, temp_dir, capsys, monkeypatch):
+        """Test update-labels command via main."""
         from ownmail.cli import main
 
         config_path = temp_dir / "config.yaml"
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'add-labels']):
+        with patch.object(sys, 'argv', ['ownmail', 'update-labels']):
             main()
 
         captured = capsys.readouterr()
         # Should fail gracefully without sources
-        assert "No sources" in captured.out or "Add Labels" in captured.out
+        assert "No sources" in captured.out or "Update Labels" in captured.out
 
     def test_main_verify_command_2(self, temp_dir, capsys, monkeypatch):
         """Test verify command via main."""
@@ -559,20 +545,6 @@ class TestMainEdgeCases:
 
         captured = capsys.readouterr()
         assert "Verify" in captured.out
-
-    def test_main_rehash_command(self, temp_dir, capsys, monkeypatch):
-        """Test rehash command via main."""
-        from ownmail.cli import main
-
-        config_path = temp_dir / "config.yaml"
-        config_path.write_text(f"archive_root: {temp_dir}\n")
-        monkeypatch.chdir(temp_dir)
-
-        with patch.object(sys, 'argv', ['ownmail', 'rehash']):
-            main()
-
-        captured = capsys.readouterr()
-        assert "Compute Hashes" in captured.out
 
     def test_main_search_with_limit(self, temp_dir, capsys, monkeypatch):
         """Test search with --limit option."""

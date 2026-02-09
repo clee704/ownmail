@@ -739,18 +739,11 @@ Examples:
     verify_parser.add_argument("--fix", action="store_true", help="Fix issues (remove stale DB entries, rebuild FTS)")
     verify_parser.add_argument("--verbose", "-v", action="store_true", help="Show full list of issues")
 
-    # rehash command
-    subparsers.add_parser(
-        "rehash",
-        help="Compute hashes for emails without them",
-        description="Compute SHA256 content hashes for emails that don't have them.",
-    )
-
     # sync-check command
     sync_check_parser = subparsers.add_parser(
         "sync-check",
-        help="Compare local archive with server",
-        description="Compare your local archive with what's on the server.",
+        help="Compare local archive with server to find missing emails",
+        description="Compare your local archive with what's on the server. Shows emails that exist on the server but haven't been backed up yet, and local emails that were deleted from the server.",
     )
     sync_check_parser.add_argument("--verbose", "-v", action="store_true", help="Show full differences")
 
@@ -761,11 +754,11 @@ Examples:
         description="Clear the sync state for all sources, forcing the next backup to do a full sync.",
     )
 
-    # add-labels command
+    # update-labels command
     subparsers.add_parser(
-        "add-labels",
-        help="Add Gmail labels to existing emails",
-        description="Fetch Gmail labels and add them to existing downloaded emails.",
+        "update-labels",
+        help="Fetch current labels from server for existing emails",
+        description="Fetch current Gmail labels from the server and update the database for already-downloaded emails.",
     )
 
     # list-unknown command
@@ -853,17 +846,14 @@ Examples:
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify
                 cmd_verify(archive, args.fix, args.verbose)
-            elif args.command == "rehash":
-                from ownmail.commands import cmd_rehash
-                cmd_rehash(archive)
             elif args.command == "sync-check":
                 from ownmail.commands import cmd_sync_check
                 cmd_sync_check(archive, args.source, args.verbose)
             elif args.command == "reset-sync":
                 cmd_reset_sync(archive, config, args.source)
-            elif args.command == "add-labels":
-                from ownmail.commands import cmd_add_labels
-                cmd_add_labels(archive, args.source)
+            elif args.command == "update-labels":
+                from ownmail.commands import cmd_update_labels
+                cmd_update_labels(archive, args.source)
             elif args.command == "list-unknown":
                 from ownmail.commands import cmd_list_unknown
                 cmd_list_unknown(archive, args.verbose)
