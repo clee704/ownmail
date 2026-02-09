@@ -142,18 +142,24 @@ def cmd_reindex(
         print("\nAll emails are already indexed. Use --force to reindex everything.")
         return
 
-    # Get message_ids that already have FTS entries (need cleanup after re-indexing)
+    # Get message_ids and rowids of existing FTS entries (need cleanup after re-indexing)
     t0 = time.time()
     print("Checking for existing FTS entries...", end="", flush=True)
     email_ids = [msg_id for msg_id, _, _, _ in emails]
     with sqlite3.connect(db_path) as conn:
         placeholders = ",".join("?" * len(email_ids))
-        existing_fts = {
-            row[0] for row in conn.execute(
-                f"SELECT DISTINCT message_id FROM emails_fts WHERE message_id IN ({placeholders})",
-                email_ids
-            ).fetchall()
-        }
+        # Get both message_id and rowid so we can delete by rowid later (much faster)
+        existing_fts_rows = conn.execute(
+            f"SELECT message_id, rowid FROM emails_fts WHERE message_id IN ({placeholders})",
+            email_ids
+        ).fetchall()
+        existing_fts = {row[0] for row in existing_fts_rows}
+        # Map message_id -> list of rowids (there might be duplicates)
+        existing_fts_rowids = {}
+        for msg_id, rowid in existing_fts_rows:
+            if msg_id not in existing_fts_rowids:
+                existing_fts_rowids[msg_id] = []
+            existing_fts_rowids[msg_id].append(rowid)
     print(f" {len(existing_fts)} found ({time.time()-t0:.1f}s)")
 
     print(f"\nIndexing {len(emails)} emails...")
@@ -178,9 +184,6 @@ def cmd_reindex(
 
     # Use a shared connection for batching (much faster on slow disks)
     batch_conn = sqlite3.connect(db_path)
-
-    # Note max FTS rowid before inserting - anything <= this is "old" and can be deleted
-    max_rowid_before = batch_conn.execute("SELECT MAX(rowid) FROM emails_fts").fetchone()[0] or 0
     # WAL mode is faster for writes and crash-safe
     batch_conn.execute("PRAGMA journal_mode = WAL")
     batch_conn.execute("PRAGMA synchronous = NORMAL")
@@ -236,20 +239,22 @@ def cmd_reindex(
         # Commit any remaining inserts
         batch_conn.commit()
 
-        # Delete old FTS entries for successfully re-indexed emails (batch delete at end)
+        # Delete old FTS entries for successfully re-indexed emails by rowid (fast!)
         if successfully_reindexed:
-            print(f"\n  Cleaning up {len(successfully_reindexed)} old FTS entries...", end="", flush=True)
-            t0 = time.time()
-            # Delete entries that existed before we started inserting (rowid <= max_rowid_before)
-            # This is fast because it's a simple comparison, no subquery
-            placeholders = ",".join("?" * len(successfully_reindexed))
-            batch_conn.execute(f"""
-                DELETE FROM emails_fts
-                WHERE message_id IN ({placeholders})
-                AND rowid <= ?
-            """, successfully_reindexed + [max_rowid_before])
-            batch_conn.commit()
-            print(f" done ({time.time()-t0:.1f}s)")
+            # Collect all rowids to delete
+            rowids_to_delete = []
+            for msg_id in successfully_reindexed:
+                if msg_id in existing_fts_rowids:
+                    rowids_to_delete.extend(existing_fts_rowids[msg_id])
+
+            if rowids_to_delete:
+                print(f"\n  Cleaning up {len(rowids_to_delete)} old FTS entries...", end="", flush=True)
+                t0 = time.time()
+                # Delete by rowid is O(1) per row in FTS5, much faster than scanning
+                placeholders = ",".join("?" * len(rowids_to_delete))
+                batch_conn.execute(f"DELETE FROM emails_fts WHERE rowid IN ({placeholders})", rowids_to_delete)
+                batch_conn.commit()
+                print(f" done ({time.time()-t0:.1f}s)")
 
         batch_conn.close()
         signal.signal(signal.SIGINT, original_handler)
