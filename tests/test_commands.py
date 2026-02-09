@@ -277,6 +277,60 @@ class TestCmdVerify:
             ).fetchone()
         assert row[0] == "emails/2024/02/new_name.eml"
 
+    def test_verify_fix_resets_sync_state_for_missing_files(self, temp_dir, capsys):
+        """Test verify --fix resets sync state so backup re-downloads deleted messages."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Set up sync state (simulating a completed backup)
+        archive.db.set_sync_state("test@gmail.com", "history_id", "12345")
+
+        # Add email record pointing to a missing file
+        archive.db.mark_downloaded(
+            _eid("missing1", "test@gmail.com"), "missing1",
+            "emails/2024/01/missing.eml",
+            content_hash="abc123",
+            account="test@gmail.com",
+        )
+
+        # Run verify --fix
+        cmd_verify(archive, fix=True)
+        captured = capsys.readouterr()
+
+        # Should have removed the stale entry
+        assert "Removed" in captured.out
+        # Should have reset sync state
+        assert "Reset sync state" in captured.out
+
+        # Verify sync state was actually cleared
+        assert archive.db.get_sync_state("test@gmail.com", "history_id") is None
+
+    def test_verify_fix_resets_sync_for_multiple_accounts(self, temp_dir, capsys):
+        """Test verify --fix resets sync state for all affected accounts."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Set up sync state for two accounts
+        archive.db.set_sync_state("alice@gmail.com", "history_id", "111")
+        archive.db.set_sync_state("bob@gmail.com", "history_id", "222")
+
+        # Add missing files for both accounts
+        archive.db.mark_downloaded(
+            _eid("msg1", "alice@gmail.com"), "msg1",
+            "emails/2024/01/msg1.eml", content_hash="aaa",
+            account="alice@gmail.com",
+        )
+        archive.db.mark_downloaded(
+            _eid("msg2", "bob@gmail.com"), "msg2",
+            "emails/2024/01/msg2.eml", content_hash="bbb",
+            account="bob@gmail.com",
+        )
+
+        cmd_verify(archive, fix=True)
+        captured = capsys.readouterr()
+
+        assert "2 account(s)" in captured.out
+        assert archive.db.get_sync_state("alice@gmail.com", "history_id") is None
+        assert archive.db.get_sync_state("bob@gmail.com", "history_id") is None
+
 
 class TestCmdVerifyDatabase:
     """Tests for verify command database checks (formerly db-check)."""
