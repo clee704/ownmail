@@ -286,6 +286,16 @@ class TestEscapeFTS5Value:
         result = _escape_fts5_value("exact phrase")
         assert result == '"exact phrase"'
 
+    def test_prefix_matching_unquoted(self):
+        """Test prefix matching with * stays unquoted."""
+        result = _escape_fts5_value("meet*")
+        assert result == "meet*"
+
+    def test_prefix_matching_special_chars(self):
+        """Test prefix with special chars only quotes prefix."""
+        result = _escape_fts5_value("year-end*")
+        assert result == '"year-end"*'
+
 
 class TestNormalizeDate:
     """Tests for date normalization."""
@@ -386,6 +396,32 @@ class TestParseQuery:
         result = parse_query("has:attachment")
         assert result.error is None
         assert "e.attachments IS NOT NULL" in result.where_clauses[0]
+
+    def test_attachment_type_filter(self):
+        """Test attachment:type filters by attachment filename."""
+        result = parse_query("attachment:pdf")
+        assert result.error is None
+        assert "e.attachments LIKE ?" in result.where_clauses
+        assert "%pdf%" in result.params
+
+    def test_negated_attachment_type_filter(self):
+        """Test -attachment:type excludes attachment type."""
+        result = parse_query("-attachment:exe")
+        assert result.error is None
+        assert "(e.attachments IS NULL OR e.attachments NOT LIKE ?)" in result.where_clauses
+        assert "%exe%" in result.params
+
+    def test_prefix_matching(self):
+        """Test prefix matching with * stays unquoted."""
+        result = parse_query("meet*")
+        assert result.error is None
+        assert result.fts_query == "meet*"
+
+    def test_prefix_matching_with_special_chars(self):
+        """Test prefix with special chars gets prefix quoted."""
+        result = parse_query("year-end*")
+        assert result.error is None
+        assert result.fts_query == '"year-end"*'
 
     def test_negation(self):
         """Test negation becomes FTS NOT."""

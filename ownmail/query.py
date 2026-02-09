@@ -167,9 +167,9 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                             field_name = 'to'
                         elif field_name == 'tag':
                             field_name = 'label'
-                        elif field_name in ('attachment', 'attachments'):
-                            field_name = 'has'
-                            field_value = 'attachment'
+                        elif field_name == 'attachments':
+                            field_name = 'attachment'
+                        # Note: has:attachment stays as-is, attachment:pdf stays as-is
 
                         tokens.append(Token(TokenType.FILTER, field_value, field=field_name, negated=True))
                         i = j
@@ -225,9 +225,9 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                     field_name = 'to'
                 elif field_name == 'tag':
                     field_name = 'label'
-                elif field_name in ('attachment', 'attachments'):
-                    field_name = 'has'
-                    field_value = 'attachment'
+                elif field_name == 'attachments':
+                    field_name = 'attachment'
+                # Note: has:attachment stays as-is, attachment:pdf stays as-is
 
                 tokens.append(Token(TokenType.FILTER, field_value, field=field_name))
                 i = j
@@ -280,7 +280,18 @@ def _escape_fts5_value(value: str) -> str:
 
     Wraps in quotes if it contains special characters or whitespace.
     Escapes internal quotes by doubling them.
+    Preserves trailing * for prefix matching.
     """
+    # Handle prefix matching: meet* should stay as meet* (unquoted)
+    if value.endswith('*'):
+        prefix = value[:-1]
+        # Check if the prefix part needs quoting
+        needs_quoting = any(c in FTS5_SPECIAL_CHARS or c.isspace() for c in prefix)
+        if needs_quoting:
+            escaped = prefix.replace('"', '""')
+            return f'"{escaped}"*'
+        return value  # Return as-is: meet*
+
     # Check if quoting is needed (special chars or whitespace)
     needs_quoting = any(c in FTS5_SPECIAL_CHARS or c.isspace() for c in value)
 
@@ -440,6 +451,14 @@ def parse_query(query: str) -> ParsedQuery:
                     where_clauses.append("(e.attachments IS NULL OR e.attachments = '')")
                 else:
                     where_clauses.append("e.attachments IS NOT NULL AND e.attachments != ''")
+
+            elif field == 'attachment':
+                # Filter by attachment filename/type (e.g., attachment:pdf)
+                if negated:
+                    where_clauses.append("(e.attachments IS NULL OR e.attachments NOT LIKE ?)")
+                else:
+                    where_clauses.append("e.attachments LIKE ?")
+                params.append(f"%{value}%")
 
     # Build final FTS query
     fts_query = ' '.join(fts_parts)
