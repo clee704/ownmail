@@ -367,7 +367,7 @@ class TestParseQuery:
         result = parse_query("label:inbox")
         assert result.error is None
         assert "__LABEL__" in result.where_clauses
-        assert "INBOX" in result.params  # Uppercase
+        assert "inbox" in result.params  # Preserved as-is for case-insensitive SQL match
 
     def test_before_filter(self):
         """Test before: filter becomes SQL WHERE."""
@@ -463,7 +463,7 @@ class TestParseQuery:
         result = parse_query("-label:spam")
         assert result.error is None
         assert "__NOT_LABEL__" in result.where_clauses
-        assert "SPAM" in result.params  # Uppercase
+        assert "spam" in result.params  # Preserved as-is for case-insensitive SQL match
 
     def test_negated_has_attachment(self):
         """Test -has:attachment uses has_attachments column."""
