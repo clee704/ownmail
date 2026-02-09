@@ -1090,3 +1090,154 @@ class TestCmdPopulateDates:
         # Should process emails
         assert "date" in captured.out.lower() or "test" in captured.out.lower() or captured.out
 
+
+class TestCmdVerifyDedup:
+    """Tests for duplicate detection and removal in verify."""
+
+    def test_verify_detects_duplicates(self, temp_dir, capsys):
+        """Test that verify detects duplicate content_hash entries."""
+        import hashlib
+
+        archive = EmailArchive(temp_dir, {})
+
+        content = b"From: a@b.com\r\nSubject: Dup\r\n\r\nBody"
+        content_hash = hashlib.sha256(content).hexdigest()
+
+        # Create two files with the same content
+        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+
+        path1 = emails_dir / "email1.eml"
+        path1.write_bytes(content)
+        path2 = emails_dir / "email2.eml"
+        path2.write_bytes(content)
+
+        rel1 = str(path1.relative_to(temp_dir))
+        rel2 = str(path2.relative_to(temp_dir))
+
+        archive.db.mark_downloaded(_eid("INBOX:1"), "INBOX:1", rel1, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("AllMail:100"), "AllMail:100", rel2, content_hash=content_hash)
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        assert "1 duplicate" in captured.out
+
+    def test_verify_fix_removes_duplicates(self, temp_dir, capsys):
+        """Test that verify --fix removes duplicate entries and files."""
+        import hashlib
+
+        archive = EmailArchive(temp_dir, {})
+
+        content = b"From: a@b.com\r\nSubject: Dup\r\n\r\nBody"
+        content_hash = hashlib.sha256(content).hexdigest()
+
+        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+
+        path1 = emails_dir / "email1.eml"
+        path1.write_bytes(content)
+        path2 = emails_dir / "email2.eml"
+        path2.write_bytes(content)
+
+        rel1 = str(path1.relative_to(temp_dir))
+        rel2 = str(path2.relative_to(temp_dir))
+
+        archive.db.mark_downloaded(_eid("INBOX:1"), "INBOX:1", rel1, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("AllMail:100"), "AllMail:100", rel2, content_hash=content_hash)
+
+        cmd_verify(archive, fix=True)
+        captured = capsys.readouterr()
+        assert "Removed 1 duplicate" in captured.out
+        assert "FTS rebuilt" in captured.out
+
+        # Verify only one entry remains
+        with sqlite3.connect(archive.db.db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
+            assert count == 1
+
+    def test_verify_fix_keeps_newest_entry(self, temp_dir, capsys):
+        """Test that verify --fix keeps the newest (highest rowid) entry."""
+        import hashlib
+
+        archive = EmailArchive(temp_dir, {})
+
+        content = b"From: a@b.com\r\nSubject: Dup\r\n\r\nBody"
+        content_hash = hashlib.sha256(content).hexdigest()
+
+        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+
+        path1 = emails_dir / "old.eml"
+        path1.write_bytes(content)
+        path2 = emails_dir / "new.eml"
+        path2.write_bytes(content)
+
+        rel1 = str(path1.relative_to(temp_dir))
+        rel2 = str(path2.relative_to(temp_dir))
+
+        # First entry (older)
+        archive.db.mark_downloaded(_eid("INBOX:1"), "INBOX:1", rel1, content_hash=content_hash)
+        # Second entry (newer)
+        archive.db.mark_downloaded(_eid("AllMail:100"), "AllMail:100", rel2, content_hash=content_hash)
+
+        cmd_verify(archive, fix=True)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            row = conn.execute("SELECT provider_id, filename FROM emails").fetchone()
+            # Should keep the newer one
+            assert row[0] == "AllMail:100"
+            assert "new.eml" in row[1]
+
+        # Old file should be deleted, new file should remain
+        assert not path1.exists()
+        assert path2.exists()
+
+    def test_verify_no_duplicates_reports_clean(self, temp_dir, capsys):
+        """Test verify reports clean when no duplicates exist."""
+        import hashlib
+
+        archive = EmailArchive(temp_dir, {})
+
+        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+
+        for i in range(3):
+            content = f"From: a@b.com\r\nSubject: Email {i}\r\n\r\nBody {i}".encode()
+            path = emails_dir / f"email{i}.eml"
+            path.write_bytes(content)
+            rel = str(path.relative_to(temp_dir))
+            h = hashlib.sha256(content).hexdigest()
+            archive.db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", rel, content_hash=h)
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        assert "No duplicate emails" in captured.out
+
+    def test_verify_verbose_shows_duplicate_details(self, temp_dir, capsys):
+        """Test that verify -v shows details of duplicate emails."""
+        import hashlib
+
+        archive = EmailArchive(temp_dir, {})
+
+        content = b"From: a@b.com\r\nSubject: Dup\r\n\r\nBody"
+        content_hash = hashlib.sha256(content).hexdigest()
+
+        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+
+        path1 = emails_dir / "email1.eml"
+        path1.write_bytes(content)
+        path2 = emails_dir / "email2.eml"
+        path2.write_bytes(content)
+
+        rel1 = str(path1.relative_to(temp_dir))
+        rel2 = str(path2.relative_to(temp_dir))
+
+        archive.db.mark_downloaded(_eid("INBOX:1"), "INBOX:1", rel1, content_hash=content_hash)
+        archive.db.mark_downloaded(_eid("AllMail:100"), "AllMail:100", rel2, content_hash=content_hash)
+
+        cmd_verify(archive, verbose=True)
+        captured = capsys.readouterr()
+        assert "INBOX:1" in captured.out
+        assert "AllMail:100" in captured.out
+

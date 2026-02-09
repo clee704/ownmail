@@ -1,6 +1,7 @@
 """Tests for CLI module."""
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -466,6 +467,292 @@ class TestCmdSetup:
 
         captured = capsys.readouterr()
         assert "already exists" in captured.out
+
+    def test_setup_imap_empty_email_exits(self, temp_dir, capsys, monkeypatch):
+        """Test that setup exits when email address is empty."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        monkeypatch.setattr('builtins.input', lambda _: '')
+
+        with pytest.raises(SystemExit):
+            cmd_setup(mock_keychain, {}, None, method="imap")
+
+    def test_setup_imap_empty_password_exits(self, temp_dir, capsys, monkeypatch):
+        """Test that setup exits when password is empty."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        monkeypatch.setattr('builtins.input', lambda _: 'user@gmail.com')
+
+        with patch('getpass.getpass', return_value=''):
+            with pytest.raises(SystemExit):
+                cmd_setup(mock_keychain, {}, None, method="imap")
+
+    def test_setup_imap_connection_failure_exits(self, temp_dir, capsys, monkeypatch):
+        """Test that setup exits on IMAP auth failure."""
+        import imaplib
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        monkeypatch.setattr('builtins.input', lambda _: 'user@gmail.com')
+
+        with patch('getpass.getpass', return_value='bad-password'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_conn = MagicMock()
+                mock_conn.login.side_effect = imaplib.IMAP4.error("AUTHENTICATIONFAILED")
+                mock_imap.return_value = mock_conn
+                with pytest.raises(SystemExit):
+                    cmd_setup(mock_keychain, {}, None, method="imap")
+
+        captured = capsys.readouterr()
+        assert "Failed" in captured.out
+
+    def test_setup_imap_non_gmail_host(self, temp_dir, capsys, monkeypatch):
+        """Test IMAP setup for non-Gmail server."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        config = {}
+
+        inputs = iter([
+            'user@company.com',     # email
+            'imap.company.com',     # hostname
+            'my_source',            # source name
+            '',                      # archive root default
+        ])
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        with patch('getpass.getpass', return_value='password123'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_imap.return_value = MagicMock()
+                cmd_setup(mock_keychain, config, None, method="imap")
+
+        captured = capsys.readouterr()
+        assert "Setup complete" in captured.out
+        # Should have saved password
+        mock_keychain.save_imap_password.assert_called_once()
+
+    def test_setup_imap_non_gmail_empty_host_exits(self, temp_dir, capsys, monkeypatch):
+        """Test that setup exits when non-Gmail host is empty."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        inputs = iter([
+            'user@company.com',     # email (not gmail)
+            '',                      # empty hostname
+        ])
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+
+        with pytest.raises(SystemExit):
+            cmd_setup(mock_keychain, {}, None, method="imap")
+
+    def test_setup_imap_generic_connection_error(self, temp_dir, capsys, monkeypatch):
+        """Test setup handles generic connection errors."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        monkeypatch.setattr('builtins.input', lambda _: 'user@gmail.com')
+
+        with patch('getpass.getpass', return_value='password'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_imap.side_effect = OSError("Connection refused")
+                with pytest.raises(SystemExit):
+                    cmd_setup(mock_keychain, {}, None, method="imap")
+
+    def test_setup_method_prompt_chooses_imap(self, temp_dir, capsys, monkeypatch):
+        """Test method selection prompt defaults to IMAP."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+
+        inputs = iter([
+            '1',                    # choose IMAP
+            'user@gmail.com',       # email
+            'my_source',            # source name
+            '',                      # archive root default
+        ])
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        with patch('getpass.getpass', return_value='password'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_imap.return_value = MagicMock()
+                cmd_setup(mock_keychain, {}, None)
+
+        captured = capsys.readouterr()
+        assert "Setup complete" in captured.out
+
+    def test_setup_method_prompt_chooses_oauth(self, temp_dir, capsys, monkeypatch):
+        """Test method selection prompt choosing OAuth."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        mock_keychain.has_client_credentials.return_value = False
+
+        inputs = iter([
+            '2',                    # choose OAuth
+            '{"installed": {"client_id": "test"}}',  # paste credentials
+            '',                     # end of paste
+            '',
+            'test@gmail.com',       # email
+            'test_source',          # source name
+        ])
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+
+        with patch("ownmail.cli.GmailProvider") as mock_provider:
+            mock_keychain.load_gmail_token.return_value = None
+            mock_instance = MagicMock()
+            mock_provider.return_value = mock_instance
+
+            try:
+                cmd_setup(mock_keychain, {}, None)
+            except (StopIteration, Exception):
+                pass
+
+        captured = capsys.readouterr()
+        assert "OAuth" in captured.out
+
+    def test_setup_credentials_file(self, temp_dir, capsys, monkeypatch):
+        """Test setup with --credentials-file flag."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        mock_keychain.has_client_credentials.return_value = False
+
+        creds_file = temp_dir / "client_secret.json"
+        creds_file.write_text('{"installed": {"client_id": "test"}}')
+
+        inputs = iter([
+            'test@gmail.com',
+            'test_source',
+            '',
+        ])
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.cli.GmailProvider") as mock_provider:
+            mock_keychain.load_gmail_token.return_value = None
+            mock_instance = MagicMock()
+            mock_provider.return_value = mock_instance
+
+            try:
+                cmd_setup(mock_keychain, {}, None,
+                          credentials_file=creds_file)
+            except (StopIteration, Exception):
+                pass
+
+        mock_keychain.save_client_credentials.assert_called_once()
+
+    def test_setup_credentials_file_not_found(self, temp_dir, capsys, monkeypatch):
+        """Test setup exits when credentials file doesn't exist."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        mock_keychain.has_client_credentials.return_value = False
+
+        with pytest.raises(SystemExit):
+            cmd_setup(mock_keychain, {}, None,
+                      credentials_file=Path("/nonexistent/file.json"),
+                      method="oauth")
+
+    def test_setup_oauth_empty_email_exits(self, temp_dir, capsys, monkeypatch):
+        """Test OAuth setup exits when email is empty."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        mock_keychain.has_client_credentials.return_value = True
+
+        monkeypatch.setattr('builtins.input', lambda _: '')
+
+        with pytest.raises(SystemExit):
+            cmd_setup(mock_keychain, {}, None, method="oauth")
+
+    def test_setup_oauth_existing_token(self, temp_dir, capsys, monkeypatch):
+        """Test OAuth setup when token already exists."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        mock_keychain.has_client_credentials.return_value = True
+        mock_keychain.load_gmail_token.return_value = MagicMock()  # Token exists
+
+        inputs = iter([
+            'test@gmail.com',
+            'test_source',
+            '',
+        ])
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        cmd_setup(mock_keychain, {}, None, method="oauth")
+
+        captured = capsys.readouterr()
+        assert "already exists" in captured.out
+
+    def test_setup_oauth_empty_credentials_paste(self, temp_dir, capsys, monkeypatch):
+        """Test OAuth setup exits when no credentials are pasted."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        mock_keychain.has_client_credentials.return_value = False
+
+        # Simulate immediate EOF
+        monkeypatch.setattr('builtins.input', MagicMock(side_effect=EOFError))
+
+        with pytest.raises(SystemExit):
+            cmd_setup(mock_keychain, {}, None, method="oauth")
+
+    def test_update_config_with_custom_archive_path(self, temp_dir, capsys, monkeypatch):
+        """Test config creation with custom archive path."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+
+        custom_path = str(temp_dir / "my_archive")
+        inputs = iter([
+            'user@gmail.com',
+            'my_source',
+            custom_path,
+        ])
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        with patch('getpass.getpass', return_value='password'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_imap.return_value = MagicMock()
+                cmd_setup(mock_keychain, {}, None, method="imap")
+
+        config_content = (temp_dir / "config.yaml").read_text()
+        assert custom_path in config_content
 
 
 class TestMainEdgeCases:
