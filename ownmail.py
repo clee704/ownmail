@@ -1002,6 +1002,9 @@ class GmailArchive:
         if not interrupted:
             self.update_history_id()
 
+        # Calculate total from memory (avoids slow DB query on USB drives)
+        total_archived = stats['total_emails'] + success_count
+
         print("\n" + "-" * 50)
         if interrupted:
             remaining = len(new_message_ids) - success_count - error_count
@@ -1014,9 +1017,7 @@ class GmailArchive:
             print(f"  Downloaded: {success_count} emails")
         if error_count > 0:
             print(f"  Errors: {error_count}")
-
-        final_stats = self.db.get_stats()
-        print(f"  Total archived: {final_stats['total_emails']} emails")
+        print(f"  Total archived: {total_archived} emails")
         print("-" * 50 + "\n")
 
     def cmd_search(self, query: str) -> None:
