@@ -889,6 +889,63 @@ class TestMainEdgeCases:
         capsys.readouterr()
         # Should not crash
 
+    def test_main_refuses_duplicate_source_names(self, temp_dir, capsys, monkeypatch):
+        """Test that CLI exits with error on duplicate source names."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(
+            f"archive_root: {temp_dir}\n"
+            "sources:\n"
+            "  - name: personal\n"
+            "    type: gmail_api\n"
+            "    account: a@test.com\n"
+            "    auth:\n"
+            "      secret_ref: keychain:tok-a\n"
+            "  - name: personal\n"
+            "    type: gmail_api\n"
+            "    account: b@test.com\n"
+            "    auth:\n"
+            "      secret_ref: keychain:tok-b\n"
+        )
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, 'argv', ['ownmail', 'backup']):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "Duplicate source name" in captured.out
+
+    def test_setup_skips_validation(self, temp_dir, capsys, monkeypatch):
+        """Test that setup command skips config validation (config may not exist yet)."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(
+            f"archive_root: {temp_dir}\n"
+            "sources:\n"
+            "  - name: dup\n"
+            "    type: gmail_api\n"
+            "    account: a@test.com\n"
+            "    auth:\n"
+            "      secret_ref: keychain:tok\n"
+            "  - name: dup\n"
+            "    type: gmail_api\n"
+            "    account: b@test.com\n"
+            "    auth:\n"
+            "      secret_ref: keychain:tok\n"
+        )
+        monkeypatch.chdir(temp_dir)
+
+        # setup should not fail on duplicate names — it needs to run
+        # to let the user fix the config
+        with patch.object(sys, 'argv', ['ownmail', 'setup']):
+            with patch('ownmail.cli.cmd_setup') as mock_setup:
+                main()
+                mock_setup.assert_called_once()
+
 
 class TestBackupCommand:
     """Tests for backup command with mocked provider."""
@@ -969,7 +1026,9 @@ sources:
         monkeypatch.chdir(temp_dir)
 
         with patch.object(sys, 'argv', ['ownmail', 'backup']):
-            main()
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
 
         captured = capsys.readouterr()
         # Should report missing auth
@@ -1057,7 +1116,9 @@ sources:
         monkeypatch.chdir(temp_dir)
 
         with patch.object(sys, 'argv', ['ownmail', 'backup']):
-            main()
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
 
         captured = capsys.readouterr()
         # Should report error about secret_ref format
