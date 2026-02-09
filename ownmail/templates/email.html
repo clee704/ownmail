@@ -17,18 +17,18 @@
             </div>
             <div class="email-header-row">
                 <span class="email-header-label">From:</span>
-                {% if sender_name and sender_email %}
+                <span class="email-header-value">{% if sender_name and sender_email %}
                     {{ sender_name }}
                     &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>&gt;
                 {% elif sender_email %}
                     <a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>
                 {% else %}
                     {{ sender }}
-                {% endif %}
+                {% endif %}</span>
             </div>
             <div class="email-header-row">
                 <span class="email-header-label">To:</span>
-                {% for rcpt in recipients_parsed %}
+                <span class="email-header-value">{% for rcpt in recipients_parsed %}
                     {% if not loop.first %}, {% endif %}
                     {% if rcpt.name and rcpt.email %}
                         {{ rcpt.name }}
@@ -38,10 +38,10 @@
                     {% else %}
                         {{ rcpt.raw }}
                     {% endif %}
-                {% endfor %}
+                {% endfor %}</span>
             </div>
             <div class="email-header-row">
-                <span class="email-header-label">Date:</span> {{ date }}
+                <span class="email-header-label">Date:</span><span class="email-header-value">{{ date }}</span>
             </div>
             {% if labels %}
             <div class="labels">
@@ -179,7 +179,7 @@
         {% endif %}
 
         {% if body_html %}
-            <iframe id="email-frame" class="email-body-html" sandbox="allow-same-origin" srcdoc="{{ body_html | e }}"></iframe>
+            <iframe id="email-frame" class="email-body-html" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ body_html | e }}"></iframe>
             <script>
             // Debug flag (may already be defined by image loading script)
             if (typeof DEBUG_RESIZE === 'undefined') var DEBUG_RESIZE = false;
