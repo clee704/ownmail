@@ -73,19 +73,6 @@ The web UI is functional (Flask + Jinja, search, email detail, attachment downlo
 
 ---
 
-## Later — Parser Refactoring
-
-**Goal**: Improve readability of `parser.py` (~735 LOC) without changing behavior.
-
-The parser works correctly but has deep nesting and long function bodies. Every fallback path exists for a real-world encoding edge case (especially Korean EUC-KR/CP949).
-
-- Extract charset detection into `_detect_charset(raw_bytes, declared_charset=None) -> str`.
-- Extract RFC 2047 grouped-part decoding into `_decode_grouped_rfc2047_parts()`.
-- Compile regex patterns at module level (some are compiled inline on every call).
-- Keep the public API (`parse_file()`, `parse_raw()`) unchanged.
-
----
-
 ## Backlog
 
 Items not yet scheduled:
