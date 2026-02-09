@@ -418,6 +418,7 @@ class TestArchiveBackupProgress:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1", "msg2", "msg3"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
         mock_provider.download_message.return_value = (
@@ -644,6 +645,7 @@ class TestBackupWithLabels:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
         mock_provider.download_message.return_value = (
@@ -948,6 +950,7 @@ class TestArchiveEdgeCases:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
         # First succeeds, second fails
@@ -967,6 +970,7 @@ class TestArchiveEdgeCases:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = ([], "new_history_id")
         mock_provider.get_current_sync_state.return_value = None
 
@@ -1358,6 +1362,7 @@ class TestArchiveBackupAdditional:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         # No since_state, return empty (initial empty sync)
         mock_provider.get_new_message_ids.return_value = ([], None)
         mock_provider.get_current_sync_state.return_value = "initial_history_123"
@@ -1375,6 +1380,7 @@ class TestArchiveBackupAdditional:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
         # Email without Date header
@@ -1558,6 +1564,7 @@ class TestBackupWithHistoryId:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         # Return new IDs with new history state
         mock_provider.get_new_message_ids.return_value = (["msg1"], "new_history")
         mock_provider.get_current_sync_state.return_value = "new_history"
@@ -1708,6 +1715,7 @@ class TestArchiveSyncStateUpdate:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = ([], "latest_history")
         mock_provider.get_current_sync_state.return_value = "latest_history"
 

@@ -34,23 +34,29 @@ class GmailProvider(EmailProvider):
     - Labels stored in database
     """
 
-    def __init__(self, account: str, keychain, include_labels: bool = True):
+    def __init__(self, account: str, keychain, include_labels: bool = True, source_name: str = "gmail"):
         """Initialize Gmail provider.
 
         Args:
             account: Email address (e.g., 'alice@gmail.com')
             keychain: KeychainStorage instance for credential access
             include_labels: Whether to fetch and inject Gmail labels
+            source_name: Source name from config
         """
         self._account = account
         self._keychain = keychain
         self._include_labels = include_labels
+        self._source_name = source_name
         self._service = None
         self._label_cache = {}
 
     @property
     def name(self) -> str:
         return "gmail"
+
+    @property
+    def source_name(self) -> str:
+        return self._source_name
 
     @property
     def account(self) -> str:

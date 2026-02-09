@@ -1105,7 +1105,7 @@ class TestCmdVerifyDedup:
         content_hash = hashlib.sha256(content).hexdigest()
 
         # Create two files with the same content
-        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir = temp_dir / "sources" / "test" / "2024" / "01"
         emails_dir.mkdir(parents=True)
 
         path1 = emails_dir / "email1.eml"
@@ -1132,7 +1132,7 @@ class TestCmdVerifyDedup:
         content = b"From: a@b.com\r\nSubject: Dup\r\n\r\nBody"
         content_hash = hashlib.sha256(content).hexdigest()
 
-        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir = temp_dir / "sources" / "test" / "2024" / "01"
         emails_dir.mkdir(parents=True)
 
         path1 = emails_dir / "email1.eml"
@@ -1165,7 +1165,7 @@ class TestCmdVerifyDedup:
         content = b"From: a@b.com\r\nSubject: Dup\r\n\r\nBody"
         content_hash = hashlib.sha256(content).hexdigest()
 
-        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir = temp_dir / "sources" / "test" / "2024" / "01"
         emails_dir.mkdir(parents=True)
 
         path1 = emails_dir / "old.eml"
@@ -1199,7 +1199,7 @@ class TestCmdVerifyDedup:
 
         archive = EmailArchive(temp_dir, {})
 
-        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir = temp_dir / "sources" / "test" / "2024" / "01"
         emails_dir.mkdir(parents=True)
 
         for i in range(3):
@@ -1223,7 +1223,7 @@ class TestCmdVerifyDedup:
         content = b"From: a@b.com\r\nSubject: Dup\r\n\r\nBody"
         content_hash = hashlib.sha256(content).hexdigest()
 
-        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir = temp_dir / "sources" / "test" / "2024" / "01"
         emails_dir.mkdir(parents=True)
 
         path1 = emails_dir / "email1.eml"
@@ -1260,7 +1260,7 @@ _SAMPLE_EML = (
 
 def _make_email(archive, temp_dir, n, account="test@gmail.com"):
     """Create an email file and DB row for testing. Returns email_id."""
-    emails_dir = temp_dir / "accounts" / account / "2024" / "01"
+    emails_dir = temp_dir / "sources" / account / "2024" / "01"
     emails_dir.mkdir(parents=True, exist_ok=True)
 
     content = _SAMPLE_EML.replace(b"Reindex Test", f"Email {n}".encode())
@@ -1444,7 +1444,7 @@ class TestVerifyEndToEnd:
         archive = EmailArchive(temp_dir, {})
 
         # Create 3 emails on disk and in DB
-        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir = temp_dir / "sources" / "test" / "2024" / "01"
         emails_dir.mkdir(parents=True)
 
         contents = []
@@ -1510,7 +1510,7 @@ class TestVerifyEndToEnd:
         archive = EmailArchive(temp_dir, {})
 
         # Download 2 emails
-        emails_dir = temp_dir / "accounts" / "test@gmail.com" / "2024" / "01"
+        emails_dir = temp_dir / "sources" / "test@gmail.com" / "2024" / "01"
         emails_dir.mkdir(parents=True)
 
         for i in range(2):
@@ -1541,6 +1541,7 @@ class TestVerifyEndToEnd:
         provider = MagicMock()
         provider.account = "test@gmail.com"
         provider.name = "imap"
+        provider.source_name = "test_source"
         provider.get_new_message_ids.return_value = ([], "fresh-state")
 
         archive.backup(provider)
@@ -1557,7 +1558,7 @@ class TestVerifyEndToEnd:
         archive = EmailArchive(temp_dir, {})
 
         # Create email on disk and register in DB
-        old_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        old_dir = temp_dir / "sources" / "test" / "2024" / "01"
         old_dir.mkdir(parents=True)
 
         eml_content = (
@@ -1586,7 +1587,7 @@ class TestVerifyEndToEnd:
         )
 
         # Rename/move the file on disk
-        new_dir = temp_dir / "accounts" / "test" / "2024" / "02"
+        new_dir = temp_dir / "sources" / "test" / "2024" / "02"
         new_dir.mkdir(parents=True)
         new_path = new_dir / "renamed.eml"
         old_path.rename(new_path)

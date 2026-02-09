@@ -53,16 +53,16 @@ class EmailArchive:
         # Batch connection for fast writes
         self._batch_conn: Optional[sqlite3.Connection] = None
 
-    def get_emails_dir(self, account: str) -> Path:
-        """Get emails directory for an account.
+    def get_emails_dir(self, source_name: str) -> Path:
+        """Get emails directory for a source.
 
         Args:
-            account: Email address.
+            source_name: Source name from config.
 
         Returns:
             Path to emails directory
         """
-        return self.archive_dir / "accounts" / account
+        return self.archive_dir / "sources" / source_name
 
     # -------------------------------------------------------------------------
     # Backup
@@ -87,7 +87,7 @@ class EmailArchive:
             Dictionary with success_count, error_count, interrupted
         """
         account = provider.account
-        emails_dir = self.get_emails_dir(account)
+        emails_dir = self.get_emails_dir(provider.source_name)
         emails_dir.mkdir(parents=True, exist_ok=True)
 
         # Get downloaded IDs for this account

@@ -418,6 +418,7 @@ def cmd_backup(
                 account=account,
                 keychain=keychain,
                 include_labels=source.get("include_labels", True),
+                source_name=name,
             )
 
             # Authenticate
@@ -474,6 +475,7 @@ def cmd_backup(
                 host=host,
                 port=port,
                 exclude_folders=exclude_folders,
+                source_name=name,
             )
 
             provider.authenticate()

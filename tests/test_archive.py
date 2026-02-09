@@ -42,7 +42,7 @@ class TestGetEmailsDir:
         """Test getting emails dir for specific account."""
         archive = EmailArchive(temp_dir, {})
         emails_dir = archive.get_emails_dir("alice@gmail.com")
-        assert emails_dir == temp_dir / "accounts" / "alice@gmail.com"
+        assert emails_dir == temp_dir / "sources" / "alice@gmail.com"
 
 
 class TestFormatHelpers:
@@ -221,6 +221,7 @@ class TestBackupWithMockedProvider:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = ([], None)
         mock_provider.get_current_sync_state.return_value = "12345"
 
@@ -241,6 +242,7 @@ class TestBackupWithMockedProvider:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
 
@@ -267,6 +269,7 @@ Body content
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
 
@@ -297,6 +300,7 @@ Body
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
 
@@ -447,6 +451,7 @@ class TestBackupFullSync:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = ([], "22222")
 
         result = archive.backup(mock_provider)
@@ -464,6 +469,7 @@ class TestBackupFullSync:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
         mock_provider.download_message.return_value = (None, None)  # Download fails
@@ -484,6 +490,7 @@ class TestBackupMultipleEmails:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1", "msg2", "msg3"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
         mock_provider.download_message.return_value = (
@@ -504,6 +511,7 @@ class TestBackupMultipleEmails:
 
         mock_provider = MagicMock()
         mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
         mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
 
@@ -593,6 +601,7 @@ class TestBackupCancel:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.get_new_message_ids.side_effect = KeyboardInterrupt
 
         result = archive.backup(provider)
@@ -612,6 +621,7 @@ class TestBackupCancel:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.get_new_message_ids.return_value = (
             [f"msg{i}" for i in range(5)], "state-after"
         )
@@ -646,6 +656,7 @@ class TestBackupCancel:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.name = "imap"
         provider.get_new_message_ids.return_value = (
             [f"msg{i}" for i in range(5)], "new-sync-state"
@@ -678,6 +689,7 @@ class TestBackupCancel:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.get_new_message_ids.return_value = (
             [f"msg{i}" for i in range(5)], None
         )
@@ -715,6 +727,7 @@ class TestBackupResume:
         # First run: download 2 emails
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.get_new_message_ids.return_value = (["msg0", "msg1"], None)
         provider.get_current_sync_state.return_value = None
         provider.download_message.side_effect = [
@@ -748,6 +761,7 @@ class TestBackupSyncState:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.name = "imap"
         provider.get_new_message_ids.return_value = (["msg0"], "new-state")
         provider.download_message.return_value = (_raw_email_with_id(0), [])
@@ -765,6 +779,7 @@ class TestBackupSyncState:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.name = "imap"
         provider.get_new_message_ids.return_value = (["msg0"], "new-state")
         provider.download_message.return_value = (_raw_email_with_id(0), [])
@@ -782,6 +797,7 @@ class TestBackupSyncState:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.name = "imap"
         provider.get_new_message_ids.return_value = (["msg0", "msg1"], "new-state")
         provider.download_message.side_effect = [
@@ -802,6 +818,7 @@ class TestBackupSyncState:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.name = "imap"
         provider.get_new_message_ids.return_value = ([], "new-state")
 
@@ -818,6 +835,7 @@ class TestBackupSyncState:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.name = "imap"
         provider.get_new_message_ids.return_value = ([], "sync-123")
 
@@ -843,13 +861,14 @@ class TestBackupContentDedup:
         # Pre-populate: same content already downloaded under different ID
         archive.db.mark_downloaded(
             _eid("INBOX:100", "test@gmail.com"),
-            "INBOX:100", "accounts/test@gmail.com/2024/01/email.eml",
+            "INBOX:100", "sources/test_source/2024/01/email.eml",
             content_hash=content_hash,
             account="test@gmail.com",
         )
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.get_new_message_ids.return_value = (["AllMail:200"], None)
         provider.get_current_sync_state.return_value = None
         # Same content under a different provider_id
@@ -871,6 +890,7 @@ class TestBackupContentDedup:
 
         provider = MagicMock()
         provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
         provider.get_new_message_ids.return_value = (
             ["msg0", "msg1", "msg2", "msg3"], None
         )
