@@ -981,6 +981,7 @@ def create_app(
             body = ""
             body_html = None
             body_parts = []  # Collect text parts from top-level only
+            embedded_messages = []  # Collect embedded message/rfc822 for digests
             attachments = []
             cid_images = {}  # Content-ID -> data URI mapping
 
@@ -994,9 +995,43 @@ def create_app(
                     content_type = part.get_content_type()
                     content_disposition = str(part.get("Content-Disposition", ""))
 
-                    # Track message/rfc822 nesting
+                    # Handle embedded message/rfc822 parts (digest entries)
                     if content_type == "message/rfc822":
                         inside_message_rfc822 += 1
+                        # Extract embedded message for digest display
+                        try:
+                            embedded = part.get_payload(0)
+                            if embedded:
+                                emb_from = decode_header(embedded.get("From", ""))
+                                emb_subject = decode_header(embedded.get("Subject", ""))
+                                emb_date = embedded.get("Date", "")
+                                emb_to = decode_header(embedded.get("To", ""))
+                                emb_reply_to = decode_header(embedded.get("Reply-To", ""))
+
+                                # Get body of embedded message
+                                emb_body = ""
+                                if embedded.is_multipart():
+                                    for sub in embedded.walk():
+                                        if sub.get_content_type() == "text/plain":
+                                            payload = sub.get_payload(decode=True)
+                                            if payload:
+                                                emb_body = _decode_text_body(payload, sub.get_content_charset())
+                                                break
+                                else:
+                                    payload = embedded.get_payload(decode=True)
+                                    if payload:
+                                        emb_body = _decode_text_body(payload, embedded.get_content_charset())
+
+                                embedded_messages.append({
+                                    "from": emb_from,
+                                    "subject": emb_subject,
+                                    "date": emb_date,
+                                    "to": emb_to,
+                                    "reply_to": emb_reply_to,
+                                    "body": emb_body,
+                                })
+                        except Exception:
+                            pass
                         continue
 
                     # Extract inline images with Content-ID (for cid: references)
@@ -1009,7 +1044,7 @@ def create_app(
                             data_uri = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
                             cid_images[cid] = data_uri
 
-                    # Skip content inside embedded messages (digest entries)
+                    # Skip content inside embedded messages (already extracted above)
                     if inside_message_rfc822 > 0:
                         continue
 
@@ -1037,6 +1072,24 @@ def create_app(
                 # Combine all text parts
                 if body_parts:
                     body = "\n\n".join(body_parts)
+
+                # Append embedded messages (for digest emails)
+                if embedded_messages:
+                    for emb in embedded_messages:
+                        separator = "\n" + "-" * 60 + "\n"
+                        header_lines = []
+                        if emb["from"]:
+                            header_lines.append(f"From: {emb['from']}")
+                        if emb["subject"]:
+                            header_lines.append(f"Subject: {emb['subject']}")
+                        if emb["date"]:
+                            header_lines.append(f"Date: {emb['date']}")
+                        if emb["to"]:
+                            header_lines.append(f"To: {emb['to']}")
+                        if emb["reply_to"]:
+                            header_lines.append(f"Reply-To: {emb['reply_to']}")
+                        headers = "\n".join(header_lines)
+                        body += separator + headers + "\n\n" + emb["body"]
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
