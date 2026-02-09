@@ -237,12 +237,7 @@ class EmailArchive:
                         # Compute stable email_id from account + provider_id
                         email_id = ArchiveDatabase.make_email_id(account, msg_id)
 
-                        # Index the email
-                        labels_str = ", ".join(labels) if labels else ""
-                        self._index_email(email_id, filepath, raw_data,
-                                          skip_delete=True, labels=labels_str)
-
-                        # Mark as downloaded and indexed
+                        # Mark as downloaded first (creates the row in emails table)
                         content_hash = hashlib.sha256(raw_data).hexdigest()
                         self.db.mark_downloaded(
                             email_id=email_id,
@@ -253,6 +248,12 @@ class EmailArchive:
                             conn=self._batch_conn,
                             email_date=email_date,
                         )
+
+                        # Index the email (updates the row with parsed metadata + FTS)
+                        labels_str = ", ".join(labels) if labels else ""
+                        self._index_email(email_id, filepath, raw_data,
+                                          skip_delete=True, labels=labels_str)
+
                         # Set indexed_hash to mark as indexed
                         self._batch_conn.execute(
                             "UPDATE emails SET indexed_hash = ? WHERE email_id = ?",
