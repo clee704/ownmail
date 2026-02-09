@@ -565,7 +565,7 @@ def _linkify(text: str) -> str:
             while current_depth < depth:
                 color = colors[current_depth % len(colors)]
                 result_lines.append(
-                    f'<div class="quote-level" style="border-left: 2px solid {color}; '
+                    f'<div class="ownmail-quote-level" style="border-left: 2px solid {color}; '
                     f'color: {color}; padding-left: 6px; margin-left: 0;">'
                 )
                 current_depth += 1
@@ -575,7 +575,7 @@ def _linkify(text: str) -> str:
                 current_depth -= 1
 
             # Add the content line
-            result_lines.append(f'<div class="quote-content">{rest or "&nbsp;"}</div>')
+            result_lines.append(f'<div class="ownmail-quote-content">{rest or "&nbsp;"}</div>')
             continue
 
         # Close all quote levels before non-quote content
@@ -590,7 +590,7 @@ def _linkify(text: str) -> str:
             rest = escaped[header_match.end():]
             rest = _linkify_line(rest)
             result_lines.append(
-                f'<div><span class="email-header-label">{label}:</span> {rest}</div>'
+                f'<div><span class="ownmail-email-header-label">{label}:</span> {rest}</div>'
             )
             continue
 
@@ -837,6 +837,7 @@ def create_app(
     trusted_senders: list = None,
     config_path: str = None,
     date_format: str = None,
+    auto_scale: bool = True,
 ) -> Flask:
     """Create the Flask application.
 
@@ -848,6 +849,7 @@ def create_app(
         trusted_senders: List of email addresses to always show images from
         config_path: Path to config.yaml for updating trusted senders
         date_format: strftime format for dates (default: auto - "Jan 26" or "2025/12/15")
+        auto_scale: Scale down wide emails to fit viewport
 
     Returns:
         Flask application
@@ -863,6 +865,7 @@ def create_app(
     app.config["trusted_senders"] = {s.lower() for s in (trusted_senders or [])}
     app.config["config_path"] = config_path
     app.config["date_format"] = date_format  # None = auto
+    app.config["auto_scale"] = auto_scale
 
     # Cache for stats (refreshed every 60 seconds)
     stats_cache = {"value": None, "time": 0}
@@ -1354,6 +1357,7 @@ def create_app(
             has_external_images=has_external_images,
             sender_is_trusted=sender_is_trusted,
             needs_padding=needs_padding,
+            auto_scale=app.config["auto_scale"],
             back_url=back_url,
         )
 
@@ -1384,22 +1388,22 @@ def create_app(
     <title>Raw Email - {escape(filename)}</title>
     <style>
         body {{ font-family: monospace; margin: 0; padding: 20px; background: #f5f5f5; }}
-        .filepath {{ background: #fff; padding: 10px 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; word-break: break-all; font-size: 13px; }}
-        .filepath-label {{ color: #666; font-size: 11px; margin-bottom: 5px; }}
-        .content {{ background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; font-size: 12px; line-height: 1.4; overflow-x: auto; word-break: break-all; }}
+        .ownmail-filepath {{ background: #fff; padding: 10px 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; word-break: break-all; font-size: 13px; }}
+        .ownmail-filepath-label {{ color: #666; font-size: 11px; margin-bottom: 5px; }}
+        .ownmail-content {{ background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; font-size: 12px; line-height: 1.4; overflow-x: auto; word-break: break-all; }}
         @media (max-width: 600px) {{
             body {{ padding: 10px; }}
-            .filepath {{ padding: 8px 10px; font-size: 11px; }}
-            .content {{ padding: 10px; font-size: 11px; }}
+            .ownmail-filepath {{ padding: 8px 10px; font-size: 11px; }}
+            .ownmail-content {{ padding: 10px; font-size: 11px; }}
         }}
     </style>
 </head>
 <body>
-    <div class="filepath">
-        <div class="filepath-label">File path:</div>
+    <div class="ownmail-filepath">
+        <div class="ownmail-filepath-label">File path:</div>
         {escape(str(filepath))}
     </div>
-    <div class="content">{escape(content)}</div>
+    <div class="ownmail-content">{escape(content)}</div>
 </body>
 </html>'''
 
@@ -1572,6 +1576,7 @@ def run_server(
     trusted_senders: list = None,
     config_path: str = None,
     date_format: str = None,
+    auto_scale: bool = True,
 ) -> None:
     """Run the web server.
 
@@ -1586,6 +1591,7 @@ def run_server(
         trusted_senders: List of email addresses to always show images from
         config_path: Path to config.yaml for updating trusted senders
         date_format: strftime format for dates (default: auto)
+        auto_scale: Scale down wide emails to fit viewport
     """
     app = create_app(
         archive,
@@ -1595,6 +1601,7 @@ def run_server(
         trusted_senders=trusted_senders,
         config_path=config_path,
         date_format=date_format,
+        auto_scale=auto_scale,
     )
 
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)

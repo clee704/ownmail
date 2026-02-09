@@ -104,7 +104,7 @@ function isTrustedFontUrl(url) {
  * - Removes @media (prefers-color-scheme: dark) blocks
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
  * - Removes url() with external resources (keeps data: URIs and trusted font URLs)
- * - Scopes all selectors under #email-content
+ * - Scopes all selectors under #ownmail-email-content
  * - Leaves @font-face, @keyframes unscoped
  */
 function scopeAndSanitizeCSS(css) {
@@ -172,7 +172,7 @@ function scopeAndSanitizeCSS(css) {
     }
   });
 
-  // Scope selectors under #email-content
+  // Scope selectors under #ownmail-email-content
   root.walkRules((rule) => {
     // Don't scope rules inside @keyframes
     if (
@@ -187,15 +187,15 @@ function scopeAndSanitizeCSS(css) {
       sel = sel.trim();
       if (!sel) return sel;
       // Already scoped
-      if (sel.includes("#email-content")) return sel;
-      // Replace standalone html/body with #email-content
-      if (/^(html|body)$/i.test(sel)) return "#email-content";
-      // Replace html/body prefix: "body .foo" → "#email-content .foo"
+      if (sel.includes("#ownmail-email-content")) return sel;
+      // Replace standalone html/body with #ownmail-email-content
+      if (/^(html|body)$/i.test(sel)) return "#ownmail-email-content";
+      // Replace html/body prefix: "body .foo" → "#ownmail-email-content .foo"
       if (/^(html|body)\s/i.test(sel)) {
-        return sel.replace(/^(html|body)\s+/i, "#email-content ");
+        return sel.replace(/^(html|body)\s+/i, "#ownmail-email-content ");
       }
       // Prefix everything else
-      return "#email-content " + sel;
+      return "#ownmail-email-content " + sel;
     });
   });
 

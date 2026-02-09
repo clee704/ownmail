@@ -3,13 +3,13 @@
 {% block title %}{{ subject }} - ownmail{% endblock %}
 
 {% block content %}
-    <div class="email-detail">
-        <div class="email-header">
-            <div class="email-header-top">
+    <div class="ownmail-email-detail">
+        <div class="ownmail-email-header">
+            <div class="ownmail-email-header-top">
                 <h2>{{ subject or '(No subject)' }}</h2>
-                <div class="email-menu">
-                    <button class="email-menu-btn" onclick="toggleEmailMenu(event)"><span></span><span></span><span></span></button>
-                    <div class="email-menu-dropdown" id="email-menu-dropdown">
+                <div class="ownmail-email-menu">
+                    <button class="ownmail-email-menu-btn" onclick="toggleEmailMenu(event)"><span></span><span></span><span></span></button>
+                    <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
                         {% if has_external_images %}
                         <a href="#" id="menu-load-images" {% if not images_blocked %}style="display: none;"{% endif %} onclick="loadImages(); return false;">Load images</a>
                         <a href="#" id="menu-block-images" {% if images_blocked %}style="display: none;"{% endif %} onclick="blockImages(); return false;">Block images</a>
@@ -17,58 +17,58 @@
                         <a href="#" id="menu-trust-sender" {% if sender_is_trusted %}style="display: none;"{% endif %} onclick="trustSender(); return false;">Always trust this sender</a>
                         <a href="#" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} onclick="untrustSender(); return false;">Untrust this sender</a>
                         {% endif %}
-                        <hr class="email-menu-divider">
+                        <hr class="ownmail-email-menu-divider">
                         {% endif %}
                         <a href="/raw/{{ message_id }}">Show original</a>
                         <a href="/download/{{ message_id }}">Download message</a>
                     </div>
                 </div>
             </div>
-            <div class="email-header-row">
-                <span class="email-header-label">From:</span>
-                <span class="email-header-value">{% if sender_name and sender_email %}
+            <div class="ownmail-email-header-row">
+                <span class="ownmail-email-header-label">From:</span>
+                <span class="ownmail-email-header-value">{% if sender_name and sender_email %}
                     {{ sender_name }}
-                    &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>&gt;
+                    &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="ownmail-clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>&gt;
                 {% elif sender_email %}
-                    <a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>
+                    <a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="ownmail-clickable-header" onclick="showLoading(event)">{{ sender_email }}</a>
                 {% else %}
                     {{ sender }}
                 {% endif %}</span>
             </div>
-            <div class="email-header-row">
-                <span class="email-header-label">To:</span>
-                <span class="email-header-value">{% for rcpt in recipients_parsed %}
+            <div class="ownmail-email-header-row">
+                <span class="ownmail-email-header-label">To:</span>
+                <span class="ownmail-email-header-value">{% for rcpt in recipients_parsed %}
                     {% if not loop.first %}, {% endif %}
                     {% if rcpt.name and rcpt.email %}
                         {{ rcpt.name }}
-                        &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ rcpt.email }}</a>&gt;
+                        &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="ownmail-clickable-header" onclick="showLoading(event)">{{ rcpt.email }}</a>&gt;
                     {% elif rcpt.email %}
-                        <a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading(event)">{{ rcpt.email }}</a>
+                        <a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="ownmail-clickable-header" onclick="showLoading(event)">{{ rcpt.email }}</a>
                     {% else %}
                         {{ rcpt.raw }}
                     {% endif %}
                 {% endfor %}</span>
             </div>
-            <div class="email-header-row">
-                <span class="email-header-label">Date:</span><span class="email-header-value">{{ date }}</span>
+            <div class="ownmail-email-header-row">
+                <span class="ownmail-email-header-label">Date:</span><span class="ownmail-email-header-value">{{ date }}</span>
             </div>
             {% if labels %}
-            <div class="labels">
+            <div class="ownmail-labels">
                 {% for label in labels %}
-                <a href="/search?q=label:{{ label | urlencode }}&sort=date_desc" class="label clickable-label" onclick="showLoading(event)">{{ label }}</a>
+                <a href="/search?q=label:{{ label | urlencode }}&sort=date_desc" class="ownmail-label ownmail-clickable-label" onclick="showLoading(event)">{{ label }}</a>
                 {% endfor %}
             </div>
             {% endif %}
         </div>
 
-        <div class="email-content-area">
+        <div class="ownmail-email-content-area">
         {% if images_blocked and has_external_images %}
-        <div class="image-banner" id="image-banner" data-has-banner="true">
-            <span class="image-banner-text" id="image-banner-text">🖼️ External images are blocked for security.</span>
-            <div class="image-banner-buttons">
+        <div class="ownmail-image-banner" id="ownmail-image-banner" data-has-banner="true">
+            <span class="ownmail-image-banner-text" id="ownmail-image-banner-text">🖼️ External images are blocked for security.</span>
+            <div class="ownmail-image-banner-buttons">
                 <button id="load-images-btn" onclick="loadImages()">Load Images</button>
                 {% if sender_email %}
-                <button class="trust-btn" onclick="trustSender()">Always trust this sender</button>
+                <button class="ownmail-trust-btn" onclick="trustSender()">Always trust this sender</button>
                 {% endif %}
             </div>
         </div>
@@ -78,12 +78,12 @@
         var senderEmail = "{{ sender_email }}";
 
         function hideBanner() {
-            var banner = document.getElementById('image-banner');
+            var banner = document.getElementById('ownmail-image-banner');
             if (banner) banner.style.display = 'none';
         }
 
         function loadImages() {
-            var container = document.getElementById('email-content');
+            var container = document.getElementById('ownmail-email-content');
             if (!container) return;
 
             var imgs = Array.from(container.querySelectorAll('img[data-src]'));
@@ -97,7 +97,7 @@
         }
 
         function blockImages() {
-            var container = document.getElementById('email-content');
+            var container = document.getElementById('ownmail-email-content');
             if (!container) return;
 
             var imgs = Array.from(container.querySelectorAll('img[src]'));
@@ -154,20 +154,51 @@
         {% endif %}
 
         {% if body_html %}
-            <div id="email-content" class="email-content-html{% if needs_padding %} email-content-padded{% endif %}">{{ body_html | safe }}</div>
+            <div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}">{{ body_html | safe }}</div>
+            {% if auto_scale %}
+            <script>
+            (function() {
+                var container = document.querySelector('.ownmail-email-content-area');
+                var content = document.getElementById('ownmail-email-content');
+                if (!container || !content) return;
+
+                function scaleToFit() {
+                    // Reset any previous scaling
+                    content.style.zoom = '';
+                    content.style.overflow = 'auto';
+
+                    // Force reflow so measurements are fresh
+                    void content.offsetWidth;
+
+                    var cw = content.clientWidth;
+                    var sw = content.scrollWidth;
+
+                    if (sw > cw + 1 && cw > 0) {
+                        var scale = cw / sw;
+                        content.style.overflow = 'hidden';
+                        content.style.zoom = scale;
+                    }
+                }
+
+                scaleToFit();
+                window.addEventListener('load', scaleToFit);
+                window.addEventListener('resize', scaleToFit);
+            })();
+            </script>
+            {% endif %}
         {% else %}
-            <div id="email-content" class="email-content-plain">
-                <pre class="email-body">{{ body | safe }}</pre>
+            <div id="ownmail-email-content" class="ownmail-email-content-plain">
+                <pre class="ownmail-email-body">{{ body | safe }}</pre>
             </div>
         {% endif %}
         </div>
 
         {% if attachments %}
-        <div class="attachments">
+        <div class="ownmail-attachments">
             <h4>Attachments</h4>
-            <ul class="attachment-list">
+            <ul class="ownmail-attachment-list">
             {% for att in attachments %}
-                <li class="attachment-item">
+                <li class="ownmail-attachment-item">
                     <a href="/attachment/{{ message_id }}/{{ loop.index0 }}">📎 {{ att.filename }}</a>
                     ({{ att.size }})
                 </li>
@@ -180,15 +211,15 @@
 <script>
 function toggleEmailMenu(event) {
     event.stopPropagation();
-    const dropdown = document.getElementById('email-menu-dropdown');
-    dropdown.classList.toggle('show');
+    const dropdown = document.getElementById('ownmail-email-menu-dropdown');
+    dropdown.classList.toggle('ownmail-show');
 }
 
 // Close dropdown when clicking outside
 document.addEventListener('click', function(event) {
-    const dropdown = document.getElementById('email-menu-dropdown');
-    if (dropdown && dropdown.classList.contains('show')) {
-        dropdown.classList.remove('show');
+    const dropdown = document.getElementById('ownmail-email-menu-dropdown');
+    if (dropdown && dropdown.classList.contains('ownmail-show')) {
+        dropdown.classList.remove('ownmail-show');
     }
 });
 </script>

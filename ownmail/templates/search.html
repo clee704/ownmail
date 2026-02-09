@@ -3,10 +3,10 @@
 {% block title %}Search - ownmail{% endblock %}
 
 {% block content %}
-    <div class="sticky-header">
-    <form class="search-form" action="/search" method="get">
+    <div class="ownmail-sticky-header">
+    <form class="ownmail-search-form" action="/search" method="get">
         <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search emails..." autofocus>
-        <select name="sort" class="sort-select" id="sort-select">
+        <select name="sort" class="ownmail-sort-select" id="sort-select">
             <option value="relevance" id="relevance-option" {{ 'selected' if sort == 'relevance' else '' }}{% if hide_relevance %} disabled{% endif %}>Relevance</option>
             <option value="date_desc" {{ 'selected' if sort == 'date_desc' else '' }}>Newest first</option>
             <option value="date_asc" {{ 'selected' if sort == 'date_asc' else '' }}>Oldest first</option>
@@ -44,14 +44,14 @@
     })();
     </script>
     {% if results %}
-        <div class="results-header">
+        <div class="ownmail-results-header">
             <p>{% if query %}Showing{% else %}Recent emails:{% endif %} {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %}{% if query %} (took {{ "%.2f"|format(search_time) }}s){% endif %}</p>
             {% if has_prev or has_more %}
-            <div class="pagination">
+            <div class="ownmail-pagination">
                 {% if has_prev %}
                     <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
                 {% endif %}
-                <span class="current">Page {{ page }}</span>
+                <span class="ownmail-current">Page {{ page }}</span>
                 {% if has_more %}
                         <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}">Next &raquo;</a>
                     {% endif %}
@@ -62,35 +62,35 @@
     </div>
 
     {% if search_error %}
-        <div class="search-error">
+        <div class="ownmail-search-error">
             <strong>Search error:</strong> {{ search_error }}
             <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
         </div>
     {% elif results %}
-            <ul class="email-list">
+            <ul class="ownmail-email-list">
             {% for result in results %}
-                <li class="email-row" onclick="window.location='/email/{{ result.message_id }}'">
-                    <span class="email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
-                    <span class="email-row-content">
-                        <span class="email-subject">{{ result.subject or '(No subject)' }}</span>
-                        {% if result.snippet %}<span class="email-snippet">{{ result.snippet }}</span>{% endif %}
+                <li class="ownmail-email-row" onclick="window.location='/email/{{ result.message_id }}'">
+                    <span class="ownmail-email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
+                    <span class="ownmail-email-row-content">
+                        <span class="ownmail-email-subject">{{ result.subject or '(No subject)' }}</span>
+                        {% if result.snippet %}<span class="ownmail-email-snippet">{{ result.snippet }}</span>{% endif %}
                     </span>
-                    <span class="email-date">{{ result.date_short }}</span>
+                    <span class="ownmail-email-date">{{ result.date_short }}</span>
                 </li>
             {% endfor %}
             </ul>
             {% if has_prev or has_more %}
-            <div class="pagination pagination-bottom">
+            <div class="ownmail-pagination ownmail-pagination-bottom">
                 {% if has_prev %}
                     <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
                 {% endif %}
-                <span class="current">Page {{ page }}</span>
+                <span class="ownmail-current">Page {{ page }}</span>
                 {% if has_more %}
                     <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}">Next &raquo;</a>
                 {% endif %}
             </div>
             {% endif %}
     {% elif query %}
-        <div class="no-results">No results found for "{{ query }}"</div>
+        <div class="ownmail-no-results">No results found for "{{ query }}"</div>
     {% endif %}
 {% endblock %}
