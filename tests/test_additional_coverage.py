@@ -745,7 +745,7 @@ class TestSetupCommand:
         config = {"sources": []}
 
         # Email first, then source name
-        inputs = iter(["user@gmail.com", "my_source", "n"])
+        inputs = iter(["user@gmail.com", "my_source"])
 
         # Create a mock keychain that doesn't touch real keychain
         mock_keychain = MagicMock()
@@ -753,7 +753,8 @@ class TestSetupCommand:
         mock_keychain.load_gmail_token.return_value = {"token": "existing"}
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, None, method="oauth")
+            with patch('pathlib.Path.cwd', return_value=temp_dir):
+                cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
         assert "already exists" in captured.out
@@ -782,14 +783,15 @@ class TestSetupCommand:
         creds_file = temp_dir / "credentials.json"
         creds_file.write_text('{"installed": {"client_id": "test", "client_secret": "secret"}}')
 
-        inputs = iter(["user@gmail.com", "test_source", "n"])
+        inputs = iter(["user@gmail.com", "test_source"])
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = False
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}  # Token exists, no OAuth
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, None, credentials_file=creds_file)
+            with patch('pathlib.Path.cwd', return_value=temp_dir):
+                cmd_setup(mock_keychain, config, None, credentials_file=creds_file)
 
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out
@@ -807,7 +809,6 @@ class TestSetupCommand:
             "",  # Second empty line to finish JSON input
             "user@gmail.com",
             "my_source",
-            "n",  # Don't add to config
         ])
 
         mock_keychain = MagicMock()
@@ -815,7 +816,8 @@ class TestSetupCommand:
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}  # Token exists
 
         with patch('builtins.input', lambda prompt="": next(inputs)):
-            cmd_setup(mock_keychain, config, None, method="oauth")
+            with patch('pathlib.Path.cwd', return_value=temp_dir):
+                cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out

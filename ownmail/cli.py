@@ -15,6 +15,30 @@ from ownmail.providers.gmail import GmailProvider
 SCRIPT_DIR = Path(__file__).parent.absolute()
 DEFAULT_ARCHIVE_DIR = SCRIPT_DIR.parent / "archive"
 
+# Template for new config.yaml with commented options
+_CONFIG_TEMPLATE = """\
+# ownmail configuration
+# See README.md for all options.
+
+# Where to store emails (default: ./archive)
+# archive_root: /path/to/your/archive
+
+# Store the database separately from the archive (optional).
+# Useful when archiving to a slow/external drive but wanting fast search.
+# db_dir: /path/to/fast/local/storage
+
+sources:
+{sources}
+
+# Web UI settings (used by 'ownmail serve')
+# web:
+#   port: 8080              # Default: 8080
+#   page_size: 50            # Emails per search page (default: 50)
+#   block_images: true       # Block external images by default (default: true)
+#   trusted_senders:         # Always load images from these senders
+#     - sender@example.com
+"""
+
 
 def cmd_setup(
     keychain: KeychainStorage,
@@ -58,6 +82,43 @@ def cmd_setup(
         _setup_imap(keychain, config, config_path, source_name)
     else:
         _setup_oauth(keychain, config, config_path, source_name, credentials_file)
+
+
+def _update_or_create_config(
+    config: dict,
+    config_path: Optional[Path],
+    source_name: str,
+    source_snippet: str,
+) -> None:
+    """Update existing config or create a new one with the source.
+
+    Args:
+        config: Current loaded config dict
+        config_path: Path to existing config file, or None
+        source_name: Name of the source being added
+        source_snippet: YAML snippet for the source (indented, starts with '  - name:')
+    """
+    sources = get_sources(config)
+    existing_source = get_source_by_name(config, source_name)
+
+    if existing_source:
+        print(f"\n✓ Source '{source_name}' already exists in config.")
+        return
+
+    if config_path and config_path.exists():
+        # Append source to existing config
+        print(f"\n  Adding source to {config_path}...")
+        with open(config_path, "a") as f:
+            if not sources:
+                f.write("\nsources:\n")
+            f.write(source_snippet)
+        print(f"✓ Added source '{source_name}' to {config_path}")
+    else:
+        # Create new config file
+        new_path = config_path or (Path.cwd() / "config.yaml")
+        content = _CONFIG_TEMPLATE.format(sources=source_snippet)
+        new_path.write_text(content)
+        print(f"\n✓ Created {new_path}")
 
 
 def _setup_imap(
@@ -139,7 +200,7 @@ def _setup_imap(
         source_name = input(f"\nSource name [{default_name}]: ").strip() or default_name
 
     # Generate config snippet
-    config_snippet = f"""
+    source_snippet = f"""\
   - name: {source_name}
     type: imap
     host: {host}
@@ -148,26 +209,7 @@ def _setup_imap(
       secret_ref: keychain:imap-password/{account_email}
 """
 
-    # Check if we should update config file
-    sources = get_sources(config)
-    existing_source = get_source_by_name(config, source_name)
-
-    if existing_source:
-        print(f"\n✓ Source '{source_name}' already exists in config.")
-        print("  No config changes needed.")
-    else:
-        print("\n" + "-" * 50)
-        print("Add this to your config.yaml under 'sources:':")
-        print(config_snippet)
-
-        if config_path and config_path.exists():
-            add_to_config = input("Add to config.yaml automatically? [Y/n]: ").strip().lower()
-            if add_to_config != "n":
-                with open(config_path, "a") as f:
-                    if not sources:
-                        f.write("\nsources:\n")
-                    f.write(config_snippet)
-                print(f"✓ Added to {config_path}")
+    _update_or_create_config(config, config_path, source_name, source_snippet)
 
     print("\n✓ Setup complete!")
     print(f"  Run 'ownmail backup --source {source_name}' to start backing up.")
@@ -276,7 +318,7 @@ def _setup_oauth(
         provider = GmailProvider(account=account_email, keychain=keychain)
         provider.authenticate()
 
-    config_snippet = f"""
+    source_snippet = f"""\
   - name: {source_name}
     type: gmail_api
     account: {account_email}
@@ -285,24 +327,7 @@ def _setup_oauth(
     include_labels: true
 """
 
-    sources = get_sources(config)
-    existing_source = get_source_by_name(config, source_name)
-
-    if existing_source:
-        print(f"\n✓ Source '{source_name}' already exists in config.")
-    else:
-        print("\n" + "-" * 50)
-        print("Add this to your config.yaml under 'sources:':")
-        print(config_snippet)
-
-        if config_path and config_path.exists():
-            add_to_config = input("Add to config.yaml automatically? [Y/n]: ").strip().lower()
-            if add_to_config != "n":
-                with open(config_path, "a") as f:
-                    if not sources:
-                        f.write("\nsources:\n")
-                    f.write(config_snippet)
-                print(f"✓ Added to {config_path}")
+    _update_or_create_config(config, config_path, source_name, source_snippet)
 
     print("\n✓ Setup complete!")
     print(f"  Run 'ownmail backup --source {source_name}' to start backing up.")
