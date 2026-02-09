@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings - ownmail{% endblock %}
+{% block title %}Settings - {{ brand_name }}{% endblock %}
 
 {% block content %}
     <div class="ownmail-settings-page">
@@ -32,6 +32,13 @@
                         </label>
                     </div>
                     <p class="ownmail-settings-hint">Theme preference is stored in your browser.</p>
+                </div>
+
+                <div class="ownmail-settings-field">
+                    <label for="brand_name">Brand name</label>
+                    <input type="text" name="brand_name" id="brand_name"
+                           value="{{ settings.brand_name }}" placeholder="ownmail">
+                    <p class="ownmail-settings-hint">Name shown in the header.</p>
                 </div>
 
                 <div class="ownmail-settings-field">

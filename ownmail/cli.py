@@ -649,6 +649,7 @@ Examples:
                 trusted_senders = web_config.get("trusted_senders", [])
                 date_format = web_config.get("date_format")  # e.g., "%Y-%m-%d" or "%m/%d"
                 auto_scale = web_config.get("auto_scale", True)
+                brand_name = web_config.get("brand_name", "ownmail")
                 run_server(
                     serve_archive,
                     args.host,
@@ -661,6 +662,7 @@ Examples:
                     config_path,
                     date_format,
                     auto_scale,
+                    brand_name,
                 )
 
     except KeyboardInterrupt:
