@@ -293,10 +293,18 @@ def create_app(
         header h1 { margin: 0; font-size: 1.5em; }
         header h1 a { color: inherit; text-decoration: none; }
         .stats { color: #666; font-size: 0.9em; }
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            background: #f5f5f5;
+            z-index: 100;
+            padding: 15px 20px 5px 20px;
+            margin: -10px -20px 0 -20px;
+        }
         .search-form {
             display: flex;
             gap: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 8px;
         }
         .search-form input[type="text"] {
             flex: 1;
@@ -323,7 +331,7 @@ def create_app(
             background: white;
             cursor: pointer;
         }
-        .email-list { list-style: none; padding: 0; }
+        .email-list { list-style: none; padding: 0; margin: 0; }
         .email-item {
             background: white;
             padding: 15px;
@@ -358,7 +366,8 @@ def create_app(
             background: white;
         }
         .back-link { margin-bottom: 15px; margin-top: 15px; }
-        .back-link a { color: #0066cc; }
+        .back-link a { color: #0066cc; text-decoration: none; }
+        .back-link a:hover { text-decoration: underline; }
         .no-results { color: #666; text-align: center; padding: 40px; }
         .search-error {
             background: #f8d7da;
@@ -437,9 +446,9 @@ def create_app(
         .results-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding: 10px 0;
+            align-items: end;
+            padding: 0;
+            margin-bottom: 10px;
         }
         .results-header p { margin: 0; color: #666; }
         .results-header .pagination { margin: 0; }
@@ -560,6 +569,7 @@ def create_app(
     ).replace(
         "{% block content %}{% endblock %}",
         """{% block content %}
+    <div class="sticky-header">
     <form class="search-form" action="/search" method="get">
         <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search emails..." autofocus>
         <select name="sort" class="sort-select" id="sort-select">
@@ -603,13 +613,7 @@ def create_app(
         Search: <code>from:</code> <code>subject:</code> <code>attachment:</code> <code>before:2024-01-01</code> <code>after:2023-06-15</code> <code>label:INBOX</code>
         &bull; <a href="/help">Syntax help</a>
     </div>
-
-    {% if search_error %}
-        <div class="search-error">
-            <strong>Search error:</strong> {{ search_error }}
-            <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
-        </div>
-    {% elif results %}
+    {% if results %}
         <div class="results-header">
             <p>{% if query %}Showing{% else %}Recent emails:{% endif %} {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %}{% if query %} (took {{ "%.2f"|format(search_time) }}s){% endif %}</p>
             {% if has_prev or has_more %}
@@ -624,6 +628,15 @@ def create_app(
                 </div>
                 {% endif %}
             </div>
+    {% endif %}
+    </div>
+
+    {% if search_error %}
+        <div class="search-error">
+            <strong>Search error:</strong> {{ search_error }}
+            <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
+        </div>
+    {% elif results %}
             <ul class="email-list">
             {% for result in results %}
                 <li class="email-item">
