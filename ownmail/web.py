@@ -601,6 +601,7 @@ def create_app(
     ).replace(
         "{% block content %}{% endblock %}",
         """{% block content %}
+    <div class="back-link"><a href="javascript:history.back()">&larr; Back to search</a></div>
     <div class="help-page">
         <h2>Search Syntax</h2>
 
@@ -646,8 +647,6 @@ def create_app(
             <tr><td><code>attachment:pdf report OR invoice</code></td><td>PDFs with report or invoice</td></tr>
             <tr><td><code>label:IMPORTANT from:boss@work.com</code></td><td>Important emails from boss</td></tr>
         </table>
-
-        <p><a href="/">&larr; Back to search</a></p>
     </div>
 {% endblock %}"""
     )
@@ -665,9 +664,9 @@ def create_app(
                 <span class="email-header-label">From:</span>
                 {% if sender_name and sender_email %}
                     {{ sender_name }}
-                    &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header">{{ sender_email }}</a>&gt;
+                    &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ sender_email }}</a>&gt;
                 {% elif sender_email %}
-                    <a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header">{{ sender_email }}</a>
+                    <a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ sender_email }}</a>
                 {% else %}
                     {{ sender }}
                 {% endif %}
@@ -678,9 +677,9 @@ def create_app(
                     {% if not loop.first %}, {% endif %}
                     {% if rcpt.name and rcpt.email %}
                         {{ rcpt.name }}
-                        &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header">{{ rcpt.email }}</a>&gt;
+                        &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ rcpt.email }}</a>&gt;
                     {% elif rcpt.email %}
-                        <a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header">{{ rcpt.email }}</a>
+                        <a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" class="clickable-header" onclick="showLoading()">{{ rcpt.email }}</a>
                     {% else %}
                         {{ rcpt.raw }}
                     {% endif %}
@@ -692,7 +691,7 @@ def create_app(
             {% if labels %}
             <div class="labels">
                 {% for label in labels %}
-                <a href="/search?q=label:{{ label | urlencode }}&sort=date_desc" class="label clickable-label">{{ label }}</a>
+                <a href="/search?q=label:{{ label | urlencode }}&sort=date_desc" class="label clickable-label" onclick="showLoading()">{{ label }}</a>
                 {% endfor %}
             </div>
             {% endif %}
