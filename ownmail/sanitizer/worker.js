@@ -101,7 +101,6 @@ function isTrustedFontUrl(url) {
 /**
  * Scope and sanitize a CSS stylesheet using postcss AST.
  * - Removes @charset; allows @import only from trusted font providers
- * - Removes @media (prefers-color-scheme: dark) blocks
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
  * - Removes url() with external resources (keeps data: URIs and trusted font URLs)
  * - Scopes all selectors under #ownmail-email-content
@@ -124,13 +123,6 @@ function scopeAndSanitizeCSS(css) {
       if (!isTrustedFontUrl(atRule.params)) {
         atRule.remove();
       }
-    }
-  });
-
-  // Remove dark mode media queries
-  root.walkAtRules("media", (atRule) => {
-    if (/prefers-color-scheme\s*:\s*dark/i.test(atRule.params)) {
-      atRule.remove();
     }
   });
 
@@ -263,6 +255,116 @@ purify.addHook("afterSanitizeAttributes", (node) => {
 });
 
 /**
+ * Detect whether an email supports dark mode natively.
+ *
+ * Returns true if:
+ * 1. The email's CSS contains @media (prefers-color-scheme: dark), OR
+ * 2. The email's first content elements use dark backgrounds (luminance < 0.4)
+ *
+ * When true, we let the email render naturally in dark mode.
+ * When false, we force a light background so text remains readable.
+ */
+function detectSupportsDarkMode(html) {
+  try {
+    const dom = new JSDOM(html);
+    const doc = dom.window.document;
+
+    // Check for dark mode media queries in <style> blocks
+    const styles = doc.querySelectorAll("style");
+    for (const style of styles) {
+      if (/prefers-color-scheme\s*:\s*dark/i.test(style.textContent)) {
+        return true;
+      }
+    }
+
+    // Check if the email uses dark backgrounds explicitly
+    const body = doc.body;
+    if (!body) return false;
+
+    const children = Array.from(body.children);
+    const contentElements = children.filter(
+      (el) => el.tagName.toLowerCase() !== "style"
+    );
+
+    for (const el of contentElements.slice(0, 2)) {
+      if (isDarkBackground(el)) return true;
+      const firstChild = el.children[0];
+      if (firstChild && isDarkBackground(firstChild)) return true;
+    }
+
+    return false;
+  } catch (e) {
+    return false; // Default to forced light mode on error
+  }
+}
+
+/**
+ * Check if an element has a dark background color.
+ */
+function isDarkBackground(el) {
+  let color = el.getAttribute("bgcolor");
+  if (color) return isColorDark(color);
+
+  const style = el.getAttribute("style") || "";
+  const match = style.match(/background(?:-color)?\s*:\s*([^;]+)/i);
+  if (match) return isColorDark(match[1].trim());
+
+  return false;
+}
+
+/**
+ * Determine if a color string is dark (luminance < 0.4).
+ * Supports hex (#rgb, #rrggbb), rgb(), and named colors.
+ */
+function isColorDark(color) {
+  color = color.trim().toLowerCase();
+
+  // Named colors (common dark ones)
+  const darkNames = new Set([
+    "black", "darkblue", "darkgreen", "darkred", "darkgray", "darkgrey",
+    "darkslategray", "darkslategrey", "darkviolet", "darkcyan", "darkmagenta",
+    "darkolivegreen", "darkslateblue", "midnightblue", "navy", "maroon",
+    "indigo", "darkkhaki", "dimgray", "dimgrey",
+  ]);
+  if (darkNames.has(color)) return true;
+
+  let r, g, b;
+
+  // Hex
+  const hexMatch = color.match(/^#([0-9a-f]{3,8})$/);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    if (hex.length === 3) {
+      r = parseInt(hex[0] + hex[0], 16);
+      g = parseInt(hex[1] + hex[1], 16);
+      b = parseInt(hex[2] + hex[2], 16);
+    } else if (hex.length >= 6) {
+      r = parseInt(hex.slice(0, 2), 16);
+      g = parseInt(hex.slice(2, 4), 16);
+      b = parseInt(hex.slice(4, 6), 16);
+    } else {
+      return false;
+    }
+  }
+
+  // rgb() / rgba()
+  if (r === undefined) {
+    const rgbMatch = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (rgbMatch) {
+      r = parseInt(rgbMatch[1]);
+      g = parseInt(rgbMatch[2]);
+      b = parseInt(rgbMatch[3]);
+    }
+  }
+
+  if (r === undefined) return false;
+
+  // Relative luminance (simplified sRGB)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance < 0.4;
+}
+
+/**
  * Detect whether an email needs padding.
  *
  * Heuristic: if the first significant element(s) in the email set an explicit
@@ -345,7 +447,11 @@ rl.on("line", (line) => {
     // formatted text) need breathing room.
     const needsPadding = detectNeedsPadding(clean);
 
-    process.stdout.write(JSON.stringify({ id, html: clean, error: null, needsPadding }) + "\n");
+    // Detect if the email supports dark mode natively (has dark-mode CSS
+    // or uses dark backgrounds).  If so, we skip forcing a light background.
+    const supportsDarkMode = detectSupportsDarkMode(clean);
+
+    process.stdout.write(JSON.stringify({ id, html: clean, error: null, needsPadding, supportsDarkMode }) + "\n");
   } catch (e) {
     process.stdout.write(
       JSON.stringify({ id, html: html, error: e.message }) + "\n"

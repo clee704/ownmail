@@ -61,7 +61,7 @@
             {% endif %}
         </div>
 
-        <div class="ownmail-email-content-area">
+        <div class="ownmail-email-content-area{% if supports_dark %} ownmail-email-dark{% endif %}">
         {% if images_blocked and has_external_images %}
         <div class="ownmail-image-banner" id="ownmail-image-banner" data-has-banner="true">
             <span class="ownmail-image-banner-text" id="ownmail-image-banner-text">🖼️ External images are blocked for security.</span>

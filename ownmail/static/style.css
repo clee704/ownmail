@@ -476,13 +476,18 @@ a:hover { text-decoration: underline; }
         background: #242424;
         display: flow-root;
     }
-    /* Email HTML assumes a white background — force light mode for email content.
-       !important needed because email's scoped <style> (inline, later in source)
-       can rewrite body{} → #ownmail-email-content{} and override by source order. */
-    #ownmail-email-content {
-        background: #fff !important;
-        color: #333 !important;
+    /* Default: force light mode for HTML email content since most emails
+       assume a white background.  The .ownmail-email-dark class overrides
+       this when the email has its own dark mode CSS or dark backgrounds. */
+    .ownmail-email-content-area:not(.ownmail-email-dark) #ownmail-email-content {
+        background: #fff;
+        color: #333;
         color-scheme: light;
+        border-radius: 0 0 5px 5px;
+    }
+    /* When email supports dark mode natively, let it render naturally */
+    .ownmail-email-content-area.ownmail-email-dark #ownmail-email-content {
+        color-scheme: dark;
         border-radius: 0 0 5px 5px;
     }
     #ownmail-email-content.ownmail-email-content-plain {
