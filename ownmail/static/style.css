@@ -7,6 +7,65 @@ body {
     background: #f5f5f5;
     color: #333;
 }
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    body {
+        background: #1a1a1a;
+        color: #e0e0e0;
+    }
+    .stats { color: #999; }
+    .stats a { color: #6cb6ff; }
+    .sticky-header { background: #1a1a1a; }
+    .search-form input[type="text"] {
+        background: #2d2d2d;
+        border-color: #444;
+        color: #e0e0e0;
+    }
+    .search-form input[type="text"]::placeholder { color: #888; }
+    .sort-select {
+        background: #2d2d2d;
+        border-color: #444;
+        color: #e0e0e0;
+    }
+    .email-list, .email-detail, .help-page {
+        background: #242424;
+        border-color: #333;
+    }
+    .email-item { border-bottom-color: #333; }
+    .email-item:hover { background: #2d2d2d; }
+    .email-subject { color: #e0e0e0; }
+    .email-snippet { color: #999; }
+    .email-date { color: #888; }
+    .email-header { border-bottom-color: #333; }
+    .email-header-label { color: #999; }
+    .clickable-header { color: #6cb6ff; }
+    .label {
+        background: #1e3a5f;
+        color: #6cb6ff;
+    }
+    .label:hover { background: #264d7a; }
+    .attachments { border-top-color: #333; }
+    .attachment-item { border-bottom-color: #333; }
+    .attachment-item a { color: #6cb6ff; }
+    .help-table td { border-bottom-color: #333; }
+    .help-table td:first-child { background: #2d2d2d; }
+    .image-banner {
+        background: #3d3520;
+        border-color: #665c3d;
+    }
+    .pagination { border-top-color: #333; }
+    .pagination a { color: #6cb6ff; }
+    .loading-overlay { background: rgba(0, 0, 0, 0.8); }
+    .loading-spinner { border-color: #333; border-top-color: #6cb6ff; }
+    .email-menu-dropdown {
+        background: #2d2d2d;
+        border-color: #444;
+    }
+    .email-menu-dropdown a { color: #e0e0e0; }
+    .email-menu-dropdown a:hover { background: #3d3d3d; }
+}
+
 header {
     display: flex;
     justify-content: space-between;
