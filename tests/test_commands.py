@@ -1549,3 +1549,70 @@ class TestVerifyEndToEnd:
         provider.get_new_message_ids.assert_called_once()
         call_args = provider.get_new_message_ids.call_args
         assert call_args[0][0] is None  # sync_state=None → full scan
+
+    def test_verify_fix_moved_file_then_web_ui_works(self, temp_dir, capsys):
+        """Rename file on disk → verify --fix → DB updated → web UI serves it."""
+        from ownmail.web import create_app
+
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email on disk and register in DB
+        old_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        old_dir.mkdir(parents=True)
+
+        eml_content = (
+            b"From: sender@example.com\r\n"
+            b"To: recipient@example.com\r\n"
+            b"Subject: Moved Email Test\r\n"
+            b"Date: Mon, 15 Jan 2024 10:30:00 +0000\r\n"
+            b"Content-Type: text/plain\r\n\r\n"
+            b"This email was moved on disk."
+        )
+        old_path = old_dir / "original_name.eml"
+        old_path.write_bytes(eml_content)
+
+        content_hash = hashlib.sha256(eml_content).hexdigest()
+        eid = _eid("moved-test")
+        old_rel = str(old_path.relative_to(temp_dir))
+        archive.db.mark_downloaded(eid, "moved-test", old_rel, content_hash=content_hash)
+        archive.db.index_email(
+            email_id=eid,
+            subject="Moved Email Test",
+            sender="sender@example.com",
+            recipients="recipient@example.com",
+            date_str="Mon, 15 Jan 2024 10:30:00 +0000",
+            body="This email was moved on disk.",
+            attachments="",
+        )
+
+        # Rename/move the file on disk
+        new_dir = temp_dir / "accounts" / "test" / "2024" / "02"
+        new_dir.mkdir(parents=True)
+        new_path = new_dir / "renamed.eml"
+        old_path.rename(new_path)
+
+        # File stays at new path, old path is gone
+        assert not old_path.exists()
+        assert new_path.exists()
+
+        # Run verify --fix → should detect moved file and update DB
+        cmd_verify(archive, fix=True)
+        out = capsys.readouterr().out
+        assert "Updated" in out
+
+        # Verify DB now has the new path
+        new_rel = str(new_path.relative_to(temp_dir))
+        with sqlite3.connect(archive.db.db_path) as conn:
+            row = conn.execute(
+                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+        assert row[0] == new_rel
+
+        # Web UI should serve the email at the updated path
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get(f"/email/{eid}")
+            assert response.status_code == 200
+            assert b"Moved Email Test" in response.data
+            assert b"sender@example.com" in response.data
+            assert b"This email was moved on disk." in response.data
