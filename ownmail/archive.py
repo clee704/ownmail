@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 from datetime import timezone
-from email.utils import parsedate_to_datetime
+from email.utils import parsedate_to_datetime as _parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -354,13 +354,18 @@ class EmailArchive:
             Tuple of (filepath, email_date_iso) or (None, None) on error
         """
         try:
-            # Parse date for directory structure
+            # Parse date for directory structure using the same robust
+            # logic as EmailParser (Korean weekday prefixes, numeric months,
+            # Received-header fallback, etc.)
             email_msg = email.message_from_bytes(raw_data)
             date_str = email_msg.get("Date", "")
+            if not date_str:
+                date_str = EmailParser._extract_date_from_received(email_msg)
+            date_str = EmailParser._normalize_date(date_str)
             email_date_iso = None
 
             try:
-                msg_date = parsedate_to_datetime(date_str)
+                msg_date = _parsedate_to_datetime(date_str)
                 # Normalize to UTC for consistent sorting across timezones
                 msg_date_utc = msg_date.astimezone(timezone.utc)
                 date_prefix = msg_date_utc.strftime("%Y%m%d_%H%M%S")
