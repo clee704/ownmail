@@ -235,6 +235,18 @@
         }
         document.getElementById('loading-overlay').classList.add('active');
     }
+    function hideLoading() {
+        document.getElementById('loading-overlay').classList.remove('active');
+    }
+    // Hide loading overlay when page is shown (handles back/forward navigation)
+    // This fires when page is restored from bfcache (back-forward cache)
+    window.addEventListener('pageshow', function(event) {
+        hideLoading();
+    });
+    // Also hide on regular page load just in case
+    window.addEventListener('load', function() {
+        hideLoading();
+    });
     // Show loading on form submit
     document.querySelectorAll('form').forEach(function(form) {
         form.addEventListener('submit', function(e) {
