@@ -149,6 +149,74 @@ class TestFullTextSearch:
         results = db.search("nonexistent query xyz123", include_unknown=True)
         assert results == []
 
+    def test_search_has_attachment(self, temp_dir):
+        """Test has:attachment filter finds emails with attachments."""
+        db = ArchiveDatabase(temp_dir)
+
+        # Email with attachment
+        db.mark_downloaded("msg1", "test1.eml")
+        db.index_email(
+            message_id="msg1",
+            subject="Report",
+            sender="alice@example.com",
+            recipients="bob@example.com",
+            date_str="Mon, 1 Jan 2024",
+            body="See attached",
+            attachments="report.pdf",
+        )
+
+        # Email without attachment
+        db.mark_downloaded("msg2", "test2.eml")
+        db.index_email(
+            message_id="msg2",
+            subject="Hi",
+            sender="alice@example.com",
+            recipients="bob@example.com",
+            date_str="Mon, 1 Jan 2024",
+            body="Just saying hi",
+            attachments="",
+        )
+
+        results = db.search("has:attachment", include_unknown=True)
+        assert len(results) == 1
+        assert results[0][0] == "msg1"
+
+    def test_search_attachment_type(self, temp_dir):
+        """Test attachment:type filter finds emails with specific attachment types."""
+        db = ArchiveDatabase(temp_dir)
+
+        # Email with PDF
+        db.mark_downloaded("msg1", "test1.eml")
+        db.index_email(
+            message_id="msg1",
+            subject="Report",
+            sender="alice@example.com",
+            recipients="bob@example.com",
+            date_str="Mon, 1 Jan 2024",
+            body="See attached PDF",
+            attachments="report.pdf",
+        )
+
+        # Email with Excel
+        db.mark_downloaded("msg2", "test2.eml")
+        db.index_email(
+            message_id="msg2",
+            subject="Spreadsheet",
+            sender="alice@example.com",
+            recipients="bob@example.com",
+            date_str="Mon, 1 Jan 2024",
+            body="See attached spreadsheet",
+            attachments="data.xlsx",
+        )
+
+        results = db.search("attachment:pdf", include_unknown=True)
+        assert len(results) == 1
+        assert results[0][0] == "msg1"
+
+        results = db.search("attachment:xlsx", include_unknown=True)
+        assert len(results) == 1
+        assert results[0][0] == "msg2"
+
     def test_clear_index(self, temp_dir):
         """Test clearing the search index."""
         db = ArchiveDatabase(temp_dir)
