@@ -153,6 +153,7 @@ def cmd_backup(
     source_name: Optional[str] = None,
     since: Optional[str] = None,
     until: Optional[str] = None,
+    verbose: bool = False,
 ) -> None:
     """Run backup for one or all sources.
 
@@ -162,6 +163,7 @@ def cmd_backup(
         source_name: Specific source to backup (None = all)
         since: Only backup emails after this date (YYYY-MM-DD)
         until: Only backup emails before this date (YYYY-MM-DD)
+        verbose: Show detailed progress output
     """
     print("\n" + "=" * 50)
     print("ownmail - Backup")
@@ -207,6 +209,8 @@ def cmd_backup(
                 continue
 
             # Create provider
+            if verbose:
+                print("[verbose] Creating Gmail provider...", flush=True)
             provider = GmailProvider(
                 account=account,
                 keychain=keychain,
@@ -214,12 +218,16 @@ def cmd_backup(
             )
 
             # Authenticate
+            if verbose:
+                print("[verbose] Authenticating...", flush=True)
             provider.authenticate()
 
             # Get stats before backup
+            if verbose:
+                print("[verbose] Getting archive stats...", flush=True)
             stats = archive.db.get_stats(account)
-            print(f"Archive location: {archive.archive_dir}")
-            print(f"Previously backed up: {stats['total_emails']} emails")
+            print(f"Archive location: {archive.archive_dir}", flush=True)
+            print(f"Previously backed up: {stats['total_emails']} emails", flush=True)
 
             # Show date filter if specified
             if since or until:
@@ -228,10 +236,12 @@ def cmd_backup(
                     date_range.append(f"from {since}")
                 if until:
                     date_range.append(f"until {until}")
-                print(f"Date filter: {' '.join(date_range)}")
+                print(f"Date filter: {' '.join(date_range)}", flush=True)
 
             # Run backup
-            result = archive.backup(provider, since=since, until=until)
+            if verbose:
+                print("[verbose] Starting backup...", flush=True)
+            result = archive.backup(provider, since=since, until=until, verbose=verbose)
 
             # Print summary
             total = stats["total_emails"] + result["success_count"]
@@ -400,6 +410,11 @@ Examples:
         type=str,
         help="Only backup emails before this date (YYYY-MM-DD)",
     )
+    backup_parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show detailed progress output",
+    )
 
     # search command
     search_parser = subparsers.add_parser(
@@ -512,7 +527,7 @@ Examples:
             archive = EmailArchive(archive_root, config)
 
             if args.command == "backup":
-                cmd_backup(archive, config, args.source, args.since, args.until)
+                cmd_backup(archive, config, args.source, args.since, args.until, args.verbose)
             elif args.command == "search":
                 cmd_search(archive, args.query, args.source, args.limit)
             elif args.command == "stats":
