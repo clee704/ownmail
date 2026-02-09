@@ -7,6 +7,10 @@
         <h2>Settings</h2>
         <p class="ownmail-settings-config-path">Config: <code>{{ config_path }}</code></p>
 
+        {% if saved %}
+        <div class="ownmail-settings-saved">✓ Settings saved.</div>
+        {% endif %}
+
         <form method="POST" action="/settings" class="ownmail-settings-form">
             <fieldset class="ownmail-settings-section">
                 <legend>Appearance</legend>
@@ -77,8 +81,7 @@
             </fieldset>
 
             <div class="ownmail-settings-actions">
-                <button type="submit" class="ownmail-settings-save">Save Settings</button>
-                <a href="/" class="ownmail-settings-cancel">Cancel</a>
+                <button type="submit" class="ownmail-settings-save">Save settings</button>
             </div>
         </form>
     </div>
