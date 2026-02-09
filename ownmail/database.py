@@ -68,6 +68,13 @@ class ArchiveDatabase:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
+            # Add sender_email and recipient_emails for fast indexed lookups
+            for col in ['sender_email', 'recipient_emails']:
+                try:
+                    conn.execute(f"ALTER TABLE emails ADD COLUMN {col} TEXT")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+
             # Sync state for incremental backup (per-account)
             # Key format: "<account>/<key>" e.g., "alice@gmail.com/history_id"
             conn.execute("""
@@ -103,8 +110,52 @@ class ArchiveDatabase:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_filename ON emails(filename)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_labels ON emails(labels)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_date ON emails(email_date)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_sender_email ON emails(sender_email)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_recipient_emails ON emails(recipient_emails)")
 
             conn.commit()
+
+    # -------------------------------------------------------------------------
+    # Email address parsing helpers
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_email(sender_str: str) -> Optional[str]:
+        """Extract email from 'Name <email>' or just 'email'."""
+        if not sender_str:
+            return None
+        # Try to extract from angle brackets
+        match = re.search(r'<([^>]+)>', sender_str)
+        if match:
+            return match.group(1).lower().strip()
+        # If no brackets, check if it's just an email
+        if '@' in sender_str:
+            return sender_str.lower().strip()
+        return None
+
+    @staticmethod
+    def _normalize_recipients(recipients_str: str) -> Optional[str]:
+        """Convert 'a@b.com, Name <c@d.com>' to ',a@b.com,c@d.com,' for exact matching."""
+        if not recipients_str:
+            return None
+        emails = []
+        for part in recipients_str.split(','):
+            part = part.strip()
+            if not part:
+                continue
+            # Try to extract from angle brackets first
+            match = re.search(r'<([^>]+)>', part)
+            if match:
+                email = match.group(1).lower().strip()
+            elif '@' in part:
+                email = part.lower().strip()
+            else:
+                continue
+            if email:
+                emails.append(email)
+        if emails:
+            return ',' + ','.join(emails) + ','
+        return None
 
     # -------------------------------------------------------------------------
     # Sync State (per-account)
@@ -317,6 +368,10 @@ class ArchiveDatabase:
             rowid = row[0]
             was_indexed = row[1] is not None  # Had subject before
 
+            # Extract email addresses for indexed lookups
+            sender_email = self._extract_email(sender)
+            recipient_emails = self._normalize_recipients(recipients)
+
             # Update metadata in emails table
             conn.execute(
                 """
@@ -326,10 +381,12 @@ class ArchiveDatabase:
                     recipients = ?,
                     date_str = ?,
                     labels = ?,
-                    snippet = ?
+                    snippet = ?,
+                    sender_email = ?,
+                    recipient_emails = ?
                 WHERE message_id = ?
                 """,
-                (subject, sender, recipients, date_str, labels, snippet, message_id)
+                (subject, sender, recipients, date_str, labels, snippet, sender_email, recipient_emails, message_id)
             )
 
             # Update FTS (contentless mode - we manage manually)
@@ -414,17 +471,43 @@ class ArchiveDatabase:
                 where_clauses.append("e.labels LIKE ?")
                 params.append(f"%{filters['label']}%")
 
-            # Sender filter - use LIKE on sender column (faster than FTS for simple lookups)
+            # Sender filter - use exact match on sender_email if it's an email address
             if filters.get("sender"):
-                where_clauses.append("e.sender LIKE ?")
-                params.append(f"%{filters['sender']}%")
+                sender_val = filters["sender"]
+                if '@' in sender_val:
+                    # Email address - exact match on indexed sender_email column (fast)
+                    where_clauses.append("e.sender_email = ?")
+                    params.append(sender_val.lower())
+                else:
+                    # Name search - will be handled by FTS below
+                    # Re-add to fts_query
+                    filters["sender_fts"] = sender_val
 
-            # Recipients filter - use LIKE on recipients column (faster than FTS for simple lookups)
+            # Recipients filter - use exact match on recipient_emails if it's an email address
             if filters.get("recipients"):
-                where_clauses.append("e.recipients LIKE ?")
-                params.append(f"%{filters['recipients']}%")
+                recipients_val = filters["recipients"]
+                if '@' in recipients_val:
+                    # Email address - search in normalized recipient_emails (fast with LIKE on indexed column)
+                    # Format: ",a@b.com,c@d.com," so we search for ",email,"
+                    where_clauses.append("e.recipient_emails LIKE ?")
+                    params.append(f"%,{recipients_val.lower()},%")
+                else:
+                    # Name search - will be handled by FTS below
+                    filters["recipients_fts"] = recipients_val
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+            # Add name-based sender/recipients searches back to FTS query
+            fts_parts = []
+            if fts_query.strip():
+                fts_parts.append(fts_query.strip())
+            if filters.get("sender_fts"):
+                # Name search on sender field via FTS
+                fts_parts.append(f'sender:{filters["sender_fts"]}')
+            if filters.get("recipients_fts"):
+                # Name search on recipients field via FTS
+                fts_parts.append(f'recipients:{filters["recipients_fts"]}')
+            fts_query = ' '.join(fts_parts)
 
             # Determine sort order
             if sort == "date_desc":
