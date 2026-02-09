@@ -220,7 +220,7 @@ class ImapProvider(EmailProvider):
         all_ids = []
 
         for folder in folders:
-            print(f"  Scanning: {folder}...", end="\r", flush=True)
+            print(f"  Scanning: {folder}...\033[K", end="\r", flush=True)
 
             uids = self._get_folder_uids(folder)
             if not uids:
@@ -352,7 +352,7 @@ class ImapProvider(EmailProvider):
         seen: Dict[str, Dict] = {}
 
         for folder in folders:
-            print(f"  Checking: {folder}...", end="\r", flush=True)
+            print(f"  Checking: {folder}...\033[K", end="\r", flush=True)
 
             status, select_data = self._conn.select(f'"{folder}"', readonly=True)
             if status != "OK":
