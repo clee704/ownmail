@@ -1,5 +1,6 @@
 """Tests for maintenance commands."""
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -1241,3 +1242,310 @@ class TestCmdVerifyDedup:
         assert "INBOX:1" in captured.out
         assert "AllMail:100" in captured.out
 
+
+# ---------------------------------------------------------------------------
+# Reindex cancel / resume tests
+# ---------------------------------------------------------------------------
+
+_SAMPLE_EML = (
+    b"From: sender@example.com\r\n"
+    b"To: recipient@example.com\r\n"
+    b"Subject: Reindex Test\r\n"
+    b"Date: Mon, 15 Jan 2024 10:00:00 +0000\r\n"
+    b"Message-ID: <reindex-test@example.com>\r\n"
+    b"\r\n"
+    b"Body content for reindex.\r\n"
+)
+
+
+def _make_email(archive, temp_dir, n, account="test@gmail.com"):
+    """Create an email file and DB row for testing. Returns email_id."""
+    emails_dir = temp_dir / "accounts" / account / "2024" / "01"
+    emails_dir.mkdir(parents=True, exist_ok=True)
+
+    content = _SAMPLE_EML.replace(b"Reindex Test", f"Email {n}".encode())
+    content_hash = hashlib.sha256(content).hexdigest()
+
+    path = emails_dir / f"email_{n}.eml"
+    path.write_bytes(content)
+    rel = str(path.relative_to(temp_dir))
+
+    eid = _eid(f"msg{n}", account)
+    archive.db.mark_downloaded(eid, f"msg{n}", rel, content_hash=content_hash, account=account)
+    return eid
+
+
+class TestReindexCancel:
+    """Tests for Ctrl-C (SIGINT) cancellation during reindex."""
+
+    def test_sigint_stops_reindex_gracefully(self, temp_dir, capsys):
+        """SIGINT mid-reindex stops after current email and saves progress."""
+        import signal
+
+        archive = EmailArchive(temp_dir, {})
+
+        # Create 10 emails to index
+        for i in range(10):
+            _make_email(archive, temp_dir, i)
+
+        # Monkey-patch _index_email_for_reindex to send SIGINT after 3
+        from ownmail import commands
+        original_fn = commands._index_email_for_reindex
+        call_count = 0
+
+        def patched_index(arch, email_id, filepath, conn, debug=False):
+            nonlocal call_count
+            call_count += 1
+            result = original_fn(arch, email_id, filepath, conn, debug)
+            if call_count == 3:
+                import os
+                os.kill(os.getpid(), signal.SIGINT)
+            return result
+
+        commands._index_email_for_reindex = patched_index
+        try:
+            cmd_reindex(archive)
+        finally:
+            commands._index_email_for_reindex = original_fn
+
+        captured = capsys.readouterr()
+        assert "Paused" in captured.out
+        assert "resume" in captured.out.lower() or "again" in captured.out.lower()
+
+    def test_reindex_resume_skips_indexed(self, temp_dir, capsys):
+        """Second reindex run skips already-indexed emails."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create 5 emails
+        for i in range(5):
+            _make_email(archive, temp_dir, i)
+
+        # First run: index all
+        cmd_reindex(archive)
+        captured1 = capsys.readouterr()
+        assert "5" in captured1.out  # Should show 5 emails
+
+        # Second run: nothing to do
+        cmd_reindex(archive)
+        captured2 = capsys.readouterr()
+        assert "already indexed" in captured2.out
+
+    def test_reindex_resume_after_interrupt(self, temp_dir, capsys):
+        """After SIGINT, second reindex picks up where it left off."""
+        import signal
+
+        archive = EmailArchive(temp_dir, {})
+
+        for i in range(8):
+            _make_email(archive, temp_dir, i)
+
+        from ownmail import commands
+        original_fn = commands._index_email_for_reindex
+        call_count = 0
+
+        def patched_index(arch, email_id, filepath, conn, debug=False):
+            nonlocal call_count
+            call_count += 1
+            result = original_fn(arch, email_id, filepath, conn, debug)
+            if call_count == 3:
+                import os
+                os.kill(os.getpid(), signal.SIGINT)
+            return result
+
+        commands._index_email_for_reindex = patched_index
+        try:
+            cmd_reindex(archive)
+        finally:
+            commands._index_email_for_reindex = original_fn
+
+        captured1 = capsys.readouterr()
+        assert "Paused" in captured1.out
+
+        # Count how many are now indexed
+        with sqlite3.connect(archive.db.db_path) as conn:
+            indexed = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
+            ).fetchone()[0]
+
+        assert indexed >= 3  # At least 3 were indexed before SIGINT
+
+        # Second run resumes
+        cmd_reindex(archive)
+        capsys.readouterr()
+
+        # After second run, all 8 should be indexed
+        with sqlite3.connect(archive.db.db_path) as conn:
+            indexed = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
+            ).fetchone()[0]
+        assert indexed == 8
+
+
+class TestReindexForceMode:
+    """Tests for reindex --force rebuilding FTS from scratch."""
+
+    def test_force_rebuilds_fts_table(self, temp_dir, capsys):
+        """Force mode drops and rebuilds FTS, re-indexes all emails."""
+        archive = EmailArchive(temp_dir, {})
+
+        for i in range(3):
+            _make_email(archive, temp_dir, i)
+
+        # First: normal index
+        cmd_reindex(archive)
+        capsys.readouterr()
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            fts_before = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
+        assert fts_before == 3
+
+        # Force reindex
+        cmd_reindex(archive, force=True)
+        captured = capsys.readouterr()
+        assert "force" in captured.out.lower() or "Rebuilding" in captured.out
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            fts_after = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
+            indexed = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
+            ).fetchone()[0]
+
+        assert fts_after == 3
+        assert indexed == 3
+
+    def test_force_with_pattern_does_not_drop_fts(self, temp_dir, capsys):
+        """Force + pattern re-indexes matching emails without dropping FTS."""
+        archive = EmailArchive(temp_dir, {})
+
+        for i in range(3):
+            _make_email(archive, temp_dir, i)
+
+        cmd_reindex(archive)
+        capsys.readouterr()
+
+        # Force with pattern - should NOT drop FTS table
+        cmd_reindex(archive, pattern="email_0", force=True)
+        captured = capsys.readouterr()
+
+        # Should show pattern matching
+        assert "email_0" in captured.out or "1" in captured.out
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            fts_count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
+        # All 3 remain (FTS wasn't dropped), pattern just re-indexed matching ones
+        assert fts_count >= 3
+
+
+class TestVerifyEndToEnd:
+    """End-to-end verify → verify --fix → verify (clean) flow."""
+
+    def test_verify_fix_verify_clean(self, temp_dir, capsys):
+        """Full lifecycle: detect issues → fix → verify clean."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create 3 emails on disk and in DB
+        emails_dir = temp_dir / "accounts" / "test" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+
+        contents = []
+        for i in range(3):
+            content = f"From: a@b.com\r\nSubject: Email {i}\r\nDate: Mon, 15 Jan 2024\r\n\r\nBody {i}".encode()
+            contents.append(content)
+            ch = hashlib.sha256(content).hexdigest()
+            path = emails_dir / f"email_{i}.eml"
+            path.write_bytes(content)
+            rel = str(path.relative_to(temp_dir))
+            eid = _eid(f"msg{i}")
+            archive.db.mark_downloaded(eid, f"msg{i}", rel, content_hash=ch)
+            archive.db.index_email(
+                email_id=eid,
+                subject=f"Email {i}",
+                sender="a@b.com",
+                recipients="",
+                date_str="2024-01-15",
+                body=f"Body {i}",
+                attachments="",
+            )
+
+        # Now break things:
+        # 1. Delete file for email_1 (→ missing)
+        (emails_dir / "email_1.eml").unlink()
+
+        # 2. Add a duplicate for email_0 (with metadata so it's fully indexed)
+        dup_hash = hashlib.sha256(contents[0]).hexdigest()
+        dup_path = emails_dir / "email_0_dup.eml"
+        dup_path.write_bytes(contents[0])
+        dup_rel = str(dup_path.relative_to(temp_dir))
+        dup_eid = _eid("dup0")
+        archive.db.mark_downloaded(dup_eid, "dup0", dup_rel, content_hash=dup_hash)
+        archive.db.index_email(
+            email_id=dup_eid,
+            subject="Email 0",
+            sender="a@b.com",
+            recipients="",
+            date_str="2024-01-15",
+            body="Body 0",
+            attachments="",
+        )
+
+        # Step 1: Verify (no fix) — should find issues
+        cmd_verify(archive, fix=False)
+        out1 = capsys.readouterr().out
+        assert "issue" in out1.lower()
+
+        # Step 2: Verify --fix — should fix issues
+        cmd_verify(archive, fix=True)
+        out2 = capsys.readouterr().out
+        assert "Fixed" in out2 or "Removed" in out2
+
+        # Step 3: Verify again — should be clean
+        cmd_verify(archive, fix=False)
+        out3 = capsys.readouterr().out
+        assert "All checks passed" in out3
+
+    def test_verify_fix_missing_then_backup_resumes(self, temp_dir, capsys):
+        """After verify --fix removes missing files, backup can resume."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        # Download 2 emails
+        emails_dir = temp_dir / "accounts" / "test@gmail.com" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+
+        for i in range(2):
+            content = f"From: a@b.com\r\nDate: Mon, 15 Jan 2024\r\n\r\nBody {i}".encode()
+            ch = hashlib.sha256(content).hexdigest()
+            path = emails_dir / f"email_{i}.eml"
+            path.write_bytes(content)
+            rel = str(path.relative_to(temp_dir))
+            eid = _eid(f"msg{i}", "test@gmail.com")
+            archive.db.mark_downloaded(eid, f"msg{i}", rel, content_hash=ch, account="test@gmail.com")
+
+        # Set sync state (simulating a successful prior sync)
+        archive.db.set_sync_state("test@gmail.com", "sync_state", "old-sync")
+
+        # Delete one file to simulate corruption
+        (emails_dir / "email_0.eml").unlink()
+
+        # verify --fix: removes stale entry AND resets sync state
+        cmd_verify(archive, fix=True)
+        out = capsys.readouterr().out
+        assert "Reset sync state" in out or "Removed" in out
+
+        # Sync state should be cleared
+        state = archive.db.get_sync_state("test@gmail.com", "sync_state")
+        assert state is None
+
+        # Now backup should do a FULL sync (since sync state is cleared)
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.name = "imap"
+        provider.get_new_message_ids.return_value = ([], "fresh-state")
+
+        archive.backup(provider)
+
+        # get_new_message_ids should have been called with None (no prior state)
+        provider.get_new_message_ids.assert_called_once()
+        call_args = provider.get_new_message_ids.call_args
+        assert call_args[0][0] is None  # sync_state=None → full scan

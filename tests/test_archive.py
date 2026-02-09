@@ -552,3 +552,340 @@ class TestArchiveSearch:
         archive = EmailArchive(temp_dir, {})
         results = archive.search("nonexistent query xyz123")
         assert len(results) == 0
+
+
+# ---------------------------------------------------------------------------
+# Cancel / Resume / Sync-state tests
+# ---------------------------------------------------------------------------
+
+_RAW_EMAIL = (
+    b"From: sender@example.com\r\n"
+    b"To: recipient@example.com\r\n"
+    b"Subject: Test Email\r\n"
+    b"Date: Mon, 15 Jan 2024 10:00:00 +0000\r\n"
+    b"Message-ID: <unique@example.com>\r\n"
+    b"\r\n"
+    b"Body content\r\n"
+)
+
+
+def _raw_email_with_id(n: int) -> bytes:
+    """Return a raw email whose content is unique per *n*."""
+    return (
+        b"From: sender@example.com\r\n"
+        b"To: recipient@example.com\r\n"
+        b"Subject: Email " + str(n).encode() + b"\r\n"
+        b"Date: Mon, 15 Jan 2024 10:00:00 +0000\r\n"
+        b"Message-ID: <msg" + str(n).encode() + b"@example.com>\r\n"
+        b"\r\n"
+        b"Body " + str(n).encode() + b"\r\n"
+    )
+
+
+class TestBackupCancel:
+    """Tests for Ctrl-C (SIGINT) cancellation during backup."""
+
+    def test_keyboard_interrupt_during_get_new_ids(self, temp_dir, capsys):
+        """KeyboardInterrupt in get_new_message_ids returns immediately."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.get_new_message_ids.side_effect = KeyboardInterrupt
+
+        result = archive.backup(provider)
+
+        assert result["interrupted"] is True
+        assert result["success_count"] == 0
+        assert result["error_count"] == 0
+        captured = capsys.readouterr()
+        assert "cancelled" in captured.out.lower()
+
+    def test_sigint_stops_after_current_email(self, temp_dir, capsys):
+        """SIGINT mid-download stops after the current email."""
+        import signal
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.get_new_message_ids.return_value = (
+            [f"msg{i}" for i in range(5)], "state-after"
+        )
+
+        call_count = 0
+
+        def download_and_interrupt(msg_id):
+            nonlocal call_count
+            call_count += 1
+            # After 2nd download, simulate SIGINT
+            if call_count == 2:
+                import os
+                os.kill(os.getpid(), signal.SIGINT)
+            return (_raw_email_with_id(call_count), [])
+
+        provider.download_message.side_effect = download_and_interrupt
+
+        result = archive.backup(provider)
+
+        assert result["interrupted"] is True
+        # At least 1 email should have been downloaded before SIGINT
+        assert result["success_count"] >= 1
+        # Should NOT have downloaded all 5
+        assert result["success_count"] < 5
+
+    def test_sync_state_not_updated_on_interrupt(self, temp_dir):
+        """Sync state must NOT be updated when backup is interrupted."""
+        import signal
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.name = "imap"
+        provider.get_new_message_ids.return_value = (
+            [f"msg{i}" for i in range(5)], "new-sync-state"
+        )
+
+        call_count = 0
+
+        def download_and_interrupt(msg_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                import os
+                os.kill(os.getpid(), signal.SIGINT)
+            return (_raw_email_with_id(call_count), [])
+
+        provider.download_message.side_effect = download_and_interrupt
+
+        archive.backup(provider)
+
+        # Sync state should NOT have been updated
+        state = archive.db.get_sync_state("test@gmail.com", "sync_state")
+        assert state is None
+
+    def test_progress_saved_on_interrupt(self, temp_dir):
+        """Emails downloaded before SIGINT are committed to database."""
+        import signal
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.get_new_message_ids.return_value = (
+            [f"msg{i}" for i in range(5)], None
+        )
+        provider.get_current_sync_state.return_value = None
+
+        call_count = 0
+
+        def download_and_interrupt(msg_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 3:
+                import os
+                os.kill(os.getpid(), signal.SIGINT)
+            return (_raw_email_with_id(call_count), [])
+
+        provider.download_message.side_effect = download_and_interrupt
+
+        result = archive.backup(provider)
+
+        assert result["interrupted"] is True
+        # Verify the downloaded emails are in the DB
+        downloaded_ids = archive.db.get_downloaded_ids("test@gmail.com")
+        assert len(downloaded_ids) >= 2
+
+
+class TestBackupResume:
+    """Tests for resumable backup — run again after interruption."""
+
+    def test_resume_skips_already_downloaded(self, temp_dir, capsys):
+        """Second backup run skips emails already saved on disk."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        # First run: download 2 emails
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.get_new_message_ids.return_value = (["msg0", "msg1"], None)
+        provider.get_current_sync_state.return_value = None
+        provider.download_message.side_effect = [
+            (_raw_email_with_id(0), []),
+            (_raw_email_with_id(1), []),
+        ]
+        result1 = archive.backup(provider)
+        assert result1["success_count"] == 2
+
+        # Second run: provider returns same 2 + 1 new
+        provider.get_new_message_ids.return_value = (["msg0", "msg1", "msg2"], None)
+        provider.download_message.reset_mock()
+        provider.download_message.side_effect = None
+        provider.download_message.return_value = (_raw_email_with_id(2), [])
+
+        result2 = archive.backup(provider)
+
+        assert result2["success_count"] == 1
+        # Only msg2 should have been downloaded
+        provider.download_message.assert_called_once_with("msg2")
+
+
+class TestBackupSyncState:
+    """Tests for sync state update conditions."""
+
+    def test_sync_state_updated_on_full_success(self, temp_dir):
+        """Sync state IS updated when all emails download successfully."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.name = "imap"
+        provider.get_new_message_ids.return_value = (["msg0"], "new-state")
+        provider.download_message.return_value = (_raw_email_with_id(0), [])
+
+        archive.backup(provider)
+
+        state = archive.db.get_sync_state("test@gmail.com", "sync_state")
+        assert state == "new-state"
+
+    def test_sync_state_not_updated_with_date_filter(self, temp_dir):
+        """Sync state NOT updated when using --since / --until."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.name = "imap"
+        provider.get_new_message_ids.return_value = (["msg0"], "new-state")
+        provider.download_message.return_value = (_raw_email_with_id(0), [])
+
+        archive.backup(provider, since="2024-01-01")
+
+        state = archive.db.get_sync_state("test@gmail.com", "sync_state")
+        assert state is None
+
+    def test_sync_state_not_updated_on_errors(self, temp_dir):
+        """Sync state NOT updated when some downloads fail."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.name = "imap"
+        provider.get_new_message_ids.return_value = (["msg0", "msg1"], "new-state")
+        provider.download_message.side_effect = [
+            (_raw_email_with_id(0), []),
+            Exception("Network error"),
+        ]
+
+        archive.backup(provider)
+
+        state = archive.db.get_sync_state("test@gmail.com", "sync_state")
+        assert state is None
+
+    def test_sync_state_not_updated_with_no_new_and_date_filter(self, temp_dir):
+        """Sync state NOT updated when no new emails and date filter is used."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.name = "imap"
+        provider.get_new_message_ids.return_value = ([], "new-state")
+
+        archive.backup(provider, until="2024-12-31")
+
+        state = archive.db.get_sync_state("test@gmail.com", "sync_state")
+        assert state is None
+
+    def test_sync_state_updated_no_new_full_sync(self, temp_dir):
+        """Sync state IS updated on full sync with no new emails."""
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.name = "imap"
+        provider.get_new_message_ids.return_value = ([], "sync-123")
+
+        archive.backup(provider)
+
+        state = archive.db.get_sync_state("test@gmail.com", "sync_state")
+        assert state == "sync-123"
+
+
+class TestBackupContentDedup:
+    """Tests for content-based deduplication during backup."""
+
+    def test_content_dedup_skips_duplicates(self, temp_dir, capsys):
+        """Emails with same content but different provider_id are skipped."""
+        import hashlib
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        raw = _raw_email_with_id(42)
+        content_hash = hashlib.sha256(raw).hexdigest()
+
+        # Pre-populate: same content already downloaded under different ID
+        archive.db.mark_downloaded(
+            _eid("INBOX:100", "test@gmail.com"),
+            "INBOX:100", "accounts/test@gmail.com/2024/01/email.eml",
+            content_hash=content_hash,
+            account="test@gmail.com",
+        )
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.get_new_message_ids.return_value = (["AllMail:200"], None)
+        provider.get_current_sync_state.return_value = None
+        # Same content under a different provider_id
+        provider.download_message.return_value = (raw, ["INBOX"])
+
+        result = archive.backup(provider)
+
+        # Should count as success (skipped, not error)
+        assert result["success_count"] == 1
+        assert result["error_count"] == 0
+        captured = capsys.readouterr()
+        assert "already downloaded" in captured.out.lower()
+
+    def test_batch_download_failure_continues(self, temp_dir, capsys):
+        """Entire batch failure is handled and continues to next batch."""
+        from unittest.mock import MagicMock, PropertyMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.get_new_message_ids.return_value = (
+            ["msg0", "msg1", "msg2", "msg3"], None
+        )
+        provider.get_current_sync_state.return_value = None
+        type(provider).download_batch_size = PropertyMock(return_value=2)
+        provider.download_messages_batch.side_effect = [
+            Exception("Batch failed"),
+            {
+                "msg2": (_raw_email_with_id(2), [], None),
+                "msg3": (_raw_email_with_id(3), [], None),
+            },
+        ]
+
+        result = archive.backup(provider)
+
+        # First batch (msg0+msg1) failed, second batch (msg2+msg3) succeeded
+        assert result["error_count"] == 2
+        assert result["success_count"] == 2
