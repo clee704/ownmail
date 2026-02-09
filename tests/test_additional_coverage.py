@@ -824,44 +824,16 @@ class TestSetupCommand:
         assert "Setup complete" in captured.out
 
 
-class TestCliRehash:
-    """Tests for rehash command - uses commands directly to avoid keychain."""
+class TestUpdateLabelsCmd:
+    """Tests for update-labels command directly."""
 
     @pytest.fixture
     def temp_dir(self, tmp_path):
         return tmp_path
 
-    def test_rehash_via_cmd(self, temp_dir, capsys):
-        """Test rehash via cmd_rehash directly."""
-        from ownmail.commands import cmd_rehash
-
-        archive = EmailArchive(temp_dir, {})
-
-        # Create an email file
-        emails_dir = temp_dir / "emails" / "2024" / "01"
-        emails_dir.mkdir(parents=True)
-        email_path = emails_dir / "test.eml"
-        email_path.write_bytes(b"From: test@example.com\r\nSubject: Test\r\n\r\nBody")
-
-        # Mark as downloaded without content_hash
-        archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/test.eml", content_hash=None)
-
-        cmd_rehash(archive)
-
-        captured = capsys.readouterr()
-        assert "Rehash" in captured.out or "hash" in captured.out.lower()
-
-
-class TestAddLabelsCmd:
-    """Tests for add-labels command directly."""
-
-    @pytest.fixture
-    def temp_dir(self, tmp_path):
-        return tmp_path
-
-    def test_add_labels_via_cmd(self, temp_dir, capsys):
-        """Test add-labels via cmd_add_labels directly with mocked provider."""
-        from ownmail.commands import cmd_add_labels
+    def test_update_labels_via_cmd(self, temp_dir, capsys):
+        """Test update-labels via cmd_update_labels directly with mocked provider."""
+        from ownmail.commands import cmd_update_labels
 
         config = {
             "sources": [{
@@ -885,10 +857,10 @@ class TestAddLabelsCmd:
             mock_provider.get_message_labels.return_value = ["INBOX", "IMPORTANT"]
             mock_provider_cls.return_value = mock_provider
 
-            cmd_add_labels(archive, source_name="test_gmail")
+            cmd_update_labels(archive, source_name="test_gmail")
 
         captured = capsys.readouterr()
-        assert "Labels" in captured.out or "add" in captured.out.lower() or "Add Labels" in captured.out
+        assert "Labels" in captured.out or "Update Labels" in captured.out
 
 
 class TestProviderBase:

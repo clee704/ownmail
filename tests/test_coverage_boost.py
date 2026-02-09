@@ -294,20 +294,6 @@ class TestCommandsVerifyEmpty:
         assert len(captured.out) > 0
 
 
-class TestCommandsRehash:
-    """Tests for cmd_rehash command."""
-
-    def test_rehash_empty_archive(self, tmp_path, capsys):
-        """Test rehash on empty archive."""
-        from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_rehash
-
-        archive = EmailArchive(tmp_path, {})
-        cmd_rehash(archive)
-        captured = capsys.readouterr()
-        assert len(captured.out) > 0
-
-
 class TestWebSearchPaginationV3:
     """Tests for web search pagination."""
 
@@ -1089,16 +1075,16 @@ class TestQueryEdgeCases:
         assert parsed is not None
 
 
-class TestCommandsAddLabels:
-    """Tests for cmd_add_labels command."""
+class TestCommandsUpdateLabels:
+    """Tests for cmd_update_labels command."""
 
-    def test_add_labels_empty_archive(self, tmp_path, capsys):
-        """Test add_labels on empty archive."""
+    def test_update_labels_empty_archive(self, tmp_path, capsys):
+        """Test update_labels on empty archive."""
         from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_add_labels
+        from ownmail.commands import cmd_update_labels
 
         archive = EmailArchive(tmp_path, {})
-        cmd_add_labels(archive)
+        cmd_update_labels(archive)
         captured = capsys.readouterr()
         assert len(captured.out) > 0
 
@@ -3144,32 +3130,6 @@ Body.
         with app.test_client() as client:
             response = client.get("/email/multilabel")
             assert response.status_code == 200
-
-
-class TestCommandsRehashV2:
-    """Tests for rehash command."""
-
-    def test_cmd_rehash(self, tmp_path, capsys):
-        """Test rehash command."""
-        from ownmail.archive import EmailArchive
-        from ownmail.commands import cmd_rehash
-
-        archive = EmailArchive(tmp_path, {})
-        eml_content = b"""From: sender@example.com
-To: recipient@example.com
-Subject: Rehash Test
-Date: Mon, 01 Jan 2024 00:00:00 +0000
-Message-ID: <rehash@example.com>
-
-Body.
-"""
-        eml_path = tmp_path / "rehash.eml"
-        eml_path.write_bytes(eml_content)
-        archive.db.mark_downloaded(_eid("rehash"), "rehash", "rehash.eml")
-
-        cmd_rehash(archive)
-        captured = capsys.readouterr()
-        assert len(captured.out) >= 0
 
 
 class TestParserMalformedContent:

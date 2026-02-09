@@ -3,9 +3,8 @@
 This module contains commands for archive maintenance:
 - reindex: Rebuild the full-text search index
 - verify: Verify archive integrity (files, hashes, database)
-- rehash: Compute hashes for emails without them
 - sync_check: Compare local archive with server
-- add_labels: Add Gmail labels to existing emails
+- update_labels: Update Gmail labels from server
 """
 
 import hashlib
@@ -655,8 +654,6 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     suggestions.append("  • 'ownmail reindex' to index orphaned files")
                 if corrupted_count > 0:
                     suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
-                if no_hash_count > 0 or null_content_hash > 0:
-                    suggestions.append("  • 'ownmail rehash' to compute missing hashes")
                 for s in suggestions:
                     print(s)
         else:
@@ -670,8 +667,6 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 suggestions.append("  • 'ownmail reindex' to index orphaned files")
             if corrupted_count > 0:
                 suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
-            if no_hash_count > 0 or null_content_hash > 0:
-                suggestions.append("  • 'ownmail rehash' to compute missing hashes")
             if missing_metadata > 0 or hash_mismatches > 0:
                 suggestions.append("  • 'ownmail reindex' to populate metadata / update stale index")
             if fts_count != emails_with_metadata:
@@ -682,91 +677,6 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     print(s)
 
     print(f"\n  Time: {total_time:.1f}s")
-    print("-" * 50 + "\n")
-
-
-def _compute_single_hash(args: tuple) -> tuple:
-    """Compute hash for a single file. Returns (email_id, hash, error)."""
-    archive_dir, email_id, filename = args
-
-    filepath = archive_dir / filename
-    if not filepath.exists():
-        return (email_id, None, 'missing')
-
-    with open(filepath, "rb") as f:
-        content_hash = hashlib.sha256(f.read()).hexdigest()
-
-    return (email_id, content_hash, None)
-
-
-def cmd_rehash(archive: EmailArchive) -> None:
-    """Compute and store hashes for emails that don't have them."""
-    import time
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    print("\n" + "=" * 50)
-    print("ownmail - Compute Hashes")
-    print("=" * 50 + "\n")
-
-    total_start = time.time()
-    db_path = archive.db.db_path
-
-    # Get emails without hashes
-    step_start = time.time()
-    with sqlite3.connect(db_path) as conn:
-        emails = conn.execute(
-            "SELECT email_id, filename FROM emails WHERE content_hash IS NULL"
-        ).fetchall()
-    db_time = time.time() - step_start
-
-    if not emails:
-        print("All emails already have hashes.")
-        return
-
-    total = len(emails)
-    print(f"Computing hashes for {total} emails...\n")
-
-    # Prepare work items
-    work_items = [(archive.archive_dir, email_id, filename) for email_id, filename in emails]
-
-    # Compute hashes in parallel
-    step_start = time.time()
-    results = []
-    completed = 0
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {executor.submit(_compute_single_hash, item): item for item in work_items}
-
-        for future in as_completed(futures):
-            completed += 1
-            print(f"  [{completed}/{total}] Hashing...\033[K", end="\r")
-            results.append(future.result())
-    hash_time = time.time() - step_start
-
-    # Update database in batch
-    step_start = time.time()
-    success_count = 0
-    error_count = 0
-    with sqlite3.connect(db_path) as conn:
-        for email_id, content_hash, error in results:
-            if error:
-                error_count += 1
-            else:
-                conn.execute(
-                    "UPDATE emails SET content_hash = ? WHERE email_id = ?",
-                    (content_hash, email_id)
-                )
-                success_count += 1
-        conn.commit()
-    update_time = time.time() - step_start
-
-    total_time = time.time() - total_start
-
-    print("\n" + "-" * 50)
-    print("Rehash Complete!")
-    print(f"  Hashed: {success_count} emails")
-    if error_count > 0:
-        print(f"  Errors (missing files): {error_count}")
-    print(f"\n  Time: {total_time:.1f}s (db: {db_time:.1f}s, hash: {hash_time:.1f}s, update: {update_time:.1f}s)")
     print("-" * 50 + "\n")
 
 
@@ -873,14 +783,14 @@ def cmd_sync_check(
     print("-" * 50 + "\n")
 
 
-def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
-    """Fetch Gmail labels and store them in the database.
+def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
+    """Fetch current Gmail labels from server and update the database.
 
     Labels are stored in the database only, not injected into .eml files.
     This keeps .eml files as pure RFC 5322 email as received from the server.
     """
     print("\n" + "=" * 50)
-    print("ownmail - Add Labels")
+    print("ownmail - Update Labels")
     print("=" * 50 + "\n")
 
     from ownmail.config import get_source_by_name, get_sources
@@ -905,7 +815,7 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
                 source = s
                 break
         if not source:
-            print("No Gmail source configured. add-labels only supports Gmail.")
+            print("No Gmail source configured. update-labels currently only supports Gmail.")
             return
 
     account = source["account"]
@@ -978,9 +888,9 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
 
     print("\n" + "-" * 50)
     if interrupted:
-        print("Add Labels Paused!")
+        print("Update Labels Paused!")
     else:
-        print("Add Labels Complete!")
+        print("Update Labels Complete!")
     print(f"  Updated: {success_count} emails")
     print(f"  Skipped (no labels): {skip_count}")
     if error_count > 0:
