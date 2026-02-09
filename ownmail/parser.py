@@ -2,8 +2,10 @@
 
 import email
 import email.utils
+import html
 import re
 from email.policy import default as email_policy
+from html.parser import HTMLParser
 from pathlib import Path
 
 # Regex to extract charset from HTML meta tag
@@ -524,28 +526,57 @@ class EmailParser:
         return ""
 
     @staticmethod
-    def _strip_html(html: str) -> str:
+    def _strip_html(html_content: str) -> str:
         """Strip HTML tags and extract text content.
 
-        Removes style, script blocks and all HTML tags, then normalizes whitespace.
+        Uses proper HTML parsing to correctly skip style/script blocks
+        and extract only visible text content.
         """
-        # Remove style blocks (with their content)
-        html = re.sub(r'<style[^>]*>.*?</style>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-        # Remove script blocks
-        html = re.sub(r'<script[^>]*>.*?</script>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-        # Remove HTML comments
-        html = re.sub(r'<!--.*?-->', ' ', html, flags=re.DOTALL)
-        # Remove all remaining HTML tags
-        html = re.sub(r'<[^>]+>', ' ', html)
-        # Decode common HTML entities
-        html = html.replace('&nbsp;', ' ')
-        html = html.replace('&amp;', '&')
-        html = html.replace('&lt;', '<')
-        html = html.replace('&gt;', '>')
-        html = html.replace('&quot;', '"')
-        # Normalize whitespace
-        html = re.sub(r'\s+', ' ', html)
-        return html.strip()
+        class TextExtractor(HTMLParser):
+            """HTML parser that extracts only visible text content."""
+
+            # Tags whose content should be skipped entirely
+            SKIP_TAGS = {'style', 'script', 'head', 'title', 'meta', 'link', 'noscript'}
+
+            def __init__(self):
+                super().__init__()
+                self.text_parts = []
+                self.skip_depth = 0  # Track nested skip tags
+
+            def handle_starttag(self, tag, attrs):
+                if tag.lower() in self.SKIP_TAGS:
+                    self.skip_depth += 1
+
+            def handle_endtag(self, tag):
+                if tag.lower() in self.SKIP_TAGS and self.skip_depth > 0:
+                    self.skip_depth -= 1
+
+            def handle_data(self, data):
+                if self.skip_depth == 0:
+                    # Only collect text outside of skip tags
+                    text = data.strip()
+                    if text:
+                        self.text_parts.append(text)
+
+            def get_text(self):
+                return ' '.join(self.text_parts)
+
+        try:
+            extractor = TextExtractor()
+            extractor.feed(html_content)
+            text = extractor.get_text()
+            # Decode HTML entities
+            text = html.unescape(text)
+            # Normalize whitespace
+            text = ' '.join(text.split())
+            return text
+        except Exception:
+            # Fallback to simple regex if parsing fails
+            text = re.sub(r'<style[^>]*>.*?</style>', ' ', html_content, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<[^>]+>', ' ', text)
+            text = html.unescape(text)
+            return ' '.join(text.split())
 
     @staticmethod
     def parse_file(filepath: Path = None, content: bytes = None) -> dict:
