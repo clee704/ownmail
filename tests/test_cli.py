@@ -376,10 +376,10 @@ class TestCmdSetup:
             'user@gmail.com',  # email address
             'test-app-password',  # app password (via getpass)
             'my_source',  # source name
-            'n',  # don't add to config
         ])
 
         monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
 
         with patch('getpass.getpass', return_value='test-app-password'):
             with patch('imaplib.IMAP4_SSL') as mock_imap:
@@ -391,6 +391,105 @@ class TestCmdSetup:
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out
         mock_keychain.save_imap_password.assert_called_once()
+        # Verify config file was created
+        assert (temp_dir / "config.yaml").exists()
+
+    def test_setup_creates_config_with_comments(self, temp_dir, capsys, monkeypatch):
+        """Test that setup creates a config.yaml with commented options when none exists."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        config = {}
+
+        inputs = iter([
+            'user@example.com',  # email address
+            'imap.example.com',  # IMAP host (non-Gmail)
+            'my_source',  # source name
+        ])
+
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        with patch('getpass.getpass', return_value='secret'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_imap.return_value = MagicMock()
+                cmd_setup(mock_keychain, config, None, method="imap")
+
+        config_file = temp_dir / "config.yaml"
+        assert config_file.exists()
+        content = config_file.read_text()
+        # Source is present
+        assert "my_source" in content
+        assert "imap.example.com" in content
+        assert "user@example.com" in content
+        # Commented options are present
+        assert "# archive_root:" in content
+        assert "# db_dir:" in content
+        assert "# web:" in content
+        assert "port:" in content
+        assert "block_images:" in content
+
+    def test_setup_appends_source_to_existing_config(self, temp_dir, capsys, monkeypatch):
+        """Test that setup appends a new source to an existing config.yaml."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text("archive_root: /tmp/mail\n\nsources:\n  - name: existing\n    type: imap\n    host: imap.old.com\n    account: old@example.com\n    auth:\n      secret_ref: keychain:imap-password/old@example.com\n")
+
+        config = {
+            "archive_root": "/tmp/mail",
+            "sources": [{"name": "existing", "type": "imap", "host": "imap.old.com", "account": "old@example.com", "auth": {"secret_ref": "keychain:imap-password/old@example.com"}}],
+        }
+
+        inputs = iter([
+            'new@example.com',
+            'imap.new.com',
+            'new_source',
+        ])
+
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+
+        with patch('getpass.getpass', return_value='secret'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_imap.return_value = MagicMock()
+                cmd_setup(mock_keychain, config, config_path, method="imap")
+
+        content = config_path.read_text()
+        assert "new_source" in content
+        assert "existing" in content  # Original source still there
+
+    def test_setup_skips_existing_source(self, temp_dir, capsys, monkeypatch):
+        """Test that setup skips config update when source already exists."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+
+        config = {
+            "sources": [{"name": "my_source", "type": "imap", "host": "imap.gmail.com", "account": "user@gmail.com", "auth": {"secret_ref": "keychain:imap-password/user@gmail.com"}}],
+        }
+
+        inputs = iter([
+            'user@gmail.com',
+            'my_source',
+        ])
+
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+
+        with patch('getpass.getpass', return_value='secret'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_imap.return_value = MagicMock()
+                cmd_setup(mock_keychain, config, None, method="imap")
+
+        captured = capsys.readouterr()
+        assert "already exists" in captured.out
 
 
 class TestMainEdgeCases:
