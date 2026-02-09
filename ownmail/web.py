@@ -838,59 +838,22 @@ def create_app(
         if has_more:
             raw_results = raw_results[:per_page]
 
-        # Format results - always extract from email file for correct encoding
+        # Format results - use database values, decode MIME headers as needed
         results = []
         for msg_id, filename, subject, sender, date_str, snippet in raw_results:
-            # Always extract from file to ensure proper Korean/encoding support
-            # The parser handles charset detection better than FTS stored values
-            if filename:
-                filepath = archive.archive_dir / filename
-                if filepath.exists():
-                    try:
-                        # Use our parser which handles Korean charset properly
-                        parsed = EmailParser.parse_file(filepath=filepath)
-                        subject = parsed.get("subject") or "(No subject)"
-                        sender = parsed.get("sender", "")
-                        date_str = parsed.get("date_str", "")
-
-                        # Ensure MIME-encoded headers are fully decoded
-                        # Parser may return partially decoded or raw MIME strings
-                        if subject and '=?' in subject:
-                            subject = decode_header(subject)
-                        if sender and '=?' in sender:
-                            sender = decode_header(sender)
-
-                        # Always extract snippet from parsed body for correct encoding
-                        # FTS snippet may have garbled Korean text
-                        body = parsed.get("body", "")
-                        if body:
-                            body = _clean_snippet_text(body)
-                            snippet = body[:150] + "..." if len(body) > 150 else body
-                    except Exception:
-                        # Fall back to FTS values if file parsing fails
-                        # But still try to decode MIME-encoded headers
-                        if subject:
-                            subject = decode_header(subject)
-                        if sender:
-                            sender = decode_header(sender)
-                        if not subject:
-                            subject = "(Error reading email)"
-                else:
-                    # File doesn't exist - decode headers from database values
-                    if subject:
-                        subject = decode_header(subject)
-                    if sender:
-                        sender = decode_header(sender)
-                    if not subject:
-                        subject = "(No subject)"
-            else:
-                # No filename - decode headers from database values
-                if subject:
+            # Use values from database - they're already indexed
+            # Only decode MIME-encoded headers if present
+            if subject:
+                if '=?' in subject:
                     subject = decode_header(subject)
-                if sender:
-                    sender = decode_header(sender)
-                if not subject:
-                    subject = "(No subject)"
+            else:
+                subject = "(No subject)"
+
+            if sender and '=?' in sender:
+                sender = decode_header(sender)
+
+            if snippet and '=?' in snippet:
+                snippet = decode_header(snippet)
 
             # Extract sender name (without email address)
             sender_name, _ = parse_email_address(sender) if sender else ("", "")
