@@ -791,15 +791,13 @@ def cmd_sync_check(
 ) -> None:
     """Compare local archive with server.
 
-    Note: Currently only supports Gmail. For other providers, this would need
-    to be extended.
+    Supports both Gmail API and IMAP sources. When no --source is specified,
+    checks the first configured source.
     """
     print("\n" + "=" * 50)
     print("ownmail - Sync Check")
     print("=" * 50 + "\n")
 
-    # For now, we need a source to sync check
-    # In the future, this could iterate over all sources
     from ownmail.config import get_source_by_name, get_sources
 
     config = archive.config
@@ -809,7 +807,7 @@ def cmd_sync_check(
         print("No sources configured. Run 'ownmail setup' first.")
         return
 
-    # Get the first gmail source (or specified source)
+    # Find the source to check
     source = None
     if source_name:
         source = get_source_by_name(config, source_name)
@@ -817,58 +815,76 @@ def cmd_sync_check(
             print(f"❌ Source '{source_name}' not found")
             return
     else:
-        # Find first gmail source
-        for s in sources:
-            if s.get("type") == "gmail_api":
-                source = s
-                break
-        if not source:
-            print("No Gmail source configured. sync-check currently only supports Gmail.")
-            return
+        source = sources[0]
 
+    source_type = source.get("type")
     account = source["account"]
     print(f"Source: {source['name']} ({account})")
 
     # Create and authenticate provider
-    from ownmail.providers.gmail import GmailProvider
+    if source_type == "gmail_api":
+        from ownmail.providers.gmail import GmailProvider
 
-    provider = GmailProvider(account=account, keychain=archive.keychain, source_name=source["name"])
+        provider = GmailProvider(
+            account=account,
+            keychain=archive.keychain,
+            source_name=source["name"],
+        )
+    elif source_type == "imap":
+        from ownmail.providers.imap import ImapProvider
+
+        provider = ImapProvider(
+            account=account,
+            keychain=archive.keychain,
+            host=source.get("host", "imap.gmail.com"),
+            port=source.get("port", 993),
+            exclude_folders=source.get("exclude_folders"),
+            source_name=source["name"],
+        )
+    else:
+        print(f"❌ sync-check is not supported for source type '{source_type}'")
+        return
+
     provider.authenticate()
 
-    # Get all message IDs from Gmail
-    print("Fetching message IDs from Gmail...")
-    gmail_ids = set(provider.get_all_message_ids())
+    # Get all message IDs from server
+    print("Fetching message IDs from server...")
+    server_ids = set(provider.get_all_message_ids())
+
+    # Close IMAP connection if applicable
+    if hasattr(provider, "close"):
+        provider.close()
 
     # Get all local message IDs for this account
     local_ids = archive.db.get_downloaded_ids(account)
 
-    print(f"\nGmail: {len(gmail_ids)} emails")
-    print(f"Local: {len(local_ids)} emails\n")
+    print(f"\nServer: {len(server_ids)} emails")
+    print(f"Local:  {len(local_ids)} emails\n")
 
     # Find differences
-    on_gmail_not_local = gmail_ids - local_ids
-    on_local_not_gmail = local_ids - gmail_ids
-    in_sync = gmail_ids & local_ids
+    on_server_not_local = server_ids - local_ids
+    on_local_not_server = local_ids - server_ids
+    in_sync = server_ids & local_ids
 
     print("-" * 50)
     print("Sync Check Complete!")
     print(f"  ✓ In sync: {len(in_sync)}")
 
     # Display differences
-    if on_gmail_not_local:
-        print(f"  ↓ On Gmail but not local: {len(on_gmail_not_local)}")
-        show_count = len(on_gmail_not_local) if verbose else min(len(on_gmail_not_local), 5)
-        for msg_id in list(on_gmail_not_local)[:show_count]:
+    if on_server_not_local:
+        print(f"  ↓ On server but not local: {len(on_server_not_local)}")
+        show_count = len(on_server_not_local) if verbose else min(len(on_server_not_local), 5)
+        for msg_id in list(on_server_not_local)[:show_count]:
             print(f"      {msg_id}")
-        if not verbose and len(on_gmail_not_local) > 5:
-            print(f"      ... and {len(on_gmail_not_local) - 5} more (use --verbose to show all)")
+        if not verbose and len(on_server_not_local) > 5:
+            print(f"      ... and {len(on_server_not_local) - 5} more (use --verbose to show all)")
         print("\n  Run 'backup' to download these emails.")
 
-    if on_local_not_gmail:
+    if on_local_not_server:
         # Get filenames for these
         with sqlite3.connect(archive.db.db_path) as conn:
             local_only_files = []
-            for msg_id in on_local_not_gmail:
+            for msg_id in on_local_not_server:
                 result = conn.execute(
                     "SELECT filename FROM emails WHERE provider_id = ? AND account = ?", (msg_id, account)
                 ).fetchone()
@@ -877,15 +893,15 @@ def cmd_sync_check(
                 else:
                     local_only_files.append(msg_id)
 
-        print(f"  ✗ On local but not on Gmail (deleted from server?): {len(on_local_not_gmail)}")
+        print(f"  ✗ On local but not on server (deleted from server?): {len(on_local_not_server)}")
         show_count = len(local_only_files) if verbose else min(len(local_only_files), 5)
         for f in local_only_files[:show_count]:
             print(f"      {f}")
         if not verbose and len(local_only_files) > 5:
             print(f"      ... and {len(local_only_files) - 5} more (use --verbose to show all)")
 
-    if not on_gmail_not_local and not on_local_not_gmail:
-        print("\n  ✓ Local archive is fully in sync with Gmail!")
+    if not on_server_not_local and not on_local_not_server:
+        print("\n  ✓ Local archive is fully in sync with server!")
     print("-" * 50 + "\n")
 
 
