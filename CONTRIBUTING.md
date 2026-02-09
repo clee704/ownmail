@@ -40,6 +40,69 @@ ownmail --help
 pytest
 ```
 
+## Before Committing
+
+**Always run tests and lint before committing:**
+
+```bash
+# Run lint check
+ruff check .
+
+# Run tests
+pytest
+
+# Or both together
+ruff check . && pytest
+```
+
+Fix any lint errors before committing. Most can be auto-fixed with `ruff check . --fix`.
+
+## Commit Messages
+
+Use semantic commit messages with a clear, concise description:
+
+### Format
+
+```
+<type>: <description>
+
+[optional body]
+```
+
+### Types
+
+| Type | Description |
+|------|-------------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation changes |
+| `test` | Adding or updating tests |
+| `refactor` | Code refactoring (no functional change) |
+| `perf` | Performance improvements |
+| `chore` | Maintenance tasks (deps, CI, etc.) |
+
+### Examples
+
+```
+feat: add db-check command for database integrity
+
+fix: use NOT IN instead of LEFT JOIN for FTS5 performance
+
+docs: add detailed help messages for all commands
+
+test: add unit tests for EmailParser
+
+refactor: extract email parsing into separate class
+
+perf: batch FTS deletes at end of reindex for 10x speedup
+```
+
+### Guidelines
+
+- Use imperative mood: "add feature" not "added feature"
+- Keep first line under 72 characters
+- Add body for complex changes explaining why, not just what
+
 ## Database Migrations
 
 When changing the database schema:
