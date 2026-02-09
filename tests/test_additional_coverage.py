@@ -145,7 +145,7 @@ class TestGmailProviderDownloadMessage:
             raw_data, labels = provider.download_message("msg123")
 
             assert raw_data is not None
-            assert b"X-Gmail-Labels:" in raw_data or b"From:" in raw_data
+            assert b"From:" in raw_data
 
     def test_download_message_without_labels(self):
         """Test downloading a message without labels."""

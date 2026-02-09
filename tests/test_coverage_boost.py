@@ -1784,7 +1784,6 @@ To: recipient@example.com
 Subject: Labeled Email
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 Message-ID: <label123@example.com>
-X-Gmail-Labels: INBOX,IMPORTANT,STARRED
 
 Email body with labels.
 """
@@ -1795,7 +1794,7 @@ Email body with labels.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 100
-        mock_archive.db.get_email_by_id.return_value = ("label123", "label.eml", None, None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("label123", "label.eml", None, None, None, "INBOX, IMPORTANT, STARRED")
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6168,7 +6167,6 @@ class TestWebLabelDisplay:
         eml_content = b'''From: sender@example.com
 To: recipient@example.com
 Subject: Labeled Email
-X-Gmail-Labels: INBOX,IMPORTANT,STARRED
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Test body.

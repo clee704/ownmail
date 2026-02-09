@@ -85,8 +85,8 @@ class TestEmailParserRobustness:
         assert result["subject"] == ""
         assert result["sender"] == ""
 
-    def test_parse_with_gmail_labels(self, sample_eml_with_labels):
-        """Test that X-Gmail-Labels header is present in email."""
+    def test_parse_with_labels_fixture(self, sample_eml_with_labels):
+        """Test parsing email from labels fixture."""
         result = EmailParser.parse_file(content=sample_eml_with_labels)
 
         assert result["subject"] == "Labeled Email"
@@ -670,21 +670,3 @@ Body.
         result = EmailParser.parse_file(content=content)
         # Just verify parsing completes
         assert result["subject"] == "No Message-ID"
-
-
-class TestLabelsExtraction:
-    """Tests for Gmail labels extraction."""
-
-    def test_extract_gmail_labels(self):
-        """Test extracting X-Gmail-Labels header."""
-        content = b"""From: sender@example.com
-X-Gmail-Labels: INBOX,IMPORTANT,Personal
-Subject: With Labels
-Content-Type: text/plain
-
-Body.
-"""
-        result = EmailParser.parse_file(content=content)
-        assert "labels" in result
-        # Labels should be accessible somehow
-        assert isinstance(result.get("labels", ""), str)

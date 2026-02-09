@@ -299,7 +299,7 @@ def _index_email_for_reindex(
             "SELECT labels FROM emails WHERE email_id = ?",
             (email_id,)
         ).fetchone()
-        labels = (existing[0] if existing and existing[0] else "") or parsed.get("labels", "")
+        labels = (existing[0] if existing and existing[0] else "")
         recipients = parsed["recipients"]
 
         # Extract email addresses from recipients for normalized table

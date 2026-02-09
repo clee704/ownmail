@@ -217,7 +217,7 @@ Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
         └── ...
 ```
 
-- **Emails**: Standard `.eml` format with `X-Gmail-Labels` header
+- **Emails**: Standard `.eml` format
 - **Database**: Only stores message IDs, filenames, and hashes — not email content
 
 ### Integrity Verification

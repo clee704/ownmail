@@ -1201,13 +1201,9 @@ def create_app(
             sender = parsed.get("sender", "")
             recipients = parsed.get("recipients", "")
             date = parsed.get("date_str", "")
-            # Prefer labels from DB (works for both IMAP and Gmail API)
-            # Fall back to parsed .eml header for legacy archives
-            labels_str = db_labels_str or parsed.get("labels", "")
-            if isinstance(labels_str, list):
-                labels = labels_str
-            else:
-                labels = [lbl.strip() for lbl in labels_str.split(",") if lbl.strip()]
+            # Labels come from DB (works for both IMAP and Gmail API)
+            labels_str = db_labels_str or ""
+            labels = [lbl.strip() for lbl in labels_str.split(",") if lbl.strip()]
 
             # Ensure MIME-encoded headers are fully decoded
             # Parser may return partially decoded or raw MIME strings
