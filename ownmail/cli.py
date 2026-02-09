@@ -22,19 +22,191 @@ def cmd_setup(
     config_path: Optional[Path],
     source_name: str = None,
     credentials_file: Optional[Path] = None,
+    method: Optional[str] = None,
 ) -> None:
-    """Set up OAuth credentials for a source."""
+    """Set up email source credentials.
+
+    Supports two methods:
+    - imap (default): App Password via IMAP. Simple setup, works with Gmail and others.
+    - oauth: Gmail API with OAuth. More complex setup, but scoped to read-only.
+    """
     print("\n" + "=" * 50)
     print("ownmail - Setup")
     print("=" * 50 + "\n")
+
+    # If --method not specified and no credentials file, ask user
+    if not method:
+        if credentials_file:
+            method = "oauth"
+        else:
+            print("Choose a setup method:\n")
+            print("  [1] IMAP with App Password (recommended)")
+            print("      Works with Gmail, Outlook, Fastmail, and any IMAP server.")
+            print("      For Gmail: just generate an App Password in your Google Account.")
+            print()
+            print("  [2] Gmail API with OAuth")
+            print("      Read-only scope, but requires creating a Google Cloud project.")
+            print()
+
+            choice = input("Your choice [1]: ").strip()
+            if choice == "2":
+                method = "oauth"
+            else:
+                method = "imap"
+
+    if method == "imap":
+        _setup_imap(keychain, config, config_path, source_name)
+    else:
+        _setup_oauth(keychain, config, config_path, source_name, credentials_file)
+
+
+def _setup_imap(
+    keychain: KeychainStorage,
+    config: dict,
+    config_path: Optional[Path],
+    source_name: str = None,
+) -> None:
+    """Set up IMAP with App Password."""
+    print("─" * 50)
+    print("IMAP Setup")
+    print("─" * 50 + "\n")
+
+    # Get email address
+    account_email = input("Email address: ").strip()
+    if not account_email:
+        print("❌ Error: Email address required")
+        sys.exit(1)
+
+    # Detect Gmail
+    is_gmail = account_email.endswith("@gmail.com") or account_email.endswith("@googlemail.com")
+
+    if is_gmail:
+        host = "imap.gmail.com"
+        print(f"\n  Detected Gmail — using {host}")
+        print()
+        print("  To create a Gmail App Password:")
+        print("  1. Go to https://myaccount.google.com/apppasswords")
+        print("     (2-Step Verification must be enabled first)")
+        print("  2. Enter a name (e.g., 'ownmail') and click Create")
+        print("  3. Copy the 16-character password shown")
+        print()
+    else:
+        host = input("IMAP server hostname: ").strip()
+        if not host:
+            print("❌ Error: IMAP hostname required")
+            sys.exit(1)
+        print()
+
+    # Get password
+    import getpass
+
+    password = getpass.getpass("App Password (hidden): ").strip()
+    if not password:
+        print("❌ Error: Password required")
+        sys.exit(1)
+
+    # Test connection
+    print("\nTesting connection...", end="", flush=True)
+    import imaplib
+
+    try:
+        conn = imaplib.IMAP4_SSL(host, 993)
+        conn.login(account_email, password)
+        conn.logout()
+        print(" ✓ Connected successfully!")
+    except imaplib.IMAP4.error as e:
+        error_msg = str(e)
+        print(" ✗ Failed!")
+        if is_gmail:
+            print("\n  Possible causes:")
+            print("  • App Password is incorrect (check for typos, remove spaces)")
+            print("  • 2-Step Verification is not enabled")
+            print("  • IMAP is disabled in Gmail settings (Settings → See all settings → Forwarding and POP/IMAP)")
+        else:
+            print(f"\n  Error: {error_msg}")
+        sys.exit(1)
+    except Exception as e:
+        print(f" ✗ Failed: {e}")
+        sys.exit(1)
+
+    # Save password to keychain
+    keychain.save_imap_password(account_email, password)
+
+    # Get source name
+    if not source_name:
+        email_prefix = account_email.split("@")[0]
+        default_name = email_prefix.replace(".", "_").replace("+", "_")
+        source_name = input(f"\nSource name [{default_name}]: ").strip() or default_name
+
+    # Generate config snippet
+    config_snippet = f"""
+  - name: {source_name}
+    type: imap
+    host: {host}
+    account: {account_email}
+    auth:
+      secret_ref: keychain:imap-password/{account_email}
+"""
+
+    # Check if we should update config file
+    sources = get_sources(config)
+    existing_source = get_source_by_name(config, source_name)
+
+    if existing_source:
+        print(f"\n✓ Source '{source_name}' already exists in config.")
+        print("  No config changes needed.")
+    else:
+        print("\n" + "-" * 50)
+        print("Add this to your config.yaml under 'sources:':")
+        print(config_snippet)
+
+        if config_path and config_path.exists():
+            add_to_config = input("Add to config.yaml automatically? [Y/n]: ").strip().lower()
+            if add_to_config != "n":
+                with open(config_path, "a") as f:
+                    if not sources:
+                        f.write("\nsources:\n")
+                    f.write(config_snippet)
+                print(f"✓ Added to {config_path}")
+
+    print("\n✓ Setup complete!")
+    print(f"  Run 'ownmail backup --source {source_name}' to start backing up.")
+
+
+def _setup_oauth(
+    keychain: KeychainStorage,
+    config: dict,
+    config_path: Optional[Path],
+    source_name: str = None,
+    credentials_file: Optional[Path] = None,
+) -> None:
+    """Set up Gmail API with OAuth (advanced)."""
+    print("─" * 50)
+    print("Gmail API + OAuth Setup")
+    print("─" * 50 + "\n")
+
+    print("This method uses the Gmail API with OAuth, which provides:")
+    print("  • Read-only scope (narrower than App Password)")
+    print("  • Faster batch downloads via Gmail API")
+    print("  • Native Gmail labels (not just folder mapping)")
+    print()
+    print("Requirements:")
+    print("  1. A Google Cloud project with the Gmail API enabled")
+    print("  2. OAuth 2.0 desktop credentials (JSON file)")
+    print()
+    print("Steps to create credentials:")
+    print("  1. Go to https://console.cloud.google.com/")
+    print("  2. Create a new project (or select existing)")
+    print("  3. APIs & Services → Library → search 'Gmail API' → Enable")
+    print("  4. APIs & Services → Credentials → Create Credentials → OAuth client ID")
+    print("  5. Application type: Desktop app → Create")
+    print("  6. Download the JSON file")
+    print()
 
     # Check if client credentials already exist
     has_client_creds = keychain.has_client_credentials("gmail")
 
     if not has_client_creds:
-        # First time setup - need client credentials
-        print("First-time setup: OAuth client credentials needed.\n")
-
         if credentials_file:
             if not credentials_file.exists():
                 print(f"❌ Error: File not found: {credentials_file}")
@@ -44,7 +216,7 @@ def cmd_setup(
                 credentials_json = f.read()
         else:
             print("Paste your OAuth client credentials JSON below.")
-            print("(The JSON from Google Cloud Console → Credentials → Download)")
+            print("(The JSON from step 6 above)")
             print("\nPaste the entire JSON content, then press Enter twice:\n")
 
             lines = []
@@ -80,28 +252,22 @@ def cmd_setup(
     # Now set up an account
     print("Add a Gmail account to backup:\n")
 
-    # Get email address first
     account_email = input("Gmail address: ").strip()
     if not account_email:
         print("❌ Error: Email address required")
         sys.exit(1)
 
-    # Get source name (use email prefix as default)
     if not source_name:
-        # Use part before @ as default name, replacing dots/plus with underscore
         email_prefix = account_email.split("@")[0]
         default_name = email_prefix.replace(".", "_").replace("+", "_")
         source_name = input(f"Source name [{default_name}]: ").strip() or default_name
 
-    # The keychain key for this account's token
     token_key = f"oauth-token/{account_email}"
 
-    # Check if token already exists
     existing_token = keychain.load_gmail_token(account_email)
     if existing_token:
         print(f"\n✓ OAuth token already exists for {account_email}")
     else:
-        # Need to authenticate
         print(f"\nAuthenticating {account_email}...")
         print("A browser window will open for you to authorize access.\n")
 
@@ -110,7 +276,6 @@ def cmd_setup(
         provider = GmailProvider(account=account_email, keychain=keychain)
         provider.authenticate()
 
-    # Generate config snippet
     config_snippet = f"""
   - name: {source_name}
     type: gmail_api
@@ -120,25 +285,21 @@ def cmd_setup(
     include_labels: true
 """
 
-    # Check if we should update config file
     sources = get_sources(config)
     existing_source = get_source_by_name(config, source_name)
 
     if existing_source:
         print(f"\n✓ Source '{source_name}' already exists in config.")
-        print("  No config changes needed.")
     else:
         print("\n" + "-" * 50)
         print("Add this to your config.yaml under 'sources:':")
         print(config_snippet)
 
-        # Offer to append automatically
         if config_path and config_path.exists():
             add_to_config = input("Add to config.yaml automatically? [Y/n]: ").strip().lower()
             if add_to_config != "n":
                 with open(config_path, "a") as f:
                     if not sources:
-                        # No sources section yet
                         f.write("\nsources:\n")
                     f.write(config_snippet)
                 print(f"✓ Added to {config_path}")
@@ -259,8 +420,52 @@ def cmd_backup(
             print("-" * 50 + "\n")
 
         elif source_type == "imap":
-            print("  IMAP support coming soon!")
-            continue
+            from ownmail.providers.imap import ImapProvider
+
+            host = source.get("host", "imap.gmail.com")
+            port = source.get("port", 993)
+            exclude_folders = source.get("exclude_folders")
+
+            provider = ImapProvider(
+                account=account,
+                keychain=keychain,
+                host=host,
+                port=port,
+                exclude_folders=exclude_folders,
+            )
+
+            provider.authenticate()
+
+            email_count = archive.db.get_email_count(account)
+            print(f"Archive location: {archive.archive_dir}", flush=True)
+            print(f"Previously backed up: {email_count:,} emails", flush=True)
+
+            if since or until:
+                date_range = []
+                if since:
+                    date_range.append(f"from {since}")
+                if until:
+                    date_range.append(f"until {until}")
+                print(f"Date filter: {' '.join(date_range)}", flush=True)
+
+            result = archive.backup(provider, since=since, until=until, verbose=verbose)
+
+            total = email_count + result["success_count"]
+            print("\n" + "-" * 50)
+            if result["interrupted"]:
+                print("Backup Paused!")
+                print(f"  Downloaded: {result['success_count']} emails")
+                print("\n  Run 'backup' again to resume.")
+            else:
+                print("Backup Complete!")
+                print(f"  Downloaded: {result['success_count']} emails")
+            if result["error_count"] > 0:
+                print(f"  Errors: {result['error_count']}")
+            print(f"  Total archived: {total:,} emails")
+            print("-" * 50 + "\n")
+
+            # Close IMAP connection
+            provider.close()
 
         else:
             print(f"  Unknown source type: {source_type}")
@@ -367,7 +572,9 @@ def cmd_reset_sync(
 
     for source in sources:
         account = source["account"]
-        archive.db.delete_sync_state(account, "history_id")
+        source_type = source.get("type", "gmail_api")
+        sync_key = "sync_state" if source_type == "imap" else "history_id"
+        archive.db.delete_sync_state(account, sync_key)
         print(f"✓ Reset sync state for {account}")
 
     print("\nNext backup will do a full sync (checking all messages).")
@@ -429,13 +636,18 @@ Examples:
     # setup command
     setup_parser = subparsers.add_parser(
         "setup",
-        help="Configure OAuth credentials",
-        description="Set up Gmail API OAuth credentials for the first time.",
+        help="Set up email source credentials",
+        description="Set up credentials for backing up emails. Supports IMAP with App Passwords (recommended) or Gmail API with OAuth.",
+    )
+    setup_parser.add_argument(
+        "--method",
+        choices=["imap", "oauth"],
+        help="Setup method: 'imap' (App Password, default) or 'oauth' (Gmail API)",
     )
     setup_parser.add_argument(
         "--credentials-file",
         type=Path,
-        help="Path to credentials JSON file",
+        help="Path to OAuth credentials JSON file (implies --method oauth)",
     )
 
     # backup command
@@ -589,7 +801,7 @@ Examples:
     try:
         if args.command == "setup":
             keychain = KeychainStorage()
-            cmd_setup(keychain, config, config_path, args.source, args.credentials_file)
+            cmd_setup(keychain, config, config_path, args.source, args.credentials_file, getattr(args, 'method', None))
 
         elif args.command == "sources":
             if args.sources_cmd == "list":

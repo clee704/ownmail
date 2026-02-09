@@ -309,17 +309,25 @@ class TestCmdBackup:
         }
         archive = EmailArchive(temp_dir, config)
 
-        cmd_backup(archive, config)
+        with patch('ownmail.providers.imap.ImapProvider') as mock_provider_cls:
+            mock_provider = MagicMock()
+            mock_provider.account = "test@gmail.com"
+            mock_provider.name = "imap"
+            mock_provider.get_new_message_ids.return_value = ([], None)
+            mock_provider.get_current_sync_state.return_value = None
+            mock_provider_cls.return_value = mock_provider
+
+            cmd_backup(archive, config)
 
         captured = capsys.readouterr()
-        assert "coming soon" in captured.out.lower()
+        assert "Backup" in captured.out or "Connected" in captured.out or "up to date" in captured.out.lower()
 
 
 class TestCmdSetup:
     """Tests for setup command."""
 
-    def test_setup_first_time_prompts_for_paste(self, temp_dir, capsys, monkeypatch):
-        """Test setup prompts for credentials when none exist."""
+    def test_setup_oauth_first_time_prompts_for_paste(self, temp_dir, capsys, monkeypatch):
+        """Test OAuth setup prompts for credentials when none exist."""
         from unittest.mock import MagicMock
 
         from ownmail.cli import cmd_setup
@@ -348,12 +356,41 @@ class TestCmdSetup:
 
             # Will fail because we're not fully mocking everything
             try:
-                cmd_setup(mock_keychain, config, None)
+                cmd_setup(mock_keychain, config, None, method="oauth")
             except (StopIteration, Exception):
                 pass  # Expected due to mock limitations
 
         captured = capsys.readouterr()
         assert "Setup" in captured.out
+
+    def test_setup_imap_method(self, temp_dir, capsys, monkeypatch):
+        """Test IMAP setup flow."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        mock_keychain = MagicMock()
+        config = {}
+
+        inputs = iter([
+            'user@gmail.com',  # email address
+            'test-app-password',  # app password (via getpass)
+            'my_source',  # source name
+            'n',  # don't add to config
+        ])
+
+        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+
+        with patch('getpass.getpass', return_value='test-app-password'):
+            with patch('imaplib.IMAP4_SSL') as mock_imap:
+                mock_conn = MagicMock()
+                mock_imap.return_value = mock_conn
+
+                cmd_setup(mock_keychain, config, None, method="imap")
+
+        captured = capsys.readouterr()
+        assert "Setup complete" in captured.out
+        mock_keychain.save_imap_password.assert_called_once()
 
 
 class TestMainEdgeCases:

@@ -97,10 +97,11 @@ class EmailArchive:
         if verbose:
             print(f"[verbose] Found {len(downloaded_ids)} previously downloaded IDs", flush=True)
 
-        # Get sync state
+        # Get sync state (key depends on provider type)
+        sync_key = "sync_state" if provider.name == "imap" else "history_id"
         if verbose:
             print("[verbose] Getting sync state...", flush=True)
-        sync_state = self.db.get_sync_state(account, "history_id")
+        sync_state = self.db.get_sync_state(account, sync_key)
         if verbose:
             print(f"[verbose] Sync state: {sync_state}", flush=True)
 
@@ -125,12 +126,12 @@ class EmailArchive:
             # Date-filtered runs are partial syncs, don't update history_id
             if not since and not until:
                 if new_state:
-                    self.db.set_sync_state(account, "history_id", new_state)
+                    self.db.set_sync_state(account, sync_key, new_state)
                 elif sync_state is None:
                     # After full sync, get current state
                     current_state = provider.get_current_sync_state()
                     if current_state:
-                        self.db.set_sync_state(account, "history_id", current_state)
+                        self.db.set_sync_state(account, sync_key, current_state)
             return {"success_count": 0, "error_count": 0, "interrupted": False, "failed_ids": []}
 
         print(f"\nFound {len(new_ids)} new emails to download")
@@ -291,11 +292,11 @@ class EmailArchive:
         # This ensures history_id marks a complete sync point
         if not interrupted and not since and not until and error_count == 0:
             if new_state:
-                self.db.set_sync_state(account, "history_id", new_state)
+                self.db.set_sync_state(account, sync_key, new_state)
             else:
                 current_state = provider.get_current_sync_state()
                 if current_state:
-                    self.db.set_sync_state(account, "history_id", current_state)
+                    self.db.set_sync_state(account, sync_key, current_state)
 
         return {
             "success_count": success_count,

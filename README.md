@@ -34,7 +34,7 @@ There are existing tools like `mbsync` + `mu` or `offlineimap` that can accompli
 |---|---|---|
 | **Setup** | Configure multiple tools separately | Single `pip install`, one config file |
 | **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
-| **Gmail sync** | IMAP (slower, label limitations) | Gmail API (fast, proper labels, history-based sync) |
+| **Gmail sync** | IMAP only | IMAP (App Password) or Gmail API (OAuth) |
 | **Integrity** | — | SHA256 hashes, `verify` and `sync-check` commands |
 | **Hackability** | Multiple codebases in different languages | Single Python project — fork it, make it yours |
 
@@ -55,7 +55,7 @@ pipx install ownmail
 ownmail setup
 
 # 2. Backup your emails
-ownmail backup --archive-dir /Volumes/Secure/ownmail
+ownmail backup
 
 # 3. Search
 ownmail search "invoice from:amazon"
@@ -65,7 +65,7 @@ ownmail search "invoice from:amazon"
 
 | Command | Description |
 |---------|-------------|
-| `setup` | Configure OAuth credentials (stored in Keychain) |
+| `setup` | Set up email source credentials (App Password or OAuth) |
 | `backup` | Download new emails |
 | `search "query"` | Full-text search |
 | `stats` | Show archive statistics |
@@ -77,26 +77,63 @@ ownmail search "invoice from:amazon"
 
 ## Setup
 
-### 1. Create Google Cloud Credentials
+ownmail supports two methods for connecting to Gmail:
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project
-3. Enable the **Gmail API** (APIs & Services → Library)
-4. Create **OAuth 2.0 credentials** (Credentials → Create → OAuth client ID → Desktop app)
-5. Download the JSON file
+### Option A: IMAP with App Password (recommended)
 
-### 2. Import Credentials
+The simplest way to get started. Works with Gmail, Outlook, Fastmail, and any IMAP server.
+
+**For Gmail:**
+
+1. Enable [2-Step Verification](https://myaccount.google.com/signinoptions/two-step-verification) (if not already)
+2. Go to [App Passwords](https://myaccount.google.com/apppasswords)
+3. Create an App Password (name it "ownmail")
+4. Run setup:
 
 ```bash
-# Option A: Paste directly (recommended — never touches disk)
 ownmail setup
-
-# Option B: Import from file
-ownmail setup --credentials-file ~/Downloads/credentials.json
-rm ~/Downloads/credentials.json  # Delete after import!
+# Choose [1] IMAP with App Password
+# Enter your Gmail address and the 16-character App Password
 ```
 
-Credentials are stored in your system keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service), never on the filesystem.
+That's it. Credentials are stored in your system keychain.
+
+**For other IMAP servers** (Fastmail, company mail, etc.), the same flow works — you'll be prompted for the IMAP hostname.
+
+### Option B: Gmail API with OAuth (advanced)
+
+Uses the Gmail API with read-only OAuth scope. Faster batch downloads and native Gmail labels, but requires creating a Google Cloud project.
+
+```bash
+ownmail setup --method oauth
+```
+
+<details>
+<summary>Detailed steps</summary>
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select existing)
+3. APIs & Services → Library → search "Gmail API" → Enable
+4. APIs & Services → Credentials → Create Credentials → OAuth client ID
+5. Application type: Desktop app → Create
+6. Download the JSON file
+7. Run: `ownmail setup --method oauth --credentials-file ~/Downloads/credentials.json`
+8. Delete the JSON file after import
+
+</details>
+
+### Comparison
+
+| | IMAP + App Password | Gmail API + OAuth |
+|---|---|---|
+| **Setup time** | 30 seconds | ~15 minutes |
+| **Requires** | 2FA enabled | Google Cloud project |
+| **Access scope** | Full account | Read-only |
+| **Revocable** | Yes (App Passwords page) | Yes (Google Account) |
+| **Speed** | Sequential (one at a time) | Batch downloads |
+| **Gmail labels** | Mapped from IMAP folders | Native labels |
+| **Works with** | Gmail, Outlook, Fastmail, any IMAP | Gmail only |
+| **Credentials stored in** | System keychain | System keychain |
 
 ## Config File
 
@@ -106,20 +143,32 @@ Create `config.yaml` in your working directory:
 archive_root: /Volumes/Secure/ownmail
 
 sources:
+  # Option A: IMAP with App Password (recommended)
   - name: gmail_personal
-    type: gmail_api
+    type: imap
+    host: imap.gmail.com
     account: you@gmail.com
     auth:
-      secret_ref: keychain:gmail_personal_token
-    include_labels: true
+      secret_ref: keychain:imap-password/you@gmail.com
 
-  # Add more sources as needed:
+  # Option B: Gmail API with OAuth
+  # - name: gmail_personal
+  #   type: gmail_api
+  #   account: you@gmail.com
+  #   auth:
+  #     secret_ref: keychain:oauth-token/you@gmail.com
+  #   include_labels: true
+
+  # Other IMAP servers
   # - name: work_imap
   #   type: imap
   #   host: imap.company.com
   #   account: you@company.com
   #   auth:
-  #     secret_ref: keychain:work_imap_password
+  #     secret_ref: keychain:imap-password/you@company.com
+  #   exclude_folders:
+  #     - Trash
+  #     - Spam
 ```
 
 ## Search
@@ -183,7 +232,7 @@ Backup Paused!
 
 | What | Where |
 |------|-------|
-| OAuth credentials | System keychain (macOS/Windows/Linux) |
+| App Passwords & OAuth tokens | System keychain (macOS/Windows/Linux) |
 | Emails & search index | Your chosen directory |
 
 Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
@@ -196,10 +245,11 @@ When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify
 
 ## Roadmap
 
-- [ ] Multiple accounts
+- [x] Gmail backup (API + OAuth)
+- [x] IMAP support (App Passwords, any IMAP server)
+- [x] Web UI for browsing and search
 - [ ] Outlook/Microsoft 365 support
-- [ ] Generic IMAP support
-- [ ] Web UI for self-hosted access
+- [ ] Local .eml import
 
 ## License
 
