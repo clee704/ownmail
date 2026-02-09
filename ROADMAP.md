@@ -146,10 +146,6 @@ The parser works correctly but has deep nesting and long function bodies. Every 
 
 Items not yet scheduled:
 
-### Test Coverage — Synthetic Email Fixtures
-
-Create `tests/fixtures/` with realistic `.eml` files that reproduce specific encoding edge cases: EUC-KR declared as UTF-8, split multi-byte RFC 2047, raw 8-bit headers, Korean weekday date prefixes, numeric month formats, no Date header, truncated multipart, nested RFC 822, mixed charset parts. Sanitize from real archive or construct synthetically.
-
 ### Email Export
 
 ```bash
