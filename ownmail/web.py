@@ -1008,19 +1008,25 @@ def create_app(
                                 emb_to = decode_header(embedded.get("To", ""))
                                 emb_reply_to = decode_header(embedded.get("Reply-To", ""))
 
-                                # Get body of embedded message
+                                # Get body and attachments of embedded message
                                 emb_body = ""
-                                if embedded.is_multipart():
-                                    for sub in embedded.walk():
-                                        if sub.get_content_type() == "text/plain":
-                                            payload = sub.get_payload(decode=True)
-                                            if payload:
-                                                emb_body = _decode_text_body(payload, sub.get_content_charset())
-                                                break
-                                else:
-                                    payload = embedded.get_payload(decode=True)
-                                    if payload:
-                                        emb_body = _decode_text_body(payload, embedded.get_content_charset())
+                                for sub in embedded.walk():
+                                    sub_ct = sub.get_content_type()
+                                    sub_disp = str(sub.get("Content-Disposition", ""))
+
+                                    # Check for attachments inside embedded message
+                                    if "attachment" in sub_disp or sub.get_filename():
+                                        att_filename = _extract_attachment_filename(sub)
+                                        payload = sub.get_payload(decode=True)
+                                        size = len(payload) if payload else 0
+                                        attachments.append({
+                                            "filename": att_filename,
+                                            "size": _format_size(size),
+                                        })
+                                    elif sub_ct == "text/plain" and not emb_body:
+                                        payload = sub.get_payload(decode=True)
+                                        if payload:
+                                            emb_body = _decode_text_body(payload, sub.get_content_charset())
 
                                 embedded_messages.append({
                                     "from": emb_from,
