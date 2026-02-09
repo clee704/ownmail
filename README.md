@@ -1,6 +1,6 @@
 # ownmail
 
-**Own your mail.** Back up your Gmail to plain files. Search them offline. Own them forever.
+**Own your mail.** Back up your Gmail to plain files. Search and read them offline. Own them forever.
 
 ```
 $ ownmail backup
@@ -36,9 +36,10 @@ ownmail backup
 
 # 3. Search
 ownmail search "invoice from:amazon"
-```
 
-> ownmail backs up and searches your email — it doesn't replace your mail app.
+# 4. Browse your archive in the browser
+ownmail serve
+```
 
 ## Philosophy
 
@@ -46,6 +47,7 @@ ownmail search "invoice from:amazon"
 - 🔐 **You own your data** — Everything stays on your drive. Put it on an encrypted volume and you're done.
 - ⚡ **Fast & incremental** — Only downloads new emails. Resume anytime with Ctrl-C.
 - 🔍 **Optional search** — SQLite-based full-text search. The index is just a convenience layer.
+- 🌐 **Built-in viewer** — Browse and read your archive in any browser. Dark mode, sanitized HTML, attachment downloads.
 
 ## Why ownmail?
 
@@ -57,6 +59,7 @@ There are existing tools like `mbsync` + `mu` or `offlineimap` that can accompli
 | **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
 | **Gmail sync** | IMAP only | IMAP (App Password) or Gmail API (OAuth) |
 | **Integrity** | — | SHA256 hashes, `verify` and `sync-check` commands |
+| **Web viewer** | — | Built-in browser UI with search, dark mode, HTML sanitization |
 | **Hackability** | Multiple codebases in different languages | Single Python project — fork it, make it yours |
 
 **The bottom line:** If you want a simple, single-tool Gmail backup that stores plain files — ownmail is for you.
@@ -68,7 +71,7 @@ There are existing tools like `mbsync` + `mu` or `offlineimap` that can accompli
 | `setup` | Set up email source credentials (App Password or OAuth) |
 | `backup` | Download new emails |
 | `search "query"` | Full-text search |
-| `serve` | Launch web UI for browsing and searching emails |
+| `serve` | Browse and read your archive in the browser |
 | `stats` | Show archive statistics |
 | `verify` | Check file integrity (SHA256) |
 | `sync-check` | Compare local archive with server |
