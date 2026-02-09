@@ -18,15 +18,20 @@ class ArchiveDatabase:
     - emails_fts: FTS5 virtual table for full-text search
     """
 
-    def __init__(self, archive_dir: Path):
+    def __init__(self, archive_dir: Path, db_dir: Path = None):
         """Initialize the archive database.
 
         Args:
-            archive_dir: Directory containing the archive (database will be created here)
+            archive_dir: Directory containing the email archive
+            db_dir: Optional separate directory for the database.
+                    If not provided, the database is stored in archive_dir.
         """
         self.archive_dir = archive_dir
-        self.db_path = archive_dir / "ownmail.db"
+        effective_db_dir = db_dir or archive_dir
+        self.db_path = effective_db_dir / "ownmail.db"
         archive_dir.mkdir(parents=True, exist_ok=True)
+        if db_dir:
+            db_dir.mkdir(parents=True, exist_ok=True)
 
         is_new_db = not self.db_path.exists()
         if is_new_db:
