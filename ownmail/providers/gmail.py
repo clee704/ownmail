@@ -83,7 +83,7 @@ class GmailProvider(EmailProvider):
             self._keychain.save_gmail_token(self._account, creds)
 
         self._service = build("gmail", "v1", credentials=creds)
-        print("✓ Authenticated with Gmail API")
+        print("✓ Authenticated with Gmail API", flush=True)
 
     def get_all_message_ids(
         self, since: Optional[str] = None, until: Optional[str] = None

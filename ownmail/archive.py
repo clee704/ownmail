@@ -75,6 +75,7 @@ class EmailArchive:
         provider: EmailProvider,
         since: Optional[str] = None,
         until: Optional[str] = None,
+        verbose: bool = False,
     ) -> dict:
         """Backup emails from a provider.
 
@@ -82,6 +83,7 @@ class EmailArchive:
             provider: Authenticated email provider
             since: Only backup emails after this date (YYYY-MM-DD)
             until: Only backup emails before this date (YYYY-MM-DD)
+            verbose: Show detailed progress output
 
         Returns:
             Dictionary with success_count, error_count, interrupted
@@ -91,14 +93,26 @@ class EmailArchive:
         emails_dir.mkdir(parents=True, exist_ok=True)
 
         # Get downloaded IDs for this account
+        if verbose:
+            print("[verbose] Loading downloaded IDs from database...", flush=True)
         downloaded_ids = self.db.get_downloaded_ids(account)
+        if verbose:
+            print(f"[verbose] Found {len(downloaded_ids)} previously downloaded IDs", flush=True)
 
         # Get sync state
+        if verbose:
+            print("[verbose] Getting sync state...", flush=True)
         sync_state = self.db.get_sync_state(account, "history_id")
+        if verbose:
+            print(f"[verbose] Sync state: {sync_state}", flush=True)
 
         # Get new message IDs (with optional date filter)
         print("Checking for new emails...", flush=True)
+        if verbose:
+            print("[verbose] Calling provider.get_new_message_ids()...", flush=True)
         new_ids, new_state = provider.get_new_message_ids(sync_state, since=since, until=until)
+        if verbose:
+            print(f"[verbose] Provider returned {len(new_ids)} message IDs", flush=True)
 
         # Filter out already downloaded
         new_ids = [mid for mid in new_ids if mid not in downloaded_ids]
