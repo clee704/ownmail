@@ -48,6 +48,18 @@ ownmail --help
 pytest
 ```
 
+### Code Coverage
+
+We enforce a coverage barrier to prevent regressions. Run tests with coverage:
+
+```bash
+pytest --cov=ownmail --cov-report=term-missing
+```
+
+Current minimum coverage: **70%** (configured in `pyproject.toml`).
+
+When adding new code, write tests to maintain or improve coverage. The build will fail if coverage drops below the barrier.
+
 ## Before Committing
 
 **Always run tests and lint before committing:**
@@ -56,8 +68,8 @@ pytest
 # Run lint check
 ruff check .
 
-# Run tests
-pytest
+# Run tests with coverage
+pytest --cov=ownmail
 
 # Or both together
 ruff check . && pytest

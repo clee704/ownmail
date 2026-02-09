@@ -194,3 +194,122 @@ class TestDatabaseStats:
 
         assert stats["total_emails"] == 2
         assert stats["indexed_emails"] == 1
+
+    def test_get_stats_per_account(self, temp_dir):
+        """Test stats filtered by account."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg2", "f2.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg3", "f3.eml", account="bob@gmail.com")
+
+        stats_alice = db.get_stats(account="alice@gmail.com")
+        stats_bob = db.get_stats(account="bob@gmail.com")
+
+        assert stats_alice["total_emails"] == 2
+        assert stats_bob["total_emails"] == 1
+
+
+class TestPerAccountOperations:
+    """Tests for per-account database operations."""
+
+    def test_sync_state_per_account(self, temp_dir):
+        """Test sync state is stored per account."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.set_sync_state("alice@gmail.com", "history_id", "alice_history")
+        db.set_sync_state("bob@gmail.com", "history_id", "bob_history")
+
+        assert db.get_sync_state("alice@gmail.com", "history_id") == "alice_history"
+        assert db.get_sync_state("bob@gmail.com", "history_id") == "bob_history"
+
+    def test_get_downloaded_ids_per_account(self, temp_dir):
+        """Test getting downloaded IDs filtered by account."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg2", "f2.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg3", "f3.eml", account="bob@gmail.com")
+
+        alice_ids = db.get_downloaded_ids(account="alice@gmail.com")
+        bob_ids = db.get_downloaded_ids(account="bob@gmail.com")
+        all_ids = db.get_downloaded_ids()
+
+        assert alice_ids == {"msg1", "msg2"}
+        assert bob_ids == {"msg3"}
+        assert all_ids == {"msg1", "msg2", "msg3"}
+
+    def test_is_downloaded_per_account(self, temp_dir):
+        """Test is_downloaded with account filter."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
+
+        assert db.is_downloaded("msg1", account="alice@gmail.com") is True
+        assert db.is_downloaded("msg1", account="bob@gmail.com") is False
+        assert db.is_downloaded("msg1") is True
+
+    def test_history_id_per_account(self, temp_dir):
+        """Test history ID stored per account."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.set_history_id("alice_history", account="alice@gmail.com")
+        db.set_history_id("bob_history", account="bob@gmail.com")
+
+        assert db.get_history_id(account="alice@gmail.com") == "alice_history"
+        assert db.get_history_id(account="bob@gmail.com") == "bob_history"
+
+
+class TestAccountManagement:
+    """Tests for account management methods."""
+
+    def test_get_accounts(self, temp_dir):
+        """Test getting list of accounts."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg2", "f2.eml", account="bob@gmail.com")
+        db.mark_downloaded("msg3", "f3.eml", account="alice@gmail.com")
+
+        accounts = db.get_accounts()
+
+        assert set(accounts) == {"alice@gmail.com", "bob@gmail.com"}
+
+    def test_get_email_count_by_account(self, temp_dir):
+        """Test getting email count per account."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg2", "f2.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg3", "f3.eml", account="bob@gmail.com")
+        db.mark_downloaded("msg4", "f4.eml")  # Legacy, no account
+
+        counts = db.get_email_count_by_account()
+
+        assert counts.get("alice@gmail.com") == 2
+        assert counts.get("bob@gmail.com") == 1
+        assert counts.get("(legacy)") == 1  # Legacy entry
+
+
+class TestSearchWithAccount:
+    """Tests for search with account filtering."""
+
+    def test_search_filters_by_account(self, temp_dir):
+        """Test that search can filter by account."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded("msg1", "f1.eml", account="alice@gmail.com")
+        db.mark_downloaded("msg2", "f2.eml", account="bob@gmail.com")
+
+        db.index_email("msg1", "Invoice Alice", "From", "To", "Date", "Body", "")
+        db.index_email("msg2", "Invoice Bob", "From", "To", "Date", "Body", "")
+
+        results_alice = db.search("invoice", account="alice@gmail.com")
+        results_bob = db.search("invoice", account="bob@gmail.com")
+        results_all = db.search("invoice")
+
+        assert len(results_alice) == 1
+        assert results_alice[0][0] == "msg1"
+        assert len(results_bob) == 1
+        assert results_bob[0][0] == "msg2"
+        assert len(results_all) == 2

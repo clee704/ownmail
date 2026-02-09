@@ -180,8 +180,15 @@ class GmailProvider(EmailProvider):
 
         return raw_data, labels
 
-    def _get_labels_for_message(self, message_id: str) -> List[str]:
-        """Fetch Gmail labels for a message."""
+    def get_labels_for_message(self, message_id: str) -> List[str]:
+        """Fetch Gmail labels for a message.
+
+        Args:
+            message_id: Gmail message ID
+
+        Returns:
+            List of human-readable label names
+        """
         try:
             message = (
                 self._service.users()
@@ -193,6 +200,9 @@ class GmailProvider(EmailProvider):
             return self._resolve_label_names(label_ids)
         except HttpError:
             return []
+
+    # Alias for backward compatibility
+    _get_labels_for_message = get_labels_for_message
 
     def _resolve_label_names(self, label_ids: List[str]) -> List[str]:
         """Convert label IDs to human-readable names."""
