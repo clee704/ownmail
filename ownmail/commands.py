@@ -142,29 +142,29 @@ def cmd_reindex(
         print("\nAll emails are already indexed. Use --force to reindex everything.")
         return
 
-    # Get message_ids and rowids of existing FTS entries (need cleanup after re-indexing)
-    t0 = time.time()
-    print("Checking for existing FTS entries...", end="", flush=True)
-    email_ids = [msg_id for msg_id, _, _, _ in emails]
-    with sqlite3.connect(db_path) as conn:
-        placeholders = ",".join("?" * len(email_ids))
-        # Get both message_id and rowid so we can delete by rowid later (much faster)
-        existing_fts_rows = conn.execute(
-            f"SELECT message_id, rowid FROM emails_fts WHERE message_id IN ({placeholders})",
-            email_ids
-        ).fetchall()
-        existing_fts = {row[0] for row in existing_fts_rows}
-        # Map message_id -> list of rowids (there might be duplicates)
-        existing_fts_rowids = {}
-        for msg_id, rowid in existing_fts_rows:
-            if msg_id not in existing_fts_rowids:
-                existing_fts_rowids[msg_id] = []
-            existing_fts_rowids[msg_id].append(rowid)
-    print(f" {len(existing_fts)} found ({time.time()-t0:.1f}s)")
+    # For full reindex with force mode, rebuild FTS table from scratch
+    # This is necessary because contentless FTS5 can't delete without original content
+    if force and not pattern and not file_path:
+        print("Rebuilding FTS index...", end="", flush=True)
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("DROP TABLE IF EXISTS emails_fts")
+            conn.execute("""
+                CREATE VIRTUAL TABLE emails_fts USING fts5(
+                    subject,
+                    sender,
+                    recipients,
+                    body,
+                    attachments,
+                    content='',
+                    tokenize='porter unicode61'
+                )
+            """)
+            # Also clear indexed_hash so all emails get reindexed
+            conn.execute("UPDATE emails SET indexed_hash = NULL, subject = NULL")
+            conn.commit()
+        print(" done")
 
     print(f"\nIndexing {len(emails)} emails...")
-    if existing_fts:
-        print(f"  ({len(existing_fts)} will be re-indexed)")
     print("(Press Ctrl-C to pause - progress is saved, run again to resume)\n")
 
     success_count = 0
@@ -173,7 +173,6 @@ def cmd_reindex(
     start_time = time.time()
     last_commit_count = 0
     COMMIT_INTERVAL = 50  # Commit every N emails
-    successfully_reindexed = []  # Track which re-indexed emails succeeded (have existing FTS)
 
     def signal_handler(signum, frame):
         nonlocal interrupted
@@ -203,12 +202,9 @@ def cmd_reindex(
                 error_count += 1
                 continue
 
-            # Index the email
+            # Index the email (updates emails table, FTS synced via triggers)
             if _index_email_for_reindex(archive, msg_id, filepath, batch_conn, debug):
                 success_count += 1
-                # Track re-indexed emails that need old FTS entry deleted
-                if msg_id in existing_fts:
-                    successfully_reindexed.append(msg_id)
             else:
                 error_count += 1
 
@@ -236,26 +232,8 @@ def cmd_reindex(
             # Update progress line
             print(f"\r\033[K  [{i}/{len(emails)}] {rate:.1f}/s | ETA {eta_str:>5} | {short_name}", end="", flush=True)
     finally:
-        # Commit any remaining inserts
+        # Commit any remaining updates
         batch_conn.commit()
-
-        # Delete old FTS entries for successfully re-indexed emails by rowid (fast!)
-        if successfully_reindexed:
-            # Collect all rowids to delete
-            rowids_to_delete = []
-            for msg_id in successfully_reindexed:
-                if msg_id in existing_fts_rowids:
-                    rowids_to_delete.extend(existing_fts_rowids[msg_id])
-
-            if rowids_to_delete:
-                print(f"\n  Cleaning up {len(rowids_to_delete)} old FTS entries...", end="", flush=True)
-                t0 = time.time()
-                # Delete by rowid is O(1) per row in FTS5, much faster than scanning
-                placeholders = ",".join("?" * len(rowids_to_delete))
-                batch_conn.execute(f"DELETE FROM emails_fts WHERE rowid IN ({placeholders})", rowids_to_delete)
-                batch_conn.commit()
-                print(f" done ({time.time()-t0:.1f}s)")
-
         batch_conn.close()
         signal.signal(signal.SIGINT, original_handler)
 
@@ -307,34 +285,49 @@ def _index_email_for_reindex(
     conn: sqlite3.Connection,
     debug: bool = False,
 ) -> bool:
-    """Index email during reindex (uses batch connection, skips DELETE)."""
+    """Index email during reindex (uses batch connection)."""
     try:
-        parsed = EmailParser.parse_file(filepath=filepath)
-
-        # Insert into FTS (skip DELETE, we batch-delete old entries at end)
-        conn.execute(
-            """
-            INSERT INTO emails_fts
-            (message_id, subject, sender, recipients, date_str, body, attachments)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (message_id, parsed["subject"], parsed["sender"], parsed["recipients"],
-             parsed["date_str"], parsed["body"], parsed["attachments"])
-        )
-
-        # Compute content hash if missing and update indexed_hash + labels
+        # Read file once for both parsing and hashing
         with open(filepath, "rb") as f:
             content = f.read()
-        content_hash = hashlib.sha256(content).hexdigest()
 
-        conn.execute(
+        content_hash = hashlib.sha256(content).hexdigest()
+        parsed = EmailParser.parse_file(content=content)
+
+        # Create snippet from body
+        body = parsed["body"]
+        snippet = body[:200] + "..." if len(body) > 200 else body
+
+        # Update metadata in emails table and get rowid in one query
+        row = conn.execute(
             """
-            UPDATE emails
-            SET indexed_hash = ?, content_hash = COALESCE(content_hash, ?), labels = ?
+            UPDATE emails SET
+                subject = ?,
+                sender = ?,
+                recipients = ?,
+                date_str = ?,
+                labels = ?,
+                snippet = ?,
+                indexed_hash = ?,
+                content_hash = COALESCE(content_hash, ?)
             WHERE message_id = ?
+            RETURNING rowid
             """,
-            (content_hash, content_hash, parsed.get("labels", ""), message_id)
-        )
+            (parsed["subject"], parsed["sender"], parsed["recipients"],
+             parsed["date_str"], parsed.get("labels", ""), snippet,
+             content_hash, content_hash, message_id)
+        ).fetchone()
+
+        # Insert into FTS
+        if row:
+            conn.execute(
+                """
+                INSERT INTO emails_fts (rowid, subject, sender, recipients, body, attachments)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (row[0], parsed["subject"], parsed["sender"], parsed["recipients"],
+                 parsed["body"], parsed["attachments"])
+            )
 
         return True
     except Exception as e:
@@ -657,10 +650,9 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
     """Check database integrity and optionally fix issues.
 
     Checks for:
-    - Duplicate FTS entries (same message_id multiple times)
-    - Orphaned FTS entries (in FTS but not in emails table)
-    - Missing FTS entries (in emails but not in FTS)
+    - Missing metadata (subject/sender not populated)
     - indexed_hash mismatches
+    - FTS sync issues
     """
     import time
 
@@ -673,136 +665,83 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
     db_path = archive.db.db_path
 
     with sqlite3.connect(db_path) as conn:
-        # First, load all the IDs we need (this is faster than complex SQL on FTS)
-        print("Loading message IDs from database...", flush=True)
-
-        print("  FTS table...", end="", flush=True)
+        # 1. Check for emails missing metadata (not indexed)
+        print("Checking for emails missing metadata...", end="", flush=True)
         start = time.time()
-        # Get all message_ids from FTS (including duplicates to count them)
-        fts_all_ids = [row[0] for row in conn.execute(
-            "SELECT message_id FROM emails_fts"
-        )]
-        print(f" {len(fts_all_ids)} entries ({time.time() - start:.1f}s)")
-
-        print("  emails table...", end="", flush=True)
-        start = time.time()
-        email_ids = {row[0] for row in conn.execute(
-            "SELECT message_id FROM emails"
-        )}
-        print(f" {len(email_ids)} entries ({time.time() - start:.1f}s)")
-
-        # Build FTS ID set and count duplicates
-        fts_ids = set()
-        fts_counts: dict = {}
-        for msg_id in fts_all_ids:
-            fts_ids.add(msg_id)
-            fts_counts[msg_id] = fts_counts.get(msg_id, 0) + 1
-
-        # 1. Check for duplicate FTS entries
-        print("\nChecking for duplicate FTS entries...", end="", flush=True)
-        start = time.time()
-        duplicates = [(msg_id, cnt) for msg_id, cnt in fts_counts.items() if cnt > 1]
+        missing_metadata = conn.execute("""
+            SELECT COUNT(*) FROM emails WHERE subject IS NULL
+        """).fetchone()[0]
         print(f" ({time.time() - start:.1f}s)")
 
-        if duplicates:
-            issues_found += len(duplicates)
-            print(f"  ✗ Found {len(duplicates)} message_ids with duplicate FTS entries")
-            if verbose:
-                for msg_id, cnt in duplicates[:10]:
-                    print(f"      {msg_id}: {cnt} entries")
-                if len(duplicates) > 10:
-                    print(f"      ... and {len(duplicates) - 10} more")
+        if missing_metadata > 0:
+            issues_found += 1
+            print(f"  ✗ {missing_metadata} emails missing subject/sender metadata")
+            print("  → Run 'ownmail reindex' to populate")
+        else:
+            print("  ✓ All emails have metadata")
 
+        # 2. Check for FTS sync issues (rowids should match)
+        print("\nChecking FTS sync...", end="", flush=True)
+        start = time.time()
+        # FTS should have same rowids as emails table for indexed entries
+        fts_count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
+        emails_with_metadata = conn.execute(
+            "SELECT COUNT(*) FROM emails WHERE subject IS NOT NULL"
+        ).fetchone()[0]
+        print(f" ({time.time() - start:.1f}s)")
+
+        if fts_count != emails_with_metadata:
+            issues_found += 1
+            print(f"  ✗ FTS has {fts_count} entries, but {emails_with_metadata} emails have metadata")
             if fix:
-                print("  Fixing: keeping only newest entry for each...", end="", flush=True)
+                print("  Fixing: rebuilding FTS index...", end="", flush=True)
                 start = time.time()
+                # Drop and recreate FTS table (can't DELETE from contentless FTS)
+                conn.execute("DROP TABLE IF EXISTS emails_fts")
                 conn.execute("""
-                    DELETE FROM emails_fts
-                    WHERE rowid NOT IN (
-                        SELECT MAX(rowid) FROM emails_fts GROUP BY message_id
+                    CREATE VIRTUAL TABLE emails_fts USING fts5(
+                        subject,
+                        sender,
+                        recipients,
+                        body,
+                        attachments,
+                        content='',
+                        tokenize='porter unicode61'
                     )
                 """)
+                # Rebuild from emails table (without body/attachments - those require reparsing)
+                conn.execute("""
+                    INSERT INTO emails_fts(rowid, subject, sender, recipients, body, attachments)
+                    SELECT rowid, COALESCE(subject, ''), COALESCE(sender, ''), COALESCE(recipients, ''), '', ''
+                    FROM emails WHERE subject IS NOT NULL
+                """)
                 conn.commit()
-                issues_fixed += len(duplicates)
+                issues_fixed += 1
                 print(f" ({time.time() - start:.1f}s)")
-                print(f"  ✓ Fixed {len(duplicates)} duplicates")
+                print("  ✓ FTS index rebuilt (run 'reindex --force' to restore body text)")
         else:
-            print("  ✓ No duplicate FTS entries")
+            print(f"  ✓ FTS in sync ({fts_count} entries)")
 
-        # 2. Check for orphaned FTS entries (in FTS but not in emails)
-        # Already have fts_ids and email_ids loaded above
-        print("\nChecking for orphaned FTS entries...", end="", flush=True)
-        start = time.time()
-        orphaned_ids = fts_ids - email_ids
-        print(f" ({time.time() - start:.1f}s)")
-
-        if orphaned_ids:
-            issues_found += len(orphaned_ids)
-            print(f"  ✗ Found {len(orphaned_ids)} FTS entries with no matching email record")
-            if verbose:
-                for msg_id in list(orphaned_ids)[:10]:
-                    print(f"      {msg_id}")
-                if len(orphaned_ids) > 10:
-                    print(f"      ... and {len(orphaned_ids) - 10} more")
-
-            if fix:
-                print("  Fixing: removing orphaned FTS entries...")
-                for msg_id in orphaned_ids:
-                    conn.execute("DELETE FROM emails_fts WHERE message_id = ?", (msg_id,))
-                conn.commit()
-                issues_fixed += len(orphaned_ids)
-                print(f"  ✓ Removed {len(orphaned_ids)} orphaned entries")
-        else:
-            print("  ✓ No orphaned FTS entries")
-
-        # 3. Check for missing FTS entries (in emails but not in FTS)
-        print("\nChecking for missing FTS entries...", end="", flush=True)
-        start = time.time()
-        missing_ids = email_ids - fts_ids
-        print(f" ({time.time() - start:.1f}s)")
-
-        if missing_ids:
-            issues_found += len(missing_ids)
-            print(f"  ✗ Found {len(missing_ids)} emails not in search index")
-            if verbose:
-                # Get filenames for display
-                for msg_id in list(missing_ids)[:10]:
-                    row = conn.execute(
-                        "SELECT filename FROM emails WHERE message_id = ?", (msg_id,)
-                    ).fetchone()
-                    if row:
-                        print(f"      {row[0]}")
-                if len(missing_ids) > 10:
-                    print(f"      ... and {len(missing_ids) - 10} more")
-            print("  → Run 'ownmail reindex' to index these emails")
-        else:
-            print("  ✓ All emails are in search index")
-
-        # 4. Check indexed_hash vs content_hash mismatches
+        # 3. Check indexed_hash vs content_hash mismatches
         print("\nChecking for index hash mismatches...", end="", flush=True)
         start = time.time()
         hash_mismatches = conn.execute("""
-            SELECT message_id, filename
+            SELECT COUNT(*)
             FROM emails
             WHERE content_hash IS NOT NULL
               AND indexed_hash IS NOT NULL
               AND content_hash != indexed_hash
-        """).fetchall()
+        """).fetchone()[0]
         print(f" ({time.time() - start:.1f}s)")
 
-        if hash_mismatches:
-            issues_found += len(hash_mismatches)
-            print(f"  ✗ Found {len(hash_mismatches)} emails where index is out of date")
-            if verbose:
-                for _, filename in hash_mismatches[:10]:
-                    print(f"      {filename}")
-                if len(hash_mismatches) > 10:
-                    print(f"      ... and {len(hash_mismatches) - 10} more")
-            print("  → Run 'ownmail reindex' to update these")
+        if hash_mismatches > 0:
+            issues_found += 1
+            print(f"  ✗ {hash_mismatches} emails where index is out of date")
+            print("  → Run 'ownmail reindex' to update")
         else:
             print("  ✓ All indexed emails are up to date")
 
-        # 5. Check for NULL hashes
+        # 4. Check for NULL hashes
         print("\nChecking for missing hashes...", end="", flush=True)
         start = time.time()
         null_content_hash = conn.execute(
@@ -816,10 +755,10 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
         if null_content_hash > 0:
             print(f"  ? {null_content_hash} emails without content_hash")
             print("  → Run 'ownmail rehash' to compute")
-        if null_indexed_hash > 0:
-            print(f"  ? {null_indexed_hash} emails without indexed_hash (not yet indexed)")
+        elif null_indexed_hash > 0:
+            print(f"  ? {null_indexed_hash} emails not yet indexed")
             print("  → Run 'ownmail reindex' to index")
-        if null_content_hash == 0 and null_indexed_hash == 0:
+        else:
             print("  ✓ All emails have hashes")
 
     # Summary

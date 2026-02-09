@@ -100,53 +100,32 @@ class TestCmdDbCheck:
             ).fetchone()
             assert result is not None
 
-    def test_db_check_finds_duplicates(self, temp_dir):
-        """Test that db-check finds duplicate FTS entries."""
+    def test_db_check_finds_missing_metadata(self, temp_dir):
+        """Test that db-check finds emails without metadata."""
         archive = GmailArchive(temp_dir)
 
-        # Manually create duplicates (with 8 columns including account, labels, email_date)
-        with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("INSERT INTO emails VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        ("msg1", "file1.eml", "2024-01-01", "hash1", "hash1", None, None, None))
-            conn.execute(
-                "INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                ("msg1", "Subj1", "from", "to", "date", "body", "")
-            )
-            conn.execute(
-                "INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                ("msg1", "Subj2", "from", "to", "date", "body2", "")
-            )
-            conn.commit()
+        # Add email without metadata (not indexed)
+        archive.db.mark_downloaded("msg1", "file1.eml")
 
-        # Check we have duplicates
+        # Check email exists but has no subject
         with sqlite3.connect(archive.db.db_path) as conn:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM emails_fts WHERE message_id = ?", ("msg1",)
-            ).fetchone()[0]
-        assert count == 2
+            result = conn.execute(
+                "SELECT subject FROM emails WHERE message_id = ?", ("msg1",)
+            ).fetchone()
+        assert result[0] is None
 
-    def test_db_check_fix_duplicates(self, temp_dir):
-        """Test that duplicate detection works."""
+    def test_db_check_fts_sync(self, temp_dir):
+        """Test that FTS stays in sync with emails table."""
         archive = GmailArchive(temp_dir)
 
-        # Create duplicates (with 8 columns including account, labels, email_date)
-        with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("INSERT INTO emails VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        ("msg1", "file1.eml", "2024-01-01", "hash1", "hash1", None, None, None))
-            conn.execute(
-                "INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                ("msg1", "Old", "from", "to", "date", "body", "")
-            )
-            conn.execute(
-                "INSERT INTO emails_fts (message_id, subject, sender, recipients, date_str, body, attachments) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                ("msg1", "New", "from", "to", "date", "body", "")
-            )
-            conn.commit()
+        # Add email and index it
+        archive.db.mark_downloaded("msg1", "file1.eml")
+        archive.db.index_email(
+            "msg1", "Subject", "from@test.com", "to@test.com",
+            "2024-01-01", "Body text", ""
+        )
 
-        # Check duplicates exist
+        # Check FTS has entry
         with sqlite3.connect(archive.db.db_path) as conn:
-            count = conn.execute(
-                "SELECT COUNT(*) FROM emails_fts WHERE message_id = ?", ("msg1",)
-            ).fetchone()[0]
-
-        assert count == 2
+            count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
+        assert count == 1
