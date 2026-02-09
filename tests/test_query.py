@@ -365,11 +365,11 @@ class TestParseQuery:
         assert "subject:" in result.fts_query
 
     def test_label_filter(self):
-        """Test label: filter becomes SQL WHERE."""
+        """Test label: filter uses marker for indexed lookup."""
         result = parse_query("label:inbox")
         assert result.error is None
-        assert "e.labels LIKE ?" in result.where_clauses
-        assert "%inbox%" in result.params
+        assert "__LABEL__" in result.where_clauses
+        assert "INBOX" in result.params  # Uppercase
 
     def test_before_filter(self):
         """Test before: filter becomes SQL WHERE."""
@@ -461,11 +461,11 @@ class TestParseQuery:
         assert "NOT subject:spam" in result.fts_query
 
     def test_negated_label_filter(self):
-        """Test -label:name generates NOT LIKE WHERE clause."""
+        """Test -label:name uses marker for indexed lookup."""
         result = parse_query("-label:spam")
         assert result.error is None
-        assert "(e.labels IS NULL OR e.labels NOT LIKE ?)" in result.where_clauses
-        assert "%spam%" in result.params
+        assert "__NOT_LABEL__" in result.where_clauses
+        assert "SPAM" in result.params  # Uppercase
 
     def test_negated_has_attachment(self):
         """Test -has:attachment uses has_attachments column."""
@@ -496,7 +496,7 @@ class TestParseQuery:
         result = parse_query("from:alice@test.com label:inbox invoice")
         assert result.error is None
         assert "e.sender_email = ?" in result.where_clauses
-        assert "e.labels LIKE ?" in result.where_clauses
+        assert "__LABEL__" in result.where_clauses
         assert result.fts_query == "invoice"
 
     def test_unclosed_quote_error(self):
