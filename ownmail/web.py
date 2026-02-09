@@ -1079,6 +1079,31 @@ def create_app(
         if body_html and images_blocked:
             body_html, has_external_images = block_external_images(body_html)
 
+        # Make all links in email open in new tab (prevents X-Frame-Options issues)
+        if body_html:
+            # Inject <base target="_blank"> to make all links open in new tab
+            if '<head>' in body_html.lower():
+                # Insert after <head> tag
+                body_html = re.sub(
+                    r'(<head[^>]*>)',
+                    r'\1<base target="_blank">',
+                    body_html,
+                    count=1,
+                    flags=re.IGNORECASE
+                )
+            elif '<html' in body_html.lower():
+                # Insert after <html> tag
+                body_html = re.sub(
+                    r'(<html[^>]*>)',
+                    r'\1<head><base target="_blank"></head>',
+                    body_html,
+                    count=1,
+                    flags=re.IGNORECASE
+                )
+            else:
+                # Prepend to body
+                body_html = '<base target="_blank">' + body_html
+
         # Get back URL if user came from search
         back_url = get_back_to_search_url()
 
