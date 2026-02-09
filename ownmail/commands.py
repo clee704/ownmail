@@ -301,10 +301,10 @@ def _index_email_for_reindex(
 
         labels = parsed.get("labels", "")
         recipients = parsed["recipients"]
-        
+
         # Extract email addresses from recipients for normalized table
         recipient_emails = ArchiveDatabase._normalize_recipients(recipients) if recipients else ""
-        
+
         # Check if has attachments
         attachments = parsed["attachments"]
         has_attachments = 1 if attachments else 0
@@ -333,7 +333,7 @@ def _index_email_for_reindex(
         # Insert into FTS and normalized tables
         if row:
             rowid = row[0]
-            
+
             conn.execute(
                 """
                 INSERT INTO emails_fts (rowid, subject, sender, recipients, body, attachments)
@@ -342,7 +342,7 @@ def _index_email_for_reindex(
                 (rowid, parsed["subject"], parsed["sender"], recipients,
                  parsed["body"], attachments)
             )
-            
+
             # Populate email_recipients normalized table
             conn.execute("DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,))
             if recipient_emails:
@@ -353,14 +353,14 @@ def _index_email_for_reindex(
                             "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
                             (rowid, email)
                         )
-            
+
             # Populate email_labels normalized table
             # Get email_date from emails table for the covering index
             email_date_row = conn.execute(
                 "SELECT email_date FROM emails WHERE rowid = ?", (rowid,)
             ).fetchone()
             email_date = email_date_row[0] if email_date_row else None
-            
+
             conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
             if labels:
                 for label in labels.split(','):

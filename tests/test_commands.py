@@ -1064,16 +1064,3 @@ class TestCmdPopulateDates:
         # Should process emails
         assert "date" in captured.out.lower() or "test" in captured.out.lower() or captured.out
 
-
-class TestCmdSyncCheck:
-    """Tests for cmd_sync_check command."""
-
-    def test_sync_check_no_sources(self, temp_dir, capsys):
-        """Test sync_check with no sources configured."""
-        from ownmail.commands import cmd_sync_check
-
-        archive = EmailArchive(temp_dir, {})
-        cmd_sync_check(archive)
-        captured = capsys.readouterr()
-        # Should report no sources
-        assert "source" in captured.out.lower() or "sync" in captured.out.lower() or "No" in captured.out

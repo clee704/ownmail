@@ -65,7 +65,7 @@ split_multi = (
     f"Message-ID: <split-multibyte@example.com>\n"
     f"Content-Type: text/plain; charset=utf-8\n\n"
     f"This email has a subject with a Korean character split across RFC 2047 encoded-word boundaries.\n"
-).encode('utf-8')
+).encode()
 
 with open(os.path.join(FIXTURES_DIR, 'split_multibyte_rfc2047.eml'), 'wb') as f:
     f.write(split_multi)
@@ -199,7 +199,7 @@ print("Created nested_rfc822.eml")
 
 # 12. mixed_charset_parts.eml - Different charsets per part
 euc_kr_part = "이 부분은 charset 선언이 없지만 EUC-KR입니다.".encode('euc-kr')
-utf8_part = "This part is in UTF-8: 안녕하세요\n".encode('utf-8')
+utf8_part = "This part is in UTF-8: 안녕하세요\n".encode()
 mixed_charset = (
     b"From: sender@example.com\n"
     b"To: recipient@example.com\n"
