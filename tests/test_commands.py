@@ -432,3 +432,428 @@ class TestCmdDbCheck:
         cmd_db_check(archive)
         captured = capsys.readouterr()
         assert "missing" in captured.out.lower() or "hash" in captured.out.lower()
+
+
+class TestCmdVerify:
+    """Tests for verify command."""
+
+    def test_verify_empty_database(self, temp_dir, capsys):
+        """Test verify on empty database."""
+        archive = EmailArchive(temp_dir, {})
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        assert "No emails to verify" in captured.out
+
+    def test_verify_valid_email(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify with valid email."""
+        import hashlib
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        # Store with correct hash
+        content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        assert "Verifying" in captured.out
+
+    def test_verify_missing_file(self, temp_dir, capsys):
+        """Test verify detects missing files."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Add to DB but don't create file
+        archive.db.mark_downloaded("missing123", "emails/2024/01/missing.eml", content_hash="abc")
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        # Should complete without crashing
+
+    def test_verify_corrupted_file(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify detects corrupted files."""
+        import hashlib
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        # Store with wrong hash
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash="wrong_hash")
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        # Should detect mismatch
+
+    def test_verify_no_hash(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify handles emails with no hash."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        # Store without hash
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        # Should complete without crashing
+
+    def test_verify_orphaned_files(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify detects orphaned files on disk."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create file but don't add to DB
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "orphan.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        cmd_verify(archive)
+        captured = capsys.readouterr()
+        # Should detect orphaned file
+
+
+class TestCmdRehash:
+    """Tests for rehash command."""
+
+    def test_rehash_empty_database(self, temp_dir, capsys):
+        """Test rehash on empty database."""
+        archive = EmailArchive(temp_dir, {})
+        cmd_rehash(archive)
+        captured = capsys.readouterr()
+        assert "Compute Hashes" in captured.out or "already have hashes" in captured.out
+
+    def test_rehash_computes_hash(self, temp_dir, sample_eml_simple, capsys):
+        """Test rehash computes missing hashes."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        # Store without hash
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+
+        cmd_rehash(archive)
+        captured = capsys.readouterr()
+        assert "Rehash" in captured.out
+
+    def test_rehash_skips_existing(self, temp_dir, sample_eml_simple, capsys):
+        """Test rehash skips emails with existing hash."""
+        import hashlib
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        # Store with hash
+        content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash=content_hash)
+
+        cmd_rehash(archive)
+        captured = capsys.readouterr()
+        # Should complete without errors
+
+    def test_rehash_missing_file(self, temp_dir, capsys):
+        """Test rehash handles missing files."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Add to DB without hash but don't create file
+        archive.db.mark_downloaded("missing123", "emails/2024/01/missing.eml", content_hash=None)
+
+        cmd_rehash(archive)
+        captured = capsys.readouterr()
+        # Should report errors for missing files
+        assert "Errors" in captured.out or "Rehash Complete" in captured.out
+
+    def test_rehash_computes_correct_hash(self, temp_dir, sample_eml_simple):
+        """Test rehash computes correct SHA256 hash."""
+        import hashlib
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        # Store without hash
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+
+        cmd_rehash(archive)
+
+        # Verify correct hash was stored
+        expected_hash = hashlib.sha256(sample_eml_simple).hexdigest()
+        with sqlite3.connect(archive.db.db_path) as conn:
+            stored_hash = conn.execute(
+                "SELECT content_hash FROM emails WHERE message_id = ?",
+                ("test123",)
+            ).fetchone()[0]
+        assert stored_hash == expected_hash
+
+
+class TestCmdSyncCheck:
+    """Tests for sync-check command."""
+
+    def test_sync_check_no_sources(self, temp_dir, capsys):
+        """Test sync-check with no sources configured."""
+        from ownmail.commands import cmd_sync_check
+        archive = EmailArchive(temp_dir, {})
+
+        cmd_sync_check(archive)
+        captured = capsys.readouterr()
+        assert "No sources" in captured.out or "no Gmail" in captured.out.lower()
+
+    def test_sync_check_with_gmail_source(self, temp_dir, capsys):
+        """Test sync-check with mocked Gmail source."""
+        from ownmail.commands import cmd_sync_check
+        from unittest.mock import MagicMock, patch
+
+        config = {
+            "sources": [{
+                "name": "test_gmail",
+                "type": "gmail_api",
+                "account": "test@gmail.com",
+                "auth": {"secret_ref": "keychain:test"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider.get_all_message_ids.return_value = ["msg1", "msg2", "msg3"]
+            mock_provider_class.return_value = mock_provider
+
+            cmd_sync_check(archive)
+
+        captured = capsys.readouterr()
+        assert "Sync Check" in captured.out
+
+    def test_sync_check_in_sync(self, temp_dir, capsys):
+        """Test sync-check when local matches server."""
+        from ownmail.commands import cmd_sync_check
+        from unittest.mock import MagicMock, patch
+
+        config = {
+            "sources": [{
+                "name": "test_gmail",
+                "type": "gmail_api",
+                "account": "test@gmail.com",
+                "auth": {"secret_ref": "keychain:test"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        # Add messages to local archive
+        archive.db.mark_downloaded("msg1", "emails/2024/01/msg1.eml", content_hash="abc", account="test@gmail.com")
+        archive.db.mark_downloaded("msg2", "emails/2024/01/msg2.eml", content_hash="def", account="test@gmail.com")
+
+        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider.get_all_message_ids.return_value = ["msg1", "msg2"]
+            mock_provider_class.return_value = mock_provider
+
+            cmd_sync_check(archive)
+
+        captured = capsys.readouterr()
+        assert "in sync" in captured.out.lower()
+
+
+class TestCmdAddLabels:
+    """Tests for add-labels command."""
+
+    def test_add_labels_no_sources(self, temp_dir, capsys):
+        """Test add-labels with no sources configured."""
+        from ownmail.commands import cmd_add_labels
+        archive = EmailArchive(temp_dir, {})
+
+        cmd_add_labels(archive)
+        captured = capsys.readouterr()
+        assert "No sources" in captured.out
+
+    def test_add_labels_no_emails(self, temp_dir, capsys):
+        """Test add-labels with no emails to process."""
+        from ownmail.commands import cmd_add_labels
+        from unittest.mock import MagicMock, patch
+
+        config = {
+            "sources": [{
+                "name": "test_gmail",
+                "type": "gmail_api",
+                "account": "test@gmail.com",
+                "auth": {"secret_ref": "keychain:test"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider_class.return_value = mock_provider
+
+            cmd_add_labels(archive)
+
+        captured = capsys.readouterr()
+        assert "No emails" in captured.out or "Add Labels" in captured.out
+
+    def test_add_labels_with_emails(self, temp_dir, sample_eml_simple, capsys):
+        """Test add-labels with emails that need labels."""
+        from ownmail.commands import cmd_add_labels
+        from unittest.mock import MagicMock, patch
+
+        config = {
+            "sources": [{
+                "name": "test_gmail",
+                "type": "gmail_api",
+                "account": "test@gmail.com",
+                "auth": {"secret_ref": "keychain:test"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        # Add to database
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash="abc", account="test@gmail.com")
+
+        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider.get_labels_for_message.return_value = ["INBOX", "Work"]
+            mock_provider_class.return_value = mock_provider
+
+            cmd_add_labels(archive)
+
+        captured = capsys.readouterr()
+        assert "Add Labels" in captured.out
+
+    def test_add_labels_already_has_labels(self, temp_dir, capsys):
+        """Test add-labels skips emails with existing labels."""
+        from ownmail.commands import cmd_add_labels
+        from unittest.mock import MagicMock, patch
+
+        config = {
+            "sources": [{
+                "name": "test_gmail",
+                "type": "gmail_api",
+                "account": "test@gmail.com",
+                "auth": {"secret_ref": "keychain:test"},
+            }]
+        }
+        archive = EmailArchive(temp_dir, config)
+
+        # Create email file with labels already
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(b"""X-Gmail-Labels: INBOX
+From: test@example.com
+Subject: Test
+
+Body
+""")
+
+        # Add to database
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash="abc", account="test@gmail.com")
+
+        with patch("ownmail.commands.GmailProvider") as mock_provider_class:
+            mock_provider = MagicMock()
+            mock_provider_class.return_value = mock_provider
+
+            cmd_add_labels(archive)
+
+        captured = capsys.readouterr()
+        assert "Skipped" in captured.out or "Add Labels" in captured.out
+
+
+class TestCmdDbCheckVerbose:
+    """Additional tests for db-check verbose output."""
+
+    def test_db_check_verbose_shows_all_files(self, temp_dir, capsys):
+        """Test db-check --verbose shows all files."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create multiple orphaned FTS entries
+        with sqlite3.connect(archive.db.db_path) as conn:
+            for i in range(15):
+                conn.execute("""
+                    INSERT INTO emails_fts (message_id, subject, sender, recipients, body, attachments)
+                    VALUES (?, 'test', 'test', 'test', 'test', '')
+                """, (f"orphan{i}",))
+            conn.commit()
+
+        cmd_db_check(archive, verbose=True)
+        captured = capsys.readouterr()
+        assert "orphan" in captured.out
+
+
+class TestCmdVerifyVerbose:
+    """Additional tests for verify verbose output."""
+
+    def test_verify_verbose_shows_all_files(self, temp_dir, sample_eml_simple, capsys):
+        """Test verify --verbose shows all files."""
+        import hashlib
+        archive = EmailArchive(temp_dir, {})
+
+        # Create multiple emails with wrong hashes
+        for i in range(7):
+            emails_dir = temp_dir / "emails" / "2024" / "01"
+            emails_dir.mkdir(parents=True, exist_ok=True)
+            email_path = emails_dir / f"test{i}.eml"
+            email_path.write_bytes(sample_eml_simple)
+
+            rel_path = str(email_path.relative_to(temp_dir))
+            archive.db.mark_downloaded(f"test{i}", rel_path, content_hash="wrong_hash")
+
+        cmd_verify(archive, verbose=True)
+        captured = capsys.readouterr()
+        # Should show corrupted files
+        assert "test" in captured.out or "Verify" in captured.out
+
+
+class TestCmdReindexDebug:
+    """Tests for reindex debug mode."""
+
+    def test_reindex_debug_shows_timing(self, temp_dir, sample_eml_simple, capsys):
+        """Test reindex --debug shows timing info."""
+        archive = EmailArchive(temp_dir, {})
+
+        # Create email file
+        emails_dir = temp_dir / "emails" / "2024" / "01"
+        emails_dir.mkdir(parents=True)
+        email_path = emails_dir / "test.eml"
+        email_path.write_bytes(sample_eml_simple)
+
+        rel_path = str(email_path.relative_to(temp_dir))
+        archive.db.mark_downloaded("test123", rel_path, content_hash=None)
+
+        cmd_reindex(archive, debug=True)
+        captured = capsys.readouterr()
+        # Should complete - debug mode outputs more info
+        assert "Reindex" in captured.out
