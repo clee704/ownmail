@@ -43,10 +43,6 @@
         updateRelevanceOption();
     })();
     </script>
-    <div class="help">
-        Search: <code>from:</code> <code>subject:</code> <code>attachment:</code> <code>before:2024-01-01</code> <code>after:2023-06-15</code> <code>label:INBOX</code>
-        &bull; <a href="/help">Syntax help</a>
-    </div>
     {% if results %}
         <div class="results-header">
             <p>{% if query %}Showing{% else %}Recent emails:{% endif %} {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %}{% if query %} (took {{ "%.2f"|format(search_time) }}s){% endif %}</p>

@@ -524,6 +524,30 @@ class EmailParser:
         return ""
 
     @staticmethod
+    def _strip_html(html: str) -> str:
+        """Strip HTML tags and extract text content.
+
+        Removes style, script blocks and all HTML tags, then normalizes whitespace.
+        """
+        # Remove style blocks (with their content)
+        html = re.sub(r'<style[^>]*>.*?</style>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+        # Remove script blocks
+        html = re.sub(r'<script[^>]*>.*?</script>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+        # Remove HTML comments
+        html = re.sub(r'<!--.*?-->', ' ', html, flags=re.DOTALL)
+        # Remove all remaining HTML tags
+        html = re.sub(r'<[^>]+>', ' ', html)
+        # Decode common HTML entities
+        html = html.replace('&nbsp;', ' ')
+        html = html.replace('&amp;', '&')
+        html = html.replace('&lt;', '<')
+        html = html.replace('&gt;', '>')
+        html = html.replace('&quot;', '"')
+        # Normalize whitespace
+        html = re.sub(r'\s+', ' ', html)
+        return html.strip()
+
+    @staticmethod
     def parse_file(filepath: Path = None, content: bytes = None) -> dict:
         """Parse an .eml file and extract searchable content.
 
@@ -613,9 +637,8 @@ class EmailParser:
                             # Only use HTML if no plain text
                             text = EmailParser._safe_get_content(part)
                             if text:
-                                # Strip HTML tags for indexing
-                                text = re.sub(r'<[^>]+>', ' ', text)
-                                text = re.sub(r'\s+', ' ', text)
+                                # Strip HTML for indexing
+                                text = EmailParser._strip_html(text)
                                 body_parts.append(text)
                     except Exception:
                         continue
@@ -623,8 +646,7 @@ class EmailParser:
                 text = EmailParser._safe_get_content(msg)
                 if text:
                     if msg.get_content_type() == "text/html":
-                        text = re.sub(r'<[^>]+>', ' ', text)
-                        text = re.sub(r'\s+', ' ', text)
+                        text = EmailParser._strip_html(text)
                     body_parts.append(text)
         except Exception:
             pass

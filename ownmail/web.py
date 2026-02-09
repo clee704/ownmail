@@ -684,9 +684,10 @@ def create_app(
     Returns:
         Flask application
     """
-    # Set templates directory relative to this module
+    # Set templates and static directories relative to this module
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
-    app = Flask(__name__, template_folder=template_dir)
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
     app.config["archive"] = archive
     app.config["verbose"] = verbose
     app.config["block_images"] = block_images
