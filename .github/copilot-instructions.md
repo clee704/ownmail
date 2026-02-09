@@ -1,5 +1,7 @@
 # Copilot Instructions for ownmail
 
+> **Note:** This file contains AI-specific guidelines. For general contribution guidelines (development setup, code style, testing, etc.), read [CONTRIBUTING.md](../CONTRIBUTING.md) first.
+
 ## Project Overview
 
 ownmail is a file-based email backup and search tool. Read [README.md](../README.md) for project philosophy and features.

@@ -2,6 +2,8 @@
 
 Thanks for your interest in contributing to ownmail!
 
+> **Note:** This guide is for both human and AI contributors. For AI-specific guidelines, see [.github/copilot-instructions.md](.github/copilot-instructions.md).
+
 ## Development Setup
 
 ```bash
