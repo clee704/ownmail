@@ -20,6 +20,12 @@ EXTERNAL_IMAGE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Regex to detect external URLs in CSS (background-image, etc.)
+CSS_EXTERNAL_URL_RE = re.compile(
+    r'url\(\s*["\']?(https?://[^"\')\s]+)["\']?\s*\)',
+    re.IGNORECASE,
+)
+
 # Regex to extract charset from HTML meta tag
 # Matches: <meta charset="euc-kr"> or <meta http-equiv="Content-Type" content="text/html; charset=euc-kr">
 HTML_CHARSET_RE = re.compile(
@@ -710,22 +716,55 @@ def _decode_html_body(payload: bytes, header_charset: str | None) -> str:
 def block_external_images(html: str) -> tuple[str, bool]:
     """Block external images in HTML by replacing src with data-src.
 
+    Handles both <img src="..."> and CSS url() in inline styles and
+    <style> blocks (background-image, list-style-image, etc.).
+
     Args:
         html: HTML content
 
     Returns:
         Tuple of (modified HTML, whether external images were found)
     """
-    has_external = bool(EXTERNAL_IMAGE_RE.search(html))
-    if not has_external:
+    has_img = bool(EXTERNAL_IMAGE_RE.search(html))
+    has_css = bool(CSS_EXTERNAL_URL_RE.search(html))
+    if not has_img and not has_css:
         return html, False
 
-    def replace_src(match):
-        prefix = match.group(1) or ""
-        url = match.group(2)
-        return f'<img {prefix}data-src="{url}" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"'
+    blocked_html = html
 
-    blocked_html = EXTERNAL_IMAGE_RE.sub(replace_src, html)
+    # Block <img src="https://...">
+    if has_img:
+        def replace_src(match):
+            prefix = match.group(1) or ""
+            url = match.group(2)
+            return f'<img {prefix}data-src="{url}" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"'
+
+        blocked_html = EXTERNAL_IMAGE_RE.sub(replace_src, blocked_html)
+
+    # Block CSS url(https://...) -> url() with data-bg attribute on the element
+    # For inline styles, replace url() with a transparent placeholder
+    if has_css:
+        def replace_css_url(match):
+            return 'url(data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)'
+
+        # Replace in inline style="..." attributes, preserving original in data-bg-urls
+        def replace_inline_style(match):
+            full = match.group(0)
+            style_val = match.group(1)
+            # Extract all external URLs from this style
+            urls = CSS_EXTERNAL_URL_RE.findall(style_val)
+            if not urls:
+                return full
+            new_style = CSS_EXTERNAL_URL_RE.sub(replace_css_url, style_val)
+            # Store originals in data attribute for restoration
+            url_str = " ".join(urls)
+            return f'style="{new_style}" data-bg-urls="{url_str}"'
+
+        blocked_html = re.sub(
+            r'style="([^"]*url\s*\([^)]*https?://[^)]*\)[^"]*)"',
+            replace_inline_style, blocked_html, flags=re.IGNORECASE
+        )
+
     return blocked_html, True
 
 
@@ -1343,7 +1382,7 @@ def create_app(
             images_blocked = False
 
         # Always detect external images so dropdown menu can show load/block actions
-        if body_html and EXTERNAL_IMAGE_RE.search(body_html):
+        if body_html and (EXTERNAL_IMAGE_RE.search(body_html) or CSS_EXTERNAL_URL_RE.search(body_html)):
             has_external_images = True
 
         if body_html and images_blocked and has_external_images:
