@@ -286,8 +286,8 @@ class TestGmailProviderDownloadMessage:
 
             raw_data, labels = provider.download_message("msg123")
 
-            # Should have X-Gmail-Labels header injected
-            assert b"X-Gmail-Labels" in raw_data
+            # Labels should be returned separately, not injected into raw data
+            assert b"X-Gmail-Labels" not in raw_data
             assert "INBOX" in labels or "IMPORTANT" in labels
 
 
@@ -329,42 +329,47 @@ class TestGmailProviderLabelHandling:
             assert "INBOX" in labels
             assert "My Label" in labels
 
-    def test_inject_labels_into_email(self):
-        """Test label injection into raw email."""
-        with patch("ownmail.providers.gmail.build"):
+    def test_labels_not_injected_into_email(self):
+        """Test that labels are NOT injected into raw email data."""
+        import base64
+        with patch("ownmail.providers.gmail.build") as mock_build:
             from ownmail.providers.gmail import GmailProvider
 
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            mock_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+                "raw": base64.urlsafe_b64encode(b"From: test@example.com\r\nSubject: Test\r\n\r\nBody").decode(),
+                "labelIds": ["INBOX", "Label_1"],
+            }
+
+            mock_service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
+                "labels": [
+                    {"id": "INBOX", "name": "INBOX"},
+                    {"id": "Label_1", "name": "Work"},
+                ]
+            }
+
             mock_keychain = MagicMock()
+            mock_creds = MagicMock()
+            mock_creds.valid = True
+            mock_keychain.load_gmail_token.return_value = mock_creds
+
             provider = GmailProvider(
                 account="alice@gmail.com",
                 keychain=mock_keychain,
+                include_labels=True,
             )
+            provider.authenticate()
 
-            raw_data = b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
-            labels = ["INBOX", "Work"]
+            raw_data, labels = provider.download_message("msg123")
 
-            result = provider._inject_labels(raw_data, labels)
-
-            assert b"X-Gmail-Labels: INBOX, Work" in result
-            assert b"From: test@example.com" in result
-
-    def test_inject_labels_lf_only(self):
-        """Test label injection with LF-only line endings."""
-        with patch("ownmail.providers.gmail.build"):
-            from ownmail.providers.gmail import GmailProvider
-
-            mock_keychain = MagicMock()
-            provider = GmailProvider(
-                account="alice@gmail.com",
-                keychain=mock_keychain,
-            )
-
-            raw_data = b"From: test@example.com\nSubject: Test\n\nBody"
-            labels = ["INBOX"]
-
-            result = provider._inject_labels(raw_data, labels)
-
-            assert b"X-Gmail-Labels: INBOX" in result
+            # Raw data should be unmodified
+            assert raw_data == b"From: test@example.com\r\nSubject: Test\r\n\r\nBody"
+            assert b"X-Gmail-Labels" not in raw_data
+            # Labels returned separately
+            assert "INBOX" in labels
+            assert "Work" in labels
 
 
 class TestGmailProviderErrors:

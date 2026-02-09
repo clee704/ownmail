@@ -227,12 +227,10 @@ class GmailProvider(EmailProvider):
 
         raw_data = base64.urlsafe_b64decode(message["raw"])
 
-        # Fetch labels if enabled
+        # Fetch labels if enabled (stored in DB, not injected into .eml)
         labels = []
         if self._include_labels:
             labels = self._get_labels_for_message(msg_id)
-            if labels:
-                raw_data = self._inject_labels(raw_data, labels)
 
         return raw_data, labels
 
@@ -268,12 +266,10 @@ class GmailProvider(EmailProvider):
                     raw_data = base64.urlsafe_b64decode(response["raw"])
                     labels = []
 
-                    # Resolve labels from the response
+                    # Resolve labels from the response (stored in DB, not injected into .eml)
                     if self._include_labels and "labelIds" in response:
                         label_ids = response.get("labelIds", [])
                         labels = self._resolve_label_names(label_ids)
-                        if labels:
-                            raw_data = self._inject_labels(raw_data, labels)
 
                     results[request_id] = (raw_data, labels, None)
                 except Exception as e:
@@ -360,22 +356,6 @@ class GmailProvider(EmailProvider):
             else:
                 names.append(lid)
         return names
-
-    def _inject_labels(self, raw_data: bytes, labels: List[str]) -> bytes:
-        """Inject X-Gmail-Labels header into raw email data."""
-        labels_str = ", ".join(labels)
-        header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode()
-
-        # Insert after the first line
-        first_newline = raw_data.find(b"\r\n")
-        if first_newline == -1:
-            first_newline = raw_data.find(b"\n")
-            if first_newline == -1:
-                return raw_data
-            header_line = f"X-Gmail-Labels: {labels_str}\n".encode()
-            return raw_data[:first_newline + 1] + header_line + raw_data[first_newline + 1:]
-
-        return raw_data[:first_newline + 2] + header_line + raw_data[first_newline + 2:]
 
     def get_current_sync_state(self) -> Optional[str]:
         """Get current Gmail history ID."""

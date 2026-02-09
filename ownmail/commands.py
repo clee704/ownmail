@@ -10,11 +10,9 @@ This module contains commands for archive maintenance:
 """
 
 import hashlib
-import os
 import signal
 import sqlite3
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -299,7 +297,12 @@ def _index_email_for_reindex(
         body = parsed["body"]
         snippet = body[:200] + "..." if len(body) > 200 else body
 
-        labels = parsed.get("labels", "")
+        # Preserve existing labels from DB (labels are not stored in .eml files)
+        existing = conn.execute(
+            "SELECT labels FROM emails WHERE message_id = ?",
+            (message_id,)
+        ).fetchone()
+        labels = (existing[0] if existing and existing[0] else "") or parsed.get("labels", "")
         recipients = parsed["recipients"]
 
         # Extract email addresses from recipients for normalized table
@@ -821,7 +824,11 @@ def cmd_db_check(archive: EmailArchive, fix: bool = False, verbose: bool = False
 
 
 def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
-    """Add Gmail labels to existing downloaded emails."""
+    """Fetch Gmail labels and store them in the database.
+
+    Labels are stored in the database only, not injected into .eml files.
+    This keeps .eml files as pure RFC 5322 email as received from the server.
+    """
     print("\n" + "=" * 50)
     print("ownmail - Add Labels")
     print("=" * 50 + "\n")
@@ -858,19 +865,19 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
     provider = GmailProvider(account=account, keychain=archive.keychain)
     provider.authenticate()
 
-    # Get all downloaded emails for this account
+    # Get all downloaded emails for this account that don't have labels yet
     with sqlite3.connect(archive.db.db_path) as conn:
         emails = conn.execute(
-            "SELECT message_id, filename FROM emails WHERE account = ? OR account IS NULL",
+            "SELECT message_id FROM emails WHERE (account = ? OR account IS NULL) AND (labels IS NULL OR labels = '')",
             (account,)
         ).fetchall()
 
     if not emails:
-        print("No emails to process.")
+        print("No emails need labels.")
         return
 
-    print(f"Adding labels to {len(emails)} emails...")
-    print("(Press Ctrl-C to stop - already processed files are saved)\n")
+    print(f"Fetching labels for {len(emails)} emails...")
+    print("(Press Ctrl-C to stop - progress is saved)\n")
 
     success_count = 0
     skip_count = 0
@@ -888,67 +895,33 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
     original_handler = signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        for i, (msg_id, filename) in enumerate(emails, 1):
-            if interrupted:
-                break
+        with sqlite3.connect(archive.db.db_path) as conn:
+            for i, (msg_id,) in enumerate(emails, 1):
+                if interrupted:
+                    break
 
-            filepath = archive.archive_dir / filename
-            if not filepath.exists():
-                error_count += 1
-                continue
+                print(f"  [{i}/{len(emails)}] Fetching labels...", end="\r")
 
-            # Check if already has labels
-            with open(filepath, "rb") as f:
-                first_bytes = f.read(1000)
-                if b"X-Gmail-Labels:" in first_bytes:
-                    skip_count += 1
-                    continue
-
-            print(f"  [{i}/{len(emails)}] Fetching labels...", end="\r")
-
-            try:
-                # Get labels for this message
-                labels = provider.get_labels_for_message(msg_id)
-                if not labels:
-                    skip_count += 1
-                    continue
-
-                # Read existing email
-                with open(filepath, "rb") as f:
-                    raw_data = f.read()
-
-                # Inject labels header
-                labels_str = ", ".join(labels)
-                header_line = f"X-Gmail-Labels: {labels_str}\r\n".encode()
-
-                first_newline = raw_data.find(b"\r\n")
-                if first_newline == -1:
-                    first_newline = raw_data.find(b"\n")
-                    if first_newline != -1:
-                        header_line = f"X-Gmail-Labels: {labels_str}\n".encode()
-                        new_data = raw_data[:first_newline + 1] + header_line + raw_data[first_newline + 1:]
-                    else:
+                try:
+                    labels = provider.get_labels_for_message(msg_id)
+                    if not labels:
                         skip_count += 1
                         continue
-                else:
-                    new_data = raw_data[:first_newline + 2] + header_line + raw_data[first_newline + 2:]
 
-                # Atomic write
-                fd, temp_path = tempfile.mkstemp(dir=filepath.parent, suffix=".tmp")
-                try:
-                    os.write(fd, new_data)
-                    os.close(fd)
-                    os.rename(temp_path, filepath)
+                    labels_str = ", ".join(labels)
+                    conn.execute(
+                        "UPDATE emails SET labels = ? WHERE message_id = ?",
+                        (labels_str, msg_id)
+                    )
                     success_count += 1
-                except Exception:
-                    os.close(fd)
-                    if os.path.exists(temp_path):
-                        os.unlink(temp_path)
-                    raise
 
-            except Exception as e:
-                print(f"\n  Error processing {msg_id}: {e}")
-                error_count += 1
+                    # Commit periodically
+                    if success_count % 50 == 0:
+                        conn.commit()
+
+                except Exception as e:
+                    print(f"\n  Error processing {msg_id}: {e}")
+                    error_count += 1
 
     finally:
         signal.signal(signal.SIGINT, original_handler)
@@ -959,7 +932,7 @@ def cmd_add_labels(archive: EmailArchive, source_name: str = None) -> None:
     else:
         print("Add Labels Complete!")
     print(f"  Updated: {success_count} emails")
-    print(f"  Skipped (already had labels or no labels): {skip_count}")
+    print(f"  Skipped (no labels): {skip_count}")
     if error_count > 0:
         print(f"  Errors: {error_count}")
     print("-" * 50 + "\n")
