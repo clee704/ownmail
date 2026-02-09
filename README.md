@@ -80,7 +80,7 @@ ownmail setup --credentials-file ~/Downloads/credentials.json
 rm ~/Downloads/credentials.json  # Delete after import!
 ```
 
-Credentials are stored in macOS Keychain, never on the filesystem.
+Credentials are stored in your system keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service), never on the filesystem.
 
 ## Config File
 
@@ -152,17 +152,17 @@ Backup Paused!
 
 | What | Where |
 |------|-------|
-| OAuth credentials | macOS Keychain |
+| OAuth credentials | System keychain (macOS/Windows/Linux) |
 | Emails & search index | Your chosen directory |
 
 Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
 
 ## Roadmap
 
+- [ ] Multiple accounts
 - [ ] Outlook/Microsoft 365 support
 - [ ] Generic IMAP support
 - [ ] Web UI for self-hosted access
-- [ ] Linux keyring support
 
 ## License
 
