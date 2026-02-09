@@ -54,9 +54,9 @@ dev = [
 ownmail = "ownmail.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/chungmin/ownmail"
-Repository = "https://github.com/chungmin/ownmail"
-Issues = "https://github.com/chungmin/ownmail/issues"
+Homepage = "https://github.com/clee704/ownmail"
+Repository = "https://github.com/clee704/ownmail"
+Issues = "https://github.com/clee704/ownmail/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ownmail"]
