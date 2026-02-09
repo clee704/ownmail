@@ -1045,9 +1045,13 @@ def create_app(
         # Make all links in email open in new tab (prevents X-Frame-Options issues)
         # Also inject base styles for consistent rendering
         if body_html:
-            # Base styles to inject - sans-serif font for better readability
+            # Base styles to inject - sans-serif font and dark mode support
             base_styles = '''<style>
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+@media (prefers-color-scheme: dark) {
+  body { color: #e0e0e0; background: #242424; }
+  a { color: #6cb6ff; }
+}
 </style>'''
             # Inject <base target="_blank"> to make all links open in new tab
             if '<head>' in body_html.lower():
