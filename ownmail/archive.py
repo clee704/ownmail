@@ -97,7 +97,7 @@ class EmailArchive:
         sync_state = self.db.get_sync_state(account, "history_id")
 
         # Get new message IDs (with optional date filter)
-        print("Checking for new emails...")
+        print("Checking for new emails...", flush=True)
         new_ids, new_state = provider.get_new_message_ids(sync_state, since=since, until=until)
 
         # Filter out already downloaded
