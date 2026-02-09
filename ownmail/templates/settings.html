@@ -48,6 +48,14 @@
                            placeholder="e.g. %b %d, %Y (leave blank for auto)">
                     <p class="ownmail-settings-hint">Python strftime format. Leave blank for automatic (e.g. "Jan 26" for current year, "2023/12/15" for older).</p>
                 </div>
+
+                <div class="ownmail-settings-field">
+                    <label for="timezone">Timezone</label>
+                    <input type="text" name="timezone" id="timezone"
+                           value="{{ settings.timezone or '' }}"
+                           placeholder="{{ server_timezone }}">
+                    <p class="ownmail-settings-hint">IANA timezone name (e.g. "America/New_York", "Asia/Seoul"). Leave blank for server default ({{ server_timezone }}).</p>
+                </div>
             </fieldset>
 
             <fieldset class="ownmail-settings-section">

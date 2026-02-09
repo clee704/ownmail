@@ -12,6 +12,8 @@ from ownmail.web import (
     _format_date_long,
     _format_date_short,
     _format_size,
+    _get_server_timezone_name,
+    _resolve_timezone,
     _to_local_datetime,
     block_external_images,
     create_app,
@@ -1169,6 +1171,15 @@ class TestToLocalDatetime:
         from datetime import timezone
         assert result.astimezone(timezone.utc).strftime("%H:%M") == "10:30"
 
+    def test_converts_to_specified_timezone(self):
+        """Date is converted to the specified timezone, not local."""
+        from zoneinfo import ZoneInfo
+        tokyo = ZoneInfo("Asia/Tokyo")  # UTC+9
+        result = _to_local_datetime("Mon, 15 Jan 2024 10:30:00 +0000", tokyo)
+        assert result is not None
+        assert result.strftime("%H:%M") == "19:30"
+        assert str(result.tzinfo) == "Asia/Tokyo"
+
     def test_empty_string_returns_none(self):
         assert _to_local_datetime("") is None
 
@@ -1214,4 +1225,81 @@ class TestFormatDateLong:
         dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         result = _format_date_long(dt)
         assert result == "Mon, 15 Jan 2024 10:30:00 +0000"
+
+
+class TestResolveTimezone:
+    """Tests for _resolve_timezone."""
+
+    def test_valid_timezone(self):
+        from zoneinfo import ZoneInfo
+        result = _resolve_timezone("America/New_York")
+        assert result == ZoneInfo("America/New_York")
+
+    def test_empty_string_returns_none(self):
+        assert _resolve_timezone("") is None
+
+    def test_none_returns_none(self):
+        assert _resolve_timezone(None) is None
+
+    def test_invalid_timezone_returns_none(self):
+        assert _resolve_timezone("Not/ATimezone") is None
+
+
+class TestGetServerTimezoneName:
+    """Tests for _get_server_timezone_name."""
+
+    def test_returns_non_empty_string(self):
+        result = _get_server_timezone_name()
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+
+class TestTimezoneSettings:
+    """Tests for timezone in settings page and create_app."""
+
+    def test_create_app_default_timezone(self, tmp_path):
+        """Default timezone is None (server local)."""
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        app = create_app(mock_archive)
+        assert app.config["timezone"] is None
+        assert app.config["timezone_name"] == ""
+
+    def test_create_app_with_timezone(self, tmp_path):
+        """Timezone is set when provided."""
+        from zoneinfo import ZoneInfo
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        app = create_app(mock_archive, display_timezone="Asia/Tokyo")
+        assert app.config["timezone"] == ZoneInfo("Asia/Tokyo")
+        assert app.config["timezone_name"] == "Asia/Tokyo"
+
+    def test_settings_page_shows_timezone(self, tmp_path):
+        """Settings page shows timezone field with server default."""
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 0
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/settings")
+            assert response.status_code == 200
+            assert b"Timezone" in response.data or b"timezone" in response.data
+
+    def test_search_uses_configured_timezone(self, tmp_path):
+        """Search results use configured timezone for date display."""
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 100
+        # UTC midnight → Tokyo is +9 hours → still Jan 2
+        mock_archive.search.return_value = [
+            ("msg1", "test.eml", "Test", "a@b.com", "Thu, 02 Jan 2020 00:00:00 +0000", "snippet")
+        ]
+        app = create_app(mock_archive, display_timezone="Asia/Tokyo")
+        with app.test_client() as client:
+            response = client.get("/search?q=test")
+            assert response.status_code == 200
+            # Tokyo time: Jan 2 00:00 UTC = Jan 2 09:00 JST → still 2020
+            assert b"2020" in response.data
 

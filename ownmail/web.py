@@ -12,6 +12,7 @@ from email.policy import default as email_policy
 from email.utils import parsedate_to_datetime
 
 from flask import Flask, abort, g, redirect, render_template, request, send_file
+from zoneinfo import ZoneInfo
 
 from ownmail.archive import EmailArchive
 from ownmail.parser import EmailParser
@@ -47,8 +48,46 @@ CHARSET_ALIASES = {
 RFC2231_FILENAME_RE = re.compile(rb"filename\*(\d*)\*?=([^;\r\n]+)", re.IGNORECASE)
 
 
-def _to_local_datetime(date_str: str) -> datetime | None:
-    """Parse an RFC 2822 date string and convert to local timezone.
+def _get_server_timezone_name() -> str:
+    """Return the server's local timezone name (e.g. 'Asia/Seoul')."""
+    try:
+        # Try to get IANA name from /etc/localtime symlink (macOS / Linux)
+        import subprocess
+        result = subprocess.run(
+            ["readlink", "/etc/localtime"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if result.returncode == 0 and "zoneinfo/" in result.stdout:
+            return result.stdout.strip().split("zoneinfo/")[-1]
+    except Exception:
+        pass
+    # Fallback: use TZ env var or UTC offset
+    tz_env = os.environ.get("TZ")
+    if tz_env:
+        return tz_env
+    offset = datetime.now().astimezone().strftime("%z")
+    return f"UTC{offset[:3]}:{offset[3:]}"
+
+
+def _resolve_timezone(tz_name: str | None) -> ZoneInfo | None:
+    """Resolve a timezone name to a ZoneInfo object.
+
+    Returns None if the name is invalid or empty (meaning: use server local).
+    """
+    if not tz_name:
+        return None
+    try:
+        return ZoneInfo(tz_name)
+    except (KeyError, Exception):
+        return None
+
+
+def _to_local_datetime(date_str: str, tz: ZoneInfo | None = None) -> datetime | None:
+    """Parse an RFC 2822 date string and convert to the given timezone.
+
+    Args:
+        date_str: RFC 2822 date string
+        tz: Target timezone (None = server's local timezone)
 
     Returns None if the date string cannot be parsed.
     """
@@ -56,6 +95,8 @@ def _to_local_datetime(date_str: str) -> datetime | None:
         return None
     try:
         parsed = parsedate_to_datetime(date_str)
+        if tz:
+            return parsed.astimezone(tz)
         return parsed.astimezone()  # Convert to system local timezone
     except Exception:
         return None
@@ -942,6 +983,7 @@ def create_app(
     auto_scale: bool = True,
     brand_name: str = "ownmail",
     sanitizer=None,
+    display_timezone: str = None,
 ) -> Flask:
     """Create the Flask application.
 
@@ -956,6 +998,7 @@ def create_app(
         auto_scale: Scale down wide emails to fit viewport
         brand_name: Custom branding name shown in header
         sanitizer: HTML sanitizer instance (default: passthrough for tests)
+        display_timezone: IANA timezone name (default: server local)
 
     Returns:
         Flask application
@@ -971,6 +1014,8 @@ def create_app(
     app.config["trusted_senders"] = {s.lower() for s in (trusted_senders or [])}
     app.config["config_path"] = config_path
     app.config["date_format"] = date_format  # None = auto
+    app.config["timezone"] = _resolve_timezone(display_timezone)
+    app.config["timezone_name"] = display_timezone or ""
     app.config["auto_scale"] = auto_scale
     app.config["brand_name"] = brand_name
     app.config["sanitizer"] = sanitizer or _PassthroughSanitizer()
@@ -1165,9 +1210,9 @@ def create_app(
                 # Fall back to email or full sender string
                 sender_name = sender_email_parsed or sender or ""
 
-            # Format date as short date (converted to local timezone)
+            # Format date as short date (converted to configured timezone)
             date_short = ""
-            local_dt = _to_local_datetime(date_str)
+            local_dt = _to_local_datetime(date_str, app.config.get("timezone"))
             if local_dt:
                 date_short = _format_date_short(local_dt, app.config.get("date_format"))
             elif date_str:
@@ -1241,7 +1286,7 @@ def create_app(
             sender = parsed.get("sender", "")
             recipients = parsed.get("recipients", "")
             raw_date = parsed.get("date_str", "")
-            local_dt = _to_local_datetime(raw_date)
+            local_dt = _to_local_datetime(raw_date, app.config.get("timezone"))
             date = _format_date_long(local_dt) if local_dt else raw_date
 
             # Ensure MIME-encoded headers are fully decoded
@@ -1608,15 +1653,18 @@ def create_app(
             "block_images": web_config.get("block_images", True),
             "auto_scale": web_config.get("auto_scale", True),
             "date_format": web_config.get("date_format", ""),
+            "timezone": web_config.get("timezone", ""),
             "brand_name": web_config.get("brand_name", "ownmail"),
             "trusted_senders": web_config.get("trusted_senders", []),
         }
+        server_timezone = _get_server_timezone_name()
         return render_template(
             "settings.html",
             settings=current,
             stats=get_cached_stats(),
             config_path=config_path or "(not set)",
             saved=request.args.get("saved") == "1",
+            server_timezone=server_timezone,
         )
 
     @app.route("/settings", methods=["POST"])
@@ -1661,6 +1709,11 @@ def create_app(
             app.config["date_format"] = date_format
         else:
             app.config["date_format"] = None
+
+        tz_name = request.form.get("timezone", "").strip()
+        web_config["timezone"] = tz_name if tz_name else None
+        app.config["timezone"] = _resolve_timezone(tz_name)
+        app.config["timezone_name"] = tz_name
 
         brand_name = request.form.get("brand_name", "").strip() or "ownmail"
         web_config["brand_name"] = brand_name
@@ -1792,6 +1845,7 @@ def run_server(
     date_format: str = None,
     auto_scale: bool = True,
     brand_name: str = "ownmail",
+    display_timezone: str = None,
 ) -> None:
     """Run the web server.
 
@@ -1808,6 +1862,7 @@ def run_server(
         date_format: strftime format for dates (default: auto)
         auto_scale: Scale down wide emails to fit viewport
         brand_name: Custom branding name shown in header
+        display_timezone: IANA timezone name (default: server local)
     """
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
     from ownmail.sanitizer import HtmlSanitizer
@@ -1826,6 +1881,7 @@ def run_server(
         auto_scale=auto_scale,
         brand_name=brand_name,
         sanitizer=sanitizer,
+        display_timezone=display_timezone,
     )
 
     print(f"\n🌐 {brand_name} web interface")
