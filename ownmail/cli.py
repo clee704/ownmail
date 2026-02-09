@@ -66,10 +66,11 @@ def cmd_setup(
             print("Choose a setup method:\n")
             print("  [1] IMAP with App Password (recommended)")
             print("      Works with Gmail, Outlook, Fastmail, and any IMAP server.")
-            print("      For Gmail: just generate an App Password in your Google Account.")
+            print("      For Gmail: generate an App Password in your Google Account.")
             print()
             print("  [2] Gmail API with OAuth")
-            print("      Read-only scope, but requires creating a Google Cloud project.")
+            print("      Faster (batch downloads), read-only scope, native Gmail labels.")
+            print("      Requires creating a Google Cloud project (~15 min one-time setup).")
             print()
 
             choice = input("Your choice [1]: ").strip()
