@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ownmail"
-version = "0.1.0"
+version = "0.2.0-dev"
 description = "Own your mail. A file-based email backup and search tool."
 readme = "README.md"
 license = "MIT"
@@ -12,7 +12,7 @@ requires-python = ">=3.8"
 authors = [
     { name = "Chungmin Lee" }
 ]
-keywords = ["email", "backup", "gmail", "archive", "search", "self-hosted"]
+keywords = ["email", "backup", "gmail", "imap", "archive", "search", "self-hosted"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -46,7 +46,7 @@ dev = [
 ]
 
 [project.scripts]
-ownmail = "ownmail:main"
+ownmail = "ownmail.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/chungmin/ownmail"
@@ -54,11 +54,11 @@ Repository = "https://github.com/chungmin/ownmail"
 Issues = "https://github.com/chungmin/ownmail/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["ownmail"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "ownmail.py",
+    "ownmail/",
     "README.md",
     "LICENSE",
 ]
@@ -104,7 +104,7 @@ known-first-party = ["ownmail"]
 
 # Coverage configuration
 [tool.coverage.run]
-source = ["."]
+source = ["ownmail"]
 omit = ["tests/*", "venv/*", ".venv/*"]
 
 [tool.coverage.report]
