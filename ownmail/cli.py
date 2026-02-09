@@ -527,6 +527,16 @@ Examples:
         description="Fetch Gmail labels and add them to existing downloaded emails.",
     )
 
+    # serve command
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Start web interface",
+        description="Start a local web server to browse and search emails.",
+    )
+    serve_parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
+    serve_parser.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
+    serve_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+
     # sources command
     sources_parser = subparsers.add_parser(
         "sources",
@@ -598,6 +608,14 @@ Examples:
             elif args.command == "add-labels":
                 from ownmail.commands import cmd_add_labels
                 cmd_add_labels(archive, args.source)
+            elif args.command == "serve":
+                try:
+                    from ownmail.web import run_server
+                except ImportError:
+                    print("❌ Flask is required for the web interface.")
+                    print("   Install with: pip install ownmail[web]")
+                    sys.exit(1)
+                run_server(archive, args.host, args.port, args.debug)
 
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
