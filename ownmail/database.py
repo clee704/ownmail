@@ -451,6 +451,22 @@ class ArchiveDatabase:
                 ).fetchall()
             return {row[0] for row in results}
 
+    def get_downloaded_content_hashes(self, account: str) -> set:
+        """Get all content hashes for an account.
+
+        Used for content-based dedup when provider IDs may change format
+        (e.g., switching from INBOX:uid to [Gmail]/All Mail:uid).
+
+        Returns:
+            Set of content_hash values
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            results = conn.execute(
+                "SELECT content_hash FROM emails WHERE account = ? AND content_hash IS NOT NULL",
+                (account,)
+            ).fetchall()
+            return {row[0] for row in results}
+
     def get_email_by_id(self, email_id: str) -> Optional[tuple]:
         """Get email info by email_id.
 

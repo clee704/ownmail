@@ -94,6 +94,9 @@ class EmailArchive:
         if verbose:
             print("[verbose] Loading downloaded IDs from database...", flush=True)
         downloaded_ids = self.db.get_downloaded_ids(account)
+        # Also load content hashes for content-based dedup
+        # (handles provider_id format changes, e.g. INBOX:uid → [Gmail]/All Mail:uid)
+        downloaded_hashes = self.db.get_downloaded_content_hashes(account)
         if verbose:
             print(f"[verbose] Found {len(downloaded_ids)} previously downloaded IDs", flush=True)
 
@@ -228,6 +231,18 @@ class EmailArchive:
 
                     raw_data, labels, _ = result
 
+                    # Content-based dedup: skip if we already have this exact email
+                    # (handles provider_id format changes across scan methods)
+                    content_hash = hashlib.sha256(raw_data).hexdigest()
+                    if content_hash in downloaded_hashes:
+                        success_count += 1
+                        i_skipped = i + j + 1
+                        if success_count > 0:
+                            elapsed = time.time() - start_time
+                            last_rate = success_count / elapsed if elapsed > 0 else 0
+                        print(f"\r\033[K  [{i_skipped}/{len(new_ids)}] {last_rate:.1f}/s | skipped (already downloaded)", end="", flush=True)
+                        continue
+
                     # Save to file
                     filepath, email_date = self._save_email(
                         raw_data, msg_id, account, emails_dir
@@ -241,7 +256,6 @@ class EmailArchive:
                         email_id = ArchiveDatabase.make_email_id(account, msg_id)
 
                         # Mark as downloaded first (creates the row in emails table)
-                        content_hash = hashlib.sha256(raw_data).hexdigest()
                         self.db.mark_downloaded(
                             email_id=email_id,
                             provider_id=msg_id,
@@ -276,6 +290,7 @@ class EmailArchive:
                         )
 
                         success_count += 1
+                        downloaded_hashes.add(content_hash)
 
                         # Commit periodically
                         if success_count - last_commit_count >= COMMIT_INTERVAL:
