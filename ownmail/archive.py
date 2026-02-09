@@ -144,65 +144,93 @@ class EmailArchive:
         last_rate = 0.0
         last_eta_str = "..."
 
+        # Check if provider supports batch downloads
+        from ownmail.providers.gmail import GmailProvider
+        has_batch = isinstance(provider, GmailProvider)
+        batch_size = 50 if has_batch else 1
+
         try:
-            for i, msg_id in enumerate(new_ids, 1):
-                if interrupted:
-                    break
+            i = 0
+            while i < len(new_ids) and not interrupted:
+                # Get batch of IDs to download
+                batch_ids = new_ids[i:i + batch_size]
 
                 # Show progress
                 if success_count > 0 and last_rate > 0:
-                    print(f"\r\033[K  [{i}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | downloading...", end="", flush=True)
+                    print(f"\r\033[K  [{i + 1}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | downloading batch...", end="", flush=True)
                 else:
-                    print(f"\r\033[K  [{i}/{len(new_ids)}] downloading...", end="", flush=True)
+                    print(f"\r\033[K  [{i + 1}/{len(new_ids)}] downloading...", end="", flush=True)
 
-                try:
-                    raw_data, labels = provider.download_message(msg_id)
-                except Exception as e:
-                    print(f"\n  Error downloading {msg_id}: {e}")
-                    error_count += 1
-                    continue
+                # Download batch
+                if has_batch and len(batch_ids) > 1:
+                    batch_results = provider.download_messages_batch(batch_ids)
+                else:
+                    # Fallback to sequential for single items or non-batch providers
+                    batch_results = {}
+                    for msg_id in batch_ids:
+                        try:
+                            raw_data, labels = provider.download_message(msg_id)
+                            batch_results[msg_id] = (raw_data, labels, None)
+                        except Exception as e:
+                            batch_results[msg_id] = (None, [], str(e))
 
-                # Save to file
-                filepath = self._save_email(
-                    raw_data, msg_id, account, emails_dir
-                )
+                # Process batch results
+                for j, msg_id in enumerate(batch_ids):
+                    if interrupted:
+                        break
 
-                if filepath:
-                    size_bytes = filepath.stat().st_size
-                    size_str = self._format_size(size_bytes)
+                    current_idx = i + j + 1
+                    result = batch_results.get(msg_id)
 
-                    print(f"\r\033[K  [{i}/{len(new_ids)}] {size_str:>7} - indexing...", end="", flush=True)
+                    if result is None or result[0] is None:
+                        error_msg = result[2] if result else "Unknown error"
+                        print(f"\n  Error downloading {msg_id}: {error_msg}")
+                        error_count += 1
+                        continue
 
-                    # Index the email
-                    self._index_email(msg_id, filepath, raw_data, skip_delete=True)
+                    raw_data, labels, _ = result
 
-                    # Mark as downloaded
-                    content_hash = hashlib.sha256(raw_data).hexdigest()
-                    self.db.mark_downloaded(
-                        message_id=msg_id,
-                        filename=str(filepath.relative_to(self.archive_dir)),
-                        content_hash=content_hash,
-                        account=account,
-                        conn=self._batch_conn,
+                    # Save to file
+                    filepath = self._save_email(
+                        raw_data, msg_id, account, emails_dir
                     )
 
-                    success_count += 1
+                    if filepath:
+                        size_bytes = filepath.stat().st_size
+                        size_str = self._format_size(size_bytes)
 
-                    # Commit periodically
-                    if success_count - last_commit_count >= COMMIT_INTERVAL:
-                        self._batch_conn.commit()
-                        last_commit_count = success_count
+                        # Index the email
+                        self._index_email(msg_id, filepath, raw_data, skip_delete=True)
 
-                    # Update progress stats
-                    elapsed = time.time() - start_time
-                    last_rate = success_count / elapsed if elapsed > 0 else 0
-                    remaining = len(new_ids) - i
-                    eta = remaining / last_rate if last_rate > 0 else 0
-                    last_eta_str = self._format_eta(eta, i)
+                        # Mark as downloaded
+                        content_hash = hashlib.sha256(raw_data).hexdigest()
+                        self.db.mark_downloaded(
+                            message_id=msg_id,
+                            filename=str(filepath.relative_to(self.archive_dir)),
+                            content_hash=content_hash,
+                            account=account,
+                            conn=self._batch_conn,
+                        )
 
-                    print(f"\r\033[K  [{i}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | {size_str:>7}", end="", flush=True)
-                else:
-                    error_count += 1
+                        success_count += 1
+
+                        # Commit periodically
+                        if success_count - last_commit_count >= COMMIT_INTERVAL:
+                            self._batch_conn.commit()
+                            last_commit_count = success_count
+
+                        # Update progress stats
+                        elapsed = time.time() - start_time
+                        last_rate = success_count / elapsed if elapsed > 0 else 0
+                        remaining = len(new_ids) - current_idx
+                        eta = remaining / last_rate if last_rate > 0 else 0
+                        last_eta_str = self._format_eta(eta, current_idx)
+
+                        print(f"\r\033[K  [{current_idx}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | {size_str:>7}", end="", flush=True)
+                    else:
+                        error_count += 1
+
+                i += len(batch_ids)
 
         finally:
             self._batch_conn.commit()

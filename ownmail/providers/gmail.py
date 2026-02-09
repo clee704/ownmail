@@ -2,17 +2,21 @@
 
 import base64
 import json
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from googleapiclient.http import BatchHttpRequest
 
 from ownmail.providers.base import EmailProvider
 
 # Gmail API scopes - readonly access
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+
+# Batch size for parallel downloads (Gmail API limit is 100)
+BATCH_SIZE = 50
 
 
 class GmailProvider(EmailProvider):
@@ -213,6 +217,66 @@ class GmailProvider(EmailProvider):
                 raw_data = self._inject_labels(raw_data, labels)
 
         return raw_data, labels
+
+    def download_messages_batch(
+        self, msg_ids: List[str]
+    ) -> Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]]:
+        """Download multiple messages in a batch request.
+
+        Args:
+            msg_ids: List of message IDs to download (max BATCH_SIZE)
+
+        Returns:
+            Dict mapping msg_id -> (raw_data, labels, error_message)
+            If successful, error_message is None.
+            If failed, raw_data is None and error_message contains the error.
+        """
+        results: Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]] = {}
+
+        # Pre-load label cache if needed
+        if self._include_labels and not self._label_cache:
+            try:
+                result = self._service.users().labels().list(userId="me").execute()
+                for label in result.get("labels", []):
+                    self._label_cache[label["id"]] = label["name"]
+            except HttpError:
+                pass
+
+        def callback(request_id: str, response, exception):
+            if exception:
+                results[request_id] = (None, [], str(exception))
+            else:
+                try:
+                    raw_data = base64.urlsafe_b64decode(response["raw"])
+                    labels = []
+
+                    # Resolve labels from the response
+                    if self._include_labels and "labelIds" in response:
+                        label_ids = response.get("labelIds", [])
+                        labels = self._resolve_label_names(label_ids)
+                        if labels:
+                            raw_data = self._inject_labels(raw_data, labels)
+
+                    results[request_id] = (raw_data, labels, None)
+                except Exception as e:
+                    results[request_id] = (None, [], str(e))
+
+        # Create batch request
+        batch = BatchHttpRequest(callback=callback)
+
+        for msg_id in msg_ids[:BATCH_SIZE]:
+            # Request raw format with labelIds included
+            batch.add(
+                self._service.users()
+                .messages()
+                .get(userId="me", id=msg_id, format="raw"),
+                request_id=msg_id,
+            )
+
+        # Execute batch
+        batch.execute()
+
+        return results
 
     def get_labels_for_message(self, message_id: str) -> List[str]:
         """Fetch Gmail labels for a message.
