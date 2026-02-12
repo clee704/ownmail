@@ -65,6 +65,7 @@ print(m.group(1))
 
 set_version() {
     sed -i '' "s/^version = \".*\"/version = \"$1\"/" "$PYPROJECT"
+    sed -i '' "s/^__version__ = \".*\"/__version__ = \"$1\"/" "ownmail/__init__.py"
 }
 
 # ── Preflight ────────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ fi
 
 echo "==> Setting release version: $RELEASE"
 set_version "$RELEASE"
-git add "$PYPROJECT"
+git add "$PYPROJECT" ownmail/__init__.py
 git commit -S -m "release: v$RELEASE"
 
 # ── Build ────────────────────────────────────────────────────────────────────
@@ -157,7 +158,7 @@ git tag -s "$TAG" -m "Release $RELEASE"
 
 echo "==> Setting next dev version: $NEXT"
 set_version "$NEXT"
-git add "$PYPROJECT"
+git add "$PYPROJECT" ownmail/__init__.py
 git commit -S -m "chore: begin $NEXT development"
 
 # ── Upload ───────────────────────────────────────────────────────────────────
