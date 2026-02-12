@@ -782,35 +782,6 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
         else:
             print("  ✓ All emails have metadata")
 
-        # FTS sync
-        fts_count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
-        emails_with_metadata = conn.execute(
-            "SELECT COUNT(*) FROM emails WHERE subject IS NOT NULL"
-        ).fetchone()[0]
-
-        if fts_count != emails_with_metadata:
-            issues_found += 1
-            print(f"  ✗ FTS out of sync ({fts_count} vs {emails_with_metadata} indexed)")
-            if fix:
-                conn.execute("DROP TABLE IF EXISTS emails_fts")
-                conn.execute("""
-                    CREATE VIRTUAL TABLE emails_fts USING fts5(
-                        subject, sender, recipients, body, attachments,
-                        content='', tokenize='porter unicode61'
-                    )
-                """)
-                conn.execute("""
-                    INSERT INTO emails_fts(rowid, subject, sender, recipients, body, attachments)
-                    SELECT rowid, COALESCE(subject, ''), COALESCE(sender, ''),
-                           COALESCE(recipients, ''), '', ''
-                    FROM emails WHERE subject IS NOT NULL
-                """)
-                conn.commit()
-                issues_fixed += 1
-                print("    → FTS rebuilt (run 'rebuild --force' to restore body text)")
-        else:
-            print(f"  ✓ FTS in sync ({fts_count} entries)")
-
         # Hash mismatches (indexed_hash vs content_hash)
         hash_mismatches = conn.execute("""
             SELECT COUNT(*) FROM emails
@@ -896,16 +867,13 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                         content='', tokenize='porter unicode61'
                     )
                 """)
-                conn.execute("""
-                    INSERT INTO emails_fts(rowid, subject, sender, recipients, body, attachments)
-                    SELECT rowid, COALESCE(subject, ''), COALESCE(sender, ''),
-                           COALESCE(recipients, ''), '', ''
-                    FROM emails WHERE subject IS NOT NULL
-                """)
+                # Clear indexed_hash so 'rebuild' will re-parse .eml files
+                # and restore full body text in FTS
+                conn.execute("UPDATE emails SET indexed_hash = NULL WHERE subject IS NOT NULL")
                 conn.commit()
                 issues_fixed += 1
                 print(f"    → Removed {removed_count} duplicate DB entries and {removed_files} orphaned files")
-                print("    → FTS rebuilt (run 'rebuild --force' to restore body text)")
+                print("    → Run 'ownmail rebuild' to restore search index")
         else:
             print("  ✓ No duplicate emails")
 
@@ -952,8 +920,6 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
             if missing_metadata > 0 or hash_mismatches > 0:
                 suggestions.append("  • 'ownmail rebuild' to populate metadata / update stale index")
-            if fts_count != emails_with_metadata:
-                suggestions.append("  • 'ownmail verify --fix' to rebuild FTS index")
             if dup_count > 0:
                 suggestions.append("  • 'ownmail verify --fix' to remove duplicate emails")
             if suggestions:

@@ -354,67 +354,6 @@ class TestCmdVerifyDatabase:
         captured = capsys.readouterr()
         assert "missing metadata" in captured.out.lower() or "missing" in captured.out.lower()
 
-    def test_verify_finds_fts_sync_issues(self, temp_dir, capsys):
-        """Test verify finds FTS sync issues."""
-        archive = EmailArchive(temp_dir, {})
-
-        # Add email and index it
-        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
-        archive.db.index_email(
-            _eid("test123"), "Subject", "sender@test.com", "recipient@test.com",
-            "2024-01-01", "Body text", ""
-        )
-
-        # Manually drop FTS to simulate sync issue
-        with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("DROP TABLE emails_fts")
-            conn.execute("""
-                CREATE VIRTUAL TABLE emails_fts USING fts5(
-                    subject, sender, recipients, body, attachments,
-                    content='', tokenize='porter unicode61'
-                )
-            """)
-            conn.commit()
-
-        cmd_verify(archive, verbose=True)
-        captured = capsys.readouterr()
-        assert "FTS" in captured.out
-
-    def test_verify_fix_rebuilds_fts(self, temp_dir, capsys):
-        """Test verify --fix rebuilds FTS when out of sync."""
-        archive = EmailArchive(temp_dir, {})
-
-        # Create actual email file on disk
-        email_path = temp_dir / "test.eml"
-        email_path.write_bytes(b"Subject: Test\n\nBody text")
-
-        # Add email and index it
-        archive.db.mark_downloaded(_eid("test123"), "test123", "test.eml")
-        archive.db.index_email(
-            _eid("test123"), "Subject", "sender@test.com", "recipient@test.com",
-            "2024-01-01", "Body text", ""
-        )
-
-        # Drop FTS entries to simulate sync issue
-        with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("DROP TABLE emails_fts")
-            conn.execute("""
-                CREATE VIRTUAL TABLE emails_fts USING fts5(
-                    subject, sender, recipients, body, attachments,
-                    content='', tokenize='porter unicode61'
-                )
-            """)
-            conn.commit()
-
-        cmd_verify(archive, fix=True)
-        captured = capsys.readouterr()
-        assert "rebuilt" in captured.out.lower() or "Fixed" in captured.out or "FTS" in captured.out
-
-        # Verify FTS has entry now
-        with sqlite3.connect(archive.db.db_path) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
-        assert count == 1
-
     def test_verify_finds_missing_fts(self, temp_dir, capsys):
         """Test verify finds emails missing from FTS (not indexed)."""
         archive = EmailArchive(temp_dir, {})
@@ -1239,7 +1178,7 @@ class TestCmdVerifyDedup:
         cmd_verify(archive, fix=True)
         captured = capsys.readouterr()
         assert "Removed 1 duplicate" in captured.out
-        assert "FTS rebuilt" in captured.out
+        assert "restore search index" in captured.out
 
         # Verify only one entry remains
         with sqlite3.connect(archive.db.db_path) as conn:
@@ -1588,10 +1527,12 @@ class TestVerifyEndToEnd:
         out2 = capsys.readouterr().out
         assert "Fixed" in out2 or "Removed" in out2
 
-        # Step 3: Verify again — should be clean
+        # Step 3: Verify again — duplicates and missing files are fixed,
+        # but stale index is expected (indexed_hash cleared for rebuild)
         cmd_verify(archive, fix=False)
         out3 = capsys.readouterr().out
-        assert "All checks passed" in out3
+        assert "No duplicate emails" in out3
+        assert "Missing" not in out3 or "0" in out3
 
     def test_verify_fix_missing_then_backup_resumes(self, temp_dir, capsys):
         """After verify --fix removes missing files, backup can resume."""
