@@ -5,6 +5,7 @@ import json
 import time
 from typing import Dict, List, Optional, Tuple
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -81,23 +82,37 @@ class GmailProvider(EmailProvider):
                 creds = None
 
         if not creds or not creds.valid:
-            # Check for client credentials
-            client_credentials = self._keychain.load_client_credentials("gmail")
-            if not client_credentials:
-                raise RuntimeError(
-                    "No OAuth credentials found. Run 'ownmail setup' first."
-                )
-
-            print("\nStarting OAuth authentication flow...")
-            print("A browser window will open for you to authorize access.\n")
-
-            client_config = json.loads(client_credentials)
-            flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-            creds = flow.run_local_server(port=0)
-            self._keychain.save_gmail_token(self._account, creds)
+            creds = self._run_oauth_flow()
 
         self._service = build("gmail", "v1", credentials=creds)
+
+        # Verify token actually works (catches revoked/expired tokens that
+        # appear valid locally but have been invalidated on Google's side)
+        try:
+            self._service.users().getProfile(userId="me").execute()
+        except RefreshError:
+            print("⚠ Token has been expired or revoked. Re-authenticating...")
+            creds = self._run_oauth_flow()
+            self._service = build("gmail", "v1", credentials=creds)
+
         print("✓ Authenticated with Gmail API", flush=True)
+
+    def _run_oauth_flow(self):
+        """Run the interactive OAuth2 flow to get new credentials."""
+        client_credentials = self._keychain.load_client_credentials("gmail")
+        if not client_credentials:
+            raise RuntimeError(
+                "No OAuth credentials found. Run 'ownmail setup' first."
+            )
+
+        print("\nStarting OAuth authentication flow...")
+        print("A browser window will open for you to authorize access.\n")
+
+        client_config = json.loads(client_credentials)
+        flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+        creds = flow.run_local_server(port=0)
+        self._keychain.save_gmail_token(self._account, creds)
+        return creds
 
     def get_all_message_ids(
         self, since: Optional[str] = None, until: Optional[str] = None
