@@ -4,7 +4,7 @@ ownmail - Own your mail.
 A file-based email backup and search tool.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0-dev"
 
 # Re-export main classes for backward compatibility
 from ownmail.archive import EmailArchive
