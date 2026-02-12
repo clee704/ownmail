@@ -756,40 +756,6 @@ class TestWebBlockExternalImages:
         assert result == html
 
 
-class TestWebLRUCache:
-    """Tests for web LRUCache."""
-
-    def test_cache_get_set(self):
-        """Test cache get and set."""
-        from ownmail.web import LRUCache
-
-        cache = LRUCache(maxsize=10, ttl=60)
-        cache.set("key1", "value1")
-        result = cache.get("key1")
-        assert result == "value1"
-
-    def test_cache_miss(self):
-        """Test cache miss."""
-        from ownmail.web import LRUCache
-
-        cache = LRUCache(maxsize=10, ttl=60)
-        result = cache.get("nonexistent")
-        assert result is None
-
-    def test_cache_maxsize(self):
-        """Test cache maxsize eviction."""
-        from ownmail.web import LRUCache
-
-        cache = LRUCache(maxsize=2, ttl=60)
-        cache.set("key1", "value1")
-        cache.set("key2", "value2")
-        cache.set("key3", "value3")
-
-        # key1 should be evicted
-        assert cache.get("key1") is None
-        assert cache.get("key2") is not None
-        assert cache.get("key3") is not None
-
 
 class TestWebDecodeHeader:
     """Tests for web decode_header."""
@@ -2223,43 +2189,6 @@ class TestDatabaseEdgeCases:
 
         assert db.is_indexed(_eid("unicodemsg"))
 
-
-class TestWebLRUCacheEdgeCases:
-    """Tests for LRU cache edge cases."""
-
-    def test_cache_ttl_expiry(self):
-        """Test cache TTL expiry."""
-        import time
-
-        from ownmail.web import LRUCache
-
-        cache = LRUCache(maxsize=10, ttl=1)  # 1 second TTL
-        cache.set("key1", "value1")
-        assert cache.get("key1") == "value1"
-
-        # Wait for expiry
-        time.sleep(1.1)
-        assert cache.get("key1") is None
-
-    def test_cache_lru_eviction(self):
-        """Test LRU eviction order."""
-        from ownmail.web import LRUCache
-
-        cache = LRUCache(maxsize=3, ttl=60)
-        cache.set("a", 1)
-        cache.set("b", 2)
-        cache.set("c", 3)
-
-        # Access "a" to make it recently used
-        cache.get("a")
-
-        # Add new item, should evict "b" (least recently used)
-        cache.set("d", 4)
-
-        assert cache.get("a") == 1  # Still there
-        assert cache.get("b") is None  # Evicted
-        assert cache.get("c") == 3  # Still there
-        assert cache.get("d") == 4  # New item
 
 
 class TestCliSearch:

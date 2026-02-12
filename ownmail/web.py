@@ -1061,45 +1061,6 @@ def parse_recipients(recipients_str: str) -> list:
     return result
 
 
-class LRUCache:
-    """Simple LRU cache with TTL."""
-
-    def __init__(self, maxsize: int = 100, ttl: int = 300):
-        self.maxsize = maxsize
-        self.ttl = ttl  # seconds
-        self.cache = {}  # key -> (value, timestamp)
-        self.order = []  # keys in access order
-
-    def get(self, key):
-        """Get value from cache, or None if not found/expired."""
-        if key not in self.cache:
-            return None
-        value, timestamp = self.cache[key]
-        if time.time() - timestamp > self.ttl:
-            # Expired
-            del self.cache[key]
-            if key in self.order:
-                self.order.remove(key)
-            return None
-        # Move to end (most recently used)
-        if key in self.order:
-            self.order.remove(key)
-        self.order.append(key)
-        return value
-
-    def set(self, key, value):
-        """Set value in cache."""
-        # Remove oldest if at capacity
-        while len(self.cache) >= self.maxsize and self.order:
-            oldest = self.order.pop(0)
-            if oldest in self.cache:
-                del self.cache[oldest]
-        self.cache[key] = (value, time.time())
-        if key in self.order:
-            self.order.remove(key)
-        self.order.append(key)
-
-
 class _PassthroughSanitizer:
     """No-op sanitizer that returns HTML unchanged. Used in tests."""
 
@@ -1184,29 +1145,9 @@ def create_app(
                 return
             abort(403)
 
-    # Cache for stats (refreshed every 60 seconds)
-    stats_cache = {"value": None, "time": 0}
-
-    # Cache for search results (100 queries, 5 min TTL)
-    search_cache = LRUCache(maxsize=100, ttl=300)
-
-    # Cache for parsed emails (50 emails, 10 min TTL)
-    email_cache = LRUCache(maxsize=50, ttl=600)
-
-    def get_cached_stats():
-        """Get stats with caching to avoid slow DB queries on every request."""
-        now = time.time()
-        if stats_cache["value"] is None or now - stats_cache["time"] > 60:
-            if verbose:
-                print("[verbose] Refreshing stats cache...", flush=True)
-            start = time.time()
-            # Use fast email count instead of slow get_stats
-            total = archive.db.get_email_count()
-            stats_cache["value"] = {"total_emails": total}
-            stats_cache["time"] = now
-            if verbose:
-                print(f"[verbose] Stats query took {time.time()-start:.2f}s", flush=True)
-        return stats_cache["value"]
+    def get_stats():
+        """Get email count stats."""
+        return {"total_emails": archive.db.get_email_count()}
 
     if verbose:
         @app.before_request
@@ -1250,7 +1191,7 @@ def create_app(
 
     @app.route("/help")
     def help_page():
-        stats = get_cached_stats()
+        stats = get_stats()
         back_url = get_back_to_search_url()
         return render_template("help.html", stats=stats, back_url=back_url)
 
@@ -1263,7 +1204,7 @@ def create_app(
         if sort not in ("relevance", "date_desc", "date_asc"):
             sort = "relevance"
         per_page = app.config["page_size"]
-        stats = get_cached_stats()
+        stats = get_stats()
 
         # Check if query is filter-only (no FTS search terms)
         # Remove known filters to see if any search terms remain
@@ -1290,36 +1231,23 @@ def create_app(
 
         # Server-side pagination: fetch only what we need + 1 to check if more exist
         offset = (page - 1) * per_page
-        cache_key = f"{query}:{sort}:{offset}:{per_page}"
 
-        # Check cache first
-        cached = search_cache.get(cache_key)
-        if cached is not None:
-            if verbose:
-                print(f"[verbose] Search cache HIT for: {query} (page {page}, sort {sort})", flush=True)
-            raw_results = cached
+        if verbose:
+            print(f"[verbose] Searching for: {query} (page {page}, offset {offset}, sort {sort})", flush=True)
+            start = time.time()
+
+        # Fetch per_page + 1 to know if there are more results
+        try:
+            raw_results = archive.search(query, limit=per_page + 1, offset=offset, sort=sort, tz=app.config.get("timezone"))
             search_error = None
-        else:
+        except Exception as e:
+            raw_results = []
+            search_error = str(e)
             if verbose:
-                print(f"[verbose] Searching for: {query} (page {page}, offset {offset}, sort {sort})", flush=True)
-                start = time.time()
+                print(f"[verbose] Search error: {e}", flush=True)
 
-            # Fetch per_page + 1 to know if there are more results
-            try:
-                raw_results = archive.search(query, limit=per_page + 1, offset=offset, sort=sort, tz=app.config.get("timezone"))
-                search_error = None
-            except Exception as e:
-                raw_results = []
-                search_error = str(e)
-                if verbose:
-                    print(f"[verbose] Search error: {e}", flush=True)
-
-            if verbose and not search_error:
-                print(f"[verbose] Search took {time.time()-start:.2f}s, {len(raw_results)} results", flush=True)
-
-            # Cache the results (only if successful)
-            if not search_error:
-                search_cache.set(cache_key, raw_results)
+        if verbose and not search_error:
+            print(f"[verbose] Search took {time.time()-start:.2f}s, {len(raw_results)} results", flush=True)
 
         # Check if there are more results
         has_more = len(raw_results) > per_page
@@ -1391,212 +1319,203 @@ def create_app(
 
     @app.route("/email/<email_id>")
     def view_email(email_id: str):
-        stats = get_cached_stats()
+        stats = get_stats()
 
-        # Check email cache first
-        cached = email_cache.get(email_id)
-        if cached is not None:
-            if verbose:
-                print(f"[verbose] Email cache HIT for: {email_id}", flush=True)
-            email_data = cached
-        else:
-            # Get email file path from database
-            if verbose:
-                print(f"[verbose] Looking up email {email_id}...", flush=True)
-                start = time.time()
-            email_info = archive.db.get_email_by_id(email_id)
-            if verbose:
-                print(f"[verbose] DB lookup took {time.time()-start:.2f}s", flush=True)
-            if not email_info:
-                abort(404)
+        # Get email file path from database
+        if verbose:
+            print(f"[verbose] Looking up email {email_id}...", flush=True)
+            start = time.time()
+        email_info = archive.db.get_email_by_id(email_id)
+        if verbose:
+            print(f"[verbose] DB lookup took {time.time()-start:.2f}s", flush=True)
+        if not email_info:
+            abort(404)
 
-            filename = email_info[1]  # filename is second column
-            filepath = archive.archive_dir / filename
+        filename = email_info[1]  # filename is second column
+        filepath = archive.archive_dir / filename
 
-            if not filepath.exists():
-                abort(404)
+        if not filepath.exists():
+            abort(404)
 
-            # Get labels from email_labels table
-            labels = archive.db.get_labels_for_email(email_id)
+        # Get labels from email_labels table
+        labels = archive.db.get_labels_for_email(email_id)
 
-            # Parse email using EmailParser for proper Korean charset handling
-            if verbose:
-                start = time.time()
+        # Parse email using EmailParser for proper Korean charset handling
+        if verbose:
+            start = time.time()
 
-            # Use EmailParser for headers (handles Korean charset properly)
-            parsed = EmailParser.parse_file(filepath=filepath)
-            subject = parsed.get("subject") or "(No subject)"
-            sender = parsed.get("sender", "")
-            recipients = parsed.get("recipients", "")
-            raw_date = parsed.get("date_str", "")
-            local_dt = _to_local_datetime(raw_date, app.config.get("timezone"))
-            date = _format_date_long(local_dt, app.config.get("detail_date_format")) if local_dt else raw_date
+        # Use EmailParser for headers (handles Korean charset properly)
+        parsed = EmailParser.parse_file(filepath=filepath)
+        subject = parsed.get("subject") or "(No subject)"
+        sender = parsed.get("sender", "")
+        recipients = parsed.get("recipients", "")
+        raw_date = parsed.get("date_str", "")
+        local_dt = _to_local_datetime(raw_date, app.config.get("timezone"))
+        date = _format_date_long(local_dt, app.config.get("detail_date_format")) if local_dt else raw_date
 
-            # Ensure MIME-encoded headers are fully decoded
-            # Parser may return partially decoded or raw MIME strings
-            if subject and '=?' in subject:
-                subject = decode_header(subject)
-            if sender and '=?' in sender:
-                sender = decode_header(sender)
+        # Ensure MIME-encoded headers are fully decoded
+        # Parser may return partially decoded or raw MIME strings
+        if subject and '=?' in subject:
+            subject = decode_header(subject)
+        if sender and '=?' in sender:
+            sender = decode_header(sender)
 
-            # For body and attachments, we still need to parse the message
-            with open(filepath, "rb") as f:
-                msg = email.message_from_binary_file(f, policy=email_policy)
+        # For body and attachments, we still need to parse the message
+        with open(filepath, "rb") as f:
+            msg = email.message_from_binary_file(f, policy=email_policy)
 
-            # Extract body
-            body = ""
-            body_html = None
-            body_parts = []  # Collect text parts from top-level only
-            embedded_messages = []  # Collect embedded message/rfc822 for digests
-            attachments = []
-            cid_images = {}  # Content-ID -> data URI mapping
+        # Extract body
+        body = ""
+        body_html = None
+        body_parts = []  # Collect text parts from top-level only
+        embedded_messages = []  # Collect embedded message/rfc822 for digests
+        attachments = []
+        cid_images = {}  # Content-ID -> data URI mapping
 
-            if msg.is_multipart():
-                # Track depth to skip content nested inside message/rfc822 parts
-                # These are embedded messages (like in digests) that shouldn't be
-                # concatenated into the main body
-                inside_message_rfc822 = 0
+        if msg.is_multipart():
+            # Track depth to skip content nested inside message/rfc822 parts
+            # These are embedded messages (like in digests) that shouldn't be
+            # concatenated into the main body
+            inside_message_rfc822 = 0
 
-                for part in msg.walk():
-                    content_type = part.get_content_type()
-                    content_disposition = str(part.get("Content-Disposition", ""))
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition", ""))
 
-                    # Handle embedded message/rfc822 parts (digest entries)
-                    if content_type == "message/rfc822":
-                        inside_message_rfc822 += 1
-                        # Extract embedded message for digest display
-                        try:
-                            embedded = part.get_payload(0)
-                            if embedded:
-                                emb_from = decode_header(embedded.get("From", ""))
-                                emb_subject = decode_header(embedded.get("Subject", ""))
-                                emb_date = embedded.get("Date", "")
-                                emb_to = decode_header(embedded.get("To", ""))
-                                emb_reply_to = decode_header(embedded.get("Reply-To", ""))
+                # Handle embedded message/rfc822 parts (digest entries)
+                if content_type == "message/rfc822":
+                    inside_message_rfc822 += 1
+                    # Extract embedded message for digest display
+                    try:
+                        embedded = part.get_payload(0)
+                        if embedded:
+                            emb_from = decode_header(embedded.get("From", ""))
+                            emb_subject = decode_header(embedded.get("Subject", ""))
+                            emb_date = embedded.get("Date", "")
+                            emb_to = decode_header(embedded.get("To", ""))
+                            emb_reply_to = decode_header(embedded.get("Reply-To", ""))
 
-                                # Get body and attachments of embedded message
-                                emb_body = ""
-                                for sub in embedded.walk():
-                                    sub_ct = sub.get_content_type()
-                                    sub_disp = str(sub.get("Content-Disposition", ""))
+                            # Get body and attachments of embedded message
+                            emb_body = ""
+                            for sub in embedded.walk():
+                                sub_ct = sub.get_content_type()
+                                sub_disp = str(sub.get("Content-Disposition", ""))
 
-                                    # Check for attachments inside embedded message
-                                    if "attachment" in sub_disp or sub.get_filename():
-                                        att_filename = _extract_attachment_filename(sub)
-                                        payload = sub.get_payload(decode=True)
-                                        size = len(payload) if payload else 0
-                                        attachments.append({
-                                            "filename": att_filename,
-                                            "size": _format_size(size),
-                                        })
-                                    elif sub_ct == "text/plain" and not emb_body:
-                                        payload = sub.get_payload(decode=True)
-                                        if payload:
-                                            emb_body = _decode_text_body(payload, sub.get_content_charset())
+                                # Check for attachments inside embedded message
+                                if "attachment" in sub_disp or sub.get_filename():
+                                    att_filename = _extract_attachment_filename(sub)
+                                    payload = sub.get_payload(decode=True)
+                                    size = len(payload) if payload else 0
+                                    attachments.append({
+                                        "filename": att_filename,
+                                        "size": _format_size(size),
+                                    })
+                                elif sub_ct == "text/plain" and not emb_body:
+                                    payload = sub.get_payload(decode=True)
+                                    if payload:
+                                        emb_body = _decode_text_body(payload, sub.get_content_charset())
 
-                                embedded_messages.append({
-                                    "from": emb_from,
-                                    "subject": emb_subject,
-                                    "date": emb_date,
-                                    "to": emb_to,
-                                    "reply_to": emb_reply_to,
-                                    "body": emb_body,
-                                })
-                        except Exception:
-                            pass
-                        continue
+                            embedded_messages.append({
+                                "from": emb_from,
+                                "subject": emb_subject,
+                                "date": emb_date,
+                                "to": emb_to,
+                                "reply_to": emb_reply_to,
+                                "body": emb_body,
+                            })
+                    except Exception:
+                        pass
+                    continue
 
-                    # Extract inline images with Content-ID (for cid: references)
-                    content_id = part.get("Content-ID", "")
-                    if content_id and content_type.startswith("image/"):
-                        # Content-ID is often wrapped in angle brackets
-                        cid = content_id.strip("<>")
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            data_uri = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
-                            cid_images[cid] = data_uri
+                # Extract inline images with Content-ID (for cid: references)
+                content_id = part.get("Content-ID", "")
+                if content_id and content_type.startswith("image/"):
+                    # Content-ID is often wrapped in angle brackets
+                    cid = content_id.strip("<>")
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        data_uri = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
+                        cid_images[cid] = data_uri
 
-                    # Skip content inside embedded messages (already extracted above)
-                    if inside_message_rfc822 > 0:
-                        continue
+                # Skip content inside embedded messages (already extracted above)
+                if inside_message_rfc822 > 0:
+                    continue
 
-                    if "attachment" in content_disposition:
-                        # Extract filename with proper charset handling
-                        att_filename = _extract_attachment_filename(part)
-                        size = len(part.get_payload(decode=True) or b"")
-                        attachments.append({
-                            "filename": att_filename,
-                            "size": _format_size(size),
-                        })
-                    elif content_type == "text/plain":
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            # Collect text/plain parts from main message
-                            text = _decode_text_body(payload, part.get_content_charset())
-                            if text:
-                                body_parts.append(text)
-                    elif content_type == "text/html" and not body_html:
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            # Use helper that can extract charset from HTML meta tag
-                            body_html = _decode_html_body(payload, part.get_content_charset())
-
-                # Combine all text parts
-                if body_parts:
-                    body = "\n\n".join(body_parts)
-
-                # Append embedded messages (for digest emails)
-                if embedded_messages:
-                    for emb in embedded_messages:
-                        separator = "\n" + "-" * 60 + "\n"
-                        header_lines = []
-                        if emb["from"]:
-                            header_lines.append(f"From: {emb['from']}")
-                        if emb["subject"]:
-                            header_lines.append(f"Subject: {emb['subject']}")
-                        if emb["date"]:
-                            header_lines.append(f"Date: {emb['date']}")
-                        if emb["to"]:
-                            header_lines.append(f"To: {emb['to']}")
-                        if emb["reply_to"]:
-                            header_lines.append(f"Reply-To: {emb['reply_to']}")
-                        headers = "\n".join(header_lines)
-                        body += separator + headers + "\n\n" + emb["body"]
-            else:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    content_type = msg.get_content_type()
-                    header_charset = msg.get_content_charset()
-                    if content_type == "text/html":
+                if "attachment" in content_disposition:
+                    # Extract filename with proper charset handling
+                    att_filename = _extract_attachment_filename(part)
+                    size = len(part.get_payload(decode=True) or b"")
+                    attachments.append({
+                        "filename": att_filename,
+                        "size": _format_size(size),
+                    })
+                elif content_type == "text/plain":
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        # Collect text/plain parts from main message
+                        text = _decode_text_body(payload, part.get_content_charset())
+                        if text:
+                            body_parts.append(text)
+                elif content_type == "text/html" and not body_html:
+                    payload = part.get_payload(decode=True)
+                    if payload:
                         # Use helper that can extract charset from HTML meta tag
-                        body_html = _decode_html_body(payload, header_charset)
-                    else:
-                        # Use helper that can detect Korean charset
-                        body = _decode_text_body(payload, header_charset)
+                        body_html = _decode_html_body(payload, part.get_content_charset())
 
-            # Prefer HTML over plain text for better formatting
-            # (we already block external images for privacy)
-            if body_html:
-                body = ""
+            # Combine all text parts
+            if body_parts:
+                body = "\n\n".join(body_parts)
 
-            if verbose:
-                print(f"[verbose] Email parsing took {time.time()-start:.2f}s", flush=True)
+            # Append embedded messages (for digest emails)
+            if embedded_messages:
+                for emb in embedded_messages:
+                    separator = "\n" + "-" * 60 + "\n"
+                    header_lines = []
+                    if emb["from"]:
+                        header_lines.append(f"From: {emb['from']}")
+                    if emb["subject"]:
+                        header_lines.append(f"Subject: {emb['subject']}")
+                    if emb["date"]:
+                        header_lines.append(f"Date: {emb['date']}")
+                    if emb["to"]:
+                        header_lines.append(f"To: {emb['to']}")
+                    if emb["reply_to"]:
+                        header_lines.append(f"Reply-To: {emb['reply_to']}")
+                    headers = "\n".join(header_lines)
+                    body += separator + headers + "\n\n" + emb["body"]
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                content_type = msg.get_content_type()
+                header_charset = msg.get_content_charset()
+                if content_type == "text/html":
+                    # Use helper that can extract charset from HTML meta tag
+                    body_html = _decode_html_body(payload, header_charset)
+                else:
+                    # Use helper that can detect Korean charset
+                    body = _decode_text_body(payload, header_charset)
 
-            # Cache the parsed email data
-            email_data = {
-                "subject": subject,
-                "sender": sender,
-                "recipients": recipients,
-                "date": date,
-                "labels": labels,
-                "body": body,
-                "body_html": body_html,
-                "attachments": attachments,
-                "cid_images": cid_images,
-            }
-            email_cache.set(email_id, email_data)
+        # Prefer HTML over plain text for better formatting
+        # (we already block external images for privacy)
+        if body_html:
+            body = ""
 
-        # Block external images if configured (do this after cache since it depends on config)
+        if verbose:
+            print(f"[verbose] Email parsing took {time.time()-start:.2f}s", flush=True)
+
+        email_data = {
+            "subject": subject,
+            "sender": sender,
+            "recipients": recipients,
+            "date": date,
+            "labels": labels,
+            "body": body,
+            "body_html": body_html,
+            "attachments": attachments,
+            "cid_images": cid_images,
+        }
+
+        # Block external images if configured
         body_html = email_data.get("body_html")
         cid_images = email_data.get("cid_images", {})
         has_external_images = False
@@ -1807,7 +1726,7 @@ def create_app(
         return render_template(
             "settings.html",
             settings=current,
-            stats=get_cached_stats(),
+            stats=get_stats(),
             config_path=config_path or "(not set)",
             saved=request.args.get("saved") == "1",
             server_timezone=server_tz_label,
