@@ -126,13 +126,13 @@ class GmailProvider(EmailProvider):
         all_ids = []
         page_token = None
 
-        # Build query for date filtering
-        query_parts = []
+        # Build query for date filtering (always exclude trash/spam)
+        query_parts = ["-in:trash -in:spam"]
         if since:
             query_parts.append(f"after:{since.replace('-', '/')}")
         if until:
             query_parts.append(f"before:{until.replace('-', '/')}")
-        query = " ".join(query_parts) if query_parts else None
+        query = " ".join(query_parts)
 
         print("  Querying Gmail API...\033[K", end="\r", flush=True)
 
@@ -142,9 +142,8 @@ class GmailProvider(EmailProvider):
                     "userId": "me",
                     "pageToken": page_token,
                     "maxResults": 500,
+                    "q": query,
                 }
-                if query:
-                    request_args["q"] = query
 
                 response = (
                     self._service.users()
@@ -226,6 +225,9 @@ class GmailProvider(EmailProvider):
                     for history in response["history"]:
                         if "messagesAdded" in history:
                             for msg in history["messagesAdded"]:
+                                labels = msg["message"].get("labelIds", [])
+                                if "TRASH" in labels or "SPAM" in labels:
+                                    continue
                                 new_ids.append(msg["message"]["id"])
 
                 page_token = response.get("nextPageToken")
