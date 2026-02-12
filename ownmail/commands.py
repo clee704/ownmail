@@ -526,13 +526,14 @@ def _index_email_for_rebuild(
             conn.execute("DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,))
             if recipients:
                 normalized = ArchiveDatabase._normalize_recipients(recipients)
-                for email_addr in normalized.strip(',').split(','):
-                    email_addr = email_addr.strip()
-                    if email_addr:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
-                            (rowid, email_addr)
-                        )
+                if normalized:
+                    for email_addr in normalized.strip(',').split(','):
+                        email_addr = email_addr.strip()
+                        if email_addr:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
+                                (rowid, email_addr)
+                            )
 
             # Populate email_labels normalized table
             # Get email_date from emails table for the covering index
