@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from ownmail.web import (
-    LRUCache,
     _extract_body_content,
     _extract_snippet,
     _format_date_long,
@@ -161,39 +160,6 @@ class TestParseRecipients:
         assert len(result) == 2
         assert result[0]["name"] == "John"
         assert result[0]["email"] == "john@example.com"
-
-
-class TestLRUCache:
-    """Tests for LRUCache class."""
-
-    def test_basic_get_set(self):
-        """Basic get and set operations."""
-        cache = LRUCache(maxsize=10, ttl=60)
-        cache.set("key1", "value1")
-        assert cache.get("key1") == "value1"
-
-    def test_missing_key(self):
-        """Missing key should return None."""
-        cache = LRUCache(maxsize=10, ttl=60)
-        assert cache.get("nonexistent") is None
-
-    def test_maxsize_eviction(self):
-        """Cache should evict oldest entries when full."""
-        cache = LRUCache(maxsize=2, ttl=60)
-        cache.set("key1", "value1")
-        cache.set("key2", "value2")
-        cache.set("key3", "value3")  # Should evict key1
-        assert cache.get("key1") is None
-        assert cache.get("key2") == "value2"
-        assert cache.get("key3") == "value3"
-
-    def test_ttl_expiration(self):
-        """Cache entries should expire after TTL."""
-        import time
-        cache = LRUCache(maxsize=10, ttl=0.01)  # 10ms TTL
-        cache.set("key1", "value1")
-        time.sleep(0.02)  # Wait for expiration
-        assert cache.get("key1") is None
 
 
 class TestExtractSnippet:
@@ -596,38 +562,6 @@ Content-Type: text/html
         assert "plain text" in snippet.lower()
 
 
-class TestSearchCacheHit:
-    """Tests for search cache functionality."""
-
-    def test_search_cache_returns_cached_results(self, tmp_path):
-        """Second search should use cached results."""
-        from unittest.mock import MagicMock
-
-        from ownmail.web import create_app
-
-        mock_archive = MagicMock()
-        mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
-        mock_archive.db.get_email_count.return_value = 100
-        mock_archive.search.return_value = [
-            ("msg1", "file1.eml", "Subject 1", "sender@example.com", "2024-01-01", "snippet")
-        ]
-
-        app = create_app(mock_archive)
-        with app.test_client() as client:
-            # First search
-            response1 = client.get("/search?q=test")
-            assert response1.status_code == 200
-
-            # Second search (should hit cache)
-            response2 = client.get("/search?q=test")
-            assert response2.status_code == 200
-
-            # Search should only be called once (second is cached)
-            # Note: It may be called twice if cache is per-request
-            assert mock_archive.search.call_count >= 1
-
-
 class TestViewEmailRoute:
     """Tests for /email/<email_id> route."""
 
@@ -783,38 +717,6 @@ Content-Type: text/html
         with app.test_client() as client:
             response = client.get("/email/msg4")
             assert response.status_code == 200
-
-    def test_view_email_cached(self, tmp_path):
-        """Second view of same email should use cache."""
-        from unittest.mock import MagicMock
-
-        from ownmail.web import create_app
-
-        eml_content = b"""From: sender@example.com
-Subject: Cacheable
-Content-Type: text/plain
-
-Body.
-"""
-        eml_path = tmp_path / "emails" / "cache.eml"
-        eml_path.parent.mkdir(parents=True)
-        eml_path.write_bytes(eml_content)
-
-        mock_archive = MagicMock()
-        mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg5", "emails/cache.eml")
-        mock_archive.db.get_email_count.return_value = 100
-
-        app = create_app(mock_archive)
-        with app.test_client() as client:
-            # First request
-            response1 = client.get("/email/msg5")
-            assert response1.status_code == 200
-
-            # Second request (should hit cache)
-            response2 = client.get("/email/msg5")
-            assert response2.status_code == 200
 
 
 class TestDownloadAttachment:
