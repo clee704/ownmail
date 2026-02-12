@@ -204,6 +204,7 @@ def cmd_rebuild(
             print(f"\r\033[K  [{i}/{len(emails)}] {short_name}", end="", flush=True)
 
             if not filepath.exists():
+                print(f"\n  Missing file: {filename}")
                 error_count += 1
                 continue
 
@@ -438,8 +439,7 @@ def _index_single_email(
         )
         return True
     except Exception as e:
-        if debug:
-            print(f"\n  Error indexing {filepath}: {e}")
+        print(f"\n  Error indexing {filepath.name}: {e}")
         return False
 
 
@@ -553,8 +553,7 @@ def _index_email_for_rebuild(
 
         return True
     except Exception as e:
-        if debug:
-            print(f"\n  Error indexing {filepath}: {e}")
+        print(f"\n  Error indexing {filepath.name}: {e}")
         return False
 
 
