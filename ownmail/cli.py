@@ -100,7 +100,8 @@ def _update_or_create_config(
         source_name: Name of the source being added
         source_snippet: YAML snippet for the source (indented, starts with '  - name:')
     """
-    sources = get_sources(config)
+    from ownmail.yaml_util import load_yaml, save_yaml
+
     existing_source = get_source_by_name(config, source_name)
 
     if existing_source:
@@ -108,12 +109,20 @@ def _update_or_create_config(
         return
 
     if config_path and config_path.exists():
-        # Append source to existing config
+        # Load config with ruamel.yaml to preserve formatting/comments
+        data = load_yaml(config_path)
+        if "sources" not in data:
+            data["sources"] = []
+
+        # Parse the source snippet into a dict
+        from io import StringIO
+        parsed = load_yaml(StringIO(f"sources:\n{source_snippet}"))
+        new_source = parsed["sources"][0]
+
+        data["sources"].append(new_source)
+
         print(f"\n  Adding source to {config_path}...")
-        with open(config_path, "a") as f:
-            if not sources:
-                f.write("\nsources:\n")
-            f.write(source_snippet)
+        save_yaml(data, config_path)
         print(f"✓ Added source '{source_name}' to {config_path}")
     else:
         # Create new config file — ask for archive root
