@@ -95,6 +95,19 @@ if ! gpg --list-secret-keys --keyid-format=long 2>/dev/null | grep -q sec; then
     exit 1
 fi
 
+# Verify PyPI token is in keyring
+if [[ "$REPO" == "testpypi" ]]; then
+    PYPI_URL="https://test.pypi.org/legacy/"
+else
+    PYPI_URL="https://upload.pypi.org/legacy/"
+fi
+
+if ! $PYTHON -c "import keyring; t = keyring.get_password('$PYPI_URL', '__token__'); assert t" 2>/dev/null; then
+    echo "❌ No PyPI token found in keyring."
+    echo "   Store one with: keyring set $PYPI_URL __token__"
+    exit 1
+fi
+
 echo "==> Running lint..."
 ruff check .
 
@@ -164,6 +177,8 @@ git commit -S -m "chore: begin $NEXT development"
 # ── Upload ───────────────────────────────────────────────────────────────────
 
 echo "==> Uploading to $REPO..."
+TWINE_USERNAME=__token__ \
+TWINE_PASSWORD=$($PYTHON -c "import keyring; print(keyring.get_password('$PYPI_URL', '__token__'))") \
 twine upload --repository "$REPO" dist/*
 
 echo ""
