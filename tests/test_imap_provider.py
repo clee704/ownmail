@@ -466,7 +466,7 @@ class TestImapProviderDownload:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b'1 (RFC822 {42}', raw_email),
+                (b"1 (RFC822 {42}", raw_email),
                 b")",
             ],
         )
@@ -487,7 +487,7 @@ class TestImapProviderDownload:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b'1 (RFC822 {42}', raw_email),
+                (b"1 (RFC822 {42}", raw_email),
                 b")",
             ],
         )
@@ -565,9 +565,11 @@ class TestImapProviderIncrementalSync:
         """Test that incremental sync returns only new UIDs."""
         provider = self._make_provider()
 
-        old_state = json.dumps({
-            "INBOX": {"max_uid": 100, "uidvalidity": "1"},
-        })
+        old_state = json.dumps(
+            {
+                "INBOX": {"max_uid": 100, "uidvalidity": "1"},
+            }
+        )
 
         # Only one folder
         provider._conn.list.return_value = (
@@ -768,14 +770,15 @@ class TestImapScanGmail:
             if cmd == "search":
                 return ("OK", [b"10 20"])
             elif cmd == "fetch":
-                return ("OK", [
-                    (b'10 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}',
-                     b'Message-ID: <msg1@test.com>\r\n\r\n'),
-                    b')',
-                    (b'20 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}',
-                     b'Message-ID: <msg2@test.com>\r\n\r\n'),
-                    b')',
-                ])
+                return (
+                    "OK",
+                    [
+                        (b"10 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg1@test.com>\r\n\r\n"),
+                        b")",
+                        (b"20 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg2@test.com>\r\n\r\n"),
+                        b")",
+                    ],
+                )
 
         provider._conn.select.side_effect = mock_select
         provider._conn.uid.side_effect = mock_uid
@@ -803,9 +806,7 @@ class TestImapScanGmail:
         provider._conn.select.return_value = ("OK", [b"100"])
         provider._conn.uid.side_effect = mock_uid
 
-        result = provider._scan_gmail(
-            ["[Gmail]/All Mail"], "[Gmail]/All Mail", "2024-01-01", "2024-12-31"
-        )
+        result = provider._scan_gmail(["[Gmail]/All Mail"], "[Gmail]/All Mail", "2024-01-01", "2024-12-31")
         # Should have filtered results
         assert len(result) <= 5
 
@@ -822,14 +823,15 @@ class TestImapScanGmail:
             if cmd == "search":
                 return ("OK", [b"1 2"])
             elif cmd == "fetch":
-                return ("OK", [
-                    (b'1 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}',
-                     b'Message-ID: <msg1@test.com>\r\n\r\n'),
-                    b')',
-                    (b'2 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}',
-                     b'Message-ID: <msg2@test.com>\r\n\r\n'),
-                    b')',
-                ])
+                return (
+                    "OK",
+                    [
+                        (b"1 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg1@test.com>\r\n\r\n"),
+                        b")",
+                        (b"2 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg2@test.com>\r\n\r\n"),
+                        b")",
+                    ],
+                )
 
         provider._conn.select.side_effect = mock_select
         provider._conn.uid.side_effect = mock_uid
@@ -873,7 +875,7 @@ class TestImapDownloadMessage:
         provider._conn.select.return_value = ("OK", [b"100"])
         provider._conn.uid.return_value = (
             "OK",
-            [(b'1 (RFC822 {100}', b'From: test@example.com\r\nSubject: Hello\r\n\r\nBody'), b')'],
+            [(b"1 (RFC822 {100}", b"From: test@example.com\r\nSubject: Hello\r\n\r\nBody"), b")"],
         )
 
         raw_data, labels = provider.download_message("INBOX:1")
@@ -910,10 +912,10 @@ class TestImapDownloadMessage:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b'1 (UID 1 RFC822 {10}', b'From: a@b.com\r\n\r\nBody1'),
-                b')',
-                (b'2 (UID 2 RFC822 {10}', b'From: c@d.com\r\n\r\nBody2'),
-                b')',
+                (b"1 (UID 1 RFC822 {10}", b"From: a@b.com\r\n\r\nBody1"),
+                b")",
+                (b"2 (UID 2 RFC822 {10}", b"From: c@d.com\r\n\r\nBody2"),
+                b")",
             ],
         )
 
@@ -957,8 +959,8 @@ class TestImapDownloadMessage:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b'1 (UID 1 RFC822 {10}', b'From: a@b.com\r\n\r\nBody'),
-                b')',
+                (b"1 (UID 1 RFC822 {10}", b"From: a@b.com\r\n\r\nBody"),
+                b")",
             ],
         )
 
@@ -974,8 +976,8 @@ class TestImapDownloadMessage:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b'1 (UID 10 RFC822 {10}', b'From: a@b.com\r\n\r\nBody'),
-                b')',
+                (b"1 (UID 10 RFC822 {10}", b"From: a@b.com\r\n\r\nBody"),
+                b")",
             ],
         )
 
@@ -1013,9 +1015,7 @@ class TestImapLabels:
         provider._message_id_to_folders = {"<msg1@test.com>": ["INBOX", "Work"]}
 
         raw_data = b"From: a@b.com\r\nMessage-ID: <msg1@test.com>\r\n\r\nBody"
-        labels = provider._get_labels_for_downloaded(
-            "[Gmail]/All Mail:1", raw_data, "[Gmail]/All Mail"
-        )
+        labels = provider._get_labels_for_downloaded("[Gmail]/All Mail:1", raw_data, "[Gmail]/All Mail")
         assert "[Gmail]/All Mail" in labels
         assert "INBOX" in labels
         assert "Work" in labels
@@ -1089,8 +1089,7 @@ class TestImapGetNewMessageIds:
         provider._conn.uid.return_value = ("OK", [b"1"])
 
         new_ids, state = provider.get_new_message_ids(
-            '{"INBOX": {"max_uid": 10, "uidvalidity": "1"}}',
-            since="2024-01-01"
+            '{"INBOX": {"max_uid": 10, "uidvalidity": "1"}}', since="2024-01-01"
         )
         assert state is None  # Full scan returns None state
 
@@ -1118,9 +1117,11 @@ class TestImapGetNewMessageIds:
         provider._conn.uid.side_effect = mock_uid
         provider._conn.response.return_value = ("OK", [b"99"])
 
-        state = json.dumps({
-            "[Gmail]/All Mail": {"max_uid": 10, "uidvalidity": "99"},
-        })
+        state = json.dumps(
+            {
+                "[Gmail]/All Mail": {"max_uid": 10, "uidvalidity": "99"},
+            }
+        )
         new_ids, new_state = provider.get_new_message_ids(state)
 
         assert len(new_ids) == 2
@@ -1146,9 +1147,11 @@ class TestImapGetNewMessageIds:
 
         provider._conn.uid.side_effect = mock_uid
 
-        state = json.dumps({
-            "[Gmail]/All Mail": {"max_uid": 10, "uidvalidity": "100"},
-        })
+        state = json.dumps(
+            {
+                "[Gmail]/All Mail": {"max_uid": 10, "uidvalidity": "100"},
+            }
+        )
         new_ids, new_state = provider.get_new_message_ids(state)
 
         captured = capsys.readouterr()
@@ -1172,18 +1175,22 @@ class TestImapGetNewMessageIds:
                     return ("OK", [b"11"])
                 return ("OK", [b"1 2 11"])
             elif cmd == "fetch":
-                return ("OK", [
-                    (b'11 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}',
-                     b'Message-ID: <new@test.com>\r\n\r\n'),
-                    b')',
-                ])
+                return (
+                    "OK",
+                    [
+                        (b"11 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <new@test.com>\r\n\r\n"),
+                        b")",
+                    ],
+                )
 
         provider._conn.uid.side_effect = mock_uid
 
-        state = json.dumps({
-            "INBOX": {"max_uid": 10, "uidvalidity": "1"},
-            "Sent": {"max_uid": 10, "uidvalidity": "1"},
-        })
+        state = json.dumps(
+            {
+                "INBOX": {"max_uid": 10, "uidvalidity": "1"},
+                "Sent": {"max_uid": 10, "uidvalidity": "1"},
+            }
+        )
         new_ids, new_state = provider.get_new_message_ids(state)
 
         # msg appears in both INBOX and Sent with same Message-ID → deduped
@@ -1195,6 +1202,7 @@ class TestImapFilterByDate:
 
     def test_to_imap_date(self):
         from ownmail.providers.imap import ImapProvider
+
         assert ImapProvider._to_imap_date("2024-01-15") == "15-Jan-2024"
         assert ImapProvider._to_imap_date("2024-12-01") == "01-Dec-2024"
 
@@ -1210,9 +1218,7 @@ class TestImapFilterByDate:
         provider._conn.select.return_value = ("OK", [b"100"])
         provider._conn.uid.return_value = ("OK", [b"3 4 5"])
 
-        result = provider._filter_uids_by_date(
-            "INBOX", [1, 2, 3, 4, 5], "2024-01-01", "2024-12-31"
-        )
+        result = provider._filter_uids_by_date("INBOX", [1, 2, 3, 4, 5], "2024-01-01", "2024-12-31")
         assert result == [3, 4, 5]
 
     def test_filter_uids_no_results(self):

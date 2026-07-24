@@ -71,11 +71,7 @@ class TestCmdStats:
         """Test stats with configured sources."""
         from ownmail.archive import EmailArchive
 
-        config = {
-            "sources": [
-                {"name": "gmail_personal", "account": "test@gmail.com"}
-            ]
-        }
+        config = {"sources": [{"name": "gmail_personal", "account": "test@gmail.com"}]}
         archive = EmailArchive(temp_dir, config)
         archive.db.mark_downloaded(_eid("msg1", "test@gmail.com"), "msg1", "test.eml", account="test@gmail.com")
 
@@ -121,7 +117,7 @@ class TestMainEntryPoint:
         from ownmail.cli import main
 
         with pytest.raises(SystemExit) as exc_info:
-            with patch.object(sys, 'argv', ['ownmail']):
+            with patch.object(sys, "argv", ["ownmail"]):
                 main()
         assert exc_info.value.code == 1
 
@@ -130,7 +126,7 @@ class TestMainEntryPoint:
         from ownmail.cli import main
 
         with pytest.raises(SystemExit) as exc_info:
-            with patch.object(sys, 'argv', ['ownmail', '--version']):
+            with patch.object(sys, "argv", ["ownmail", "--version"]):
                 main()
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
@@ -145,7 +141,7 @@ class TestMainEntryPoint:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'stats']):
+        with patch.object(sys, "argv", ["ownmail", "stats"]):
             main()
 
         captured = capsys.readouterr()
@@ -167,7 +163,7 @@ sources:
 """)
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'sources', 'list']):
+        with patch.object(sys, "argv", ["ownmail", "sources", "list"]):
             main()
 
         captured = capsys.readouterr()
@@ -181,7 +177,7 @@ sources:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'search', 'test query']):
+        with patch.object(sys, "argv", ["ownmail", "search", "test query"]):
             main()
 
         captured = capsys.readouterr()
@@ -195,7 +191,7 @@ sources:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'rebuild']):
+        with patch.object(sys, "argv", ["ownmail", "rebuild"]):
             main()
 
         captured = capsys.readouterr()
@@ -209,7 +205,7 @@ sources:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'verify']):
+        with patch.object(sys, "argv", ["ownmail", "verify"]):
             main()
 
         captured = capsys.readouterr()
@@ -238,11 +234,7 @@ class TestCmdDownload:
         from ownmail.archive import EmailArchive
         from ownmail.cli import cmd_download
 
-        config = {
-            "sources": [
-                {"name": "existing", "type": "gmail_api", "account": "test@test.com"}
-            ]
-        }
+        config = {"sources": [{"name": "existing", "type": "gmail_api", "account": "test@test.com"}]}
         archive = EmailArchive(temp_dir, config)
 
         with pytest.raises(SystemExit):
@@ -256,11 +248,7 @@ class TestCmdDownload:
         from ownmail.archive import EmailArchive
         from ownmail.cli import cmd_download
 
-        config = {
-            "sources": [
-                {"name": "test", "type": "unknown_type", "account": "test@test.com"}
-            ]
-        }
+        config = {"sources": [{"name": "test", "type": "unknown_type", "account": "test@test.com"}]}
         archive = EmailArchive(temp_dir, config)
 
         cmd_download(archive, config)
@@ -275,13 +263,18 @@ class TestCmdDownload:
 
         config = {
             "sources": [
-                {"name": "test", "type": "imap", "account": "test@test.com",
-                 "host": "imap.test.com", "auth": {"secret_ref": "keychain:test"}}
+                {
+                    "name": "test",
+                    "type": "imap",
+                    "account": "test@test.com",
+                    "host": "imap.test.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
             ]
         }
         archive = EmailArchive(temp_dir, config)
 
-        with patch('ownmail.providers.imap.ImapProvider') as mock_provider_cls:
+        with patch("ownmail.providers.imap.ImapProvider") as mock_provider_cls:
             mock_provider = MagicMock()
             mock_provider.account = "test@gmail.com"
             mock_provider.name = "imap"
@@ -311,15 +304,17 @@ class TestCmdSetup:
         config = {}
 
         # Simulate user input - empty path (paste mode), then credentials, then email/source
-        inputs = iter([
-            '',  # press Enter to paste credentials
-            '{"installed": {"client_id": "test"}}',  # credentials
-            '',  # end of paste
-            '',
-            'test@gmail.com',  # email (now first)
-            'test_source',  # source name
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                "",  # press Enter to paste credentials
+                '{"installed": {"client_id": "test"}}',  # credentials
+                "",  # end of paste
+                "",
+                "test@gmail.com",  # email (now first)
+                "test_source",  # source name
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
         # Mock the OAuth flow
         with patch("ownmail.cli.GmailProvider") as mock_provider:
@@ -345,18 +340,20 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
         config = {}
 
-        inputs = iter([
-            'user@gmail.com',  # email address
-            'test-app-password',  # app password (via getpass)
-            'my_source',  # source name
-            '',  # archive root (accept default)
-        ])
+        inputs = iter(
+            [
+                "user@gmail.com",  # email address
+                "test-app-password",  # app password (via getpass)
+                "my_source",  # source name
+                "",  # archive root (accept default)
+            ]
+        )
 
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         monkeypatch.chdir(temp_dir)
 
-        with patch('getpass.getpass', return_value='test-app-password'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="test-app-password"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_conn = MagicMock()
                 mock_imap.return_value = mock_conn
 
@@ -377,18 +374,20 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
         config = {}
 
-        inputs = iter([
-            'user@example.com',  # email address
-            'imap.example.com',  # IMAP host (non-Gmail)
-            'my_source',  # source name
-            '',  # archive root (accept default)
-        ])
+        inputs = iter(
+            [
+                "user@example.com",  # email address
+                "imap.example.com",  # IMAP host (non-Gmail)
+                "my_source",  # source name
+                "",  # archive root (accept default)
+            ]
+        )
 
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         monkeypatch.chdir(temp_dir)
 
-        with patch('getpass.getpass', return_value='secret'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="secret"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_imap.return_value = MagicMock()
                 cmd_setup(mock_keychain, config, None, method="imap")
 
@@ -417,23 +416,35 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
 
         config_path = temp_dir / "config.yaml"
-        config_path.write_text("archive_root: /tmp/mail\n\nsources:\n  - name: existing\n    type: imap\n    host: imap.old.com\n    account: old@example.com\n    auth:\n      secret_ref: keychain:imap-password/old@example.com\n")
+        config_path.write_text(
+            "archive_root: /tmp/mail\n\nsources:\n  - name: existing\n    type: imap\n    host: imap.old.com\n    account: old@example.com\n    auth:\n      secret_ref: keychain:imap-password/old@example.com\n"
+        )
 
         config = {
             "archive_root": "/tmp/mail",
-            "sources": [{"name": "existing", "type": "imap", "host": "imap.old.com", "account": "old@example.com", "auth": {"secret_ref": "keychain:imap-password/old@example.com"}}],
+            "sources": [
+                {
+                    "name": "existing",
+                    "type": "imap",
+                    "host": "imap.old.com",
+                    "account": "old@example.com",
+                    "auth": {"secret_ref": "keychain:imap-password/old@example.com"},
+                }
+            ],
         }
 
-        inputs = iter([
-            'new@example.com',
-            'imap.new.com',
-            'new_source',
-        ])
+        inputs = iter(
+            [
+                "new@example.com",
+                "imap.new.com",
+                "new_source",
+            ]
+        )
 
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
-        with patch('getpass.getpass', return_value='secret'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="secret"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_imap.return_value = MagicMock()
                 cmd_setup(mock_keychain, config, config_path, method="imap")
 
@@ -450,18 +461,28 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
 
         config = {
-            "sources": [{"name": "my_source", "type": "imap", "host": "imap.gmail.com", "account": "user@gmail.com", "auth": {"secret_ref": "keychain:imap-password/user@gmail.com"}}],
+            "sources": [
+                {
+                    "name": "my_source",
+                    "type": "imap",
+                    "host": "imap.gmail.com",
+                    "account": "user@gmail.com",
+                    "auth": {"secret_ref": "keychain:imap-password/user@gmail.com"},
+                }
+            ],
         }
 
-        inputs = iter([
-            'user@gmail.com',
-            'my_source',
-        ])
+        inputs = iter(
+            [
+                "user@gmail.com",
+                "my_source",
+            ]
+        )
 
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
-        with patch('getpass.getpass', return_value='secret'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="secret"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_imap.return_value = MagicMock()
                 cmd_setup(mock_keychain, config, None, method="imap")
 
@@ -475,7 +496,7 @@ class TestCmdSetup:
         from ownmail.cli import cmd_setup
 
         mock_keychain = MagicMock()
-        monkeypatch.setattr('builtins.input', lambda _: '')
+        monkeypatch.setattr("builtins.input", lambda _: "")
 
         with pytest.raises(SystemExit):
             cmd_setup(mock_keychain, {}, None, method="imap")
@@ -487,9 +508,9 @@ class TestCmdSetup:
         from ownmail.cli import cmd_setup
 
         mock_keychain = MagicMock()
-        monkeypatch.setattr('builtins.input', lambda _: 'user@gmail.com')
+        monkeypatch.setattr("builtins.input", lambda _: "user@gmail.com")
 
-        with patch('getpass.getpass', return_value=''):
+        with patch("getpass.getpass", return_value=""):
             with pytest.raises(SystemExit):
                 cmd_setup(mock_keychain, {}, None, method="imap")
 
@@ -501,10 +522,10 @@ class TestCmdSetup:
         from ownmail.cli import cmd_setup
 
         mock_keychain = MagicMock()
-        monkeypatch.setattr('builtins.input', lambda _: 'user@gmail.com')
+        monkeypatch.setattr("builtins.input", lambda _: "user@gmail.com")
 
-        with patch('getpass.getpass', return_value='bad-password'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="bad-password"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_conn = MagicMock()
                 mock_conn.login.side_effect = imaplib.IMAP4.error("AUTHENTICATIONFAILED")
                 mock_imap.return_value = mock_conn
@@ -523,17 +544,19 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
         config = {}
 
-        inputs = iter([
-            'user@company.com',     # email
-            'imap.company.com',     # hostname
-            'my_source',            # source name
-            '',                      # archive root default
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                "user@company.com",  # email
+                "imap.company.com",  # hostname
+                "my_source",  # source name
+                "",  # archive root default
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         monkeypatch.chdir(temp_dir)
 
-        with patch('getpass.getpass', return_value='password123'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="password123"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_imap.return_value = MagicMock()
                 cmd_setup(mock_keychain, config, None, method="imap")
 
@@ -549,11 +572,13 @@ class TestCmdSetup:
         from ownmail.cli import cmd_setup
 
         mock_keychain = MagicMock()
-        inputs = iter([
-            'user@company.com',     # email (not gmail)
-            '',                      # empty hostname
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                "user@company.com",  # email (not gmail)
+                "",  # empty hostname
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
         with pytest.raises(SystemExit):
             cmd_setup(mock_keychain, {}, None, method="imap")
@@ -565,10 +590,10 @@ class TestCmdSetup:
         from ownmail.cli import cmd_setup
 
         mock_keychain = MagicMock()
-        monkeypatch.setattr('builtins.input', lambda _: 'user@gmail.com')
+        monkeypatch.setattr("builtins.input", lambda _: "user@gmail.com")
 
-        with patch('getpass.getpass', return_value='password'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="password"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_imap.side_effect = OSError("Connection refused")
                 with pytest.raises(SystemExit):
                     cmd_setup(mock_keychain, {}, None, method="imap")
@@ -581,17 +606,19 @@ class TestCmdSetup:
 
         mock_keychain = MagicMock()
 
-        inputs = iter([
-            '1',                    # choose IMAP
-            'user@gmail.com',       # email
-            'my_source',            # source name
-            '',                      # archive root default
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                "1",  # choose IMAP
+                "user@gmail.com",  # email
+                "my_source",  # source name
+                "",  # archive root default
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         monkeypatch.chdir(temp_dir)
 
-        with patch('getpass.getpass', return_value='password'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="password"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_imap.return_value = MagicMock()
                 cmd_setup(mock_keychain, {}, None)
 
@@ -607,16 +634,18 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = False
 
-        inputs = iter([
-            '2',                    # choose OAuth
-            '',                     # press Enter to paste credentials
-            '{"installed": {"client_id": "test"}}',  # paste credentials
-            '',                     # end of paste
-            '',
-            'test@gmail.com',       # email
-            'test_source',          # source name
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                "2",  # choose OAuth
+                "",  # press Enter to paste credentials
+                '{"installed": {"client_id": "test"}}',  # paste credentials
+                "",  # end of paste
+                "",
+                "test@gmail.com",  # email
+                "test_source",  # source name
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
 
         with patch("ownmail.cli.GmailProvider") as mock_provider:
             mock_keychain.load_gmail_token.return_value = None
@@ -643,13 +672,15 @@ class TestCmdSetup:
         creds_file = temp_dir / "client_secret.json"
         creds_file.write_text('{"installed": {"client_id": "test"}}')
 
-        inputs = iter([
-            str(creds_file),    # path to credentials file
-            'test@gmail.com',
-            'test_source',
-            '',
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                str(creds_file),  # path to credentials file
+                "test@gmail.com",
+                "test_source",
+                "",
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         monkeypatch.chdir(temp_dir)
 
         with patch("ownmail.cli.GmailProvider") as mock_provider:
@@ -658,8 +689,7 @@ class TestCmdSetup:
             mock_provider.return_value = mock_instance
 
             try:
-                cmd_setup(mock_keychain, {}, None,
-                          method="oauth")
+                cmd_setup(mock_keychain, {}, None, method="oauth")
             except (StopIteration, Exception):
                 pass
 
@@ -675,11 +705,10 @@ class TestCmdSetup:
         mock_keychain.has_client_credentials.return_value = False
 
         # Provide a nonexistent file path interactively
-        monkeypatch.setattr('builtins.input', lambda _: "/nonexistent/file.json")
+        monkeypatch.setattr("builtins.input", lambda _: "/nonexistent/file.json")
 
         with pytest.raises(SystemExit):
-            cmd_setup(mock_keychain, {}, None,
-                      method="oauth")
+            cmd_setup(mock_keychain, {}, None, method="oauth")
 
     def test_setup_oauth_empty_email_exits(self, temp_dir, capsys, monkeypatch):
         """Test OAuth setup exits when email is empty."""
@@ -690,7 +719,7 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = True
 
-        monkeypatch.setattr('builtins.input', lambda _: '')
+        monkeypatch.setattr("builtins.input", lambda _: "")
 
         with pytest.raises(SystemExit):
             cmd_setup(mock_keychain, {}, None, method="oauth")
@@ -705,12 +734,14 @@ class TestCmdSetup:
         mock_keychain.has_client_credentials.return_value = True
         mock_keychain.load_gmail_token.return_value = MagicMock()  # Token exists
 
-        inputs = iter([
-            'test@gmail.com',
-            'test_source',
-            '',
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                "test@gmail.com",
+                "test_source",
+                "",
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         monkeypatch.chdir(temp_dir)
 
         cmd_setup(mock_keychain, {}, None, method="oauth")
@@ -728,7 +759,7 @@ class TestCmdSetup:
         mock_keychain.has_client_credentials.return_value = False
 
         # Simulate immediate EOF
-        monkeypatch.setattr('builtins.input', MagicMock(side_effect=EOFError))
+        monkeypatch.setattr("builtins.input", MagicMock(side_effect=EOFError))
 
         with pytest.raises(SystemExit):
             cmd_setup(mock_keychain, {}, None, method="oauth")
@@ -742,16 +773,18 @@ class TestCmdSetup:
         mock_keychain = MagicMock()
 
         custom_path = str(temp_dir / "my_archive")
-        inputs = iter([
-            'user@gmail.com',
-            'my_source',
-            custom_path,
-        ])
-        monkeypatch.setattr('builtins.input', lambda _: next(inputs))
+        inputs = iter(
+            [
+                "user@gmail.com",
+                "my_source",
+                custom_path,
+            ]
+        )
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
         monkeypatch.chdir(temp_dir)
 
-        with patch('getpass.getpass', return_value='password'):
-            with patch('imaplib.IMAP4_SSL') as mock_imap:
+        with patch("getpass.getpass", return_value="password"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
                 mock_imap.return_value = MagicMock()
                 cmd_setup(mock_keychain, {}, None, method="imap")
 
@@ -773,7 +806,7 @@ class TestMainEdgeCases:
         custom_dir = temp_dir / "custom"
         custom_dir.mkdir()
 
-        with patch.object(sys, 'argv', ['ownmail', '--archive-root', str(custom_dir), 'stats']):
+        with patch.object(sys, "argv", ["ownmail", "--archive-root", str(custom_dir), "stats"]):
             main()
 
         captured = capsys.readouterr()
@@ -787,7 +820,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'sync-check']):
+        with patch.object(sys, "argv", ["ownmail", "sync-check"]):
             main()
 
         captured = capsys.readouterr()
@@ -802,7 +835,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'update-labels']):
+        with patch.object(sys, "argv", ["ownmail", "update-labels"]):
             main()
 
         captured = capsys.readouterr()
@@ -817,7 +850,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'verify']):
+        with patch.object(sys, "argv", ["ownmail", "verify"]):
             main()
 
         captured = capsys.readouterr()
@@ -831,7 +864,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'verify', '--fix']):
+        with patch.object(sys, "argv", ["ownmail", "verify", "--fix"]):
             main()
 
         captured = capsys.readouterr()
@@ -845,7 +878,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'search', 'test', '--limit', '5']):
+        with patch.object(sys, "argv", ["ownmail", "search", "test", "--limit", "5"]):
             main()
 
         captured = capsys.readouterr()
@@ -859,7 +892,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'rebuild', '--force']):
+        with patch.object(sys, "argv", ["ownmail", "rebuild", "--force"]):
             main()
 
         captured = capsys.readouterr()
@@ -873,7 +906,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'rebuild', '--pattern', '2024/*']):
+        with patch.object(sys, "argv", ["ownmail", "rebuild", "--pattern", "2024/*"]):
             main()
 
         captured = capsys.readouterr()
@@ -887,7 +920,7 @@ class TestMainEdgeCases:
         config_path.write_text(f"archive_root: {temp_dir}\n")
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'verify', '--verbose']):
+        with patch.object(sys, "argv", ["ownmail", "verify", "--verbose"]):
             main()
 
         capsys.readouterr()
@@ -914,7 +947,7 @@ class TestMainEdgeCases:
         )
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'download']):
+        with patch.object(sys, "argv", ["ownmail", "download"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -945,8 +978,8 @@ class TestMainEdgeCases:
 
         # setup should not fail on duplicate names — it needs to run
         # to let the user fix the config
-        with patch.object(sys, 'argv', ['ownmail', 'setup']):
-            with patch('ownmail.cli.cmd_setup') as mock_setup:
+        with patch.object(sys, "argv", ["ownmail", "setup"]):
+            with patch("ownmail.cli.cmd_setup") as mock_setup:
                 main()
                 mock_setup.assert_called_once()
 
@@ -979,7 +1012,7 @@ sources:
             mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', 'download']):
+            with patch.object(sys, "argv", ["ownmail", "download"]):
                 main()
 
         captured = capsys.readouterr()
@@ -1009,7 +1042,7 @@ sources:
             mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', 'download', '--source', 'test_gmail']):
+            with patch.object(sys, "argv", ["ownmail", "download", "--source", "test_gmail"]):
                 main()
 
         captured = capsys.readouterr()
@@ -1029,7 +1062,7 @@ sources:
 """)
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'download']):
+        with patch.object(sys, "argv", ["ownmail", "download"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -1062,11 +1095,11 @@ sources:
             mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider.download_message.return_value = (
                 b"From: test@example.com\nDate: Mon, 15 Jan 2024 10:00:00 +0000\n\nBody",
-                ["INBOX"]
+                ["INBOX"],
             )
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', 'download']):
+            with patch.object(sys, "argv", ["ownmail", "download"]):
                 main()
 
         captured = capsys.readouterr()
@@ -1097,7 +1130,7 @@ sources:
             mock_provider.download_message.return_value = (None, None)  # Download fails
             mock_provider_class.return_value = mock_provider
 
-            with patch.object(sys, 'argv', ['ownmail', 'download']):
+            with patch.object(sys, "argv", ["ownmail", "download"]):
                 main()
 
         captured = capsys.readouterr()
@@ -1119,11 +1152,13 @@ sources:
 """)
         monkeypatch.chdir(temp_dir)
 
-        with patch.object(sys, 'argv', ['ownmail', 'download']):
+        with patch.object(sys, "argv", ["ownmail", "download"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
 
         captured = capsys.readouterr()
         # Should report error about secret_ref format
-        assert "error" in captured.out.lower() or "invalid" in captured.out.lower() or "keychain:" in captured.out.lower()
+        assert (
+            "error" in captured.out.lower() or "invalid" in captured.out.lower() or "keychain:" in captured.out.lower()
+        )

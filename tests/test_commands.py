@@ -213,6 +213,7 @@ class TestCmdVerify:
     def test_verify_finds_orphaned_files(self, temp_dir, sample_eml_simple, capsys):
         """Test verify detects orphaned files on disk."""
         import hashlib
+
         archive = EmailArchive(temp_dir, {})
 
         # Create one indexed email so verify has something to do
@@ -221,7 +222,9 @@ class TestCmdVerify:
         indexed_path = emails_dir / "indexed.eml"
         indexed_path.write_bytes(sample_eml_simple)
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
-        archive.db.mark_downloaded(_eid("indexed123"), "indexed123", str(indexed_path.relative_to(temp_dir)), content_hash=content_hash)
+        archive.db.mark_downloaded(
+            _eid("indexed123"), "indexed123", str(indexed_path.relative_to(temp_dir)), content_hash=content_hash
+        )
 
         # Create orphaned email file not in database
         (emails_dir / "orphaned.eml").write_bytes(b"Orphaned email")
@@ -233,13 +236,16 @@ class TestCmdVerify:
     def test_verify_detects_moved_files(self, temp_dir, sample_eml_simple, capsys):
         """Test verify detects moved/renamed files by matching hashes."""
         import hashlib
+
         archive = EmailArchive(temp_dir, {})
 
         # Register email at old path (file doesn't exist there)
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         archive.db.mark_downloaded(
-            _eid("moved123"), "moved123",
-            "emails/2024/01/old_name.eml", content_hash=content_hash,
+            _eid("moved123"),
+            "moved123",
+            "emails/2024/01/old_name.eml",
+            content_hash=content_hash,
         )
 
         # Place the same file at a new path (orphaned from DB's perspective)
@@ -258,12 +264,15 @@ class TestCmdVerify:
     def test_verify_fix_updates_moved_paths(self, temp_dir, sample_eml_simple, capsys):
         """Test verify --fix updates DB paths for moved files."""
         import hashlib
+
         archive = EmailArchive(temp_dir, {})
 
         content_hash = hashlib.sha256(sample_eml_simple).hexdigest()
         archive.db.mark_downloaded(
-            _eid("moved123"), "moved123",
-            "emails/2024/01/old_name.eml", content_hash=content_hash,
+            _eid("moved123"),
+            "moved123",
+            "emails/2024/01/old_name.eml",
+            content_hash=content_hash,
         )
 
         new_dir = temp_dir / "emails" / "2024" / "02"
@@ -291,7 +300,8 @@ class TestCmdVerify:
 
         # Add email record pointing to a missing file
         archive.db.mark_downloaded(
-            _eid("missing1", "test@gmail.com"), "missing1",
+            _eid("missing1", "test@gmail.com"),
+            "missing1",
             "emails/2024/01/missing.eml",
             content_hash="abc123",
             account="test@gmail.com",
@@ -319,13 +329,17 @@ class TestCmdVerify:
 
         # Add missing files for both accounts
         archive.db.mark_downloaded(
-            _eid("msg1", "alice@gmail.com"), "msg1",
-            "emails/2024/01/msg1.eml", content_hash="aaa",
+            _eid("msg1", "alice@gmail.com"),
+            "msg1",
+            "emails/2024/01/msg1.eml",
+            content_hash="aaa",
             account="alice@gmail.com",
         )
         archive.db.mark_downloaded(
-            _eid("msg2", "bob@gmail.com"), "msg2",
-            "emails/2024/01/msg2.eml", content_hash="bbb",
+            _eid("msg2", "bob@gmail.com"),
+            "msg2",
+            "emails/2024/01/msg2.eml",
+            content_hash="bbb",
             account="bob@gmail.com",
         )
 
@@ -372,6 +386,7 @@ class TestCmdVerifyDatabase:
     def test_verify_hash_mismatches(self, temp_dir, sample_eml_simple, capsys):
         """Test verify detects hash mismatches."""
         import hashlib
+
         archive = EmailArchive(temp_dir, {})
 
         # Create email file
@@ -385,10 +400,13 @@ class TestCmdVerifyDatabase:
         rel_path = str(email_path.relative_to(temp_dir))
 
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO emails (email_id, provider_id, filename, content_hash, indexed_hash)
                 VALUES (?, ?, ?, ?, 'different_hash')
-            """, (_eid("test123"), "test123", rel_path, content_hash))
+            """,
+                (_eid("test123"), "test123", rel_path, content_hash),
+            )
             conn.commit()
 
         cmd_verify(archive)
@@ -408,10 +426,13 @@ class TestCmdVerifyDatabase:
         rel_path = str(email_path.relative_to(temp_dir))
 
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO emails (email_id, provider_id, filename, content_hash)
                 VALUES (?, ?, ?, NULL)
-            """, (_eid("test456"), "test456", rel_path))
+            """,
+                (_eid("test456"), "test456", rel_path),
+            )
             conn.commit()
 
         cmd_verify(archive)
@@ -432,6 +453,7 @@ class TestCmdVerifyEdgeCases:
     def test_verify_valid_email(self, temp_dir, sample_eml_simple, capsys):
         """Test verify with valid email."""
         import hashlib
+
         archive = EmailArchive(temp_dir, {})
 
         # Create email file
@@ -517,6 +539,7 @@ class TestCmdSyncCheck:
     def test_sync_check_no_sources(self, temp_dir, capsys):
         """Test sync-check with no sources configured."""
         from ownmail.commands import cmd_sync_check
+
         archive = EmailArchive(temp_dir, {})
 
         cmd_sync_check(archive)
@@ -530,12 +553,14 @@ class TestCmdSyncCheck:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -556,18 +581,32 @@ class TestCmdSyncCheck:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
         # Add messages to local archive
-        archive.db.mark_downloaded(_eid("msg1", "test@gmail.com"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc", account="test@gmail.com")
-        archive.db.mark_downloaded(_eid("msg2", "test@gmail.com"), "msg2", "emails/2024/01/msg2.eml", content_hash="def", account="test@gmail.com")
+        archive.db.mark_downloaded(
+            _eid("msg1", "test@gmail.com"),
+            "msg1",
+            "emails/2024/01/msg1.eml",
+            content_hash="abc",
+            account="test@gmail.com",
+        )
+        archive.db.mark_downloaded(
+            _eid("msg2", "test@gmail.com"),
+            "msg2",
+            "emails/2024/01/msg2.eml",
+            content_hash="def",
+            account="test@gmail.com",
+        )
 
         with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
@@ -586,6 +625,7 @@ class TestCmdUpdateLabels:
     def test_update_labels_no_sources(self, temp_dir, capsys):
         """Test update-labels with no sources configured."""
         from ownmail.commands import cmd_update_labels
+
         archive = EmailArchive(temp_dir, {})
 
         cmd_update_labels(archive)
@@ -597,12 +637,14 @@ class TestCmdUpdateLabels:
         from ownmail.commands import cmd_update_labels
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -618,12 +660,14 @@ class TestCmdUpdateLabels:
         from ownmail.commands import cmd_update_labels
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -635,7 +679,9 @@ class TestCmdUpdateLabels:
 
         # Add to database
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded(_eid("test123", "test@gmail.com"), "test123", rel_path, content_hash="abc", account="test@gmail.com")
+        archive.db.mark_downloaded(
+            _eid("test123", "test@gmail.com"), "test123", rel_path, content_hash="abc", account="test@gmail.com"
+        )
 
         with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
@@ -655,12 +701,14 @@ class TestCmdUpdateLabels:
         from ownmail.commands import cmd_update_labels
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -670,8 +718,7 @@ class TestCmdUpdateLabels:
         conn = sqlite3.connect(archive.db.db_path)
         rowid = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (email_id,)).fetchone()[0]
         conn.execute(
-            "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-            (rowid, "INBOX", None)
+            "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)", (rowid, "INBOX", None)
         )
         conn.commit()
         conn.close()
@@ -688,12 +735,14 @@ class TestCmdUpdateLabels:
         from ownmail.commands import cmd_update_labels
 
         config = {
-            "sources": [{
-                "name": "test_imap",
-                "type": "imap",
-                "account": "test@gmail.com",
-                "host": "imap.gmail.com",
-            }]
+            "sources": [
+                {
+                    "name": "test_imap",
+                    "type": "imap",
+                    "account": "test@gmail.com",
+                    "host": "imap.gmail.com",
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -701,7 +750,9 @@ class TestCmdUpdateLabels:
         eid1 = _eid("INBOX:100", "test@gmail.com")
         eid2 = _eid("[Gmail]/Sent Mail:200", "test@gmail.com")
         archive.db.mark_downloaded(eid1, "INBOX:100", "emails/msg1.eml", content_hash="abc", account="test@gmail.com")
-        archive.db.mark_downloaded(eid2, "[Gmail]/Sent Mail:200", "emails/msg2.eml", content_hash="def", account="test@gmail.com")
+        archive.db.mark_downloaded(
+            eid2, "[Gmail]/Sent Mail:200", "emails/msg2.eml", content_hash="def", account="test@gmail.com"
+        )
 
         cmd_update_labels(archive)
 
@@ -724,12 +775,14 @@ class TestCmdUpdateLabels:
         from ownmail.commands import cmd_update_labels
 
         config = {
-            "sources": [{
-                "name": "test_imap",
-                "type": "imap",
-                "account": "test@gmail.com",
-                "host": "imap.gmail.com",
-            }]
+            "sources": [
+                {
+                    "name": "test_imap",
+                    "type": "imap",
+                    "account": "test@gmail.com",
+                    "host": "imap.gmail.com",
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -817,12 +870,14 @@ class TestCmdSyncCheckDifferences:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -843,18 +898,32 @@ class TestCmdSyncCheckDifferences:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
         # Add local emails
-        archive.db.mark_downloaded(_eid("local1", "test@gmail.com"), "local1", "emails/2024/01/local1.eml", content_hash="abc", account="test@gmail.com")
-        archive.db.mark_downloaded(_eid("local2", "test@gmail.com"), "local2", "emails/2024/01/local2.eml", content_hash="def", account="test@gmail.com")
+        archive.db.mark_downloaded(
+            _eid("local1", "test@gmail.com"),
+            "local1",
+            "emails/2024/01/local1.eml",
+            content_hash="abc",
+            account="test@gmail.com",
+        )
+        archive.db.mark_downloaded(
+            _eid("local2", "test@gmail.com"),
+            "local2",
+            "emails/2024/01/local2.eml",
+            content_hash="def",
+            account="test@gmail.com",
+        )
 
         with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
@@ -873,12 +942,14 @@ class TestCmdSyncCheckDifferences:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -900,24 +971,32 @@ class TestCmdSyncCheckDifferences:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "work_imap",
-                "type": "imap",
-                "account": "user@company.com",
-                "host": "imap.company.com",
-                "auth": {"secret_ref": "keychain:work"},
-            }]
+            "sources": [
+                {
+                    "name": "work_imap",
+                    "type": "imap",
+                    "account": "user@company.com",
+                    "host": "imap.company.com",
+                    "auth": {"secret_ref": "keychain:work"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
         # Add local emails
         archive.db.mark_downloaded(
-            _eid("INBOX:1", "user@company.com"), "INBOX:1",
-            "emails/2024/01/e1.eml", content_hash="aaa", account="user@company.com",
+            _eid("INBOX:1", "user@company.com"),
+            "INBOX:1",
+            "emails/2024/01/e1.eml",
+            content_hash="aaa",
+            account="user@company.com",
         )
         archive.db.mark_downloaded(
-            _eid("INBOX:2", "user@company.com"), "INBOX:2",
-            "emails/2024/01/e2.eml", content_hash="bbb", account="user@company.com",
+            _eid("INBOX:2", "user@company.com"),
+            "INBOX:2",
+            "emails/2024/01/e2.eml",
+            content_hash="bbb",
+            account="user@company.com",
         )
 
         with patch("ownmail.providers.imap.ImapProvider") as mock_cls:
@@ -938,19 +1017,24 @@ class TestCmdSyncCheckDifferences:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "work_imap",
-                "type": "imap",
-                "account": "user@company.com",
-                "host": "imap.company.com",
-                "auth": {"secret_ref": "keychain:work"},
-            }]
+            "sources": [
+                {
+                    "name": "work_imap",
+                    "type": "imap",
+                    "account": "user@company.com",
+                    "host": "imap.company.com",
+                    "auth": {"secret_ref": "keychain:work"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
         archive.db.mark_downloaded(
-            _eid("INBOX:1", "user@company.com"), "INBOX:1",
-            "emails/2024/01/e1.eml", content_hash="aaa", account="user@company.com",
+            _eid("INBOX:1", "user@company.com"),
+            "INBOX:1",
+            "emails/2024/01/e1.eml",
+            content_hash="aaa",
+            account="user@company.com",
         )
 
         with patch("ownmail.providers.imap.ImapProvider") as mock_cls:
@@ -968,12 +1052,14 @@ class TestCmdSyncCheckDifferences:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "weird",
-                "type": "pop3",
-                "account": "x@x.com",
-                "auth": {"secret_ref": "keychain:x"},
-            }]
+            "sources": [
+                {
+                    "name": "weird",
+                    "type": "pop3",
+                    "account": "x@x.com",
+                    "auth": {"secret_ref": "keychain:x"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
         cmd_sync_check(archive)
@@ -1036,6 +1122,7 @@ class TestCmdRebuildEdgeCases:
     def test_rebuild_updates_indexed_hash(self, temp_dir, sample_eml_simple, capsys):
         """Test rebuild updates the indexed_hash after indexing."""
         import hashlib
+
         archive = EmailArchive(temp_dir, {})
 
         # Create email file
@@ -1052,10 +1139,7 @@ class TestCmdRebuildEdgeCases:
 
         # Check indexed_hash was set
         with sqlite3.connect(archive.db.db_path) as conn:
-            result = conn.execute(
-                "SELECT indexed_hash FROM emails WHERE email_id = ?",
-                (_eid("test123"),)
-            ).fetchone()
+            result = conn.execute("SELECT indexed_hash FROM emails WHERE email_id = ?", (_eid("test123"),)).fetchone()
         assert result[0] == content_hash
 
 
@@ -1324,9 +1408,7 @@ class TestReconcileLabelSidecars:
                 "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                 (rowid, "INBOX", email_date),
             )
-            filename = conn.execute(
-                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
-            ).fetchone()[0]
+            filename = conn.execute("SELECT filename FROM emails WHERE email_id = ?", (eid,)).fetchone()[0]
 
         _reconcile_label_sidecars(archive)
 
@@ -1347,9 +1429,7 @@ class TestReconcileLabelSidecars:
                 "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                 (rowid, "OLD_LABEL", email_date),
             )
-            filename = conn.execute(
-                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
-            ).fetchone()[0]
+            filename = conn.execute("SELECT filename FROM emails WHERE email_id = ?", (eid,)).fetchone()[0]
 
         sidecar.write_labels(temp_dir / filename, ["NEW_LABEL"])
 
@@ -1357,9 +1437,8 @@ class TestReconcileLabelSidecars:
 
         with sqlite3.connect(archive.db.db_path) as conn:
             labels = [
-                row[0] for row in conn.execute(
-                    "SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,)
-                ).fetchall()
+                row[0]
+                for row in conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,)).fetchall()
             ]
         assert labels == ["NEW_LABEL"]
         captured = capsys.readouterr()
@@ -1377,9 +1456,7 @@ class TestReconcileLabelSidecars:
                 "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                 (rowid, "INBOX", email_date),
             )
-            filename = conn.execute(
-                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
-            ).fetchone()[0]
+            filename = conn.execute("SELECT filename FROM emails WHERE email_id = ?", (eid,)).fetchone()[0]
 
         sidecar.write_labels(temp_dir / filename, ["INBOX"])
 
@@ -1412,6 +1489,7 @@ class TestRebuildCancel:
 
         # Monkey-patch _index_email_for_rebuild to send SIGINT after 3
         from ownmail import commands
+
         original_fn = commands._index_email_for_rebuild
         call_count = 0
 
@@ -1421,6 +1499,7 @@ class TestRebuildCancel:
             result = original_fn(arch, email_id, filepath, conn, debug)
             if call_count == 3:
                 import os
+
                 os.kill(os.getpid(), signal.SIGINT)
             return result
 
@@ -1462,6 +1541,7 @@ class TestRebuildCancel:
             _make_email(archive, temp_dir, i)
 
         from ownmail import commands
+
         original_fn = commands._index_email_for_rebuild
         call_count = 0
 
@@ -1471,6 +1551,7 @@ class TestRebuildCancel:
             result = original_fn(arch, email_id, filepath, conn, debug)
             if call_count == 3:
                 import os
+
                 os.kill(os.getpid(), signal.SIGINT)
             return result
 
@@ -1485,9 +1566,7 @@ class TestRebuildCancel:
 
         # Count how many are now indexed
         with sqlite3.connect(archive.db.db_path) as conn:
-            indexed = conn.execute(
-                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
-            ).fetchone()[0]
+            indexed = conn.execute("SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL").fetchone()[0]
 
         assert indexed >= 3  # At least 3 were indexed before SIGINT
 
@@ -1497,9 +1576,7 @@ class TestRebuildCancel:
 
         # After second run, all 8 should be indexed
         with sqlite3.connect(archive.db.db_path) as conn:
-            indexed = conn.execute(
-                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
-            ).fetchone()[0]
+            indexed = conn.execute("SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL").fetchone()[0]
         assert indexed == 8
 
 
@@ -1528,9 +1605,7 @@ class TestRebuildForceMode:
 
         with sqlite3.connect(archive.db.db_path) as conn:
             fts_after = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
-            indexed = conn.execute(
-                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
-            ).fetchone()[0]
+            indexed = conn.execute("SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL").fetchone()[0]
 
         assert fts_after == 3
         assert indexed == 3
@@ -1728,9 +1803,7 @@ class TestVerifyEndToEnd:
         # Verify DB now has the new path
         new_rel = str(new_path.relative_to(temp_dir))
         with sqlite3.connect(archive.db.db_path) as conn:
-            row = conn.execute(
-                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
-            ).fetchone()
+            row = conn.execute("SELECT filename FROM emails WHERE email_id = ?", (eid,)).fetchone()
         assert row[0] == new_rel
 
         # Web UI should serve the email at the updated path

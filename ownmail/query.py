@@ -31,18 +31,20 @@ from enum import Enum, auto
 
 class TokenType(Enum):
     """Types of tokens in search queries."""
-    WORD = auto()           # Plain word: invoice
-    PHRASE = auto()         # Quoted phrase: "exact phrase"
-    FILTER = auto()         # Field filter: from:alice
-    NEGATION = auto()       # Negated term: -spam
-    OR = auto()             # Boolean OR operator
-    LPAREN = auto()         # Left parenthesis (
-    RPAREN = auto()         # Right parenthesis )
+
+    WORD = auto()  # Plain word: invoice
+    PHRASE = auto()  # Quoted phrase: "exact phrase"
+    FILTER = auto()  # Field filter: from:alice
+    NEGATION = auto()  # Negated term: -spam
+    OR = auto()  # Boolean OR operator
+    LPAREN = auto()  # Left parenthesis (
+    RPAREN = auto()  # Right parenthesis )
 
 
 @dataclass
 class Token:
     """A single token from the search query."""
+
     type: TokenType
     value: str
     field: str = ""  # For FILTER tokens: from, to, subject, etc.
@@ -59,6 +61,7 @@ class ParsedQuery:
         params: Bound parameters for WHERE clauses
         error: Parse error message, if any
     """
+
     fts_query: str = ""
     where_clauses: list[str] = field(default_factory=list)
     params: list = field(default_factory=list)
@@ -77,7 +80,7 @@ class ParsedQuery:
 FTS5_SPECIAL_CHARS = set('.@-+*"():^')
 
 # Date pattern: YYYY-MM-DD or YYYYMMDD
-DATE_PATTERN = re.compile(r'^(\d{4})-?(\d{2})-?(\d{2})$')
+DATE_PATTERN = re.compile(r"^(\d{4})-?(\d{2})-?(\d{2})$")
 
 
 def _tokenize(query: str) -> tuple[list[Token], str | None]:
@@ -104,38 +107,38 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
             end = query.find('"', i + 1)
             if end == -1:
                 # Unclosed quote - find the partial phrase for error message
-                partial = query[i+1:i+20]
+                partial = query[i + 1 : i + 20]
                 if len(query) > i + 20:
                     partial += "..."
                 return tokens, f"Unclosed quote after '{partial}'"
-            phrase = query[i+1:end]
+            phrase = query[i + 1 : end]
             tokens.append(Token(TokenType.PHRASE, phrase))
             i = end + 1
             continue
 
         # Parentheses
-        if char == '(':
-            tokens.append(Token(TokenType.LPAREN, '('))
+        if char == "(":
+            tokens.append(Token(TokenType.LPAREN, "("))
             i += 1
             continue
-        if char == ')':
-            tokens.append(Token(TokenType.RPAREN, ')'))
+        if char == ")":
+            tokens.append(Token(TokenType.RPAREN, ")"))
             i += 1
             continue
 
         # Negation (must be followed by a word or quote, not whitespace)
-        if char == '-' and i + 1 < len(query) and not query[i+1].isspace():
+        if char == "-" and i + 1 < len(query) and not query[i + 1].isspace():
             next_char = query[i + 1]
 
             # Negated phrase: -"exact phrase"
             if next_char == '"':
                 end = query.find('"', i + 2)
                 if end == -1:
-                    partial = query[i+2:i+22]
+                    partial = query[i + 2 : i + 22]
                     if len(query) > i + 22:
                         partial += "..."
                     return tokens, f"Unclosed quote after '{partial}'"
-                phrase = query[i+2:end]
+                phrase = query[i + 2 : end]
                 # Negated phrase - add as NEGATION with the phrase value
                 tokens.append(Token(TokenType.NEGATION, phrase))
                 i = end + 1
@@ -145,18 +148,28 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
             j = i + 1
             while j < len(query) and not query[j].isspace() and query[j] not in '()"':
                 j += 1
-            word = query[i+1:j]
+            word = query[i + 1 : j]
             if word:
                 # Check if it's a negated filter (-from:alice@example.com)
-                colon_pos = word.find(':')
+                colon_pos = word.find(":")
                 if colon_pos > 0:
                     field_name = word[:colon_pos].lower()
-                    field_value = word[colon_pos+1:]
+                    field_value = word[colon_pos + 1 :]
 
                     # Check if it's a known filter field
                     known_filters = {
-                        'from', 'sender', 'to', 'recipients', 'subject',
-                        'label', 'tag', 'before', 'after', 'has', 'attachment', 'attachments'
+                        "from",
+                        "sender",
+                        "to",
+                        "recipients",
+                        "subject",
+                        "label",
+                        "tag",
+                        "before",
+                        "after",
+                        "has",
+                        "attachment",
+                        "attachments",
                     }
 
                     if field_name in known_filters:
@@ -164,24 +177,24 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                         if not field_value and j < len(query) and query[j] == '"':
                             end = query.find('"', j + 1)
                             if end == -1:
-                                partial = query[j+1:j+21]
+                                partial = query[j + 1 : j + 21]
                                 if len(query) > j + 21:
                                     partial += "..."
                                 return tokens, f"Unclosed quote after '{partial}'"
-                            field_value = query[j+1:end]
+                            field_value = query[j + 1 : end]
                             j = end + 1
 
                         if not field_value:
                             return tokens, f"Empty value for '-{field_name}:' filter"
                         # Normalize field names
-                        if field_name == 'sender':
-                            field_name = 'from'
-                        elif field_name == 'recipients':
-                            field_name = 'to'
-                        elif field_name == 'tag':
-                            field_name = 'label'
-                        elif field_name == 'attachments':
-                            field_name = 'attachment'
+                        if field_name == "sender":
+                            field_name = "from"
+                        elif field_name == "recipients":
+                            field_name = "to"
+                        elif field_name == "tag":
+                            field_name = "label"
+                        elif field_name == "attachments":
+                            field_name = "attachment"
                         # Note: has:attachment stays as-is, attachment:pdf stays as-is
 
                         tokens.append(Token(TokenType.FILTER, field_value, field=field_name, negated=True))
@@ -205,27 +218,37 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
             continue
 
         # Check if it's OR operator
-        if segment.upper() == 'OR':
-            tokens.append(Token(TokenType.OR, 'OR'))
+        if segment.upper() == "OR":
+            tokens.append(Token(TokenType.OR, "OR"))
             i = j
             continue
 
         # Check if it's AND operator (we'll strip these later)
-        if segment.upper() == 'AND':
+        if segment.upper() == "AND":
             # Skip AND - it's implicit in FTS5
             i = j
             continue
 
         # Check if it's a filter (field:value)
-        colon_pos = segment.find(':')
+        colon_pos = segment.find(":")
         if colon_pos > 0:
             field_name = segment[:colon_pos].lower()
-            field_value = segment[colon_pos+1:]
+            field_value = segment[colon_pos + 1 :]
 
             # Validate known filter fields
             known_filters = {
-                'from', 'sender', 'to', 'recipients', 'subject',
-                'label', 'tag', 'before', 'after', 'has', 'attachment', 'attachments'
+                "from",
+                "sender",
+                "to",
+                "recipients",
+                "subject",
+                "label",
+                "tag",
+                "before",
+                "after",
+                "has",
+                "attachment",
+                "attachments",
             }
 
             if field_name in known_filters:
@@ -233,24 +256,24 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                 if not field_value and j < len(query) and query[j] == '"':
                     end = query.find('"', j + 1)
                     if end == -1:
-                        partial = query[j+1:j+21]
+                        partial = query[j + 1 : j + 21]
                         if len(query) > j + 21:
                             partial += "..."
                         return tokens, f"Unclosed quote after '{partial}'"
-                    field_value = query[j+1:end]
+                    field_value = query[j + 1 : end]
                     j = end + 1
 
                 if not field_value:
                     return tokens, f"Empty value for '{field_name}:' filter"
                 # Normalize field names
-                if field_name == 'sender':
-                    field_name = 'from'
-                elif field_name == 'recipients':
-                    field_name = 'to'
-                elif field_name == 'tag':
-                    field_name = 'label'
-                elif field_name == 'attachments':
-                    field_name = 'attachment'
+                if field_name == "sender":
+                    field_name = "from"
+                elif field_name == "recipients":
+                    field_name = "to"
+                elif field_name == "tag":
+                    field_name = "label"
+                elif field_name == "attachments":
+                    field_name = "attachment"
                 # Note: has:attachment stays as-is, attachment:pdf stays as-is
 
                 tokens.append(Token(TokenType.FILTER, field_value, field=field_name))
@@ -307,7 +330,7 @@ def _escape_fts5_value(value: str) -> str:
     Preserves trailing * for prefix matching.
     """
     # Handle prefix matching: meet* should stay as meet* (unquoted)
-    if value.endswith('*'):
+    if value.endswith("*"):
         prefix = value[:-1]
         # Check if the prefix part needs quoting
         needs_quoting = any(c in FTS5_SPECIAL_CHARS or c.isspace() for c in prefix)
@@ -365,10 +388,8 @@ def _date_to_utc_iso(date_str: str, tz=None) -> str | None:
     if not tz:
         return date_str
     try:
-        year, month, day = date_str.split('-')
-        local_midnight = datetime(
-            int(year), int(month), int(day), tzinfo=tz
-        )
+        year, month, day = date_str.split("-")
+        local_midnight = datetime(int(year), int(month), int(day), tzinfo=tz)
         utc_dt = local_midnight.astimezone(timezone.utc)
         return utc_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00")
     except Exception:
@@ -416,24 +437,24 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
 
         elif token.type == TokenType.NEGATION:
             # FTS5 NOT syntax
-            fts_parts.append(f'NOT {_escape_fts5_value(token.value)}')
+            fts_parts.append(f"NOT {_escape_fts5_value(token.value)}")
 
         elif token.type == TokenType.OR:
-            fts_parts.append('OR')
+            fts_parts.append("OR")
 
         elif token.type == TokenType.LPAREN:
-            fts_parts.append('(')
+            fts_parts.append("(")
 
         elif token.type == TokenType.RPAREN:
-            fts_parts.append(')')
+            fts_parts.append(")")
 
         elif token.type == TokenType.FILTER:
             field = token.field
             value = token.value
             negated = token.negated
 
-            if field == 'from':
-                if '@' in value:
+            if field == "from":
+                if "@" in value:
                     # Email address - exact match on sender_email column
                     if negated:
                         where_clauses.append("e.sender_email != ?")
@@ -444,12 +465,12 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                     # Name search - use FTS on sender field
                     escaped = _escape_fts5_value(value)
                     if negated:
-                        fts_parts.append(f'NOT sender:{escaped}')
+                        fts_parts.append(f"NOT sender:{escaped}")
                     else:
-                        fts_parts.append(f'sender:{escaped}')
+                        fts_parts.append(f"sender:{escaped}")
 
-            elif field == 'to':
-                if '@' in value:
+            elif field == "to":
+                if "@" in value:
                     # Email address - use normalized table
                     # This is handled specially in search() - we set a flag
                     if negated:
@@ -461,19 +482,19 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                     # Name search - use FTS on recipients field
                     escaped = _escape_fts5_value(value)
                     if negated:
-                        fts_parts.append(f'NOT recipients:{escaped}')
+                        fts_parts.append(f"NOT recipients:{escaped}")
                     else:
-                        fts_parts.append(f'recipients:{escaped}')
+                        fts_parts.append(f"recipients:{escaped}")
 
-            elif field == 'subject':
+            elif field == "subject":
                 # Subject search via FTS
                 escaped = _escape_fts5_value(value)
                 if negated:
-                    fts_parts.append(f'NOT subject:{escaped}')
+                    fts_parts.append(f"NOT subject:{escaped}")
                 else:
-                    fts_parts.append(f'subject:{escaped}')
+                    fts_parts.append(f"subject:{escaped}")
 
-            elif field == 'label':
+            elif field == "label":
                 # Label filter - use normalized email_labels table for fast indexed lookup
                 if negated:
                     where_clauses.append("__NOT_LABEL__")
@@ -481,7 +502,7 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                     where_clauses.append("__LABEL__")
                 params.append(value)  # Preserve original case for labels like Imported/user@example.com
 
-            elif field == 'before':
+            elif field == "before":
                 normalized = _normalize_date(value)
                 if normalized is None:
                     return ParsedQuery(error=f"Invalid date format for 'before:': {value}")
@@ -492,7 +513,7 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                     where_clauses.append("e.email_date < ?")
                 params.append(utc_date)
 
-            elif field == 'after':
+            elif field == "after":
                 normalized = _normalize_date(value)
                 if normalized is None:
                     return ParsedQuery(error=f"Invalid date format for 'after:': {value}")
@@ -503,30 +524,26 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                     where_clauses.append("e.email_date >= ?")
                 params.append(utc_date)
 
-            elif field == 'has' and value in ('attachment', 'attachments'):
+            elif field == "has" and value in ("attachment", "attachments"):
                 # Emails with attachments - use has_attachments column in emails table
                 if negated:
                     where_clauses.append("e.has_attachments = 0")
                 else:
                     where_clauses.append("e.has_attachments = 1")
 
-            elif field == 'attachment':
+            elif field == "attachment":
                 # Filter by attachment filename/type (e.g., attachment:pdf)
                 # Use FTS column search since attachments only in emails_fts
                 escaped = _escape_fts5_value(value)
                 if negated:
-                    fts_parts.append(f'NOT attachments:{escaped}')
+                    fts_parts.append(f"NOT attachments:{escaped}")
                 else:
-                    fts_parts.append(f'attachments:{escaped}')
+                    fts_parts.append(f"attachments:{escaped}")
 
     # Build final FTS query
-    fts_query = ' '.join(fts_parts)
+    fts_query = " ".join(fts_parts)
 
     # Clean up FTS query - remove empty parts, normalize whitespace
-    fts_query = ' '.join(fts_query.split())
+    fts_query = " ".join(fts_query.split())
 
-    return ParsedQuery(
-        fts_query=fts_query,
-        where_clauses=where_clauses,
-        params=params
-    )
+    return ParsedQuery(fts_query=fts_query, where_clauses=where_clauses, params=params)

@@ -84,23 +84,26 @@ def _create_gmail_archive_compat():
                     if conn:
                         conn.execute(
                             "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE email_id = ?",
-                            (new_hash, new_hash, email_id)
+                            (new_hash, new_hash, email_id),
                         )
                     else:
                         import sqlite3 as sql
+
                         with sql.connect(self.db.db_path) as c:
                             c.execute(
                                 "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE email_id = ?",
-                                (new_hash, new_hash, email_id)
+                                (new_hash, new_hash, email_id),
                             )
                             c.commit()
                 t_update = time.time() - t0
 
                 if debug:
                     total = t_read + t_hash + t_parse + t_fts + t_update
-                    print(f"\n    DEBUG: read={t_read*1000:.0f}ms hash={t_hash*1000:.0f}ms "
-                          f"parse={t_parse*1000:.0f}ms fts={t_fts*1000:.0f}ms "
-                          f"update={t_update*1000:.0f}ms TOTAL={total*1000:.0f}ms")
+                    print(
+                        f"\n    DEBUG: read={t_read * 1000:.0f}ms hash={t_hash * 1000:.0f}ms "
+                        f"parse={t_parse * 1000:.0f}ms fts={t_fts * 1000:.0f}ms "
+                        f"update={t_update * 1000:.0f}ms TOTAL={total * 1000:.0f}ms"
+                    )
 
                 return True
             except Exception as e:

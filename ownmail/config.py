@@ -6,6 +6,7 @@ from typing import Any
 # Optional YAML support
 try:
     from ownmail.yaml_util import load_yaml
+
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
@@ -176,7 +177,7 @@ def validate_config(config: dict[str, Any]) -> list[str]:
     for i, source in enumerate(sources):
         # Required fields
         if "name" not in source:
-            errors.append(f"Source {i+1}: missing 'name' field")
+            errors.append(f"Source {i + 1}: missing 'name' field")
             continue
 
         name = source["name"]
@@ -210,4 +211,3 @@ def validate_config(config: dict[str, Any]) -> list[str]:
                 errors.append(f"Source '{name}': IMAP requires 'host' field")
 
     return errors
-

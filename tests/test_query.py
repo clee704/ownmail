@@ -1,6 +1,5 @@
 """Tests for the search query parser."""
 
-
 from ownmail.query import (
     Token,
     TokenType,
@@ -565,6 +564,7 @@ class TestDateFilterTimezone:
     def test_before_with_tz_converts_to_utc(self):
         """With timezone, before: converts local midnight to UTC."""
         from zoneinfo import ZoneInfo
+
         tz = ZoneInfo("Asia/Seoul")  # UTC+9
         result = parse_query("before:2024-01-15", tz=tz)
         assert "e.email_date < ?" in result.where_clauses
@@ -574,6 +574,7 @@ class TestDateFilterTimezone:
     def test_after_with_tz_converts_to_utc(self):
         """With timezone, after: converts local midnight to UTC."""
         from zoneinfo import ZoneInfo
+
         tz = ZoneInfo("America/New_York")  # UTC-5
         result = parse_query("after:2024-06-01", tz=tz)
         assert "e.email_date >= ?" in result.where_clauses
@@ -583,6 +584,7 @@ class TestDateFilterTimezone:
     def test_before_with_utc_tz_matches_midnight(self):
         """UTC timezone should produce midnight UTC."""
         from zoneinfo import ZoneInfo
+
         tz = ZoneInfo("UTC")
         result = parse_query("before:2024-01-15", tz=tz)
         assert result.params[0] == "2024-01-15T00:00:00+00:00"

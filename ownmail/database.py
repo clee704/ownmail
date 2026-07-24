@@ -82,21 +82,21 @@ class ArchiveDatabase:
             """)
 
             # Add new metadata columns if missing (migration)
-            for col in ['subject', 'sender', 'recipients', 'date_str', 'snippet']:
+            for col in ["subject", "sender", "recipients", "date_str", "snippet"]:
                 try:
                     conn.execute(f"ALTER TABLE emails ADD COLUMN {col} TEXT")
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
             # Legacy migrations
-            for col in ['account', 'labels', 'email_date']:
+            for col in ["account", "labels", "email_date"]:
                 try:
                     conn.execute(f"ALTER TABLE emails ADD COLUMN {col} TEXT")
                 except sqlite3.OperationalError:
                     pass  # Column already exists
 
             # Add sender_email and recipient_emails for fast indexed lookups
-            for col in ['sender_email', 'recipient_emails']:
+            for col in ["sender_email", "recipient_emails"]:
                 try:
                     conn.execute(f"ALTER TABLE emails ADD COLUMN {col} TEXT")
                 except sqlite3.OperationalError:
@@ -110,7 +110,7 @@ class ArchiveDatabase:
                 pass  # Column already exists
 
             # Trash support columns
-            for col in ['trashed_at', 'original_filename']:
+            for col in ["trashed_at", "original_filename"]:
                 try:
                     conn.execute(f"ALTER TABLE emails ADD COLUMN {col} TEXT")
                 except sqlite3.OperationalError:
@@ -185,7 +185,9 @@ class ArchiveDatabase:
             # Composite index for from:user@example.com sorted by date (very common query)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_sender_date ON emails(sender_email, email_date DESC)")
             # Composite index for has:attachment sorted by date
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_emails_attachments_date ON emails(has_attachments, email_date DESC)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emails_attachments_date ON emails(has_attachments, email_date DESC)"
+            )
             # Unique index for fast provider_id lookups and duplicate prevention
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_emails_provider ON emails(account, provider_id)")
 
@@ -217,9 +219,9 @@ class ArchiveDatabase:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(emails)")}
         if not cols:
             return  # Table doesn't exist yet (fresh install)
-        if 'provider_id' in cols:
+        if "provider_id" in cols:
             return  # Already migrated
-        if 'message_id' not in cols:
+        if "message_id" not in cols:
             return  # Unexpected schema
 
         print("Migrating database schema (message_id → email_id)...", end="", flush=True)
@@ -279,7 +281,7 @@ class ArchiveDatabase:
                     subject, sender, recipients, date_str, snippet,
                     sender_email, recipient_emails, has_attachments)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                migrated
+                migrated,
             )
 
         conn.commit()
@@ -295,11 +297,11 @@ class ArchiveDatabase:
         if not sender_str:
             return None
         # Try to extract from angle brackets
-        match = re.search(r'<([^>]+)>', sender_str)
+        match = re.search(r"<([^>]+)>", sender_str)
         if match:
             return match.group(1).lower().strip()
         # If no brackets, check if it's just an email
-        if '@' in sender_str:
+        if "@" in sender_str:
             return sender_str.lower().strip()
         return None
 
@@ -309,22 +311,22 @@ class ArchiveDatabase:
         if not recipients_str:
             return None
         emails = []
-        for part in recipients_str.split(','):
+        for part in recipients_str.split(","):
             part = part.strip()
             if not part:
                 continue
             # Try to extract from angle brackets first
-            match = re.search(r'<([^>]+)>', part)
+            match = re.search(r"<([^>]+)>", part)
             if match:
                 email = match.group(1).lower().strip()
-            elif '@' in part:
+            elif "@" in part:
                 email = part.lower().strip()
             else:
                 continue
             if email:
                 emails.append(email)
         if emails:
-            return ',' + ','.join(emails) + ','
+            return "," + ",".join(emails) + ","
         return None
 
     # -------------------------------------------------------------------------
@@ -343,10 +345,7 @@ class ArchiveDatabase:
         """
         state_key = f"{account}/{key}"
         with sqlite3.connect(self.db_path) as conn:
-            result = conn.execute(
-                "SELECT value FROM sync_state WHERE key = ?",
-                (state_key,)
-            ).fetchone()
+            result = conn.execute("SELECT value FROM sync_state WHERE key = ?", (state_key,)).fetchone()
             return result[0] if result else None
 
     def set_sync_state(self, account: str, key: str, value: str) -> None:
@@ -359,10 +358,7 @@ class ArchiveDatabase:
         """
         state_key = f"{account}/{key}"
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO sync_state (key, value) VALUES (?, ?)",
-                (state_key, value)
-            )
+            conn.execute("INSERT OR REPLACE INTO sync_state (key, value) VALUES (?, ?)", (state_key, value))
             conn.commit()
 
     def delete_sync_state(self, account: str, key: str) -> None:
@@ -397,9 +393,7 @@ class ArchiveDatabase:
             return self.get_sync_state(account, "history_id")
         # Legacy: check for non-account-scoped key
         with sqlite3.connect(self.db_path) as conn:
-            result = conn.execute(
-                "SELECT value FROM sync_state WHERE key = 'history_id'"
-            ).fetchone()
+            result = conn.execute("SELECT value FROM sync_state WHERE key = 'history_id'").fetchone()
             return result[0] if result else None
 
     def set_history_id(self, history_id: str, account: str = None) -> None:
@@ -409,10 +403,7 @@ class ArchiveDatabase:
         else:
             # Legacy: non-account-scoped
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('history_id', ?)",
-                    (history_id,)
-                )
+                conn.execute("INSERT OR REPLACE INTO sync_state (key, value) VALUES ('history_id', ?)", (history_id,))
                 conn.commit()
 
     # -------------------------------------------------------------------------
@@ -429,14 +420,10 @@ class ArchiveDatabase:
         with sqlite3.connect(self.db_path) as conn:
             if account:
                 result = conn.execute(
-                    "SELECT 1 FROM emails WHERE provider_id = ? AND account = ?",
-                    (provider_id, account)
+                    "SELECT 1 FROM emails WHERE provider_id = ? AND account = ?", (provider_id, account)
                 ).fetchone()
             else:
-                result = conn.execute(
-                    "SELECT 1 FROM emails WHERE provider_id = ?",
-                    (provider_id,)
-                ).fetchone()
+                result = conn.execute("SELECT 1 FROM emails WHERE provider_id = ?", (provider_id,)).fetchone()
             return result is not None
 
     def get_downloaded_ids(self, account: str = None) -> set:
@@ -447,14 +434,9 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             if account:
-                results = conn.execute(
-                    "SELECT provider_id FROM emails WHERE account = ?",
-                    (account,)
-                ).fetchall()
+                results = conn.execute("SELECT provider_id FROM emails WHERE account = ?", (account,)).fetchall()
             else:
-                results = conn.execute(
-                    "SELECT provider_id FROM emails"
-                ).fetchall()
+                results = conn.execute("SELECT provider_id FROM emails").fetchall()
             return {row[0] for row in results}
 
     def get_tracked_filenames(self, account: str | None = None) -> set:
@@ -471,14 +453,9 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             if account:
-                results = conn.execute(
-                    "SELECT filename FROM emails WHERE account = ?",
-                    (account,)
-                ).fetchall()
+                results = conn.execute("SELECT filename FROM emails WHERE account = ?", (account,)).fetchall()
             else:
-                results = conn.execute(
-                    "SELECT filename FROM emails"
-                ).fetchall()
+                results = conn.execute("SELECT filename FROM emails").fetchall()
             return {row[0] for row in results}
 
     def get_downloaded_content_hashes(self, account: str) -> set:
@@ -492,8 +469,7 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             results = conn.execute(
-                "SELECT content_hash FROM emails WHERE account = ? AND content_hash IS NOT NULL",
-                (account,)
+                "SELECT content_hash FROM emails WHERE account = ? AND content_hash IS NOT NULL", (account,)
             ).fetchall()
             return {row[0] for row in results}
 
@@ -510,7 +486,7 @@ class ArchiveDatabase:
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(
                 "SELECT email_id, filename, downloaded_at, content_hash, account, trashed_at FROM emails WHERE email_id = ?",
-                (email_id,)
+                (email_id,),
             ).fetchone()
             return result
 
@@ -525,10 +501,8 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
-                "SELECT el.label FROM email_labels el "
-                "JOIN emails e ON e.rowid = el.email_rowid "
-                "WHERE e.email_id = ?",
-                (email_id,)
+                "SELECT el.label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid WHERE e.email_id = ?",
+                (email_id,),
             ).fetchall()
             return [row[0] for row in rows]
 
@@ -548,8 +522,7 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT filename FROM emails WHERE email_id = ? AND trashed_at IS NULL",
-                (email_id,)
+                "SELECT filename FROM emails WHERE email_id = ? AND trashed_at IS NULL", (email_id,)
             ).fetchone()
             if not row:
                 return None
@@ -575,9 +548,8 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT filename, original_filename FROM emails "
-                "WHERE email_id = ? AND trashed_at IS NOT NULL",
-                (email_id,)
+                "SELECT filename, original_filename FROM emails WHERE email_id = ? AND trashed_at IS NOT NULL",
+                (email_id,),
             ).fetchone()
             if not row:
                 return None
@@ -613,9 +585,7 @@ class ArchiveDatabase:
             conn.commit()
             return cursor.rowcount
 
-    def get_trashed_emails(
-        self, limit: int = 50, offset: int = 0
-    ) -> list[tuple]:
+    def get_trashed_emails(self, limit: int = 50, offset: int = 0) -> list[tuple]:
         """List trashed emails, newest first.
 
         Returns:
@@ -635,9 +605,7 @@ class ArchiveDatabase:
     def get_trash_count(self) -> int:
         """Get number of trashed emails."""
         with sqlite3.connect(self.db_path) as conn:
-            return conn.execute(
-                "SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL"
-            ).fetchone()[0]
+            return conn.execute("SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL").fetchone()[0]
 
     def get_expired_trash(self, days: int = 30) -> list[tuple]:
         """Get trashed emails older than N days.
@@ -685,7 +653,7 @@ class ArchiveDatabase:
                 (email_id, provider_id, filename, downloaded_at, content_hash, account, email_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (email_id, provider_id, filename, datetime.now().isoformat(), content_hash, account, email_date)
+                (email_id, provider_id, filename, datetime.now().isoformat(), content_hash, account, email_date),
             )
             if should_close:
                 conn.commit()
@@ -731,8 +699,7 @@ class ArchiveDatabase:
         try:
             # Check if already indexed BEFORE updating (for FTS delete logic)
             row = conn.execute(
-                "SELECT rowid, subject, email_date FROM emails WHERE email_id = ?",
-                (email_id,)
+                "SELECT rowid, subject, email_date FROM emails WHERE email_id = ?", (email_id,)
             ).fetchone()
             if not row:
                 # Message not in database yet - can't index
@@ -764,7 +731,7 @@ class ArchiveDatabase:
                     email_date = COALESCE(email_date, ?)
                 WHERE email_id = ?
                 """,
-                (subject, sender, recipients, date_str, snippet, sender_email, has_attachments, email_date, email_id)
+                (subject, sender, recipients, date_str, snippet, sender_email, has_attachments, email_date, email_id),
             )
 
             # Update normalized recipients table for fast lookups
@@ -773,12 +740,12 @@ class ArchiveDatabase:
             # Then insert individual recipient emails from the recipients string
             normalized = self._normalize_recipients(recipients) if recipients else None
             if normalized:
-                for email_addr in normalized.strip(',').split(','):
+                for email_addr in normalized.strip(",").split(","):
                     email_addr = email_addr.strip()
                     if email_addr:
                         conn.execute(
                             "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
-                            (rowid, email_addr)
+                            (rowid, email_addr),
                         )
 
             # Update normalized labels table for fast lookups
@@ -787,12 +754,12 @@ class ArchiveDatabase:
                 # Use the newly-computed email_date if available, otherwise existing
                 label_date = email_date or existing_email_date
                 # labels is comma-separated: "INBOX,IMPORTANT,CATEGORY_PERSONAL"
-                for label in labels.split(','):
+                for label in labels.split(","):
                     label = label.strip()
                     if label:
                         conn.execute(
                             "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                            (rowid, label, label_date)
+                            (rowid, label, label_date),
                         )
 
             # Update FTS (contentless mode - we manage manually)
@@ -808,7 +775,7 @@ class ArchiveDatabase:
             conn.execute(
                 "INSERT INTO emails_fts(rowid, subject, sender, recipients, body, attachments) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (rowid, subject, sender, recipients, body, attachments)
+                (rowid, subject, sender, recipients, body, attachments),
             )
 
             if should_close:
@@ -821,8 +788,7 @@ class ArchiveDatabase:
         """Check if a message is in the search index (has metadata populated)."""
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(
-                "SELECT 1 FROM emails WHERE email_id = ? AND subject IS NOT NULL",
-                (email_id,)
+                "SELECT 1 FROM emails WHERE email_id = ? AND subject IS NOT NULL", (email_id,)
             ).fetchone()
             return result is not None
 
@@ -851,13 +817,17 @@ class ArchiveDatabase:
             List of tuples: (message_id, filename, subject, sender, date_str, snippet)
         """
         import time
+
         _t0 = time.time()
         with sqlite3.connect(self.db_path) as conn:
             _t1 = time.time()
             # Parse query using the new query parser
             parsed = parse_query(query, tz=tz)
-            print(f"[db.search] connect: {_t1-_t0:.3f}s, parse_query: {time.time()-_t1:.3f}s", flush=True)
-            print(f"[db.search] fts_query={repr(parsed.fts_query)}, where={parsed.where_clauses}, error={parsed.error}", flush=True)
+            print(f"[db.search] connect: {_t1 - _t0:.3f}s, parse_query: {time.time() - _t1:.3f}s", flush=True)
+            print(
+                f"[db.search] fts_query={repr(parsed.fts_query)}, where={parsed.where_clauses}, error={parsed.error}",
+                flush=True,
+            )
 
             # If there's a parse error, return empty results
             # The caller (web.py or cli) should display parsed.error to the user
@@ -908,7 +878,7 @@ class ArchiveDatabase:
                 else:
                     where_clauses.append(clause)
                     # Only consume a param if the clause uses one (has ?)
-                    if '?' in clause:
+                    if "?" in clause:
                         params.append(parsed.params[param_idx])
                         param_idx += 1
 
@@ -975,7 +945,9 @@ class ArchiveDatabase:
 
                 join_sql = " ".join(extra_joins)
                 if extra_where:
-                    where_sql = " AND ".join([where_sql] + extra_where) if where_sql != "1=1" else " AND ".join(extra_where)
+                    where_sql = (
+                        " AND ".join([where_sql] + extra_where) if where_sql != "1=1" else " AND ".join(extra_where)
+                    )
 
                 # Determine if we need DISTINCT
                 # Single-join cases never produce duplicates due to PKs on junction tables
@@ -1004,7 +976,7 @@ class ArchiveDatabase:
                         ORDER BY {order_by}
                         LIMIT ? OFFSET ?
                         """,
-                        fts_params
+                        fts_params,
                     ).fetchall()
                 except sqlite3.OperationalError as e:
                     error_str = str(e).lower()
@@ -1013,7 +985,7 @@ class ArchiveDatabase:
                         # Return empty results - caller should check for FTS errors
                         return []
                     raise
-                print(f"[db.search] FTS query took {time.time()-_t2:.3f}s, {len(results)} results", flush=True)
+                print(f"[db.search] FTS query took {time.time() - _t2:.3f}s, {len(results)} results", flush=True)
             else:
                 print("[db.search] Using table-only path", flush=True)
                 # No text search - query emails table only (fast with indexes)
@@ -1066,7 +1038,7 @@ class ArchiveDatabase:
                 print(f"[db.search] SQL: {sql}", flush=True)
                 print(f"[db.search] params: {query_params}", flush=True)
                 results = conn.execute(sql, query_params).fetchall()
-                print(f"[db.search] Table query took {time.time()-_t2:.3f}s, {len(results)} results", flush=True)
+                print(f"[db.search] Table query took {time.time() - _t2:.3f}s, {len(results)} results", flush=True)
 
             return results
 
@@ -1079,40 +1051,40 @@ class ArchiveDatabase:
         filters = {}
 
         # Extract before:YYYY-MM-DD or before:YYYYMMDD
-        before_match = re.search(r'\bbefore:(\d{4}-?\d{2}-?\d{2})\b', query)
+        before_match = re.search(r"\bbefore:(\d{4}-?\d{2}-?\d{2})\b", query)
         if before_match:
             date_str = before_match.group(1).replace("-", "")
             # Convert to ISO 8601 format for email_date column comparison
             year, month, day = date_str[:4], date_str[4:6], date_str[6:8]
             filters["before"] = f"{year}-{month}-{day}"
-            query = query[:before_match.start()] + query[before_match.end():]
+            query = query[: before_match.start()] + query[before_match.end() :]
 
         # Extract after:YYYY-MM-DD or after:YYYYMMDD
-        after_match = re.search(r'\bafter:(\d{4}-?\d{2}-?\d{2})\b', query)
+        after_match = re.search(r"\bafter:(\d{4}-?\d{2}-?\d{2})\b", query)
         if after_match:
             date_str = after_match.group(1).replace("-", "")
             # Convert to ISO 8601 format for email_date column comparison
             year, month, day = date_str[:4], date_str[4:6], date_str[6:8]
             filters["after"] = f"{year}-{month}-{day}"
-            query = query[:after_match.start()] + query[after_match.end():]
+            query = query[: after_match.start()] + query[after_match.end() :]
 
         # Extract label:xxx or tag:xxx
-        label_match = re.search(r'\b(?:label|tag):(\S+)\b', query)
+        label_match = re.search(r"\b(?:label|tag):(\S+)\b", query)
         if label_match:
             filters["label"] = label_match.group(1)
-            query = query[:label_match.start()] + query[label_match.end():]
+            query = query[: label_match.start()] + query[label_match.end() :]
 
         # Extract from:xxx or sender:xxx - use LIKE filter instead of FTS for much faster date-sorted queries
-        from_match = re.search(r'\b(?:from|sender):(\S+)\b', query)
+        from_match = re.search(r"\b(?:from|sender):(\S+)\b", query)
         if from_match:
             filters["sender"] = from_match.group(1)
-            query = query[:from_match.start()] + query[from_match.end():]
+            query = query[: from_match.start()] + query[from_match.end() :]
 
         # Extract to:xxx or recipients:xxx - use LIKE filter instead of FTS for much faster date-sorted queries
-        to_match = re.search(r'\b(?:to|recipients):(\S+)\b', query)
+        to_match = re.search(r"\b(?:to|recipients):(\S+)\b", query)
         if to_match:
             filters["recipients"] = to_match.group(1)
-            query = query[:to_match.start()] + query[to_match.end():]
+            query = query[: to_match.start()] + query[to_match.end() :]
 
         # Clean up the remaining query
         query = query.strip()
@@ -1122,10 +1094,10 @@ class ArchiveDatabase:
         # e.g., "after:2025-01 AND invoice" -> "AND invoice" -> "invoice"
         # NOTE: We intentionally do NOT strip OR/NOT - if user writes "after:X OR text",
         # they expect OR semantics which we don't support, so let it error clearly.
-        query = re.sub(r'^\s*AND\s+', '', query, flags=re.IGNORECASE)
-        query = re.sub(r'\s+AND\s*$', '', query, flags=re.IGNORECASE)
-        if query.upper() == 'AND':
-            query = ''
+        query = re.sub(r"^\s*AND\s+", "", query, flags=re.IGNORECASE)
+        query = re.sub(r"\s+AND\s*$", "", query, flags=re.IGNORECASE)
+        if query.upper() == "AND":
+            query = ""
 
         # Convert remaining query to FTS5 syntax
         fts_query = self._convert_query(query.strip())
@@ -1135,9 +1107,9 @@ class ArchiveDatabase:
     def _convert_query(self, query: str) -> str:
         """Convert user query to FTS5 syntax."""
         # Convert field prefixes
-        query = re.sub(r'\bfrom:', 'sender:', query)
-        query = re.sub(r'\bto:', 'recipients:', query)
-        query = re.sub(r'\battachment:', 'attachments:', query)
+        query = re.sub(r"\bfrom:", "sender:", query)
+        query = re.sub(r"\bto:", "recipients:", query)
+        query = re.sub(r"\battachment:", "attachments:", query)
 
         # Quote values after field: prefixes that contain special characters
         # FTS5 special chars: . @ - + * " ( ) : ^
@@ -1148,9 +1120,9 @@ class ArchiveDatabase:
             if re.search(r'[.@\-+*"():^]', value):
                 # Escape any existing quotes and wrap in quotes
                 value = '"' + value.replace('"', '""') + '"'
-            return field + ':' + value
+            return field + ":" + value
 
-        query = re.sub(r'\b(sender|recipients|subject|attachments):(\S+)', quote_field_value, query)
+        query = re.sub(r"\b(sender|recipients|subject|attachments):(\S+)", quote_field_value, query)
 
         return query
 
@@ -1171,10 +1143,7 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path, timeout=5.0) as conn:
             if account:
-                return conn.execute(
-                    "SELECT COUNT(*) FROM emails WHERE account = ?",
-                    (account,)
-                ).fetchone()[0]
+                return conn.execute("SELECT COUNT(*) FROM emails WHERE account = ?", (account,)).fetchone()[0]
             else:
                 return conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
 
@@ -1193,7 +1162,7 @@ class ArchiveDatabase:
                 row = conn.execute(
                     """SELECT COUNT(*), MIN(downloaded_at), MAX(downloaded_at)
                        FROM emails WHERE account = ? AND trashed_at IS NULL""",
-                    (account,)
+                    (account,),
                 ).fetchone()
                 email_count, oldest, newest = row
             else:
@@ -1207,9 +1176,7 @@ class ArchiveDatabase:
                 "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL AND trashed_at IS NULL"
             ).fetchone()[0]
 
-            trash_count = conn.execute(
-                "SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL"
-            ).fetchone()[0]
+            trash_count = conn.execute("SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL").fetchone()[0]
 
             return {
                 "total_emails": email_count,
@@ -1240,7 +1207,9 @@ class ArchiveDatabase:
                 )
             """)
             # Clear indexed metadata in emails table
-            conn.execute("UPDATE emails SET subject = NULL, sender = NULL, recipients = NULL, date_str = NULL, snippet = NULL, indexed_hash = NULL")
+            conn.execute(
+                "UPDATE emails SET subject = NULL, sender = NULL, recipients = NULL, date_str = NULL, snippet = NULL, indexed_hash = NULL"
+            )
             conn.commit()
 
     # -------------------------------------------------------------------------
@@ -1250,9 +1219,7 @@ class ArchiveDatabase:
     def get_accounts(self) -> list[str]:
         """Get list of unique accounts in the database."""
         with sqlite3.connect(self.db_path) as conn:
-            results = conn.execute(
-                "SELECT DISTINCT account FROM emails WHERE account IS NOT NULL"
-            ).fetchall()
+            results = conn.execute("SELECT DISTINCT account FROM emails WHERE account IS NOT NULL").fetchall()
             return [row[0] for row in results]
 
     def get_email_count_by_account(self) -> dict:

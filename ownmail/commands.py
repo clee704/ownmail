@@ -77,10 +77,7 @@ def cmd_rebuild(
 
         if rel_path:
             with sqlite3.connect(db_path) as conn:
-                result = conn.execute(
-                    "SELECT email_id FROM emails WHERE filename = ?",
-                    (str(rel_path),)
-                ).fetchone()
+                result = conn.execute("SELECT email_id FROM emails WHERE filename = ?", (str(rel_path),)).fetchone()
                 if result:
                     email_id = result[0]
                     print(f"Indexing: {file_path.name}")
@@ -114,22 +111,21 @@ def cmd_rebuild(
                     """SELECT email_id, filename, content_hash, indexed_hash
                        FROM emails
                        WHERE filename LIKE ?""",
-                    (like_pattern,)
+                    (like_pattern,),
                 ).fetchall()
-                print(f" {len(emails)} matching '{pattern}' (force) ({time.time()-t0:.1f}s)")
+                print(f" {len(emails)} matching '{pattern}' (force) ({time.time() - t0:.1f}s)")
             else:
                 emails = conn.execute(
                     """SELECT email_id, filename, content_hash, indexed_hash
                        FROM emails
                        WHERE filename LIKE ?
                        AND (indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash)""",
-                    (like_pattern,)
+                    (like_pattern,),
                 ).fetchall()
                 total_matching = conn.execute(
-                    "SELECT COUNT(*) FROM emails WHERE filename LIKE ?",
-                    (like_pattern,)
+                    "SELECT COUNT(*) FROM emails WHERE filename LIKE ?", (like_pattern,)
                 ).fetchone()[0]
-                print(f" {len(emails)} of {total_matching} matching '{pattern}' ({time.time()-t0:.1f}s)")
+                print(f" {len(emails)} of {total_matching} matching '{pattern}' ({time.time() - t0:.1f}s)")
         else:
             if force:
                 # Force mode: select ALL emails
@@ -137,16 +133,16 @@ def cmd_rebuild(
                     """SELECT email_id, filename, content_hash, indexed_hash
                        FROM emails"""
                 ).fetchall()
-                print(f" {len(emails)} emails (force) ({time.time()-t0:.1f}s)")
+                print(f" {len(emails)} emails (force) ({time.time() - t0:.1f}s)")
             else:
                 emails = conn.execute(
                     """SELECT email_id, filename, content_hash, indexed_hash
                    FROM emails
                    WHERE indexed_hash IS NULL OR content_hash IS NULL OR indexed_hash != content_hash"""
-            ).fetchall()
+                ).fetchall()
             total_emails = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
             already_indexed = total_emails - len(emails)
-            print(f" {len(emails)} emails ({time.time()-t0:.1f}s)")
+            print(f" {len(emails)} emails ({time.time() - t0:.1f}s)")
             if already_indexed > 0:
                 print(f"  (skipping {already_indexed} already-indexed)")
 
@@ -236,9 +232,9 @@ def cmd_rebuild(
             if i < 5:
                 eta_str = "..."
             elif eta > 3600:
-                eta_str = f"{eta/3600:.1f}h"
+                eta_str = f"{eta / 3600:.1f}h"
             elif eta > 60:
-                eta_str = f"{eta/60:.0f}m"
+                eta_str = f"{eta / 60:.0f}m"
             else:
                 eta_str = f"{eta:.0f}s"
 
@@ -301,24 +297,21 @@ def _populate_dates_only(
         if like_pattern:
             if force:
                 emails = conn.execute(
-                    "SELECT email_id, filename, date_str FROM emails WHERE filename LIKE ?",
-                    (like_pattern,)
+                    "SELECT email_id, filename, date_str FROM emails WHERE filename LIKE ?", (like_pattern,)
                 ).fetchall()
             else:
                 emails = conn.execute(
                     "SELECT email_id, filename, date_str FROM emails WHERE email_date IS NULL AND filename LIKE ?",
-                    (like_pattern,)
+                    (like_pattern,),
                 ).fetchall()
         else:
             if force:
-                emails = conn.execute(
-                    "SELECT email_id, filename, date_str FROM emails"
-                ).fetchall()
+                emails = conn.execute("SELECT email_id, filename, date_str FROM emails").fetchall()
             else:
                 emails = conn.execute(
                     "SELECT email_id, filename, date_str FROM emails WHERE email_date IS NULL"
                 ).fetchall()
-        print(f" {len(emails)} emails ({time.time()-t0:.1f}s)")
+        print(f" {len(emails)} emails ({time.time() - t0:.1f}s)")
 
     if not emails:
         print("\nAll emails already have dates." + (" Use --force to repopulate." if not force else ""))
@@ -373,13 +366,12 @@ def _populate_dates_only(
             if email_date_iso:
                 if force:
                     batch_conn.execute(
-                        "UPDATE emails SET email_date = ? WHERE email_id = ?",
-                        (email_date_iso, email_id)
+                        "UPDATE emails SET email_date = ? WHERE email_id = ?", (email_date_iso, email_id)
                     )
                 else:
                     batch_conn.execute(
                         "UPDATE emails SET email_date = COALESCE(email_date, ?) WHERE email_id = ?",
-                        (email_date_iso, email_id)
+                        (email_date_iso, email_id),
                     )
                 success_count += 1
             else:
@@ -446,14 +438,11 @@ def _reconcile_label_sidecars(
     with sqlite3.connect(db_path) as conn:
         if like_pattern:
             emails = conn.execute(
-                "SELECT rowid, email_id, filename, email_date FROM emails WHERE filename LIKE ?",
-                (like_pattern,)
+                "SELECT rowid, email_id, filename, email_date FROM emails WHERE filename LIKE ?", (like_pattern,)
             ).fetchall()
         else:
-            emails = conn.execute(
-                "SELECT rowid, email_id, filename, email_date FROM emails"
-            ).fetchall()
-    print(f" {len(emails)} emails ({time.time()-t0:.1f}s)")
+            emails = conn.execute("SELECT rowid, email_id, filename, email_date FROM emails").fetchall()
+    print(f" {len(emails)} emails ({time.time() - t0:.1f}s)")
 
     if not emails:
         print("\nNo emails to reconcile.")
@@ -474,9 +463,9 @@ def _reconcile_label_sidecars(
                 continue
 
             db_labels = [
-                row[0] for row in conn.execute(
-                    "SELECT label FROM email_labels WHERE email_rowid = ? ORDER BY label",
-                    (rowid,)
+                row[0]
+                for row in conn.execute(
+                    "SELECT label FROM email_labels WHERE email_rowid = ? ORDER BY label", (rowid,)
                 ).fetchall()
             ]
 
@@ -494,7 +483,7 @@ def _reconcile_label_sidecars(
                 for label in sidecar_labels:
                     conn.execute(
                         "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                        (rowid, label, email_date)
+                        (rowid, label, email_date),
                     )
                 reconciled += 1
                 if debug:
@@ -585,7 +574,7 @@ def _index_email_for_rebuild(
         # Preserve existing labels from email_labels table
         existing_labels_rows = conn.execute(
             "SELECT el.label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid WHERE e.email_id = ?",
-            (email_id,)
+            (email_id,),
         ).fetchall()
         labels_list = [row[0] for row in existing_labels_rows]
         recipients = parsed["recipients"]
@@ -623,9 +612,18 @@ def _index_email_for_rebuild(
             WHERE email_id = ?
             RETURNING rowid
             """,
-            (parsed["subject"], parsed["sender"], recipients,
-             parsed["date_str"], snippet,
-             content_hash, content_hash, has_attachments, email_date_iso, email_id)
+            (
+                parsed["subject"],
+                parsed["sender"],
+                recipients,
+                parsed["date_str"],
+                snippet,
+                content_hash,
+                content_hash,
+                has_attachments,
+                email_date_iso,
+                email_id,
+            ),
         ).fetchone()
 
         # Insert into FTS and normalized tables
@@ -637,8 +635,7 @@ def _index_email_for_rebuild(
                 INSERT INTO emails_fts (rowid, subject, sender, recipients, body, attachments)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (rowid, parsed["subject"], parsed["sender"], recipients,
-                 parsed["body"], attachments)
+                (rowid, parsed["subject"], parsed["sender"], recipients, parsed["body"], attachments),
             )
 
             # Populate email_recipients normalized table
@@ -646,19 +643,17 @@ def _index_email_for_rebuild(
             if recipients:
                 normalized = ArchiveDatabase._normalize_recipients(recipients)
                 if normalized:
-                    for email_addr in normalized.strip(',').split(','):
+                    for email_addr in normalized.strip(",").split(","):
                         email_addr = email_addr.strip()
                         if email_addr:
                             conn.execute(
                                 "INSERT OR IGNORE INTO email_recipients (email_rowid, recipient_email) VALUES (?, ?)",
-                                (rowid, email_addr)
+                                (rowid, email_addr),
                             )
 
             # Populate email_labels normalized table
             # Get email_date from emails table for the covering index
-            email_date_row = conn.execute(
-                "SELECT email_date FROM emails WHERE rowid = ?", (rowid,)
-            ).fetchone()
+            email_date_row = conn.execute("SELECT email_date FROM emails WHERE rowid = ?", (rowid,)).fetchone()
             email_date = email_date_row[0] if email_date_row else None
 
             conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
@@ -668,7 +663,7 @@ def _index_email_for_rebuild(
                     if label:
                         conn.execute(
                             "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                            (rowid, label, email_date)
+                            (rowid, label, email_date),
                         )
 
         return True
@@ -687,19 +682,19 @@ def _verify_single_file(args: tuple) -> tuple:
     filepath = archive_dir / filename
 
     if not filepath.exists():
-        return ('missing', filename)
+        return ("missing", filename)
 
     if not stored_hash:
-        return ('no_hash', filename)
+        return ("no_hash", filename)
 
     # Compute current hash
     with open(filepath, "rb") as f:
         current_hash = hashlib.sha256(f.read()).hexdigest()
 
     if current_hash == stored_hash:
-        return ('ok', filename)
+        return ("ok", filename)
     else:
-        return ('corrupted', filename)
+        return ("corrupted", filename)
 
 
 def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) -> None:
@@ -732,9 +727,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
     # ── Phase 1: File integrity ──────────────────────────────────────────
 
     with sqlite3.connect(db_path) as conn:
-        emails = conn.execute(
-            "SELECT email_id, filename, content_hash FROM emails"
-        ).fetchall()
+        emails = conn.execute("SELECT email_id, filename, content_hash FROM emails").fetchall()
 
     total = len(emails)
     ok_count = 0
@@ -770,9 +763,9 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 print(f"  [{completed}/{total}] Verifying...\033[K", end="\r")
 
                 status, filename = future.result()
-                if status == 'ok':
+                if status == "ok":
                     ok_count += 1
-                elif status == 'missing':
+                elif status == "missing":
                     missing_count += 1
                     missing_files.append(filename)
                     eid = email_id_by_filename[filename]
@@ -780,10 +773,10 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     stored_hash = hash_by_filename[filename]
                     if stored_hash:
                         missing_hashes[stored_hash] = (filename, eid)
-                elif status == 'corrupted':
+                elif status == "corrupted":
                     corrupted_count += 1
                     corrupted_files.append(filename)
-                elif status == 'no_hash':
+                elif status == "no_hash":
                     no_hash_count += 1
 
         # Orphaned files
@@ -847,9 +840,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     # Collect affected accounts before deleting
                     affected_accounts = set()
                     for eid in missing_email_ids:
-                        row = conn.execute(
-                            "SELECT account FROM emails WHERE email_id = ?", (eid,)
-                        ).fetchone()
+                        row = conn.execute("SELECT account FROM emails WHERE email_id = ?", (eid,)).fetchone()
                         if row and row[0]:
                             affected_accounts.add(row[0])
                         conn.execute("DELETE FROM emails WHERE email_id = ?", (eid,))
@@ -877,7 +868,9 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                                     (f"{account}/%",),
                                 )
                                 verify_conn.commit()
-                    print(f"    → Reset sync state for {len(affected_accounts)} account(s) (next backup will do a full sync)")
+                    print(
+                        f"    → Reset sync state for {len(affected_accounts)} account(s) (next backup will do a full sync)"
+                    )
         if len(orphaned_files) > 0:
             issues_found += 1
             _print_file_list(orphaned_files, "? On disk but not indexed", verbose)
@@ -891,9 +884,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
 
     with sqlite3.connect(db_path) as conn:
         # Missing metadata
-        missing_metadata = conn.execute(
-            "SELECT COUNT(*) FROM emails WHERE subject IS NULL"
-        ).fetchone()[0]
+        missing_metadata = conn.execute("SELECT COUNT(*) FROM emails WHERE subject IS NULL").fetchone()[0]
 
         if missing_metadata > 0:
             issues_found += 1
@@ -916,9 +907,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
             print("  ✓ All indexed emails up to date")
 
         # Missing hashes
-        null_content_hash = conn.execute(
-            "SELECT COUNT(*) FROM emails WHERE content_hash IS NULL"
-        ).fetchone()[0]
+        null_content_hash = conn.execute("SELECT COUNT(*) FROM emails WHERE content_hash IS NULL").fetchone()[0]
 
         if null_content_hash > 0:
             issues_found += 1
@@ -942,8 +931,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
             if verbose:
                 for content_hash, _cnt in dup_rows[:10]:
                     rows = conn.execute(
-                        "SELECT email_id, provider_id, filename FROM emails WHERE content_hash = ?",
-                        (content_hash,)
+                        "SELECT email_id, provider_id, filename FROM emails WHERE content_hash = ?", (content_hash,)
                     ).fetchall()
                     for eid, pid, fn in rows:
                         print(f"      {eid} | {pid} | {fn}")
@@ -956,22 +944,16 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     # Get all rows for this content_hash, keep the one with highest rowid (newest)
                     rows = conn.execute(
                         "SELECT rowid, email_id, filename FROM emails WHERE content_hash = ? ORDER BY rowid DESC",
-                        (content_hash,)
+                        (content_hash,),
                     ).fetchall()
                     # Keep the first (newest), delete the rest
                     for rowid, _email_id, filename in rows[1:]:
                         # Delete labels
-                        conn.execute(
-                            "DELETE FROM email_labels WHERE email_rowid = ?", (rowid,)
-                        )
+                        conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
                         # Delete recipients
-                        conn.execute(
-                            "DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,)
-                        )
+                        conn.execute("DELETE FROM email_recipients WHERE email_rowid = ?", (rowid,))
                         # Delete the email row
-                        conn.execute(
-                            "DELETE FROM emails WHERE rowid = ?", (rowid,)
-                        )
+                        conn.execute("DELETE FROM emails WHERE rowid = ?", (rowid,))
                         # Delete the orphaned .eml file
                         eml_path = archive.archive_dir / filename
                         if eml_path.exists():
@@ -1217,7 +1199,7 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
                AND NOT EXISTS (
                    SELECT 1 FROM email_labels el WHERE el.email_rowid = e.rowid
                )""",
-            (account,)
+            (account,),
         ).fetchall()
 
     if not emails:
@@ -1232,9 +1214,7 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
         print(f"update-labels is not supported for source type '{source_type}'")
 
 
-def _update_labels_imap(
-    archive: EmailArchive, account: str, emails: list
-) -> None:
+def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> None:
     """Update labels for IMAP emails by extracting folder from provider_id.
 
     IMAP provider_id format is "folder:uid", so the folder name IS the label.
@@ -1265,9 +1245,7 @@ def _update_labels_imap(
                 continue
             rowid, email_date = row
 
-            conn.execute(
-                "DELETE FROM email_labels WHERE email_rowid = ?", (rowid,)
-            )
+            conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
             conn.execute(
                 "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                 (rowid, folder, email_date),
@@ -1284,9 +1262,7 @@ def _update_labels_imap(
     print("-" * 50 + "\n")
 
 
-def _update_labels_gmail(
-    archive: EmailArchive, account: str, emails: list
-) -> None:
+def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> None:
     """Update labels for Gmail API emails by fetching from server."""
     from ownmail.providers.gmail import GmailProvider
 
@@ -1437,6 +1413,7 @@ def cmd_list_unknown(
                 if filepath.exists():
                     try:
                         import email
+
                         with open(filepath, "rb") as f:
                             msg = email.message_from_binary_file(f)
                         date_header = msg.get("Date", "")
@@ -1500,4 +1477,3 @@ def cmd_scan(
     print("=" * 50 + "\n")
 
     archive.scan_archive(account=account, dry_run=dry_run)
-

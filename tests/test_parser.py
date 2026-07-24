@@ -122,6 +122,7 @@ class TestSafeGetHeader:
     def test_safe_get_header_normal(self, sample_eml_simple):
         """Test getting a normal header."""
         import email
+
         msg = email.message_from_bytes(sample_eml_simple)
         result = EmailParser._safe_get_header(msg, "Subject")
         assert result == "Test Email"
@@ -129,6 +130,7 @@ class TestSafeGetHeader:
     def test_safe_get_header_missing(self, sample_eml_simple):
         """Test getting a missing header returns empty string."""
         import email
+
         msg = email.message_from_bytes(sample_eml_simple)
         result = EmailParser._safe_get_header(msg, "X-Nonexistent-Header")
         assert result == ""
@@ -140,6 +142,7 @@ class TestSafeGetContent:
     def test_safe_get_content_plain(self):
         """Test getting plain text content."""
         import email
+
         content = b"""Content-Type: text/plain
 
 Hello world!
@@ -151,6 +154,7 @@ Hello world!
     def test_safe_get_content_bytes_utf8(self):
         """Test getting UTF-8 bytes content."""
         import email
+
         content = b"""Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 8bit
 
@@ -163,6 +167,7 @@ Hello world UTF-8!
     def test_safe_get_content_korean(self):
         """Test getting Korean encoded content."""
         import email
+
         content = """Content-Type: text/plain; charset="utf-8"
 
 안녕하세요
@@ -272,6 +277,7 @@ class TestSafeGetHeaderEdgeCases:
     def test_safe_get_header_none_value(self):
         """Test handling None header value."""
         import email
+
         content = b"From: test@example.com\n\nBody"
         msg = email.message_from_bytes(content)
         # Access non-existent header
@@ -281,6 +287,7 @@ class TestSafeGetHeaderEdgeCases:
     def test_safe_get_header_malformed_encoding(self):
         """Test handling malformed encoded header."""
         import email
+
         # Malformed RFC2047 encoding
         content = b"From: =?invalid-charset?Q?test?= <test@example.com>\nSubject: Test\n\nBody"
         msg = email.message_from_bytes(content)
@@ -326,6 +333,7 @@ class TestSafeGetContentEdgeCases:
     def test_safe_get_content_binary_fallback(self):
         """Test fallback for binary content."""
         import email
+
         content = b"""Content-Type: application/octet-stream
 
 \x00\x01\x02\x03"""
@@ -337,6 +345,7 @@ class TestSafeGetContentEdgeCases:
     def test_safe_get_content_euc_kr(self):
         """Test handling EUC-KR encoded content."""
         import email
+
         # EUC-KR encoded Korean text
         content = b"""Content-Type: text/plain; charset="euc-kr"
 Content-Transfer-Encoding: 8bit
@@ -349,6 +358,7 @@ Content-Transfer-Encoding: 8bit
     def test_safe_get_content_cp949(self):
         """Test handling CP949 encoded content."""
         import email
+
         content = b"""Content-Type: text/plain; charset="cp949"
 
 test"""
@@ -359,9 +369,10 @@ test"""
     def test_safe_get_content_strips_embedded_mime_headers(self):
         """Test that embedded MIME headers in body text are stripped."""
         import email
+
         # Simulate USPS-style email where body starts with MIME headers
         content = (
-            b"Content-Type: text/plain; charset=\"utf-8\"\r\n"
+            b'Content-Type: text/plain; charset="utf-8"\r\n'
             b"Content-Transfer-Encoding: quoted-printable\r\n\r\n"
             b"Content-Type: text/plain; charset=3DUTF-8\r\n"
             b"Content-Transfer-Encoding: 7bit\r\n\r\n"
@@ -471,6 +482,7 @@ class TestSafeGetHeaderFallback:
     def test_safe_get_header_with_defects(self):
         """Test header access with defects fallback."""
         import email
+
         # Create a malformed email
         content = b"From: =?unknown?Q?test?= <test@example.com>\nSubject: Test\n\nBody"
         msg = email.message_from_bytes(content)
@@ -480,6 +492,7 @@ class TestSafeGetHeaderFallback:
     def test_safe_get_header_complete_failure(self):
         """Test header access when everything fails."""
         from unittest.mock import MagicMock
+
         msg = MagicMock()
         msg.get.side_effect = Exception("Header parsing failed")
         result = EmailParser._safe_get_header(msg, "Subject")
@@ -492,6 +505,7 @@ class TestSafeGetContentFallback:
     def test_safe_get_content_get_payload_fallback(self):
         """Test fallback to get_payload when get_content fails."""
         from unittest.mock import MagicMock
+
         part = MagicMock()
         part.get_content.side_effect = Exception("get_content failed")
         part.get_payload.return_value = b"Fallback content"
@@ -502,6 +516,7 @@ class TestSafeGetContentFallback:
     def test_safe_get_content_complete_failure(self):
         """Test when both get_content and get_payload fail."""
         from unittest.mock import MagicMock
+
         part = MagicMock()
         part.get_content.side_effect = Exception("get_content failed")
         part.get_payload.side_effect = Exception("get_payload failed")
@@ -512,6 +527,7 @@ class TestSafeGetContentFallback:
     def test_safe_get_content_bytes_fallback_encoding(self):
         """Test decoding bytes with fallback encodings."""
         import email
+
         # ISO-8859-1 encoded content
         content = b"""Content-Type: text/plain; charset="iso-8859-1"
 

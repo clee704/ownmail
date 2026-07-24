@@ -331,6 +331,7 @@ class TestGmailProviderLabelHandling:
     def test_labels_not_injected_into_email(self):
         """Test that labels are NOT injected into raw email data."""
         import base64
+
         with patch("ownmail.providers.gmail.build") as mock_build:
             from ownmail.providers.gmail import GmailProvider
 
@@ -559,17 +560,23 @@ class TestDownloadMessagesBatch:
 
             def fake_batch_execute(batch_obj):
                 for request_id, (_request, callback, _) in batch_obj._requests.items():
-                    callback(request_id, {
-                        "raw": encoded,
-                        "labelIds": ["INBOX", "Label_1"],
-                    }, None)
+                    callback(
+                        request_id,
+                        {
+                            "raw": encoded,
+                            "labelIds": ["INBOX", "Label_1"],
+                        },
+                        None,
+                    )
 
             mock_batch = MagicMock()
 
             def patched_new_batch(callback):
                 mock_batch._requests = {}
+
                 def patched_add(request, request_id):
                     mock_batch._requests[request_id] = (request, callback, None)
+
                 mock_batch.add = patched_add
                 mock_batch.execute = lambda: fake_batch_execute(mock_batch)
                 return mock_batch
@@ -621,17 +628,23 @@ class TestDownloadMessagesBatch:
             # Batch response WITHOUT labelIds
             def fake_batch_execute(batch_obj):
                 for request_id, (_request, callback, _) in batch_obj._requests.items():
-                    callback(request_id, {
-                        "raw": encoded,
-                        # No labelIds!
-                    }, None)
+                    callback(
+                        request_id,
+                        {
+                            "raw": encoded,
+                            # No labelIds!
+                        },
+                        None,
+                    )
 
             mock_batch = MagicMock()
 
             def patched_new_batch(callback):
                 mock_batch._requests = {}
+
                 def patched_add(request, request_id):
                     mock_batch._requests[request_id] = (request, callback, None)
+
                 mock_batch.add = patched_add
                 mock_batch.execute = lambda: fake_batch_execute(mock_batch)
                 return mock_batch

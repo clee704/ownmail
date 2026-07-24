@@ -64,13 +64,12 @@ class TestIndexEmail:
 
         with sqlite3.connect(archive.db.db_path) as conn:
             row = conn.execute(
-                "SELECT content_hash, indexed_hash FROM emails WHERE email_id = ?",
-                (_eid("test123"),)
+                "SELECT content_hash, indexed_hash FROM emails WHERE email_id = ?", (_eid("test123"),)
             ).fetchone()
 
         assert row[0] is not None  # content_hash
         assert row[1] is not None  # indexed_hash
-        assert row[0] == row[1]    # should match after indexing
+        assert row[0] == row[1]  # should match after indexing
 
 
 class TestCmdStats:
@@ -100,9 +99,7 @@ class TestDatabaseIntegrity:
         # Check database has expected structure
         with sqlite3.connect(archive.db.db_path) as conn:
             # Verify FTS table exists
-            result = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='emails_fts'"
-            ).fetchone()
+            result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='emails_fts'").fetchone()
             assert result is not None
 
     def test_missing_metadata_detected(self, temp_dir):
@@ -114,9 +111,7 @@ class TestDatabaseIntegrity:
 
         # Check email exists but has no subject
         with sqlite3.connect(archive.db.db_path) as conn:
-            result = conn.execute(
-                "SELECT subject FROM emails WHERE email_id = ?", (_eid("msg1"),)
-            ).fetchone()
+            result = conn.execute("SELECT subject FROM emails WHERE email_id = ?", (_eid("msg1"),)).fetchone()
         assert result[0] is None
 
     def test_fts_sync(self, temp_dir):
@@ -125,10 +120,7 @@ class TestDatabaseIntegrity:
 
         # Add email and index it
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "file1.eml")
-        archive.db.index_email(
-            _eid("msg1"), "Subject", "from@test.com", "to@test.com",
-            "2024-01-01", "Body text", ""
-        )
+        archive.db.index_email(_eid("msg1"), "Subject", "from@test.com", "to@test.com", "2024-01-01", "Body text", "")
 
         # Check FTS has entry
         with sqlite3.connect(archive.db.db_path) as conn:

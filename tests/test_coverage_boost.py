@@ -756,7 +756,6 @@ class TestWebBlockExternalImages:
         assert result == html
 
 
-
 class TestWebDecodeHeader:
     """Tests for web decode_header."""
 
@@ -1475,7 +1474,9 @@ class TestWebSearchWithResults:
 
         # Add an indexed email
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "test.eml")
-        archive.db.index_email(_eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body text", "")
+        archive.db.index_email(
+            _eid("msg1"), "Test Subject", "from@test.com", "to@test.com", "2024-01-01", "body text", ""
+        )
 
         app = create_app(archive)
         with app.test_client() as client:
@@ -1536,7 +1537,12 @@ class TestKeychainModule:
         from ownmail import keychain
 
         # Check that it has some password-related function
-        assert hasattr(keychain, "get_password") or hasattr(keychain, "set_password") or callable(getattr(keychain, "Keychain", None)) or True  # Just verify module loads
+        assert (
+            hasattr(keychain, "get_password")
+            or hasattr(keychain, "set_password")
+            or callable(getattr(keychain, "Keychain", None))
+            or True
+        )  # Just verify module loads
 
 
 class TestDatabaseIndexMultiple:
@@ -1563,7 +1569,9 @@ class TestQueryParserMultiple:
         """Test complex query with multiple terms."""
         from ownmail.query import parse_query
 
-        parsed = parse_query("from:test@test.com to:recipient@test.com subject:hello after:2024-01-01 before:2024-12-31 label:INBOX")
+        parsed = parse_query(
+            "from:test@test.com to:recipient@test.com subject:hello after:2024-01-01 before:2024-12-31 label:INBOX"
+        )
         assert parsed is not None
 
     def test_parentheses_query(self):
@@ -2190,7 +2198,6 @@ class TestDatabaseEdgeCases:
         assert db.is_indexed(_eid("unicodemsg"))
 
 
-
 class TestCliSearch:
     """Tests for CLI search command."""
 
@@ -2241,11 +2248,7 @@ class TestCliStats:
         from ownmail.cli import cmd_stats
 
         archive = EmailArchive(tmp_path, {})
-        config = {
-            "sources": [
-                {"name": "test_source", "type": "gmail", "account": "test@gmail.com"}
-            ]
-        }
+        config = {"sources": [{"name": "test_source", "type": "gmail", "account": "test@gmail.com"}]}
         cmd_stats(archive, config)
 
         captured = capsys.readouterr()
@@ -2288,11 +2291,7 @@ class TestCliResetSync:
         from ownmail.cli import cmd_reset_sync
 
         archive = EmailArchive(tmp_path, {})
-        config = {
-            "sources": [
-                {"name": "test_source", "type": "gmail", "account": "test@gmail.com"}
-            ]
-        }
+        config = {"sources": [{"name": "test_source", "type": "gmail", "account": "test@gmail.com"}]}
 
         # Reset sync for test_source
         cmd_reset_sync(archive, config, "test_source")
@@ -2774,7 +2773,14 @@ Body.
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 100
         # Return tuple with prev/next IDs
-        mock_archive.db.get_email_by_id.return_value = ("nav", "nav.eml", "prev_id", "next_id", "Test Subject", "from@test.com")
+        mock_archive.db.get_email_by_id.return_value = (
+            "nav",
+            "nav.eml",
+            "prev_id",
+            "next_id",
+            "Test Subject",
+            "from@test.com",
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -3144,7 +3150,9 @@ class TestDatabasePagination:
         # Add multiple emails
         for i in range(10):
             db.mark_downloaded(_eid(f"msg{i}"), f"msg{i}", f"test{i}.eml")
-            db.index_email(_eid(f"msg{i}"), f"Test Subject {i}", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+            db.index_email(
+                _eid(f"msg{i}"), f"Test Subject {i}", "from@test.com", "to@test.com", "2024-01-01", "body", ""
+            )
 
         results = db.search("Test", limit=5, offset=5)
         assert isinstance(results, list)
@@ -3411,18 +3419,22 @@ class TestWebLargeEmail:
         from ownmail.web import create_app
 
         # Build multipart email with multiple attachments
-        parts = [b"""------=_Part_0
+        parts = [
+            b"""------=_Part_0
 Content-Type: text/plain
 
 Body.
-"""]
+"""
+        ]
         for i in range(3):
-            parts.append(f"""------=_Part_0
+            parts.append(
+                f"""------=_Part_0
 Content-Type: application/octet-stream
 Content-Disposition: attachment; filename="file{i}.txt"
 
 content{i}
-""".encode())
+""".encode()
+            )
         parts.append(b"------=_Part_0--")
 
         eml_content = b"""From: sender@example.com
@@ -4138,7 +4150,9 @@ class TestDatabaseIndexEmailVariants:
 
         db = ArchiveDatabase(tmp_path)
         db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
-        db.index_email(_eid("msg1"), "Re: [URGENT] 50% off! Don't miss", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.index_email(
+            _eid("msg1"), "Re: [URGENT] 50% off! Don't miss", "from@test.com", "to@test.com", "2024-01-01", "body", ""
+        )
 
         results = db.search("URGENT")
         assert isinstance(results, list)
@@ -4187,7 +4201,9 @@ class TestQueryParserOperatorCombinations:
 
         db = ArchiveDatabase(tmp_path)
         db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
-        db.index_email(_eid("msg1"), "Important Meeting", "boss@company.com", "me@company.com", "2024-01-01", "body", "")
+        db.index_email(
+            _eid("msg1"), "Important Meeting", "boss@company.com", "me@company.com", "2024-01-01", "body", ""
+        )
 
         results = db.search("from:boss subject:Important")
         assert isinstance(results, list)
@@ -4320,10 +4336,9 @@ class TestWebTrustSenderFlow:
 
         app = create_app(mock_archive)
         with app.test_client() as client:
-            response = client.post("/trust-sender", data={
-                "email": "trusted@example.com",
-                "return_url": "/email/test123"
-            })
+            response = client.post(
+                "/trust-sender", data={"email": "trusted@example.com", "return_url": "/email/test123"}
+            )
             # Should redirect
             assert response.status_code in (302, 303, 200)
 
@@ -4407,7 +4422,9 @@ class TestQueryParserNegation:
 
         db = ArchiveDatabase(tmp_path)
         db.mark_downloaded(_eid("msg1"), "msg1", "test1.eml")
-        db.index_email(_eid("msg1"), "Newsletter from Company", "from@test.com", "to@test.com", "2024-01-01", "body", "")
+        db.index_email(
+            _eid("msg1"), "Newsletter from Company", "from@test.com", "to@test.com", "2024-01-01", "body", ""
+        )
 
         results = db.search("from:test -unsubscribe")
         assert isinstance(results, list)
@@ -4570,7 +4587,14 @@ class TestWebSearchWithMimeHeaders:
         mock_archive.db.get_email_count.return_value = 100
         # Return result with MIME-encoded subject
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "=?UTF-8?B?7ZWc6riA7Jet66qp?=", "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            (
+                "msg1",
+                "test.eml",
+                "=?UTF-8?B?7ZWc6riA7Jet66qp?=",
+                "sender@test.com",
+                "Mon, 01 Jan 2024 00:00:00 +0000",
+                "snippet",
+            )
         ]
 
         app = create_app(mock_archive)
@@ -4588,7 +4612,14 @@ class TestWebSearchWithMimeHeaders:
         mock_archive.db.get_email_count.return_value = 100
         # Return result with MIME-encoded sender
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "=?UTF-8?B?7ZWc6riA?= <test@test.com>", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            (
+                "msg1",
+                "test.eml",
+                "Subject",
+                "=?UTF-8?B?7ZWc6riA?= <test@test.com>",
+                "Mon, 01 Jan 2024 00:00:00 +0000",
+                "snippet",
+            )
         ]
 
         app = create_app(mock_archive)
@@ -4631,9 +4662,7 @@ class TestWebSearchDateFormatting:
         # Return result with date from current year
         now = datetime.now()
         date_str = now.strftime("%a, %d %b %Y %H:%M:%S +0000")
-        mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "sender@test.com", date_str, "snippet")
-        ]
+        mock_archive.search.return_value = [("msg1", "test.eml", "Subject", "sender@test.com", date_str, "snippet")]
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -4982,7 +5011,14 @@ class TestWebSearchSnippetCleaning:
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "=?UTF-8?B?7ZWc6riA?=")
+            (
+                "msg1",
+                "test.eml",
+                "Subject",
+                "sender@test.com",
+                "Mon, 01 Jan 2024 00:00:00 +0000",
+                "=?UTF-8?B?7ZWc6riA?=",
+            )
         ]
 
         app = create_app(mock_archive)
@@ -5001,13 +5037,13 @@ class TestParserDecodeRawBytesV2:
         """Test parsing email with cp949 (Korean) charset."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: =?cp949?B?vsiz58fPvLy/5g==?=
 Content-Type: text/plain; charset="cp949"
 
 Hello from cp949
-'''
+"""
         eml_file = tmp_path / "cp949.eml"
         eml_file.write_bytes(eml_content)
         result = EmailParser.parse_file(filepath=eml_file)
@@ -5017,13 +5053,13 @@ Hello from cp949
         """Test parsing email with ks_c_5601-1987 charset alias."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Test Korean
 Content-Type: text/plain; charset="ks_c_5601-1987"
 
 Test content
-'''
+"""
         eml_file = tmp_path / "ks_c.eml"
         eml_file.write_bytes(eml_content)
         result = EmailParser.parse_file(filepath=eml_file)
@@ -5037,12 +5073,12 @@ class TestParserDecodeHeaderValueV2:
         """Test parsing email with base64 encoded subject."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: =?UTF-8?B?5rWL6K+V?=
 
 Test body
-'''
+"""
         eml_file = tmp_path / "b64subj.eml"
         eml_file.write_bytes(eml_content)
         result = EmailParser.parse_file(filepath=eml_file)
@@ -5052,12 +5088,12 @@ Test body
         """Test parsing email with quoted-printable subject."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: =?UTF-8?Q?Test_Subject?=
 
 Test body
-'''
+"""
         eml_file = tmp_path / "qpsubj.eml"
         eml_file.write_bytes(eml_content)
         result = EmailParser.parse_file(filepath=eml_file)
@@ -5071,7 +5107,7 @@ class TestParserExtractBodyV2:
         """Test body extraction from S/MIME signed email."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Signed Message
 MIME-Version: 1.0
@@ -5087,7 +5123,7 @@ Content-Type: application/pkcs7-signature; name="smime.p7s"
 
 SGVsbG8=
 ------=_Part_0--
-'''
+"""
         eml_file = tmp_path / "signed.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5103,7 +5139,7 @@ SGVsbG8=
         body_text = "This is base64 encoded content."
         encoded_body = base64.b64encode(body_text.encode()).decode()
 
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: Base64 Body
 MIME-Version: 1.0
@@ -5111,7 +5147,7 @@ Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: base64
 
 {encoded_body}
-'''.encode()
+""".encode()
         eml_file = tmp_path / "base64body.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5129,13 +5165,13 @@ class TestCliMainFunction:
         """Test CLI main function with help."""
         from ownmail import cli
 
-        monkeypatch.setattr('sys.argv', ['ownmail', '--help'])
+        monkeypatch.setattr("sys.argv", ["ownmail", "--help"])
         try:
             cli.main()
         except SystemExit:
             pass
         captured = capsys.readouterr()
-        assert 'usage' in captured.out.lower() or len(captured.out) > 0
+        assert "usage" in captured.out.lower() or len(captured.out) > 0
 
 
 # ===== COMMANDS ADDITIONAL TESTS =====
@@ -5198,7 +5234,7 @@ class TestWebMultipleAttachments:
 
         img1 = base64.b64encode(b"PNG fake data 1").decode()
         img2 = base64.b64encode(b"PNG fake data 2").decode()
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: Multiple Attachments
 MIME-Version: 1.0
@@ -5221,7 +5257,7 @@ Content-Transfer-Encoding: base64
 
 {img2}
 ------=_Part_0--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "multiattach.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5229,7 +5265,14 @@ Content-Transfer-Encoding: base64
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("multi", "multiattach.eml", "Multiple Attachments", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "multi",
+            "multiattach.eml",
+            "Multiple Attachments",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5252,8 +5295,10 @@ class TestWebSearchPaginationV4:
         mock_archive.db.get_email_count.return_value = 100
 
         # Return 50 results
-        results = [(f"msg{i}", f"test{i}.eml", f"Subject {i}", "sender@test.com",
-                   "Mon, 01 Jan 2024 00:00:00 +0000", "snippet") for i in range(50)]
+        results = [
+            (f"msg{i}", f"test{i}.eml", f"Subject {i}", "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            for i in range(50)
+        ]
         mock_archive.search.return_value = results
 
         app = create_app(mock_archive)
@@ -5269,13 +5314,13 @@ class TestWebEmailNavigation:
         """Test email view with search context."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@test.com
+        eml_content = b"""From: sender@test.com
 To: recipient@test.com
 Subject: Navigation Test
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Test body content.
-'''
+"""
         eml_file = tmp_path / "nav.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5283,7 +5328,14 @@ Test body content.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 10
-        mock_archive.db.get_email_by_id.return_value = ("nav", "nav.eml", "Navigation Test", "sender@test.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "nav",
+            "nav.eml",
+            "Navigation Test",
+            "sender@test.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5326,7 +5378,7 @@ class TestWebStaticFilesV4:
         with app.test_client() as client:
             response = client.get("/static/style.css")
             assert response.status_code == 200
-            assert b"css" in response.content_type.encode() or response.content_type == 'text/css; charset=utf-8'
+            assert b"css" in response.content_type.encode() or response.content_type == "text/css; charset=utf-8"
 
 
 class TestWebEmailWithInlineImages:
@@ -5339,7 +5391,7 @@ class TestWebEmailWithInlineImages:
         from ownmail.web import create_app
 
         img_data = base64.b64encode(b"fake png").decode()
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: Inline Image
 MIME-Version: 1.0
@@ -5356,7 +5408,7 @@ Content-Transfer-Encoding: base64
 
 {img_data}
 ------=_Part_0--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "inline.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5364,7 +5416,14 @@ Content-Transfer-Encoding: base64
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("inline", "inline.eml", "Inline Image", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "inline",
+            "inline.eml",
+            "Inline Image",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5415,14 +5474,14 @@ class TestWebRawView:
         """Test raw view shows headers."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@test.com
+        eml_content = b"""From: sender@test.com
 To: recipient@test.com
 Subject: Raw View Test
 X-Custom-Header: custom-value
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Test body.
-'''
+"""
         eml_file = tmp_path / "raw.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5430,7 +5489,14 @@ Test body.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("raw", "raw.eml", "Raw View Test", "sender@test.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "raw",
+            "raw.eml",
+            "Raw View Test",
+            "sender@test.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5452,14 +5518,14 @@ class TestArchiveSearchMethodsV2:
         archive = EmailArchive(tmp_path, {})
 
         # Create an email
-        eml_content = b'''From: sender@test.com
+        eml_content = b"""From: sender@test.com
 To: recipient@test.com
 Subject: Searchable Content
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 Message-ID: <searchable@test.com>
 
 This email has searchable keywords.
-'''
+"""
         eml_file = tmp_path / "searchable.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5607,10 +5673,10 @@ class TestWebAttachmentMimeFilename:
         # Create filename with RFC2231 + MIME hybrid encoding
         # This is the pattern: filename*0="=?UTF-8?B?...?=" filename*1="=?UTF-8?B?...?="
         korean_filename = "테스트파일.pdf"
-        encoded_part1 = base64.b64encode(korean_filename[:3].encode('utf-8')).decode()
-        encoded_part2 = base64.b64encode(korean_filename[3:].encode('utf-8')).decode()
+        encoded_part1 = base64.b64encode(korean_filename[:3].encode("utf-8")).decode()
+        encoded_part2 = base64.b64encode(korean_filename[3:].encode("utf-8")).decode()
 
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: RFC2231 MIME Hybrid Test
 MIME-Version: 1.0
@@ -5629,7 +5695,7 @@ Content-Transfer-Encoding: base64
 
 JVBERi0xLjQKMSAwIG9iago=
 ------=_Part_0--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "rfc2231hybrid.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5637,7 +5703,14 @@ JVBERi0xLjQKMSAwIG9iago=
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("hybrid", "rfc2231hybrid.eml", "RFC2231 Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "hybrid",
+            "rfc2231hybrid.eml",
+            "RFC2231 Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5649,7 +5722,7 @@ JVBERi0xLjQKMSAwIG9iago=
         """Test attachment with RFC2231+MIME QP hybrid encoding."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: RFC2231 QP Hybrid Test
 MIME-Version: 1.0
@@ -5668,7 +5741,7 @@ Content-Transfer-Encoding: base64
 
 JVBERi0xLjQK
 ------=_Part_0--
-'''
+"""
         eml_file = tmp_path / "qphybrid.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5676,7 +5749,14 @@ JVBERi0xLjQK
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("qph", "qphybrid.eml", "QP Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "qph",
+            "qphybrid.eml",
+            "QP Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5693,10 +5773,11 @@ class TestWebAttachmentRawCJKFilename:
 
         # Create email with raw Korean bytes in filename (EUC-KR encoding)
         korean_text = "한글파일.txt"
-        korean_bytes = korean_text.encode('euc-kr')
+        korean_bytes = korean_text.encode("euc-kr")
 
         # Build the email manually to get raw bytes in the filename
-        eml_content = b'''From: sender@example.com
+        eml_content = (
+            b'''From: sender@example.com
 To: recipient@example.com
 Subject: Raw Korean Filename
 MIME-Version: 1.0
@@ -5708,12 +5789,15 @@ Content-Type: text/plain
 Email with raw Korean filename.
 ------=_Part_0
 Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="''' + korean_bytes + b'''"
+Content-Disposition: attachment; filename="'''
+            + korean_bytes
+            + b""""
 Content-Transfer-Encoding: base64
 
 dGVzdCBjb250ZW50
 ------=_Part_0--
-'''
+"""
+        )
         eml_file = tmp_path / "rawkorean.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5721,7 +5805,14 @@ dGVzdCBjb250ZW50
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("raw", "rawkorean.eml", "Raw Korean", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "raw",
+            "rawkorean.eml",
+            "Raw Korean",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5733,9 +5824,10 @@ dGVzdCBjb250ZW50
         from ownmail.web import create_app
 
         chinese_text = "测试文件.txt"
-        chinese_bytes = chinese_text.encode('gb2312')
+        chinese_bytes = chinese_text.encode("gb2312")
 
-        eml_content = b'''From: sender@example.com
+        eml_content = (
+            b'''From: sender@example.com
 To: recipient@example.com
 Subject: Raw Chinese Filename
 MIME-Version: 1.0
@@ -5747,12 +5839,15 @@ Content-Type: text/plain
 Email with raw Chinese filename.
 ------=_Part_0
 Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="''' + chinese_bytes + b'''"
+Content-Disposition: attachment; filename="'''
+            + chinese_bytes
+            + b""""
 Content-Transfer-Encoding: base64
 
 dGVzdCBjb250ZW50
 ------=_Part_0--
-'''
+"""
+        )
         eml_file = tmp_path / "rawchinese.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5760,7 +5855,14 @@ dGVzdCBjb250ZW50
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("rawcn", "rawchinese.eml", "Raw Chinese", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "rawcn",
+            "rawchinese.eml",
+            "Raw Chinese",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5772,9 +5874,10 @@ dGVzdCBjb250ZW50
         from ownmail.web import create_app
 
         japanese_text = "テスト.txt"
-        japanese_bytes = japanese_text.encode('shift_jis')
+        japanese_bytes = japanese_text.encode("shift_jis")
 
-        eml_content = b'''From: sender@example.com
+        eml_content = (
+            b'''From: sender@example.com
 To: recipient@example.com
 Subject: Raw Japanese Filename
 MIME-Version: 1.0
@@ -5786,12 +5889,15 @@ Content-Type: text/plain
 Email with raw Japanese filename.
 ------=_Part_0
 Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="''' + japanese_bytes + b'''"
+Content-Disposition: attachment; filename="'''
+            + japanese_bytes
+            + b""""
 Content-Transfer-Encoding: base64
 
 dGVzdCBjb250ZW50
 ------=_Part_0--
-'''
+"""
+        )
         eml_file = tmp_path / "rawjapanese.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5799,7 +5905,14 @@ dGVzdCBjb250ZW50
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("rawjp", "rawjapanese.eml", "Raw Japanese", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "rawjp",
+            "rawjapanese.eml",
+            "Raw Japanese",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5816,9 +5929,9 @@ class TestWebAttachmentRfc2231:
 
         # RFC2231 format: filename*=utf-8''%ED%95%9C%EA%B8%80.txt
         korean_filename = "한글.txt"
-        encoded = "".join(f"%{b:02X}" for b in korean_filename.encode('utf-8'))
+        encoded = "".join(f"%{b:02X}" for b in korean_filename.encode("utf-8"))
 
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: RFC2231 UTF8 Test
 MIME-Version: 1.0
@@ -5835,7 +5948,7 @@ Content-Transfer-Encoding: base64
 
 JVBERi0xLjQK
 ------=_Part_0--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "rfc2231utf8.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5843,7 +5956,14 @@ JVBERi0xLjQK
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("rfc", "rfc2231utf8.eml", "RFC2231 Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "rfc",
+            "rfc2231utf8.eml",
+            "RFC2231 Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5903,13 +6023,13 @@ class TestWebGetBackToSearchUrl:
         """Test back-to-search URL preserves query params from referer."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@test.com
+        eml_content = b"""From: sender@test.com
 To: recipient@test.com
 Subject: Back Test
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Test body.
-'''
+"""
         eml_file = tmp_path / "back.eml"
         eml_file.write_bytes(eml_content)
 
@@ -5917,7 +6037,14 @@ Test body.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 10
-        mock_archive.db.get_email_by_id.return_value = ("back", "back.eml", "Back Test", "sender@test.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "back",
+            "back.eml",
+            "Back Test",
+            "sender@test.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -5937,7 +6064,7 @@ class TestParserMojibakeFix:
         from ownmail.parser import EmailParser
 
         # Create email with a filename that could have mojibake
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Mojibake Test
 MIME-Version: 1.0
@@ -5954,7 +6081,7 @@ Content-Transfer-Encoding: base64
 
 JVBERi0xLjQK
 ------=_Part_0--
-'''
+"""
         eml_file = tmp_path / "mojibake.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6002,7 +6129,14 @@ class TestWebComplexMimeDecoding:
         mock_archive.db.get_email_count.return_value = 100
         # Split MIME encoded subject
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "=?UTF-8?B?5rWL6K+V?= =?UTF-8?B?5rWL6K+V?=", "sender@test.com", "Mon, 01 Jan 2024", "snippet")
+            (
+                "msg1",
+                "test.eml",
+                "=?UTF-8?B?5rWL6K+V?= =?UTF-8?B?5rWL6K+V?=",
+                "sender@test.com",
+                "Mon, 01 Jan 2024",
+                "snippet",
+            )
         ]
 
         app = create_app(mock_archive)
@@ -6016,14 +6150,17 @@ class TestWebComplexMimeDecoding:
 
         # Create email with Korean content in EUC-KR
         korean_text = "테스트 내용입니다"
-        korean_bytes = korean_text.encode('euc-kr')
+        korean_bytes = korean_text.encode("euc-kr")
 
-        eml_content = b'''From: sender@example.com
+        eml_content = (
+            b"""From: sender@example.com
 To: recipient@example.com
 Subject: Charset Test
 Content-Type: text/plain; charset="euc-kr"
 
-''' + korean_bytes
+"""
+            + korean_bytes
+        )
 
         eml_file = tmp_path / "charset.eml"
         eml_file.write_bytes(eml_content)
@@ -6032,7 +6169,14 @@ Content-Type: text/plain; charset="euc-kr"
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("charset", "charset.eml", "Charset Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "charset",
+            "charset.eml",
+            "Charset Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6047,7 +6191,7 @@ class TestWebEmailWithManyRecipients:
         """Test email with CC and BCC fields."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient1@example.com, recipient2@example.com
 Cc: cc1@example.com, cc2@example.com
 Bcc: bcc@example.com
@@ -6055,7 +6199,7 @@ Subject: Multi Recipient Test
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Test body.
-'''
+"""
         eml_file = tmp_path / "multirecip.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6063,7 +6207,14 @@ Test body.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("multi", "multirecip.eml", "Multi Recipient Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "multi",
+            "multirecip.eml",
+            "Multi Recipient Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6079,13 +6230,13 @@ class TestWebLabelDisplay:
         """Test email view displays labels correctly."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Labeled Email
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Test body.
-'''
+"""
         eml_file = tmp_path / "labeled.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6109,13 +6260,13 @@ class TestWebTrustSenderV4:
         """Test trust sender toggling UI."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: untrusted@example.com
+        eml_content = b"""From: untrusted@example.com
 To: recipient@example.com
 Subject: Trust Test
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Test body.
-'''
+"""
         eml_file = tmp_path / "trust.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6123,7 +6274,14 @@ Test body.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("trust", "trust.eml", "Trust Test", "untrusted@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "trust",
+            "trust.eml",
+            "Trust Test",
+            "untrusted@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
         mock_archive.config = {"trusted_senders": []}
 
         app = create_app(mock_archive)
@@ -6139,7 +6297,7 @@ class TestWebThreadedEmails:
         """Test email that is a reply (has In-Reply-To header)."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Re: Original Subject
 Date: Mon, 01 Jan 2024 00:00:00 +0000
@@ -6147,7 +6305,7 @@ In-Reply-To: <original-message@example.com>
 References: <original-message@example.com>
 
 This is a reply.
-'''
+"""
         eml_file = tmp_path / "reply.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6155,7 +6313,14 @@ This is a reply.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("reply", "reply.eml", "Re: Original Subject", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "reply",
+            "reply.eml",
+            "Re: Original Subject",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6204,7 +6369,7 @@ class TestWebNestedMultipart:
         """Test email with nested alternative and mixed parts."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Nested Multipart
 MIME-Version: 1.0
@@ -6229,7 +6394,7 @@ Content-Transfer-Encoding: base64
 
 JVBERi0xLjQK
 --outer--
-'''
+"""
         eml_file = tmp_path / "nested.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6237,7 +6402,14 @@ JVBERi0xLjQK
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("nested", "nested.eml", "Nested Multipart", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "nested",
+            "nested.eml",
+            "Nested Multipart",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6266,7 +6438,7 @@ class TestDatabaseIndexEmailV4:
             "2024-01-01",
             "Test body",
             "",
-            labels="INBOX,STARRED"
+            labels="INBOX,STARRED",
         )
         assert db.is_indexed(_eid("test-msg-id"))
 
@@ -6281,13 +6453,7 @@ class TestDatabaseGetEmailByIdV4:
         db = ArchiveDatabase(tmp_path)
         db.mark_downloaded(_eid("find-me-id"), "find-me-id", "findme.eml")
         db.index_email(
-            _eid("find-me-id"),
-            "Find Me",
-            "sender@test.com",
-            "recipient@test.com",
-            "2024-01-01",
-            "Find this email",
-            ""
+            _eid("find-me-id"), "Find Me", "sender@test.com", "recipient@test.com", "2024-01-01", "Find this email", ""
         )
         result = db.get_email_by_id(_eid("find-me-id"))
         assert result is not None
@@ -6329,7 +6495,7 @@ class TestParserAttachmentHandling:
         from ownmail.parser import EmailParser
 
         fake_image = base64.b64encode(b"fake png data").decode()
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: Embedded Image
 MIME-Version: 1.0
@@ -6346,7 +6512,7 @@ Content-Transfer-Encoding: base64
 
 {fake_image}
 ------=_Part_0--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "embedded.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6357,7 +6523,7 @@ Content-Transfer-Encoding: base64
         """Test parsing email with malformed MIME boundaries."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Broken MIME
 MIME-Version: 1.0
@@ -6370,7 +6536,7 @@ Normal text.
 ------=_Part_1
 This boundary doesn't match!
 ------=_Part_0--
-'''
+"""
         eml_file = tmp_path / "broken.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6386,14 +6552,14 @@ class TestParserHeaderDecodingV4:
         """Test parsing email with multiline folded subject."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: This is a very long subject that has been
  folded across multiple lines
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Body.
-'''
+"""
         eml_file = tmp_path / "multiline.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6404,13 +6570,13 @@ Body.
         """Test parsing email with RFC2047 encoded display name."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: =?UTF-8?B?5rWL6K+V?= <sender@example.com>
+        eml_content = b"""From: =?UTF-8?B?5rWL6K+V?= <sender@example.com>
 To: recipient@example.com
 Subject: RFC2047 From
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Body.
-'''
+"""
         eml_file = tmp_path / "rfc2047from.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6459,7 +6625,7 @@ class TestWebAttachmentDownloadVariants:
         from ownmail.web import create_app
 
         pdf_data = base64.b64encode(b"%PDF-1.4").decode()
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: Attachment Download Test
 MIME-Version: 1.0
@@ -6476,7 +6642,7 @@ Content-Transfer-Encoding: base64
 
 {pdf_data}
 ------=_Part_0--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "downloadtest.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6484,7 +6650,14 @@ Content-Transfer-Encoding: base64
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("dl", "downloadtest.eml", "Download Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "dl",
+            "downloadtest.eml",
+            "Download Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6523,7 +6696,10 @@ class TestWebSearchResultDisplay:
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 500
         # Return many results
-        results = [(f"msg{i}", f"test{i}.eml", f"Subject {i}", "sender@test.com", "Mon, 01 Jan 2024", "snippet") for i in range(100)]
+        results = [
+            (f"msg{i}", f"test{i}.eml", f"Subject {i}", "sender@test.com", "Mon, 01 Jan 2024", "snippet")
+            for i in range(100)
+        ]
         mock_archive.search.return_value = results
 
         app = create_app(mock_archive)
@@ -6539,13 +6715,13 @@ class TestParserCharsetHandling:
         """Test parsing email with unknown charset falls back gracefully."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Unknown Charset
 Content-Type: text/plain; charset="unknown-charset"
 
 Some body text.
-'''
+"""
         eml_file = tmp_path / "unknown.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6556,13 +6732,13 @@ Some body text.
         """Test parsing email with ISO-2022-JP charset."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Japanese Email
 Content-Type: text/plain; charset="iso-2022-jp"
 
 Test content.
-'''
+"""
         eml_file = tmp_path / "japanese.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6577,13 +6753,13 @@ class TestWebEmailViewVariations:
         """Test email with HTML body only (no plain text)."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: HTML Only
 Content-Type: text/html
 
 <html><body><h1>HTML Only Email</h1></body></html>
-'''
+"""
         eml_file = tmp_path / "htmlonly.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6591,7 +6767,14 @@ Content-Type: text/html
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("html", "htmlonly.eml", "HTML Only", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "html",
+            "htmlonly.eml",
+            "HTML Only",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6602,13 +6785,13 @@ Content-Type: text/html
         """Test email with empty body."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Empty Body
 Content-Type: text/plain
 
 
-'''
+"""
         eml_file = tmp_path / "empty.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6616,7 +6799,14 @@ Content-Type: text/plain
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("empty", "empty.eml", "Empty Body", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "empty",
+            "empty.eml",
+            "Empty Body",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6689,7 +6879,7 @@ class TestParserMultipartAlternative:
         """Test that plain text is preferred over HTML in alternative."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Alternative Email
 MIME-Version: 1.0
@@ -6704,7 +6894,7 @@ Content-Type: text/html
 
 <html><body>HTML version.</body></html>
 ------=_Part_0--
-'''
+"""
         eml_file = tmp_path / "alternative.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6758,13 +6948,16 @@ class TestParserKoreanCharset:
         from ownmail.parser import EmailParser
 
         korean_text = "안녕하세요 테스트입니다"
-        korean_bytes = korean_text.encode('euc-kr')
-        eml_content = b'''From: sender@example.com
+        korean_bytes = korean_text.encode("euc-kr")
+        eml_content = (
+            b"""From: sender@example.com
 To: recipient@example.com
 Subject: Korean Test
 Content-Type: text/plain; charset="EUC-KR"
 
-''' + korean_bytes
+"""
+            + korean_bytes
+        )
 
         eml_file = tmp_path / "korean.eml"
         eml_file.write_bytes(eml_content)
@@ -6777,13 +6970,16 @@ Content-Type: text/plain; charset="EUC-KR"
         from ownmail.parser import EmailParser
 
         korean_text = "한글 테스트"
-        korean_bytes = korean_text.encode('cp949')
-        eml_content = b'''From: sender@example.com
+        korean_bytes = korean_text.encode("cp949")
+        eml_content = (
+            b"""From: sender@example.com
 To: recipient@example.com
 Subject: CP949 Test
 Content-Type: text/plain; charset="CP949"
 
-''' + korean_bytes
+"""
+            + korean_bytes
+        )
 
         eml_file = tmp_path / "cp949body.eml"
         eml_file.write_bytes(eml_content)
@@ -6800,13 +6996,13 @@ class TestWebEmailHeaderDisplay:
         from ownmail.web import create_app
 
         long_subject = "A" * 500
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: {long_subject}
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Body.
-'''.encode()
+""".encode()
         eml_file = tmp_path / "longheader.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6814,7 +7010,14 @@ Body.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("long", "longheader.eml", long_subject, "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "long",
+            "longheader.eml",
+            long_subject,
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6829,7 +7032,7 @@ class TestWebQuotedReplyFormatting:
         """Test email with > quoted text."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Reply with Quotes
 Date: Mon, 01 Jan 2024 00:00:00 +0000
@@ -6842,7 +7045,7 @@ Thanks for your message.
 > with quote markers
 
 My response.
-'''
+"""
         eml_file = tmp_path / "quoted.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6850,7 +7053,14 @@ My response.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("quoted", "quoted.eml", "Reply with Quotes", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "quoted",
+            "quoted.eml",
+            "Reply with Quotes",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6865,7 +7075,7 @@ class TestWebEmailWithLinks:
         """Test email with clickable URLs."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Email with Links
 Date: Mon, 01 Jan 2024 00:00:00 +0000
@@ -6873,7 +7083,7 @@ Content-Type: text/plain
 
 Check out this link: https://example.com/page
 And this one: http://test.com
-'''
+"""
         eml_file = tmp_path / "links.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6881,7 +7091,14 @@ And this one: http://test.com
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("links", "links.eml", "Email with Links", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "links",
+            "links.eml",
+            "Email with Links",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6921,7 +7138,7 @@ class TestWebSpecialCharacterHandling:
         """Test email body with < and > that should be escaped."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Special Chars
 Date: Mon, 01 Jan 2024 00:00:00 +0000
@@ -6929,7 +7146,7 @@ Content-Type: text/plain
 
 The formula is: y = <x + 1> where x > 0
 Also & and "quotes" are here.
-'''
+"""
         eml_file = tmp_path / "special.eml"
         eml_file.write_bytes(eml_content)
 
@@ -6937,7 +7154,14 @@ Also & and "quotes" are here.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("special", "special.eml", "Special Chars", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "special",
+            "special.eml",
+            "Special Chars",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -6952,7 +7176,7 @@ class TestParserDeliveryStatus:
         """Test parsing delivery status notification."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: mailer-daemon@example.com
+        eml_content = b"""From: mailer-daemon@example.com
 To: recipient@example.com
 Subject: Delivery Status Notification
 Content-Type: multipart/report; report-type=delivery-status; boundary="=_report"
@@ -6967,7 +7191,7 @@ Content-Type: message/delivery-status
 Reporting-MTA: dns; example.com
 Arrival-Date: Mon, 01 Jan 2024 00:00:00 +0000
 --=_report--
-'''
+"""
         eml_file = tmp_path / "dsn.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7041,7 +7265,7 @@ class TestWebAttachmentMimeTypes:
         from ownmail.web import create_app
 
         pdf_data = base64.b64encode(b"%PDF-1.4 fake").decode()
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: PDF Attachment
 MIME-Version: 1.0
@@ -7058,7 +7282,7 @@ Content-Transfer-Encoding: base64
 
 {pdf_data}
 --bound--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "pdf.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7066,7 +7290,14 @@ Content-Transfer-Encoding: base64
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("pdf", "pdf.eml", "PDF Attachment", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "pdf",
+            "pdf.eml",
+            "PDF Attachment",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -7080,7 +7311,7 @@ Content-Transfer-Encoding: base64
         from ownmail.web import create_app
 
         zip_data = base64.b64encode(b"PK fake zip").decode()
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: ZIP Attachment
 MIME-Version: 1.0
@@ -7097,7 +7328,7 @@ Content-Transfer-Encoding: base64
 
 {zip_data}
 --bound--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "zip.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7105,7 +7336,14 @@ Content-Transfer-Encoding: base64
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("zip", "zip.eml", "ZIP Attachment", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "zip",
+            "zip.eml",
+            "ZIP Attachment",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -7195,13 +7433,13 @@ class TestParserEncodingFallback:
         """Test parsing email with mixed encoding in headers."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: =?UTF-8?B?5rWL6K+V?= <sender@example.com>
+        eml_content = b"""From: =?UTF-8?B?5rWL6K+V?= <sender@example.com>
 To: =?ISO-8859-1?Q?R=E9cipient?= <recipient@example.com>
 Subject: Mixed Encoding Subject
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Body text.
-'''
+"""
         eml_file = tmp_path / "mixed.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7212,13 +7450,13 @@ Body text.
         """Test parsing email with malformed MIME encoding."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: =?UTF-8?B?incomplete
 Date: Mon, 01 Jan 2024 00:00:00 +0000
 
 Body text.
-'''
+"""
         eml_file = tmp_path / "malformed.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7234,7 +7472,7 @@ class TestWebEmailHTMLBody:
         """Test email with script tags are sanitized."""
         from ownmail.web import create_app
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Script Test
 Content-Type: text/html
@@ -7243,7 +7481,7 @@ Content-Type: text/html
 <script>alert('xss')</script>
 <p>Normal content</p>
 </body></html>
-'''
+"""
         eml_file = tmp_path / "script.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7251,7 +7489,14 @@ Content-Type: text/html
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("script", "script.eml", "Script Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "script",
+            "script.eml",
+            "Script Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -7304,13 +7549,13 @@ class TestParserDateParsing:
         """Test parsing email with timezone in date."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Timezone Test
 Date: Mon, 01 Jan 2024 10:00:00 +0900
 
 Body.
-'''
+"""
         eml_file = tmp_path / "tz.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7322,13 +7567,13 @@ Body.
         """Test parsing email with named timezone."""
         from ownmail.parser import EmailParser
 
-        eml_content = b'''From: sender@example.com
+        eml_content = b"""From: sender@example.com
 To: recipient@example.com
 Subject: Named Timezone
 Date: Mon, 01 Jan 2024 10:00:00 PST
 
 Body.
-'''
+"""
         eml_file = tmp_path / "namedtz.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7346,7 +7591,7 @@ class TestWebInlineImageRoute:
         from ownmail.web import create_app
 
         img_data = base64.b64encode(b"fake png").decode()
-        eml_content = f'''From: sender@example.com
+        eml_content = f"""From: sender@example.com
 To: recipient@example.com
 Subject: Inline Image Test
 MIME-Version: 1.0
@@ -7363,7 +7608,7 @@ Content-Transfer-Encoding: base64
 
 {img_data}
 --bound--
-'''.encode()
+""".encode()
         eml_file = tmp_path / "inline_img.eml"
         eml_file.write_bytes(eml_content)
 
@@ -7371,7 +7616,14 @@ Content-Transfer-Encoding: base64
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("inline_img", "inline_img.eml", "Inline Image Test", "sender@example.com", "Mon, 01 Jan 2024", [])
+        mock_archive.db.get_email_by_id.return_value = (
+            "inline_img",
+            "inline_img.eml",
+            "Inline Image Test",
+            "sender@example.com",
+            "Mon, 01 Jan 2024",
+            [],
+        )
 
         app = create_app(mock_archive)
         with app.test_client() as client:

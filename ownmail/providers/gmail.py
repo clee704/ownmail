@@ -116,9 +116,7 @@ class GmailProvider(EmailProvider):
         self._keychain.save_gmail_token(self._account, creds)
         return creds
 
-    def get_all_message_ids(
-        self, since: str | None = None, until: str | None = None
-    ) -> list[str]:
+    def get_all_message_ids(self, since: str | None = None, until: str | None = None) -> list[str]:
         """Get all message IDs from Gmail.
 
         Args:
@@ -147,12 +145,7 @@ class GmailProvider(EmailProvider):
                     "q": query,
                 }
 
-                response = (
-                    self._service.users()
-                    .messages()
-                    .list(**request_args)
-                    .execute()
-                )
+                response = self._service.users().messages().list(**request_args).execute()
 
                 if "messages" in response:
                     all_ids.extend([msg["id"] for msg in response["messages"]])
@@ -248,12 +241,7 @@ class GmailProvider(EmailProvider):
             Tuple of (raw_email_bytes, labels)
         """
         # Fetch raw email
-        message = (
-            self._service.users()
-            .messages()
-            .get(userId="me", id=msg_id, format="raw")
-            .execute()
-        )
+        message = self._service.users().messages().get(userId="me", id=msg_id, format="raw").execute()
 
         raw_data = base64.urlsafe_b64decode(message["raw"])
 
@@ -264,9 +252,7 @@ class GmailProvider(EmailProvider):
 
         return raw_data, labels
 
-    def download_messages_batch(
-        self, msg_ids: list[str]
-    ) -> dict[str, tuple[bytes | None, list[str], str | None]]:
+    def download_messages_batch(self, msg_ids: list[str]) -> dict[str, tuple[bytes | None, list[str], str | None]]:
         """Download multiple messages in a batch request.
 
         Args:

@@ -423,7 +423,7 @@ class TestArchiveBackupProgress:
         mock_provider.get_current_sync_state.return_value = "12345"
         mock_provider.download_message.return_value = (
             b"From: test@example.com\r\nDate: Mon, 15 Jan 2024 10:00:00 +0000\r\n\r\nBody",
-            ["INBOX"]
+            ["INBOX"],
         )
 
         result = archive.backup(mock_provider)
@@ -568,12 +568,14 @@ class TestSyncCheckWithDifferences:
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -620,10 +622,13 @@ class TestVerifyDuplicateFTS:
 
         # Insert an email with metadata but manually delete its FTS entry to simulate sync issue
         with sqlite3.connect(archive.db.db_path) as conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO emails (email_id, provider_id, filename, subject, sender)
                 VALUES (?, 'sync123', 'emails/2024/01/sync.eml', 'Test Subject', 'test@example.com')
-            """, (_eid("sync123"),))
+            """,
+                (_eid("sync123"),),
+            )
             # FTS entry should have been created, but we'll check verify works
             conn.commit()
 
@@ -650,7 +655,7 @@ class TestBackupWithLabels:
         mock_provider.get_current_sync_state.return_value = "12345"
         mock_provider.download_message.return_value = (
             b"From: test@example.com\r\nSubject: Test\r\nDate: Mon, 15 Jan 2024 10:00:00 +0000\r\n\r\nBody",
-            ["INBOX", "Important"]
+            ["INBOX", "Important"],
         )
 
         result = archive.backup(mock_provider)
@@ -697,7 +702,7 @@ sources:
             attachments="",
         )
 
-        with patch.object(sys, 'argv', ['ownmail', 'search', 'xyz123']):
+        with patch.object(sys, "argv", ["ownmail", "search", "xyz123"]):
             main()
 
         captured = capsys.readouterr()
@@ -726,7 +731,7 @@ class TestStatsWithData:
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
         archive.db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/01/msg2.eml", content_hash="def")
 
-        with patch.object(sys, 'argv', ['ownmail', 'stats']):
+        with patch.object(sys, "argv", ["ownmail", "stats"]):
             main()
 
         captured = capsys.readouterr()
@@ -754,8 +759,8 @@ class TestSetupCommand:
         mock_keychain.has_client_credentials.return_value = True
         mock_keychain.load_gmail_token.return_value = {"token": "existing"}
 
-        with patch('builtins.input', lambda prompt="": next(inputs)):
-            with patch('pathlib.Path.cwd', return_value=temp_dir):
+        with patch("builtins.input", lambda prompt="": next(inputs)):
+            with patch("pathlib.Path.cwd", return_value=temp_dir):
                 cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
@@ -772,7 +777,7 @@ class TestSetupCommand:
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = True
 
-        with patch('builtins.input', lambda prompt="": next(inputs)):
+        with patch("builtins.input", lambda prompt="": next(inputs)):
             with pytest.raises(SystemExit):
                 cmd_setup(mock_keychain, config, None, method="oauth")
 
@@ -791,8 +796,8 @@ class TestSetupCommand:
         mock_keychain.has_client_credentials.return_value = False
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}  # Token exists, no OAuth
 
-        with patch('builtins.input', lambda prompt="": next(inputs)):
-            with patch('pathlib.Path.cwd', return_value=temp_dir):
+        with patch("builtins.input", lambda prompt="": next(inputs)):
+            with patch("pathlib.Path.cwd", return_value=temp_dir):
                 cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
@@ -805,22 +810,24 @@ class TestSetupCommand:
         config = {"sources": []}
 
         # Simulate user pressing Enter (paste mode), then pasting JSON, then email/source
-        inputs = iter([
-            "",   # press Enter to paste credentials
-            '{"installed": {"client_id": "test", "client_secret": "secret"}}',
-            "",  # First empty line
-            "",  # Second empty line to finish JSON input
-            "user@gmail.com",
-            "my_source",
-            "",  # archive root (accept default)
-        ])
+        inputs = iter(
+            [
+                "",  # press Enter to paste credentials
+                '{"installed": {"client_id": "test", "client_secret": "secret"}}',
+                "",  # First empty line
+                "",  # Second empty line to finish JSON input
+                "user@gmail.com",
+                "my_source",
+                "",  # archive root (accept default)
+            ]
+        )
 
         mock_keychain = MagicMock()
         mock_keychain.has_client_credentials.return_value = False
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}  # Token exists
 
-        with patch('builtins.input', lambda prompt="": next(inputs)):
-            with patch('pathlib.Path.cwd', return_value=temp_dir):
+        with patch("builtins.input", lambda prompt="": next(inputs)):
+            with patch("pathlib.Path.cwd", return_value=temp_dir):
                 cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
@@ -839,12 +846,14 @@ class TestUpdateLabelsCmd:
         from ownmail.commands import cmd_update_labels
 
         config = {
-            "sources": [{
-                "name": "test_gmail",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "test_gmail",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -855,7 +864,7 @@ class TestUpdateLabelsCmd:
         email_path.write_text("From: test@example.com\r\nSubject: Test\r\n\r\nBody")
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/test.eml", content_hash="abc")
 
-        with patch('ownmail.providers.gmail.GmailProvider') as mock_provider_cls:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_cls:
             mock_provider = MagicMock()
             mock_provider.get_message_labels.return_value = ["INBOX", "IMPORTANT"]
             mock_provider_cls.return_value = mock_provider
@@ -901,7 +910,7 @@ class TestSetupAddToConfig:
         mock_keychain.has_client_credentials.return_value = True
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}
 
-        with patch('builtins.input', lambda prompt="": next(inputs)):
+        with patch("builtins.input", lambda prompt="": next(inputs)):
             cmd_setup(mock_keychain, config, config_path, method="oauth")
 
         captured = capsys.readouterr()
@@ -917,11 +926,13 @@ class TestSetupAddToConfig:
         from ownmail.cli import cmd_setup
 
         config = {
-            "sources": [{
-                "name": "existing_source",
-                "type": "gmail_api",
-                "account": "user@gmail.com",
-            }]
+            "sources": [
+                {
+                    "name": "existing_source",
+                    "type": "gmail_api",
+                    "account": "user@gmail.com",
+                }
+            ]
         }
 
         # Email first, then source name (which already exists)
@@ -931,7 +942,7 @@ class TestSetupAddToConfig:
         mock_keychain.has_client_credentials.return_value = True
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}
 
-        with patch('builtins.input', lambda prompt="": next(inputs)):
+        with patch("builtins.input", lambda prompt="": next(inputs)):
             cmd_setup(mock_keychain, config, None, method="oauth")
 
         captured = capsys.readouterr()
@@ -1127,7 +1138,7 @@ This is a test email body.
         archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash="abc")
 
         # Mock the parser to raise an exception
-        with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Parse error")):
+        with patch("ownmail.commands.EmailParser.parse_file", side_effect=Exception("Parse error")):
             cmd_rebuild(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
@@ -1150,7 +1161,7 @@ This is a test email body.
         # Don't add to DB, so it uses filename as email_id
 
         # Mock the parser to raise an exception
-        with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Parse error")):
+        with patch("ownmail.commands.EmailParser.parse_file", side_effect=Exception("Parse error")):
             cmd_rebuild(archive, file_path=Path(email_path))
 
         captured = capsys.readouterr()
@@ -1183,11 +1194,13 @@ This is a test email body.
         from ownmail.cli import cmd_stats
 
         config = {
-            "sources": [{
-                "name": "gmail_personal",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-            }]
+            "sources": [
+                {
+                    "name": "gmail_personal",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -1204,12 +1217,14 @@ This is a test email body.
         from ownmail.commands import cmd_sync_check
 
         config = {
-            "sources": [{
-                "name": "gmail_personal",
-                "type": "gmail_api",
-                "account": "test@gmail.com",
-                "auth": {"secret_ref": "keychain:test"},
-            }]
+            "sources": [
+                {
+                    "name": "gmail_personal",
+                    "type": "gmail_api",
+                    "account": "test@gmail.com",
+                    "auth": {"secret_ref": "keychain:test"},
+                }
+            ]
         }
         archive = EmailArchive(temp_dir, config)
 
@@ -1217,7 +1232,7 @@ This is a test email body.
         archive.db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/msg1.eml", content_hash="abc")
         archive.db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/01/msg2.eml", content_hash="def")
 
-        with patch('ownmail.providers.gmail.GmailProvider') as mock_provider_cls:
+        with patch("ownmail.providers.gmail.GmailProvider") as mock_provider_cls:
             mock_provider = MagicMock()
             # Gmail has msg1 and msg3 (msg2 missing on server)
             mock_provider.get_all_message_ids.return_value = ["msg1", "msg3"]
@@ -1385,10 +1400,7 @@ class TestArchiveBackupAdditional:
         mock_provider.get_new_message_ids.return_value = (["msg1"], None)
         mock_provider.get_current_sync_state.return_value = "12345"
         # Email without Date header
-        mock_provider.download_message.return_value = (
-            b"From: test@example.com\r\nSubject: No Date\r\n\r\nBody",
-            []
-        )
+        mock_provider.download_message.return_value = (b"From: test@example.com\r\nSubject: No Date\r\n\r\nBody", [])
 
         result = archive.backup(mock_provider)
 
@@ -1419,7 +1431,7 @@ class TestCliSetupAddToConfigAuto:
         mock_keychain.has_client_credentials.return_value = True
         mock_keychain.load_gmail_token.return_value = {"token": "exists"}
 
-        with patch('builtins.input', lambda prompt="": next(inputs)):
+        with patch("builtins.input", lambda prompt="": next(inputs)):
             cmd_setup(mock_keychain, config, config_path, method="oauth")
 
         captured = capsys.readouterr()
@@ -1483,7 +1495,7 @@ This is a test email body.
         archive.db.mark_downloaded(_eid("test123"), "test123", "emails/2024/01/test.eml", content_hash="abc")
 
         # Mock parser to fail
-        with patch('ownmail.commands.EmailParser.parse_file', side_effect=Exception("Debug error msg")):
+        with patch("ownmail.commands.EmailParser.parse_file", side_effect=Exception("Debug error msg")):
             cmd_rebuild(archive, file_path=Path(email_path), debug=True)
 
         captured = capsys.readouterr()
@@ -1514,7 +1526,7 @@ This is a test email body.
                 raise Exception("Parse failed for second file")
             return original_parse(*args, **kwargs)
 
-        with patch.object(EmailParser, 'parse_file', side_effect=failing_parse):
+        with patch.object(EmailParser, "parse_file", side_effect=failing_parse):
             cmd_rebuild(archive, debug=True)
 
         captured = capsys.readouterr()
@@ -1571,7 +1583,7 @@ class TestBackupWithHistoryId:
         mock_provider.get_current_sync_state.return_value = "new_history"
         mock_provider.download_message.return_value = (
             b"From: test@example.com\r\nDate: Mon, 15 Jan 2024 10:00:00 +0000\r\n\r\nBody",
-            []
+            [],
         )
 
         result = archive.backup(mock_provider)
@@ -1593,6 +1605,7 @@ class TestConfigNoYAML:
 
         # Temporarily modify the module to simulate no YAML
         import ownmail.config as config_module
+
         original_has_yaml = config_module.HAS_YAML
 
         try:
@@ -1600,6 +1613,7 @@ class TestConfigNoYAML:
             monkeypatch.chdir(tmp_path)
 
             from ownmail.config import load_config
+
             result = load_config()
 
             captured = capsys.readouterr()
@@ -1627,13 +1641,12 @@ class TestCliSetupErrors:
             except StopIteration:
                 raise EOFError() from None
 
-        monkeypatch.setattr('builtins.input', mock_input)
+        monkeypatch.setattr("builtins.input", mock_input)
 
         from ownmail.cli import cmd_setup
 
         with pytest.raises(SystemExit):
-            cmd_setup(keychain=mock_keychain, config={}, config_path=None,
-                     source_name=None, method="oauth")
+            cmd_setup(keychain=mock_keychain, config={}, config_path=None, source_name=None, method="oauth")
 
     def test_setup_empty_email(self, monkeypatch, capsys):
         """Test setup when email address is empty."""
@@ -1647,13 +1660,12 @@ class TestCliSetupErrors:
         def mock_input(prompt=""):
             return next(inputs)
 
-        monkeypatch.setattr('builtins.input', mock_input)
+        monkeypatch.setattr("builtins.input", mock_input)
 
         from ownmail.cli import cmd_setup
 
         with pytest.raises(SystemExit):
-            cmd_setup(keychain=mock_keychain, config={}, config_path=None,
-                     source_name=None, method="oauth")
+            cmd_setup(keychain=mock_keychain, config={}, config_path=None, source_name=None, method="oauth")
 
         captured = capsys.readouterr()
         assert "Email address required" in captured.out
@@ -1673,7 +1685,7 @@ class TestParserSafeGetHeaderDefects:
         def mock_get(header_name, *args, **kwargs):
             raise Exception("Parse error")
 
-        with patch.object(msg, 'get', mock_get):
+        with patch.object(msg, "get", mock_get):
             result = EmailParser._safe_get_header(msg, "Subject")
 
         # When msg.get raises, we return empty string (or try raw extraction if available)
@@ -1687,20 +1699,20 @@ class TestParserSafeGetHeaderDefects:
 
         msg = EmailMessage()
         # Simulate a severely corrupted header
-        msg['Subject'] = '\ufffd\ufffd\ufffd\ufffd'
+        msg["Subject"] = "\ufffd\ufffd\ufffd\ufffd"
 
         # Without raw_content, we get either replacement chars, question marks (from
         # encode/decode recovery attempt), or empty - but not the correct content
         result = EmailParser._safe_get_header(msg, "Subject")
         # Just verify we didn't get the correct Korean - the exact corruption format varies
-        assert result != '한글'
+        assert result != "한글"
 
         # With raw_content containing raw Korean bytes (cp949 encoded), we should get Korean text
-        korean_subject = '한글'.encode('cp949')  # b'\xc7\xd1\xb1\xdb'
-        raw_content = b'Subject: ' + korean_subject + b'\r\n\r\nBody'
+        korean_subject = "한글".encode("cp949")  # b'\xc7\xd1\xb1\xdb'
+        raw_content = b"Subject: " + korean_subject + b"\r\n\r\nBody"
         result_with_raw = EmailParser._safe_get_header(msg, "Subject", raw_content=raw_content)
         # The raw extraction should decode the Korean
-        assert result_with_raw == '한글'
+        assert result_with_raw == "한글"
 
 
 class TestArchiveSyncStateUpdate:

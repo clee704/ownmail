@@ -28,9 +28,7 @@ class TestArchiveDatabaseInit:
         db = ArchiveDatabase(temp_dir)
 
         with sqlite3.connect(db.db_path) as conn:
-            tables = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             table_names = [t[0] for t in tables]
 
         assert "emails" in table_names
@@ -375,8 +373,12 @@ class TestSearchSorting:
         db = ArchiveDatabase(temp_dir)
 
         # email_date determines sort order
-        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
-        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
+        db.mark_downloaded(
+            _eid("msg1"), "msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00"
+        )
+        db.mark_downloaded(
+            _eid("msg2"), "msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00"
+        )
         db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
         db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 
@@ -391,8 +393,12 @@ class TestSearchSorting:
         """Test search with date ascending sort."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00")
-        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00")
+        db.mark_downloaded(
+            _eid("msg1"), "msg1", "emails/2024/01/20240101_120000_abc.eml", email_date="2024-01-01T12:00:00"
+        )
+        db.mark_downloaded(
+            _eid("msg2"), "msg2", "emails/2024/02/20240201_120000_def.eml", email_date="2024-02-01T12:00:00"
+        )
         db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
         db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 
@@ -411,8 +417,12 @@ class TestSearchDateFilters:
         """Test search with after: date filter."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00")
-        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00")
+        db.mark_downloaded(
+            _eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00"
+        )
+        db.mark_downloaded(
+            _eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00"
+        )
         db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
         db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 
@@ -426,8 +436,12 @@ class TestSearchDateFilters:
         """Test search with before: date filter."""
         db = ArchiveDatabase(temp_dir)
 
-        db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00")
-        db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00")
+        db.mark_downloaded(
+            _eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml", email_date="2024-01-15T12:00:00"
+        )
+        db.mark_downloaded(
+            _eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml", email_date="2024-02-15T12:00:00"
+        )
         db.index_email(_eid("msg1"), "Test", "from", "to", "date", "body", "")
         db.index_email(_eid("msg2"), "Test", "from", "to", "date", "body", "")
 

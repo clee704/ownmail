@@ -86,10 +86,7 @@ class ImapProvider(EmailProvider):
         """Connect and authenticate with the IMAP server."""
         password = self._keychain.load_imap_password(self._account)
         if not password:
-            raise RuntimeError(
-                f"No password found for {self._account}. "
-                "Run 'ownmail setup' first."
-            )
+            raise RuntimeError(f"No password found for {self._account}. Run 'ownmail setup' first.")
 
         try:
             self._conn = imaplib.IMAP4_SSL(self._host, self._port)
@@ -158,9 +155,7 @@ class ImapProvider(EmailProvider):
 
         return [int(uid) for uid in data[0].split()]
 
-    def _get_message_ids_for_uids(
-        self, folder: str, uids: list[int]
-    ) -> dict[int, str]:
+    def _get_message_ids_for_uids(self, folder: str, uids: list[int]) -> dict[int, str]:
         """Fetch Message-ID headers for a batch of UIDs.
 
         Args:
@@ -179,9 +174,7 @@ class ImapProvider(EmailProvider):
             batch = uids[i : i + FETCH_BATCH_SIZE]
             uid_set = ",".join(str(u) for u in batch)
 
-            status, data = self._conn.uid(
-                "fetch", uid_set, "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])"
-            )
+            status, data = self._conn.uid("fetch", uid_set, "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
             if status != "OK":
                 continue
 
@@ -218,14 +211,16 @@ class ImapProvider(EmailProvider):
     def _get_all_mail_folder(self, folders: list[str]) -> str | None:
         """Find the [Gmail]/All Mail folder if it exists."""
         for f in folders:
-            if f in ("[Gmail]/All Mail", "[Gmail]/Tous les messages",
-                     "[Gmail]/Alle Nachrichten", "[Gmail]/Toda la correspondencia"):
+            if f in (
+                "[Gmail]/All Mail",
+                "[Gmail]/Tous les messages",
+                "[Gmail]/Alle Nachrichten",
+                "[Gmail]/Toda la correspondencia",
+            ):
                 return f
         return None
 
-    def get_all_message_ids(
-        self, since: str | None = None, until: str | None = None
-    ) -> list[str]:
+    def get_all_message_ids(self, since: str | None = None, until: str | None = None) -> list[str]:
         """Scan all folders and return deduplicated message identifiers.
 
         For Gmail: uses [Gmail]/All Mail as sole download source (it contains
@@ -350,9 +345,7 @@ class ImapProvider(EmailProvider):
         for _msg_id_val, info in seen.items():
             self._folder_lookup[info["primary"]] = info["folders"]
 
-        total_dupes = sum(
-            len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1
-        )
+        total_dupes = sum(len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1)
         print(f"  Found {len(all_ids)} unique messages ({total_dupes} duplicates across folders)")
         return all_ids
 
@@ -467,9 +460,7 @@ class ImapProvider(EmailProvider):
 
             # Search for UIDs > old_max_uid
             if old_max_uid > 0:
-                status, data = self._conn.uid(
-                    "search", None, f"UID {old_max_uid + 1}:*"
-                )
+                status, data = self._conn.uid("search", None, f"UID {old_max_uid + 1}:*")
             else:
                 status, data = self._conn.uid("search", None, "ALL")
 
@@ -529,9 +520,7 @@ class ImapProvider(EmailProvider):
             for _msg_id_val, info in seen.items():
                 self._folder_lookup[info["primary"]] = info["folders"]
 
-            total_dupes = sum(
-                len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1
-            )
+            total_dupes = sum(len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1)
             if total_dupes > 0:
                 print(f"  ({total_dupes} duplicates across folders)")
 
@@ -610,9 +599,7 @@ class ImapProvider(EmailProvider):
 
         return raw_data, labels
 
-    def download_messages_batch(
-        self, msg_ids: list[str]
-    ) -> dict[str, tuple[bytes | None, list[str], str | None]]:
+    def download_messages_batch(self, msg_ids: list[str]) -> dict[str, tuple[bytes | None, list[str], str | None]]:
         """Download multiple messages, grouped by folder for efficiency.
 
         Groups message IDs by folder to minimize SELECT calls, then uses
@@ -675,9 +662,7 @@ class ImapProvider(EmailProvider):
                 # Mark any missing UIDs as errors
                 for mid, uid in batch:
                     if uid not in fetched_uids:
-                        results.setdefault(
-                            mid, (None, [], f"No data for UID {uid}")
-                        )
+                        results.setdefault(mid, (None, [], f"No data for UID {uid}"))
 
         # Resolve labels for successfully downloaded messages
         for mid, (raw_data, labels, _error) in list(results.items()):

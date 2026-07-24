@@ -55,9 +55,12 @@ def _get_server_timezone_name() -> str:
     try:
         # Try to get IANA name from /etc/localtime symlink (macOS / Linux)
         import subprocess
+
         result = subprocess.run(
             ["readlink", "/etc/localtime"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
         if result.returncode == 0 and "zoneinfo/" in result.stdout:
             return result.stdout.strip().split("zoneinfo/")[-1]
@@ -75,82 +78,82 @@ def _get_server_timezone_name() -> str:
 # Flat timezone list sorted by UTC offset, following industry standard.
 # Covers all major offsets from UTC-12 to UTC+14 with representative cities.
 COMMON_TIMEZONES = [
-    "Pacific/Pago_Pago",          # UTC-11:00  Pago Pago
-    "Pacific/Honolulu",           # UTC-10:00  Honolulu
-    "America/Anchorage",          # UTC-09:00  Anchorage
-    "America/Los_Angeles",        # UTC-08:00  Los Angeles
-    "America/Vancouver",          # UTC-08:00  Vancouver
-    "America/Denver",             # UTC-07:00  Denver
-    "America/Phoenix",            # UTC-07:00  Phoenix (no DST)
-    "America/Chicago",            # UTC-06:00  Chicago
-    "America/Mexico_City",        # UTC-06:00  Mexico City
-    "America/New_York",           # UTC-05:00  New York
-    "America/Toronto",            # UTC-05:00  Toronto
-    "America/Bogota",             # UTC-05:00  Bogota
-    "America/Lima",               # UTC-05:00  Lima
-    "America/Caracas",            # UTC-04:00  Caracas
-    "America/Santiago",           # UTC-04:00  Santiago
-    "America/Halifax",            # UTC-04:00  Halifax
-    "America/St_Johns",           # UTC-03:30  St. John's
-    "America/Sao_Paulo",          # UTC-03:00  São Paulo
+    "Pacific/Pago_Pago",  # UTC-11:00  Pago Pago
+    "Pacific/Honolulu",  # UTC-10:00  Honolulu
+    "America/Anchorage",  # UTC-09:00  Anchorage
+    "America/Los_Angeles",  # UTC-08:00  Los Angeles
+    "America/Vancouver",  # UTC-08:00  Vancouver
+    "America/Denver",  # UTC-07:00  Denver
+    "America/Phoenix",  # UTC-07:00  Phoenix (no DST)
+    "America/Chicago",  # UTC-06:00  Chicago
+    "America/Mexico_City",  # UTC-06:00  Mexico City
+    "America/New_York",  # UTC-05:00  New York
+    "America/Toronto",  # UTC-05:00  Toronto
+    "America/Bogota",  # UTC-05:00  Bogota
+    "America/Lima",  # UTC-05:00  Lima
+    "America/Caracas",  # UTC-04:00  Caracas
+    "America/Santiago",  # UTC-04:00  Santiago
+    "America/Halifax",  # UTC-04:00  Halifax
+    "America/St_Johns",  # UTC-03:30  St. John's
+    "America/Sao_Paulo",  # UTC-03:00  São Paulo
     "America/Argentina/Buenos_Aires",  # UTC-03:00  Buenos Aires
-    "Atlantic/South_Georgia",     # UTC-02:00  South Georgia
-    "Atlantic/Azores",            # UTC-01:00  Azores
-    "Atlantic/Cape_Verde",        # UTC-01:00  Cape Verde
-    "UTC",                        # UTC+00:00
-    "Europe/London",              # UTC+00:00  London
-    "Africa/Lagos",               # UTC+01:00  Lagos
-    "Europe/Paris",               # UTC+01:00  Paris
-    "Europe/Berlin",              # UTC+01:00  Berlin
-    "Europe/Amsterdam",           # UTC+01:00  Amsterdam
-    "Europe/Rome",                # UTC+01:00  Rome
-    "Europe/Madrid",              # UTC+01:00  Madrid
-    "Europe/Zurich",              # UTC+01:00  Zurich
-    "Europe/Stockholm",           # UTC+01:00  Stockholm
-    "Africa/Cairo",               # UTC+02:00  Cairo
-    "Africa/Johannesburg",        # UTC+02:00  Johannesburg
-    "Europe/Athens",              # UTC+02:00  Athens
-    "Europe/Bucharest",           # UTC+02:00  Bucharest
-    "Europe/Helsinki",            # UTC+02:00  Helsinki
-    "Europe/Kyiv",                # UTC+02:00  Kyiv
-    "Asia/Jerusalem",             # UTC+02:00  Jerusalem
-    "Europe/Istanbul",            # UTC+03:00  Istanbul
-    "Europe/Moscow",              # UTC+03:00  Moscow
-    "Asia/Riyadh",                # UTC+03:00  Riyadh
-    "Africa/Nairobi",             # UTC+03:00  Nairobi
-    "Asia/Baghdad",               # UTC+03:00  Baghdad
-    "Asia/Tehran",                # UTC+03:30  Tehran
-    "Asia/Dubai",                 # UTC+04:00  Dubai
-    "Asia/Baku",                  # UTC+04:00  Baku
-    "Asia/Kabul",                 # UTC+04:30  Kabul
-    "Asia/Karachi",               # UTC+05:00  Karachi
-    "Asia/Tashkent",              # UTC+05:00  Tashkent
-    "Asia/Kolkata",               # UTC+05:30  Kolkata
-    "Asia/Kathmandu",             # UTC+05:45  Kathmandu
-    "Asia/Dhaka",                 # UTC+06:00  Dhaka
-    "Asia/Yangon",                # UTC+06:30  Yangon
-    "Asia/Bangkok",               # UTC+07:00  Bangkok
-    "Asia/Jakarta",               # UTC+07:00  Jakarta
-    "Asia/Ho_Chi_Minh",           # UTC+07:00  Ho Chi Minh City
-    "Asia/Shanghai",              # UTC+08:00  Shanghai
-    "Asia/Hong_Kong",             # UTC+08:00  Hong Kong
-    "Asia/Taipei",                # UTC+08:00  Taipei
-    "Asia/Singapore",             # UTC+08:00  Singapore
-    "Asia/Kuala_Lumpur",          # UTC+08:00  Kuala Lumpur
-    "Asia/Manila",                # UTC+08:00  Manila
-    "Australia/Perth",            # UTC+08:00  Perth
-    "Asia/Seoul",                 # UTC+09:00  Seoul
-    "Asia/Tokyo",                 # UTC+09:00  Tokyo
-    "Australia/Adelaide",         # UTC+09:30  Adelaide
-    "Australia/Sydney",           # UTC+10:00  Sydney
-    "Australia/Melbourne",        # UTC+10:00  Melbourne
-    "Australia/Brisbane",         # UTC+10:00  Brisbane (no DST)
-    "Pacific/Guam",               # UTC+10:00  Guam
-    "Pacific/Noumea",             # UTC+11:00  Noumea
-    "Pacific/Auckland",           # UTC+12:00  Auckland
-    "Pacific/Fiji",               # UTC+12:00  Fiji
-    "Pacific/Tongatapu",          # UTC+13:00  Nuku'alofa
-    "Pacific/Kiritimati",         # UTC+14:00  Kiritimati
+    "Atlantic/South_Georgia",  # UTC-02:00  South Georgia
+    "Atlantic/Azores",  # UTC-01:00  Azores
+    "Atlantic/Cape_Verde",  # UTC-01:00  Cape Verde
+    "UTC",  # UTC+00:00
+    "Europe/London",  # UTC+00:00  London
+    "Africa/Lagos",  # UTC+01:00  Lagos
+    "Europe/Paris",  # UTC+01:00  Paris
+    "Europe/Berlin",  # UTC+01:00  Berlin
+    "Europe/Amsterdam",  # UTC+01:00  Amsterdam
+    "Europe/Rome",  # UTC+01:00  Rome
+    "Europe/Madrid",  # UTC+01:00  Madrid
+    "Europe/Zurich",  # UTC+01:00  Zurich
+    "Europe/Stockholm",  # UTC+01:00  Stockholm
+    "Africa/Cairo",  # UTC+02:00  Cairo
+    "Africa/Johannesburg",  # UTC+02:00  Johannesburg
+    "Europe/Athens",  # UTC+02:00  Athens
+    "Europe/Bucharest",  # UTC+02:00  Bucharest
+    "Europe/Helsinki",  # UTC+02:00  Helsinki
+    "Europe/Kyiv",  # UTC+02:00  Kyiv
+    "Asia/Jerusalem",  # UTC+02:00  Jerusalem
+    "Europe/Istanbul",  # UTC+03:00  Istanbul
+    "Europe/Moscow",  # UTC+03:00  Moscow
+    "Asia/Riyadh",  # UTC+03:00  Riyadh
+    "Africa/Nairobi",  # UTC+03:00  Nairobi
+    "Asia/Baghdad",  # UTC+03:00  Baghdad
+    "Asia/Tehran",  # UTC+03:30  Tehran
+    "Asia/Dubai",  # UTC+04:00  Dubai
+    "Asia/Baku",  # UTC+04:00  Baku
+    "Asia/Kabul",  # UTC+04:30  Kabul
+    "Asia/Karachi",  # UTC+05:00  Karachi
+    "Asia/Tashkent",  # UTC+05:00  Tashkent
+    "Asia/Kolkata",  # UTC+05:30  Kolkata
+    "Asia/Kathmandu",  # UTC+05:45  Kathmandu
+    "Asia/Dhaka",  # UTC+06:00  Dhaka
+    "Asia/Yangon",  # UTC+06:30  Yangon
+    "Asia/Bangkok",  # UTC+07:00  Bangkok
+    "Asia/Jakarta",  # UTC+07:00  Jakarta
+    "Asia/Ho_Chi_Minh",  # UTC+07:00  Ho Chi Minh City
+    "Asia/Shanghai",  # UTC+08:00  Shanghai
+    "Asia/Hong_Kong",  # UTC+08:00  Hong Kong
+    "Asia/Taipei",  # UTC+08:00  Taipei
+    "Asia/Singapore",  # UTC+08:00  Singapore
+    "Asia/Kuala_Lumpur",  # UTC+08:00  Kuala Lumpur
+    "Asia/Manila",  # UTC+08:00  Manila
+    "Australia/Perth",  # UTC+08:00  Perth
+    "Asia/Seoul",  # UTC+09:00  Seoul
+    "Asia/Tokyo",  # UTC+09:00  Tokyo
+    "Australia/Adelaide",  # UTC+09:30  Adelaide
+    "Australia/Sydney",  # UTC+10:00  Sydney
+    "Australia/Melbourne",  # UTC+10:00  Melbourne
+    "Australia/Brisbane",  # UTC+10:00  Brisbane (no DST)
+    "Pacific/Guam",  # UTC+10:00  Guam
+    "Pacific/Noumea",  # UTC+11:00  Noumea
+    "Pacific/Auckland",  # UTC+12:00  Auckland
+    "Pacific/Fiji",  # UTC+12:00  Fiji
+    "Pacific/Tongatapu",  # UTC+13:00  Nuku'alofa
+    "Pacific/Kiritimati",  # UTC+14:00  Kiritimati
 ]
 
 
@@ -263,39 +266,40 @@ def _extract_attachment_filename(part) -> str:
         mime_matches = rfc2231_mime_re.findall(raw_part)
         if mime_matches:
             # Join all parts and clean up
-            combined_value = b''.join(mime_matches).replace(b'\r\n ', b' ').replace(b'\r\n', b'').replace(b'\n ', b' ')
-            combined_str = combined_value.decode('ascii', errors='ignore')
+            combined_value = b"".join(mime_matches).replace(b"\r\n ", b" ").replace(b"\r\n", b"").replace(b"\n ", b" ")
+            combined_str = combined_value.decode("ascii", errors="ignore")
 
             # Check if it contains MIME encoded-words
-            if '=?' in combined_str and '?=' in combined_str:
+            if "=?" in combined_str and "?=" in combined_str:
                 # Extract MIME encoded-words
-                mime_word_re = re.compile(r'=\?([^?]+)\?([BbQq])\?([^?]+)\?=')
+                mime_word_re = re.compile(r"=\?([^?]+)\?([BbQq])\?([^?]+)\?=")
                 mime_parts = mime_word_re.findall(combined_str)
                 if mime_parts:
                     decoded_parts = []
                     for charset_name, encoding, encoded_text in mime_parts:
                         try:
-                            if encoding.upper() == 'B':
+                            if encoding.upper() == "B":
                                 # Base64 - fix padding
                                 padding = 4 - (len(encoded_text) % 4) if len(encoded_text) % 4 else 0
-                                encoded_text += '=' * padding
+                                encoded_text += "=" * padding
                                 decoded_bytes = base64.b64decode(encoded_text)
                             else:
                                 # Quoted-printable
                                 import quopri
-                                decoded_bytes = quopri.decodestring(encoded_text.encode('ascii'))
+
+                                decoded_bytes = quopri.decodestring(encoded_text.encode("ascii"))
 
                             # Decode with charset
                             cs = charset_name.lower()
-                            if cs == 'unknown':
-                                cs = 'utf-8'
-                            decoded_parts.append(decoded_bytes.decode(cs, errors='replace'))
+                            if cs == "unknown":
+                                cs = "utf-8"
+                            decoded_parts.append(decoded_bytes.decode(cs, errors="replace"))
                         except Exception:
                             continue
 
                     if decoded_parts:
-                        result = ''.join(decoded_parts)
-                        if '\ufffd' not in result:
+                        result = "".join(decoded_parts)
+                        if "\ufffd" not in result:
                             return result
 
         # SECOND: Look for standard RFC 2231 encoded filename
@@ -315,18 +319,18 @@ def _extract_attachment_filename(part) -> str:
             # First part has charset''value format
             if b"''" in value:
                 charset_bytes, encoded_value = value.split(b"''", 1)
-                charset = charset_bytes.decode('ascii', errors='ignore').lower()
+                charset = charset_bytes.decode("ascii", errors="ignore").lower()
                 # unknown-8bit is often EUC-KR for Korean emails
-                if charset in ('unknown-8bit', ''):
-                    charset = 'euc-kr'
+                if charset in ("unknown-8bit", ""):
+                    charset = "euc-kr"
             else:
                 # Continuation parts don't have charset prefix
                 encoded_value = value
-                charset = 'euc-kr'
+                charset = "euc-kr"
 
             # URL-decode the value
             try:
-                decoded_bytes = unquote_to_bytes(encoded_value.decode('ascii'))
+                decoded_bytes = unquote_to_bytes(encoded_value.decode("ascii"))
                 filename_parts.append((part_num, decoded_bytes, charset))
             except Exception:
                 continue
@@ -334,21 +338,23 @@ def _extract_attachment_filename(part) -> str:
         if filename_parts:
             # Sort by part number and combine
             filename_parts.sort(key=lambda x: x[0])
-            combined = b''.join(p[1] for p in filename_parts)
+            combined = b"".join(p[1] for p in filename_parts)
             charset = filename_parts[0][2]  # Use charset from first part
 
             # Try the specified charset first, then fallbacks
-            for enc in [charset, 'euc-kr', 'cp949', 'utf-8', 'gb2312', 'shift_jis']:
+            for enc in [charset, "euc-kr", "cp949", "utf-8", "gb2312", "shift_jis"]:
                 try:
                     decoded = combined.decode(enc)
                     # Validate it has readable CJK content
-                    if any('\uAC00' <= c <= '\uD7AF' or  # Hangul
-                           '\u4E00' <= c <= '\u9FFF' or  # CJK
-                           '\u3040' <= c <= '\u30FF'     # Japanese
-                           for c in decoded):
+                    if any(
+                        "\uac00" <= c <= "\ud7af"  # Hangul
+                        or "\u4e00" <= c <= "\u9fff"  # CJK
+                        or "\u3040" <= c <= "\u30ff"  # Japanese
+                        for c in decoded
+                    ):
                         return decoded
                     # If no CJK but decoded without errors, use it
-                    if enc in ['utf-8', charset]:
+                    if enc in ["utf-8", charset]:
                         return decoded
                 except (UnicodeDecodeError, LookupError):
                     continue
@@ -362,15 +368,17 @@ def _extract_attachment_filename(part) -> str:
             # Check if it has high bytes (non-ASCII)
             if any(b >= 0x80 for b in raw_filename):
                 # Try various CJK encodings
-                for enc in ['euc-kr', 'cp949', 'utf-8', 'gb2312', 'gbk', 'shift_jis', 'cp1251', 'koi8-r']:
+                for enc in ["euc-kr", "cp949", "utf-8", "gb2312", "gbk", "shift_jis", "cp1251", "koi8-r"]:
                     try:
                         decoded = raw_filename.decode(enc)
                         # Validate - should have CJK/Cyrillic chars
-                        if any('\uAC00' <= c <= '\uD7AF' or  # Hangul
-                               '\u4E00' <= c <= '\u9FFF' or  # CJK
-                               '\u0400' <= c <= '\u04FF' or  # Cyrillic
-                               '\u3040' <= c <= '\u30FF'     # Japanese
-                               for c in decoded):
+                        if any(
+                            "\uac00" <= c <= "\ud7af"  # Hangul
+                            or "\u4e00" <= c <= "\u9fff"  # CJK
+                            or "\u0400" <= c <= "\u04ff"  # Cyrillic
+                            or "\u3040" <= c <= "\u30ff"  # Japanese
+                            for c in decoded
+                        ):
                             return decoded
                     except (UnicodeDecodeError, LookupError):
                         continue
@@ -382,14 +390,14 @@ def _extract_attachment_filename(part) -> str:
     filename = part.get_filename()
     if filename:
         # Check for replacement characters (corruption)
-        if '\ufffd' not in filename:
+        if "\ufffd" not in filename:
             fixed = _fix_mojibake_filename(filename)
             if fixed:
                 return fixed
         # Try decode_header for MIME-encoded filenames
-        if '=?' in filename:
+        if "=?" in filename:
             decoded = decode_header(filename)
-            if decoded and '\ufffd' not in decoded:
+            if decoded and "\ufffd" not in decoded:
                 return decoded
         return filename
 
@@ -414,30 +422,26 @@ def _extract_body_content(html: str) -> str:
 
     # Extract <style> tags from anywhere (they may be in <head>)
     styles = []
-    style_pattern = re.compile(r'<style[^>]*>[\s\S]*?</style>', re.IGNORECASE)
+    style_pattern = re.compile(r"<style[^>]*>[\s\S]*?</style>", re.IGNORECASE)
     for match in style_pattern.finditer(html):
         styles.append(match.group())
 
     # Try to extract body content
-    body_match = re.search(
-        r'<body[^>]*>(.*)</body>',
-        html,
-        re.IGNORECASE | re.DOTALL
-    )
+    body_match = re.search(r"<body[^>]*>(.*)</body>", html, re.IGNORECASE | re.DOTALL)
     if body_match:
         content = body_match.group(1)
     else:
         # No <body> tag — might be a fragment, use as-is
         # Strip <html> and <head> wrappers if present
-        content = re.sub(r'</?html[^>]*>', '', html, flags=re.IGNORECASE)
-        content = re.sub(r'<head[^>]*>[\s\S]*?</head>', '', content, flags=re.IGNORECASE)
+        content = re.sub(r"</?html[^>]*>", "", html, flags=re.IGNORECASE)
+        content = re.sub(r"<head[^>]*>[\s\S]*?</head>", "", content, flags=re.IGNORECASE)
 
     # Remove any <style> tags already in content (we'll prepend all styles)
-    content_without_styles = style_pattern.sub('', content)
+    content_without_styles = style_pattern.sub("", content)
 
     # Prepend all collected styles
     if styles:
-        return '\n'.join(styles) + '\n' + content_without_styles
+        return "\n".join(styles) + "\n" + content_without_styles
     return content_without_styles
 
 
@@ -461,7 +465,7 @@ def _fix_mojibake_filename(filename: str) -> str:
     # could be EUC-KR/CP949 bytes interpreted as latin-1)
     try:
         # Try to encode as latin-1 to get raw bytes
-        raw_bytes = filename.encode('latin-1')
+        raw_bytes = filename.encode("latin-1")
     except UnicodeEncodeError:
         # Contains chars outside latin-1, not simple mojibake
         return filename
@@ -471,15 +475,18 @@ def _fix_mojibake_filename(filename: str) -> str:
         return filename  # All ASCII, no mojibake
 
     # Try to decode as various CJK encodings
-    for encoding in ['euc-kr', 'cp949', 'utf-8', 'gb2312', 'gbk', 'shift_jis']:
+    for encoding in ["euc-kr", "cp949", "utf-8", "gb2312", "gbk", "shift_jis"]:
         try:
             decoded = raw_bytes.decode(encoding)
             # Validate that result looks like readable text
             # (contains Hangul, CJK, or mostly printable ASCII)
-            hangul_cjk = sum(1 for c in decoded
-                            if '\uAC00' <= c <= '\uD7AF'  # Hangul
-                            or '\u4E00' <= c <= '\u9FFF'  # CJK
-                            or '\u3040' <= c <= '\u30FF')  # Japanese
+            hangul_cjk = sum(
+                1
+                for c in decoded
+                if "\uac00" <= c <= "\ud7af"  # Hangul
+                or "\u4e00" <= c <= "\u9fff"  # CJK
+                or "\u3040" <= c <= "\u30ff"
+            )  # Japanese
             if hangul_cjk > 0:
                 return decoded
         except (UnicodeDecodeError, LookupError):
@@ -500,13 +507,13 @@ def decode_header(value) -> str:
     if not value:
         return ""
     # Handle Header objects by converting to string first
-    if hasattr(value, '__str__') and not isinstance(value, str):
+    if hasattr(value, "__str__") and not isinstance(value, str):
         value = str(value)
     if not isinstance(value, str):
         return ""
 
     # Check if it looks like MIME-encoded
-    if '=?' not in value or '?=' not in value:
+    if "=?" not in value or "?=" not in value:
         return value
 
     try:
@@ -516,28 +523,37 @@ def decode_header(value) -> str:
             if isinstance(data, bytes):
                 # Try the declared charset first, then common fallbacks
                 charsets_to_try = []
-                if charset and charset.upper() != 'UNKNOWN':
+                if charset and charset.upper() != "UNKNOWN":
                     charsets_to_try.append(charset)
                 # Add common fallbacks: CJK, Russian, Western European
-                charsets_to_try.extend([
-                    'utf-8', 'euc-kr', 'cp949', 'iso-2022-kr',  # Korean
-                    'cp1251', 'koi8-r',  # Russian
-                    'gb2312', 'gbk',  # Chinese
-                    'shift_jis', 'euc-jp',  # Japanese
-                    'iso-8859-1', 'cp1252',  # Western
-                ])
+                charsets_to_try.extend(
+                    [
+                        "utf-8",
+                        "euc-kr",
+                        "cp949",
+                        "iso-2022-kr",  # Korean
+                        "cp1251",
+                        "koi8-r",  # Russian
+                        "gb2312",
+                        "gbk",  # Chinese
+                        "shift_jis",
+                        "euc-jp",  # Japanese
+                        "iso-8859-1",
+                        "cp1252",  # Western
+                    ]
+                )
                 decoded = None
                 for cs in charsets_to_try:
                     if cs:
                         try:
                             decoded = data.decode(cs)
                             # Validate it doesn't have too many replacement chars
-                            if '\ufffd' not in decoded:
+                            if "\ufffd" not in decoded:
                                 break
                         except (UnicodeDecodeError, LookupError):
                             continue
                 if decoded is None:
-                    decoded = data.decode('utf-8', errors='replace')
+                    decoded = data.decode("utf-8", errors="replace")
                 result.append(decoded)
             else:
                 result.append(data)
@@ -547,7 +563,7 @@ def decode_header(value) -> str:
         # Some emails have split multi-byte chars across encoded-words
         try:
             # Find all encoded-words and try to decode them together
-            pattern = r'=\?([^?]+)\?([BbQq])\?([^?]*)\?='
+            pattern = r"=\?([^?]+)\?([BbQq])\?([^?]*)\?="
             matches = list(re.finditer(pattern, value))
 
             if not matches:
@@ -558,19 +574,19 @@ def decode_header(value) -> str:
             charset_used = None
             for m in matches:
                 charset, encoding, encoded_text = m.groups()
-                if encoding.upper() == 'B':
+                if encoding.upper() == "B":
                     base64_parts.append(encoded_text)
                     charset_used = charset
 
             if base64_parts and charset_used:
                 # Combine and decode
-                combined = ''.join(base64_parts)
+                combined = "".join(base64_parts)
                 # Add padding if needed
                 padding = 4 - (len(combined) % 4) if len(combined) % 4 else 0
-                combined += '=' * padding
+                combined += "=" * padding
                 try:
                     decoded_bytes = base64.b64decode(combined)
-                    return decoded_bytes.decode(charset_used, errors='replace')
+                    return decoded_bytes.decode(charset_used, errors="replace")
                 except Exception:
                     pass
 
@@ -619,20 +635,17 @@ def _clean_snippet_text(text: str) -> str:
 
     # Strip leading MIME headers embedded in body text
     # Some senders (e.g. USPS) accidentally include MIME headers in the body
-    text = re.sub(
-        r'^(\s*Content-(?:Type|Transfer-Encoding|Disposition)[^\n]*\n)+\s*',
-        '', text, flags=re.IGNORECASE
-    )
+    text = re.sub(r"^(\s*Content-(?:Type|Transfer-Encoding|Disposition)[^\n]*\n)+\s*", "", text, flags=re.IGNORECASE)
 
     # Strip HTML tags using lxml (handles malformed/truncated tags properly)
-    if '<' in text:
+    if "<" in text:
         try:
             from lxml import html as lxml_html
 
             tree = lxml_html.fromstring(text)
             # Remove elements that shouldn't contribute text,
             # preserving tail text (text after the closing tag)
-            for element in tree.xpath('//style | //script | //head | //noscript'):
+            for element in tree.xpath("//style | //script | //head | //noscript"):
                 tail = element.tail
                 parent = element.getparent()
                 if parent is not None:
@@ -646,10 +659,10 @@ def _clean_snippet_text(text: str) -> str:
             text = tree.text_content()
         except Exception:
             # Fallback: simple regex if lxml fails
-            text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-            text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-            text = re.sub(r'<[^>]+>', ' ', text)
-            text = re.sub(r'<[^>]*$', '', text)
+            text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = re.sub(r"<[^>]*$", "", text)
 
     # Remove zero-width and invisible characters
     # U+200B Zero Width Space
@@ -658,22 +671,24 @@ def _clean_snippet_text(text: str) -> str:
     # U+FEFF Byte Order Mark / Zero Width No-Break Space
     # U+00AD Soft Hyphen
     # U+2060 Word Joiner
-    invisible_chars = '\u200b\u200c\u200d\ufeff\u00ad\u2060'
+    invisible_chars = "\u200b\u200c\u200d\ufeff\u00ad\u2060"
     for char in invisible_chars:
-        text = text.replace(char, '')
+        text = text.replace(char, "")
 
     # Remove CSS-like content (selectors with braces)
     # Matches ".class { ... }", "#id { ... }", and element selectors like
     # "body { ... }", "table, td, tr { ... }", "* { ... }", "@media (...) { ... }"
-    text = re.sub(r'[.#][\w-]+\s*\{[^}]*\}', '', text)
-    text = re.sub(r'(?:^|\s)(?:[a-z][a-z0-9-]*(?:\s*,\s*[a-z][a-z0-9-]*)*|\*)\s*\{[^}]*\}', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'@media\s*[^{]*\{[^}]*(?:\{[^}]*\}[^}]*)*\}', '', text)
+    text = re.sub(r"[.#][\w-]+\s*\{[^}]*\}", "", text)
+    text = re.sub(
+        r"(?:^|\s)(?:[a-z][a-z0-9-]*(?:\s*,\s*[a-z][a-z0-9-]*)*|\*)\s*\{[^}]*\}", "", text, flags=re.IGNORECASE
+    )
+    text = re.sub(r"@media\s*[^{]*\{[^}]*(?:\{[^}]*\}[^}]*)*\}", "", text)
     # Remove CSS selectors with attribute selectors like a[x-apple-data-detectors=true]
-    text = re.sub(r'\w+\[[^\]]+\]\s*\{[^}]*\}', '', text)
+    text = re.sub(r"\w+\[[^\]]+\]\s*\{[^}]*\}", "", text)
 
     # Remove repetitive padding patterns (single char repeated with spaces)
     # Matches "ä ä ä ä" or ". . . ." etc.
-    text = re.sub(r'(\S)\s+(?:\1\s+){3,}', '', text)
+    text = re.sub(r"(\S)\s+(?:\1\s+){3,}", "", text)
 
     # Collapse whitespace
     text = " ".join(text.split())
@@ -694,7 +709,7 @@ def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
         return False
 
     # Check for replacement characters (decoding failed)
-    if '\ufffd' in text:
+    if "\ufffd" in text:
         return False
 
     # Count readable vs unreadable characters
@@ -710,16 +725,18 @@ def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
         # - Latin extended (accented chars)
         # - CJK characters (Chinese, Japanese, Korean)
         # - Common punctuation and symbols
-        if (0x20 <= code <= 0x7E or  # ASCII printable
-            code in (0x09, 0x0A, 0x0D) or  # tab, newline, CR
-            0x80 <= code <= 0xFF or  # Latin extended
-            0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
-            0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
-            0x1100 <= code <= 0x11FF or  # Hangul Jamo
-            0x3040 <= code <= 0x309F or  # Hiragana
-            0x30A0 <= code <= 0x30FF or  # Katakana
-            0x3000 <= code <= 0x303F or  # CJK Punctuation
-            0xFF00 <= code <= 0xFFEF):   # Fullwidth forms
+        if (
+            0x20 <= code <= 0x7E  # ASCII printable
+            or code in (0x09, 0x0A, 0x0D)  # tab, newline, CR
+            or 0x80 <= code <= 0xFF  # Latin extended
+            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs
+            or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
+            or 0x1100 <= code <= 0x11FF  # Hangul Jamo
+            or 0x3040 <= code <= 0x309F  # Hiragana
+            or 0x30A0 <= code <= 0x30FF  # Katakana
+            or 0x3000 <= code <= 0x303F  # CJK Punctuation
+            or 0xFF00 <= code <= 0xFFEF
+        ):  # Fullwidth forms
             readable += 1
 
     if total == 0:
@@ -740,20 +757,12 @@ def _try_decode(payload: bytes, encoding: str) -> str | None:
 
 
 # Regex patterns for linkifying plain text
-URL_RE = re.compile(
-    r'(https?://[^\s<>"\')\]]+)',
-    re.IGNORECASE
-)
-EMAIL_RE = re.compile(
-    r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
-)
+URL_RE = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
+EMAIL_RE = re.compile(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})")
 # Header patterns for embedded messages
-HEADER_RE = re.compile(
-    r'^(From|Subject|Date|To|Reply-To|Cc|Bcc):\s*',
-    re.IGNORECASE
-)
+HEADER_RE = re.compile(r"^(From|Subject|Date|To|Reply-To|Cc|Bcc):\s*", re.IGNORECASE)
 # Quote level pattern (lines starting with >)
-QUOTE_RE = re.compile(r'^(&gt;)+')
+QUOTE_RE = re.compile(r"^(&gt;)+")
 
 
 def _linkify_line(line: str) -> str:
@@ -768,7 +777,7 @@ def _linkify_line(line: str) -> str:
         start = match.start()
         preceding = line[:start]
         last_href = preceding.rfind('href="')
-        last_close = max(preceding.rfind('>'), preceding.rfind('"'))
+        last_close = max(preceding.rfind(">"), preceding.rfind('"'))
         if last_href > last_close:
             return email_addr
         return f'<a href="mailto:{email_addr}" rel="noopener noreferrer">{email_addr}</a>'
@@ -785,10 +794,10 @@ def _linkify(text: str) -> str:
     Returns:
         HTML with URLs/emails as links, headers styled, quotes colored
     """
-    lines = text.split('\n')
+    lines = text.split("\n")
     result_lines = []
 
-    colors = ['#58a6c9', '#7ee787', '#f0a855', '#d2a8ff']
+    colors = ["#58a6c9", "#7ee787", "#f0a855", "#d2a8ff"]
     current_depth = 0
 
     for line in lines:
@@ -797,8 +806,8 @@ def _linkify(text: str) -> str:
         # Check for quote markers (>, >>, etc.)
         quote_match = QUOTE_RE.match(escaped)
         if quote_match:
-            depth = quote_match.group(0).count('&gt;')
-            rest = escaped[quote_match.end():]
+            depth = quote_match.group(0).count("&gt;")
+            rest = escaped[quote_match.end() :]
             rest = _linkify_line(rest)
 
             # Adjust nesting level
@@ -811,7 +820,7 @@ def _linkify(text: str) -> str:
                 current_depth += 1
 
             while current_depth > depth:
-                result_lines.append('</div>')
+                result_lines.append("</div>")
                 current_depth -= 1
 
             # Add the content line
@@ -820,29 +829,27 @@ def _linkify(text: str) -> str:
 
         # Close all quote levels before non-quote content
         while current_depth > 0:
-            result_lines.append('</div>')
+            result_lines.append("</div>")
             current_depth -= 1
 
         # Check for header lines (From:, Subject:, etc.)
         header_match = HEADER_RE.match(escaped)
         if header_match:
             label = header_match.group(1)
-            rest = escaped[header_match.end():]
+            rest = escaped[header_match.end() :]
             rest = _linkify_line(rest)
-            result_lines.append(
-                f'<div><span class="ownmail-email-header-label">{label}:</span> {rest}</div>'
-            )
+            result_lines.append(f'<div><span class="ownmail-email-header-label">{label}:</span> {rest}</div>')
             continue
 
         # Regular line - wrap in div
-        result_lines.append(f'<div>{_linkify_line(escaped) or "&nbsp;"}</div>')
+        result_lines.append(f"<div>{_linkify_line(escaped) or '&nbsp;'}</div>")
 
     # Close any remaining quote levels
     while current_depth > 0:
-        result_lines.append('</div>')
+        result_lines.append("</div>")
         current_depth -= 1
 
-    return ''.join(result_lines)
+    return "".join(result_lines)
 
 
 def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
@@ -871,14 +878,13 @@ def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
     if high_bytes > 10:
         # Has significant non-ASCII content - try various encodings
         # and validate the result makes sense
-        for encoding in ['utf-8', 'cp949', 'euc-kr', 'gb2312', 'gbk',
-                         'big5', 'shift_jis', 'euc-jp']:
+        for encoding in ["utf-8", "cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"]:
             result = _try_decode(payload, encoding)
             if result is not None:
                 return result
 
     # Try common encodings with validation
-    for encoding in ['utf-8', 'iso-8859-1', 'cp1252']:
+    for encoding in ["utf-8", "iso-8859-1", "cp1252"]:
         result = _try_decode(payload, encoding)
         if result is not None:
             return result
@@ -931,14 +937,13 @@ def _decode_html_body(payload: bytes, header_charset: str | None) -> str:
 
     if high_bytes > 10:
         # Has significant non-ASCII content - try various encodings
-        for encoding in ['utf-8', 'cp949', 'euc-kr', 'gb2312', 'gbk',
-                         'big5', 'shift_jis', 'euc-jp']:
+        for encoding in ["utf-8", "cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"]:
             result = _try_decode(payload, encoding)
             if result is not None:
                 return result
 
     # Try common encodings with validation
-    for encoding in ['utf-8', 'iso-8859-1', 'cp1252']:
+    for encoding in ["utf-8", "iso-8859-1", "cp1252"]:
         result = _try_decode(payload, encoding)
         if result is not None:
             return result
@@ -968,6 +973,7 @@ def block_external_images(html: str) -> tuple[str, bool]:
 
     # Block <img src="https://...">
     if has_img:
+
         def replace_src(match):
             prefix = match.group(1) or ""
             url = match.group(2)
@@ -978,8 +984,9 @@ def block_external_images(html: str) -> tuple[str, bool]:
     # Block CSS url(https://...) -> url() with data-bg attribute on the element
     # For inline styles, replace url() with a transparent placeholder
     if has_css:
+
         def replace_css_url(match):
-            return 'url(data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)'
+            return "url(data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)"
 
         # Replace in inline style="..." attributes, preserving original in data-bg-urls
         def replace_inline_style(match):
@@ -996,7 +1003,9 @@ def block_external_images(html: str) -> tuple[str, bool]:
 
         blocked_html = re.sub(
             r'style="([^"]*url\s*\([^)]*https?://[^)]*\)[^"]*)"',
-            replace_inline_style, blocked_html, flags=re.IGNORECASE
+            replace_inline_style,
+            blocked_html,
+            flags=re.IGNORECASE,
         )
 
     return blocked_html, True
@@ -1018,9 +1027,9 @@ def parse_email_address(addr: str) -> tuple:
     addr = addr.strip()
 
     # Find the last <...> which should contain the email address
-    last_open = addr.rfind('<')
-    if last_open != -1 and addr.endswith('>'):
-        email_addr = addr[last_open + 1:-1].strip()
+    last_open = addr.rfind("<")
+    if last_open != -1 and addr.endswith(">"):
+        email_addr = addr[last_open + 1 : -1].strip()
         name = addr[:last_open].strip()
         # Strip surrounding quotes from name and unescape internal quotes
         if name.startswith('"') and name.endswith('"'):
@@ -1028,7 +1037,7 @@ def parse_email_address(addr: str) -> tuple:
         return (name, email_addr)
 
     # Try to match just email
-    match = re.match(r'^<?([^@\s]+@[^>\s]+)>?$', addr)
+    match = re.match(r"^<?([^@\s]+@[^>\s]+)>?$", addr)
     if match:
         return ("", match.group(1))
 
@@ -1055,11 +1064,13 @@ def parse_recipients(recipients_str: str) -> list:
         if not part:
             continue
         name, email_addr = parse_email_address(part)
-        result.append({
-            "name": name,
-            "email": email_addr,
-            "raw": part,
-        })
+        result.append(
+            {
+                "name": name,
+                "email": email_addr,
+                "raw": part,
+            }
+        )
     return result
 
 
@@ -1167,6 +1178,7 @@ def create_app(
         }
 
     if verbose:
+
         @app.before_request
         def before_request():
             g.start_time = time.time()
@@ -1195,6 +1207,7 @@ def create_app(
 
         # Parse the referer to check if it's a search page on this host
         from urllib.parse import urlparse
+
         parsed = urlparse(referer)
 
         # Check if it's the same host and a search path
@@ -1227,12 +1240,12 @@ def create_app(
         # Remove known filters to see if any search terms remain
         query_without_filters = query
         for pattern in [
-            r'\b(?:before|after):\d{4}-?\d{2}-?\d{2}\b',
+            r"\b(?:before|after):\d{4}-?\d{2}-?\d{2}\b",
             r'\b(?:label|tag):(?:"[^"]*"|\S+)\b',
         ]:
-            query_without_filters = re.sub(pattern, '', query_without_filters)
+            query_without_filters = re.sub(pattern, "", query_without_filters)
         # Also remove orphaned AND
-        query_without_filters = re.sub(r'\bAND\b', '', query_without_filters, flags=re.IGNORECASE)
+        query_without_filters = re.sub(r"\bAND\b", "", query_without_filters, flags=re.IGNORECASE)
         # Check if there are actual search terms (including field:value FTS queries)
         has_fts_terms = bool(query_without_filters.strip())
 
@@ -1255,7 +1268,9 @@ def create_app(
 
         # Fetch per_page + 1 to know if there are more results
         try:
-            raw_results = archive.search(query, limit=per_page + 1, offset=offset, sort=sort, tz=app.config.get("timezone"))
+            raw_results = archive.search(
+                query, limit=per_page + 1, offset=offset, sort=sort, tz=app.config.get("timezone")
+            )
             search_error = None
         except Exception as e:
             raw_results = []
@@ -1264,7 +1279,7 @@ def create_app(
                 print(f"[verbose] Search error: {e}", flush=True)
 
         if verbose and not search_error:
-            print(f"[verbose] Search took {time.time()-start:.2f}s, {len(raw_results)} results", flush=True)
+            print(f"[verbose] Search took {time.time() - start:.2f}s, {len(raw_results)} results", flush=True)
 
         # Check if there are more results
         has_more = len(raw_results) > per_page
@@ -1277,15 +1292,15 @@ def create_app(
             # Use values from database - they're already indexed
             # Only decode MIME-encoded headers if present
             if subject:
-                if '=?' in subject:
+                if "=?" in subject:
                     subject = decode_header(subject)
             else:
                 subject = "(No subject)"
 
-            if sender and '=?' in sender:
+            if sender and "=?" in sender:
                 sender = decode_header(sender)
 
-            if snippet and '=?' in snippet:
+            if snippet and "=?" in snippet:
                 snippet = decode_header(snippet)
 
             # Clean up snippet text (remove CSS, padding chars, etc.)
@@ -1307,16 +1322,18 @@ def create_app(
                 # Fall back to extracting date part from string
                 date_short = date_str.split()[0]
 
-            results.append({
-                "email_id": msg_id,
-                "filename": filename,
-                "subject": subject,
-                "sender": sender,
-                "sender_name": sender_name,
-                "date_str": date_str,
-                "date_short": date_short,
-                "snippet": snippet,
-            })
+            results.append(
+                {
+                    "email_id": msg_id,
+                    "filename": filename,
+                    "subject": subject,
+                    "sender": sender,
+                    "sender_name": sender_name,
+                    "date_str": date_str,
+                    "date_short": date_short,
+                    "snippet": snippet,
+                }
+            )
 
         search_time = time.time() - search_start
         return render_template(
@@ -1344,7 +1361,7 @@ def create_app(
             start = time.time()
         email_info = archive.db.get_email_by_id(email_id)
         if verbose:
-            print(f"[verbose] DB lookup took {time.time()-start:.2f}s", flush=True)
+            print(f"[verbose] DB lookup took {time.time() - start:.2f}s", flush=True)
         if not email_info:
             abort(404)
 
@@ -1373,9 +1390,9 @@ def create_app(
 
         # Ensure MIME-encoded headers are fully decoded
         # Parser may return partially decoded or raw MIME strings
-        if subject and '=?' in subject:
+        if subject and "=?" in subject:
             subject = decode_header(subject)
-        if sender and '=?' in sender:
+        if sender and "=?" in sender:
             sender = decode_header(sender)
 
         # For body and attachments, we still need to parse the message
@@ -1424,23 +1441,27 @@ def create_app(
                                     att_filename = _extract_attachment_filename(sub)
                                     payload = sub.get_payload(decode=True)
                                     size = len(payload) if payload else 0
-                                    attachments.append({
-                                        "filename": att_filename,
-                                        "size": _format_size(size),
-                                    })
+                                    attachments.append(
+                                        {
+                                            "filename": att_filename,
+                                            "size": _format_size(size),
+                                        }
+                                    )
                                 elif sub_ct == "text/plain" and not emb_body:
                                     payload = sub.get_payload(decode=True)
                                     if payload:
                                         emb_body = _decode_text_body(payload, sub.get_content_charset())
 
-                            embedded_messages.append({
-                                "from": emb_from,
-                                "subject": emb_subject,
-                                "date": emb_date,
-                                "to": emb_to,
-                                "reply_to": emb_reply_to,
-                                "body": emb_body,
-                            })
+                            embedded_messages.append(
+                                {
+                                    "from": emb_from,
+                                    "subject": emb_subject,
+                                    "date": emb_date,
+                                    "to": emb_to,
+                                    "reply_to": emb_reply_to,
+                                    "body": emb_body,
+                                }
+                            )
                     except Exception:
                         pass
                     continue
@@ -1463,10 +1484,12 @@ def create_app(
                     # Extract filename with proper charset handling
                     att_filename = _extract_attachment_filename(part)
                     size = len(part.get_payload(decode=True) or b"")
-                    attachments.append({
-                        "filename": att_filename,
-                        "size": _format_size(size),
-                    })
+                    attachments.append(
+                        {
+                            "filename": att_filename,
+                            "size": _format_size(size),
+                        }
+                    )
                 elif content_type == "text/plain":
                     payload = part.get_payload(decode=True)
                     if payload:
@@ -1519,7 +1542,7 @@ def create_app(
             body = ""
 
         if verbose:
-            print(f"[verbose] Email parsing took {time.time()-start:.2f}s", flush=True)
+            print(f"[verbose] Email parsing took {time.time() - start:.2f}s", flush=True)
 
         email_data = {
             "subject": subject,
@@ -1544,7 +1567,7 @@ def create_app(
         if body_html and cid_images:
             for cid, data_uri in cid_images.items():
                 # cid references can appear as "cid:xxx" in src attributes
-                body_html = body_html.replace(f'cid:{cid}', data_uri)
+                body_html = body_html.replace(f"cid:{cid}", data_uri)
 
         # Sanitize HTML/CSS using DOMPurify sidecar
         needs_padding = True
@@ -1629,7 +1652,8 @@ def create_app(
 
         # Render HTML page with filepath and content
         from markupsafe import escape
-        return f'''<!DOCTYPE html>
+
+        return f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -1654,7 +1678,7 @@ def create_app(
     </div>
     <div class="ownmail-content">{escape(content)}</div>
 </body>
-</html>'''
+</html>"""
 
     @app.route("/download/<email_id>")
     def download_eml(email_id: str):
@@ -1706,6 +1730,7 @@ def create_app(
 
                     # Send directly from memory
                     import io
+
                     return send_file(
                         io.BytesIO(att_data),
                         mimetype=content_type,
@@ -1814,11 +1839,7 @@ def create_app(
 
         # Trusted senders: textarea, one per line
         trusted_raw = request.form.get("trusted_senders", "")
-        trusted_list = [
-            s.strip().lower()
-            for s in trusted_raw.splitlines()
-            if s.strip()
-        ]
+        trusted_list = [s.strip().lower() for s in trusted_raw.splitlines() if s.strip()]
         web_config["trusted_senders"] = trusted_list
         app.config["trusted_senders"] = set(trusted_list)
 
@@ -1845,11 +1866,11 @@ def create_app(
             email_id, filename, subject, sender, date_str, snippet, trashed_at, original_filename = row
 
             # Decode MIME headers if present
-            if subject and '=?' in subject:
+            if subject and "=?" in subject:
                 subject = decode_header(subject)
-            if sender and '=?' in sender:
+            if sender and "=?" in sender:
                 sender = decode_header(sender)
-            if snippet and '=?' in snippet:
+            if snippet and "=?" in snippet:
                 snippet = decode_header(snippet)
 
             # Clean up snippet
@@ -1870,14 +1891,16 @@ def create_app(
             else:
                 date_short = ""
 
-            results.append({
-                "email_id": email_id,
-                "subject": subject or "(No subject)",
-                "sender": sender,
-                "sender_name": sender_name,
-                "snippet": snippet,
-                "date_short": date_short,
-            })
+            results.append(
+                {
+                    "email_id": email_id,
+                    "subject": subject or "(No subject)",
+                    "sender": sender,
+                    "sender_name": sender_name,
+                    "snippet": snippet,
+                    "date_short": date_short,
+                }
+            )
 
         return render_template(
             "trash.html",
@@ -1953,6 +1976,7 @@ def create_app(
         try:
             # Read current config
             from ownmail.yaml_util import load_yaml, save_yaml
+
             config_data = load_yaml(config_path)
 
             # Add to trusted_senders
@@ -1996,6 +2020,7 @@ def create_app(
             try:
                 # Read current config
                 from ownmail.yaml_util import load_yaml, save_yaml
+
                 config_data = load_yaml(config_path)
 
                 # Remove from trusted_senders

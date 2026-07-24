@@ -115,6 +115,7 @@ def _update_or_create_config(
 
         # Parse the source snippet into a dict
         from io import StringIO
+
         parsed = load_yaml(StringIO(f"sources:\n{source_snippet}"))
         new_source = parsed["sources"][0]
 
@@ -126,9 +127,7 @@ def _update_or_create_config(
     else:
         # Create new config file — ask for archive root
         default_archive = Path.cwd() / "archive"
-        archive_input = input(
-            f"\nWhere to store emails [{default_archive}]: "
-        ).strip()
+        archive_input = input(f"\nWhere to store emails [{default_archive}]: ").strip()
         if archive_input:
             archive_path = Path(archive_input).resolve()
         else:
@@ -415,7 +414,6 @@ def cmd_download(
     except Exception:
         pass
 
-
     for source in sources:
         name = source["name"]
         source_type = source["type"]
@@ -645,11 +643,7 @@ def cmd_trash(archive: EmailArchive, empty: bool = False, expire: bool = False) 
     print("\nUse --empty to permanently delete all, or --expire to delete >30 days old")
 
 
-def cmd_reset_sync(
-    archive: EmailArchive,
-    config: dict,
-    source_name: str | None = None
-) -> None:
+def cmd_reset_sync(archive: EmailArchive, config: dict, source_name: str | None = None) -> None:
     """Reset sync state to force a full re-sync.
 
     Args:
@@ -726,7 +720,8 @@ Examples:
     )
 
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show detailed progress output",
     )
@@ -794,12 +789,20 @@ Examples:
         description="Rebuild the full-text search index from email files.",
     )
     rebuild_parser.add_argument("--file", type=Path, help="Index only this specific .eml file")
-    rebuild_parser.add_argument("--pattern", type=str, help="Index only files whose path matches this pattern (e.g., '2024/09/*')")
+    rebuild_parser.add_argument(
+        "--pattern", type=str, help="Index only files whose path matches this pattern (e.g., '2024/09/*')"
+    )
     rebuild_parser.add_argument("--force", "-f", action="store_true", help="Rebuild all, even if indexed")
     rebuild_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
-    rebuild_parser.add_argument("--index-only", action="store_true", help="Only rebuild the search index (skip date population)")
+    rebuild_parser.add_argument(
+        "--index-only", action="store_true", help="Only rebuild the search index (skip date population)"
+    )
     rebuild_parser.add_argument("--date-only", action="store_true", help="Only populate email dates (skip indexing)")
-    rebuild_parser.add_argument("--sidecars-only", action="store_true", help="Only reconcile label sidecar files with the DB (sidecar wins on divergence)")
+    rebuild_parser.add_argument(
+        "--sidecars-only",
+        action="store_true",
+        help="Only reconcile label sidecar files with the DB (sidecar wins on divergence)",
+    )
     _add_global_opts(rebuild_parser)
 
     # verify command
@@ -884,8 +887,12 @@ Examples:
         description="Recursively import .eml files (e.g. exports from Tuta, Thunderbird) into the archive.",
     )
     import_parser.add_argument("path", type=Path, help="File or directory of .eml files to import")
-    import_parser.add_argument("--account", type=str, help="Associate imported emails with this account (default: From header of each email)")
-    import_parser.add_argument("--move", action="store_true", help="Delete source files after a successful import (default: copy)")
+    import_parser.add_argument(
+        "--account", type=str, help="Associate imported emails with this account (default: From header of each email)"
+    )
+    import_parser.add_argument(
+        "--move", action="store_true", help="Delete source files after a successful import (default: copy)"
+    )
     import_parser.add_argument("--dry-run", action="store_true", help="Show what would be imported without doing it")
     _add_global_opts(import_parser)
 
@@ -895,7 +902,9 @@ Examples:
         help="Register untracked .eml files already in the archive dir",
         description="Detect .eml files present in the archive directory but not tracked in the database, and register them in place.",
     )
-    scan_parser.add_argument("--account", type=str, help="Associate registered emails with this account (default: From header of each email)")
+    scan_parser.add_argument(
+        "--account", type=str, help="Associate registered emails with this account (default: From header of each email)"
+    )
     scan_parser.add_argument("--dry-run", action="store_true", help="Show what would be registered without doing it")
     _add_global_opts(scan_parser)
 
@@ -934,7 +943,7 @@ Examples:
     try:
         if args.command == "setup":
             keychain = KeychainStorage()
-            cmd_setup(keychain, config, config_path, method=getattr(args, 'method', None))
+            cmd_setup(keychain, config, config_path, method=getattr(args, "method", None))
 
         elif args.command == "sources":
             if args.sources_cmd == "list":
@@ -953,6 +962,7 @@ Examples:
                 cmd_stats(archive, config, args.source)
             elif args.command == "rebuild":
                 from ownmail.commands import cmd_rebuild
+
                 only = None
                 if args.date_only:
                     only = "dates"
@@ -963,28 +973,35 @@ Examples:
                 cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug, only)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify
+
                 cmd_verify(archive, args.fix, args.verbose)
             elif args.command == "sync-check":
                 from ownmail.commands import cmd_sync_check
+
                 cmd_sync_check(archive, args.source, args.verbose)
             elif args.command == "reset-sync":
                 cmd_reset_sync(archive, config, args.source)
             elif args.command == "update-labels":
                 from ownmail.commands import cmd_update_labels
+
                 cmd_update_labels(archive, args.source)
             elif args.command == "list-unknown":
                 from ownmail.commands import cmd_list_unknown
+
                 cmd_list_unknown(archive, args.verbose)
             elif args.command == "trash":
                 cmd_trash(archive, args.empty, args.expire)
             elif args.command == "import":
                 from ownmail.commands import cmd_import
+
                 cmd_import(archive, args.path, args.account, args.move, args.dry_run)
             elif args.command == "scan":
                 from ownmail.commands import cmd_scan
+
                 cmd_scan(archive, args.account, args.dry_run)
             elif args.command == "serve":
                 from ownmail.web import run_server
+
                 # serve can use its own archive-dir or fall back to global
                 serve_archive_root = args.archive_dir if args.archive_dir else archive_root
                 serve_archive = EmailArchive(serve_archive_root, config)

@@ -1,7 +1,5 @@
 """Tests for EmailArchive class."""
 
-
-
 from ownmail import sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
@@ -607,7 +605,7 @@ class TestBackupMultipleEmails:
         mock_provider.get_current_sync_state.return_value = "12345"
         mock_provider.download_message.return_value = (
             b"From: test@example.com\nDate: Mon, 15 Jan 2024 10:00:00 +0000\n\nBody",
-            ["INBOX"]
+            ["INBOX"],
         )
 
         result = archive.backup(mock_provider)
@@ -653,7 +651,9 @@ class TestArchiveSearch:
         email_path.write_bytes(sample_eml_simple)
 
         rel_path = str(email_path.relative_to(temp_dir))
-        archive.db.mark_downloaded(_eid("test123"), "test123", rel_path, content_hash="abc", email_date="2024-01-15T00:00:00")
+        archive.db.mark_downloaded(
+            _eid("test123"), "test123", rel_path, content_hash="abc", email_date="2024-01-15T00:00:00"
+        )
         archive.db.index_email(
             email_id=_eid("test123"),
             subject="Test Email",
@@ -734,9 +734,7 @@ class TestBackupCancel:
         provider = MagicMock()
         provider.account = "test@gmail.com"
         provider.source_name = "test_source"
-        provider.get_new_message_ids.return_value = (
-            [f"msg{i}" for i in range(5)], "state-after"
-        )
+        provider.get_new_message_ids.return_value = ([f"msg{i}" for i in range(5)], "state-after")
 
         call_count = 0
 
@@ -746,6 +744,7 @@ class TestBackupCancel:
             # After 2nd download, simulate SIGINT
             if call_count == 2:
                 import os
+
                 os.kill(os.getpid(), signal.SIGINT)
             return (_raw_email_with_id(call_count), [])
 
@@ -770,9 +769,7 @@ class TestBackupCancel:
         provider.account = "test@gmail.com"
         provider.source_name = "test_source"
         provider.name = "imap"
-        provider.get_new_message_ids.return_value = (
-            [f"msg{i}" for i in range(5)], "new-sync-state"
-        )
+        provider.get_new_message_ids.return_value = ([f"msg{i}" for i in range(5)], "new-sync-state")
 
         call_count = 0
 
@@ -781,6 +778,7 @@ class TestBackupCancel:
             call_count += 1
             if call_count == 2:
                 import os
+
                 os.kill(os.getpid(), signal.SIGINT)
             return (_raw_email_with_id(call_count), [])
 
@@ -802,9 +800,7 @@ class TestBackupCancel:
         provider = MagicMock()
         provider.account = "test@gmail.com"
         provider.source_name = "test_source"
-        provider.get_new_message_ids.return_value = (
-            [f"msg{i}" for i in range(5)], None
-        )
+        provider.get_new_message_ids.return_value = ([f"msg{i}" for i in range(5)], None)
         provider.get_current_sync_state.return_value = None
 
         call_count = 0
@@ -814,6 +810,7 @@ class TestBackupCancel:
             call_count += 1
             if call_count == 3:
                 import os
+
                 os.kill(os.getpid(), signal.SIGINT)
             return (_raw_email_with_id(call_count), [])
 
@@ -973,7 +970,8 @@ class TestBackupContentDedup:
         # Pre-populate: same content already downloaded under different ID
         archive.db.mark_downloaded(
             _eid("INBOX:100", "test@gmail.com"),
-            "INBOX:100", "sources/test_source/2024/01/email.eml",
+            "INBOX:100",
+            "sources/test_source/2024/01/email.eml",
             content_hash=content_hash,
             account="test@gmail.com",
         )
@@ -1003,9 +1001,7 @@ class TestBackupContentDedup:
         provider = MagicMock()
         provider.account = "test@gmail.com"
         provider.source_name = "test_source"
-        provider.get_new_message_ids.return_value = (
-            ["msg0", "msg1", "msg2", "msg3"], None
-        )
+        provider.get_new_message_ids.return_value = (["msg0", "msg1", "msg2", "msg3"], None)
         provider.get_current_sync_state.return_value = None
         type(provider).download_batch_size = PropertyMock(return_value=2)
         provider.download_messages_batch.side_effect = [

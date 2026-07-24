@@ -86,6 +86,7 @@ class TestGmailTokenStorage:
         """Test saving Gmail OAuth token."""
         with patch("ownmail.keychain.keyring") as mock_keyring:
             from unittest.mock import MagicMock
+
             storage = KeychainStorage("test-service")
 
             # Create mock credentials
@@ -109,14 +110,16 @@ class TestGmailTokenStorage:
     def test_load_gmail_token_success(self):
         """Test loading Gmail OAuth token."""
         with patch("ownmail.keychain.keyring") as mock_keyring:
-            token_data = json.dumps({
-                "token": "access_token_123",
-                "refresh_token": "refresh_token_456",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "client_id_789",
-                "client_secret": "client_secret_abc",
-                "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
-            })
+            token_data = json.dumps(
+                {
+                    "token": "access_token_123",
+                    "refresh_token": "refresh_token_456",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "client_id": "client_id_789",
+                    "client_secret": "client_secret_abc",
+                    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+                }
+            )
             mock_keyring.get_password.return_value = token_data
 
             storage = KeychainStorage("test-service")
@@ -208,14 +211,16 @@ class TestLegacyCompatibility:
     def test_load_legacy_token(self):
         """Test loading legacy single-account OAuth token."""
         with patch("ownmail.keychain.keyring") as mock_keyring:
-            token_data = json.dumps({
-                "token": "legacy_token",
-                "refresh_token": "legacy_refresh",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "legacy_client_id",
-                "client_secret": "legacy_secret",
-                "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
-            })
+            token_data = json.dumps(
+                {
+                    "token": "legacy_token",
+                    "refresh_token": "legacy_refresh",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "client_id": "legacy_client_id",
+                    "client_secret": "legacy_secret",
+                    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+                }
+            )
             mock_keyring.get_password.return_value = token_data
 
             storage = KeychainStorage("test-service")

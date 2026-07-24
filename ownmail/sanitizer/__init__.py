@@ -147,9 +147,7 @@ class HtmlSanitizer:
             )
 
             # Start stderr drain thread
-            self._stderr_thread = threading.Thread(
-                target=self._drain_stderr, daemon=True
-            )
+            self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
             self._stderr_thread.start()
 
             # Wait for ready signal
@@ -205,9 +203,7 @@ class HtmlSanitizer:
                 while True:
                     elapsed = time.monotonic() - start
                     if elapsed >= self._timeout:
-                        logger.warning(
-                            "HTML sanitization timed out after %.1fs", self._timeout
-                        )
+                        logger.warning("HTML sanitization timed out after %.1fs", self._timeout)
                         self._restart()
                         return html_module.escape(html), True, False
 
@@ -226,9 +222,7 @@ class HtmlSanitizer:
 
                     if response.get("id") == req_id:
                         if response.get("error"):
-                            logger.warning(
-                                "DOMPurify error: %s", response["error"]
-                            )
+                            logger.warning("DOMPurify error: %s", response["error"])
                             return html_module.escape(html), True, False
                         result_html = response.get("html", html)
                         needs_padding = response.get("needsPadding", True)

@@ -36,6 +36,7 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
     def test_sanitize_without_node_returns_escaped(self):
         """Test sanitize() returns escaped HTML when not available."""
         import html as html_module
+
         sanitizer = HtmlSanitizer()
         html = "<script>alert(1)</script><p>Hello</p>"
         result, needs_padding, supports_dark = sanitizer.sanitize(html)
@@ -126,11 +127,13 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
 
         mock_process = MagicMock()
         mock_process.stdout = io.StringIO('{"ready": true}\n')
-        mock_process.stderr = io.StringIO('')
+        mock_process.stderr = io.StringIO("")
 
-        with patch.object(HtmlSanitizer, "is_node_available", return_value=True), \
-             patch.object(sanitizer, "_ensure_deps", return_value=True), \
-             patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process):
+        with (
+            patch.object(HtmlSanitizer, "is_node_available", return_value=True),
+            patch.object(sanitizer, "_ensure_deps", return_value=True),
+            patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process),
+        ):
             sanitizer.start()
 
         assert sanitizer.available is True
@@ -143,14 +146,16 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         sanitizer = HtmlSanitizer()
 
         mock_process = MagicMock()
-        mock_process.stdout = io.StringIO('')
-        mock_process.stderr = io.StringIO('')
+        mock_process.stdout = io.StringIO("")
+        mock_process.stderr = io.StringIO("")
         mock_process.terminate.return_value = None
         mock_process.wait.return_value = 0
 
-        with patch.object(HtmlSanitizer, "is_node_available", return_value=True), \
-             patch.object(sanitizer, "_ensure_deps", return_value=True), \
-             patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process):
+        with (
+            patch.object(HtmlSanitizer, "is_node_available", return_value=True),
+            patch.object(sanitizer, "_ensure_deps", return_value=True),
+            patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process),
+        ):
             sanitizer.start()
 
         assert sanitizer.available is False
@@ -159,8 +164,10 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         """Test start() when _ensure_deps fails."""
         sanitizer = HtmlSanitizer()
 
-        with patch.object(HtmlSanitizer, "is_node_available", return_value=True), \
-             patch.object(sanitizer, "_ensure_deps", return_value=False):
+        with (
+            patch.object(HtmlSanitizer, "is_node_available", return_value=True),
+            patch.object(sanitizer, "_ensure_deps", return_value=False),
+        ):
             sanitizer.start()
 
         assert sanitizer.available is False
@@ -173,12 +180,17 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         sanitizer = HtmlSanitizer()
         sanitizer._available = True
 
-        response = json.dumps({
-            "id": 1,
-            "html": "<p>Clean</p>",
-            "needsPadding": False,
-            "supportsDarkMode": True,
-        }) + "\n"
+        response = (
+            json.dumps(
+                {
+                    "id": 1,
+                    "html": "<p>Clean</p>",
+                    "needsPadding": False,
+                    "supportsDarkMode": True,
+                }
+            )
+            + "\n"
+        )
 
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
@@ -200,7 +212,7 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
 
         mock_process = MagicMock()
         mock_process.stdin = MagicMock()
-        mock_process.stdout = io.StringIO('')  # EOF = process died
+        mock_process.stdout = io.StringIO("")  # EOF = process died
 
         sanitizer._process = mock_process
 
@@ -290,8 +302,7 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         sanitizer = HtmlSanitizer()
         sanitizer._available = True
 
-        with patch.object(sanitizer, "_kill_process") as mock_kill, \
-             patch.object(sanitizer, "start") as mock_start:
+        with patch.object(sanitizer, "_kill_process") as mock_kill, patch.object(sanitizer, "start") as mock_start:
             sanitizer._restart()
 
         mock_kill.assert_called_once()
@@ -303,9 +314,11 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         sanitizer = HtmlSanitizer(verbose=True)
 
         mock_run = MagicMock(returncode=1, stderr="verbose error msg")
-        with patch("ownmail.sanitizer.subprocess.run", return_value=mock_run), \
-             patch("ownmail.sanitizer.os.path.isdir", return_value=False), \
-             patch("shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None):
+        with (
+            patch("ownmail.sanitizer.subprocess.run", return_value=mock_run),
+            patch("ownmail.sanitizer.os.path.isdir", return_value=False),
+            patch("shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
+        ):
             result = sanitizer._ensure_deps()
 
         assert result is False
@@ -393,7 +406,9 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 
     def test_strips_meta_refresh(self):
         """Test that <meta http-equiv=refresh> is removed."""
-        html = '<html><head><meta http-equiv="refresh" content="0;url=https://evil.com"></head><body>Content</body></html>'
+        html = (
+            '<html><head><meta http-equiv="refresh" content="0;url=https://evil.com"></head><body>Content</body></html>'
+        )
         result, *_ = self.sanitizer.sanitize(html)
         assert "http-equiv" not in result
         assert "Content" in result
@@ -491,7 +506,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 
     def test_scopes_css_selectors(self):
         """Test that CSS selectors are scoped under #ownmail-email-content."""
-        html = '<style>.header { color: red; } p { margin: 0; }</style><p>Text</p>'
+        html = "<style>.header { color: red; } p { margin: 0; }</style><p>Text</p>"
         result, *_ = self.sanitizer.sanitize(html)
         assert "#ownmail-email-content .header" in result
         assert "#ownmail-email-content p" in result
@@ -499,7 +514,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 
     def test_scopes_body_selector_to_email_content(self):
         """Test that body {} becomes #ownmail-email-content {}."""
-        html = '<html><head><style>body { font-size: 14px; }</style></head><body><p>Hi</p></body></html>'
+        html = "<html><head><style>body { font-size: 14px; }</style></head><body><p>Hi</p></body></html>"
         result, *_ = self.sanitizer.sanitize(html)
         assert "#ownmail-email-content" in result
         assert "font-size" in result
@@ -521,14 +536,14 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 
     def test_preserves_dark_mode_media(self):
         """Test that @media (prefers-color-scheme: dark) blocks are preserved."""
-        html = '<style>p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }</style><p>Hi</p>'
+        html = "<style>p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }</style><p>Hi</p>"
         result, *_ = self.sanitizer.sanitize(html)
         assert "color: #333" in result or "color:#333" in result
         assert "prefers-color-scheme" in result
 
     def test_dark_mode_detected_from_css(self):
         """Test emails with dark mode CSS are detected as supporting dark mode."""
-        html = '<style>p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }</style><p>Hi</p>'
+        html = "<style>p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }</style><p>Hi</p>"
         _, _, supports_dark = self.sanitizer.sanitize(html)
         assert supports_dark is True
 
@@ -546,7 +561,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 
     def test_light_email_no_dark_support(self):
         """Test plain emails without dark mode are not flagged as dark-capable."""
-        html = '<p>Hello world</p>'
+        html = "<p>Hello world</p>"
         _, _, supports_dark = self.sanitizer.sanitize(html)
         assert supports_dark is False
 
@@ -619,6 +634,6 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 
     def test_appends_sans_serif_fallback_style_block(self):
         """Test that font-family in <style> block gets sans-serif fallback."""
-        html = '<style>td { font-family: Roboto; }</style><td>Hi</td>'
+        html = "<style>td { font-family: Roboto; }</style><td>Hi</td>"
         result, *_ = self.sanitizer.sanitize(html)
         assert "sans-serif" in result

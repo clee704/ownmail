@@ -167,9 +167,7 @@ class TestExtractSnippet:
 
     def test_plain_text_email(self):
         """Extract snippet from plain text email."""
-        msg = email.message_from_string(
-            "Content-Type: text/plain\n\nHello, this is a test email body."
-        )
+        msg = email.message_from_string("Content-Type: text/plain\n\nHello, this is a test email body.")
         snippet = _extract_snippet(msg)
         assert "Hello" in snippet
         assert "test email" in snippet
@@ -177,9 +175,7 @@ class TestExtractSnippet:
     def test_long_text_truncation(self):
         """Long text should be truncated."""
         long_text = "A" * 200
-        msg = email.message_from_string(
-            f"Content-Type: text/plain\n\n{long_text}"
-        )
+        msg = email.message_from_string(f"Content-Type: text/plain\n\n{long_text}")
         snippet = _extract_snippet(msg, max_len=50)
         assert len(snippet) <= 54  # 50 + "..."
         assert snippet.endswith("...")
@@ -358,6 +354,7 @@ class TestDecodeTextBody:
     def test_utf8_content(self):
         """UTF-8 content should decode correctly."""
         from ownmail.web import _decode_text_body
+
         payload = b"Hello World"
         result = _decode_text_body(payload, "utf-8")
         assert result == "Hello World"
@@ -365,6 +362,7 @@ class TestDecodeTextBody:
     def test_korean_content_euc_kr(self):
         """Korean EUC-KR content should decode correctly."""
         from ownmail.web import _decode_text_body
+
         payload = "안녕하세요".encode("euc-kr")
         result = _decode_text_body(payload, "euc-kr")
         assert "안녕하세요" in result
@@ -372,6 +370,7 @@ class TestDecodeTextBody:
     def test_no_charset_auto_detect(self):
         """Content without charset should auto-detect."""
         from ownmail.web import _decode_text_body
+
         payload = b"Hello World"
         result = _decode_text_body(payload, None)
         assert "Hello" in result
@@ -379,6 +378,7 @@ class TestDecodeTextBody:
     def test_invalid_charset_fallback(self):
         """Invalid charset should fallback to auto-detection."""
         from ownmail.web import _decode_text_body
+
         payload = b"Hello World"
         result = _decode_text_body(payload, "invalid-charset-xyz")
         assert "Hello" in result
@@ -390,6 +390,7 @@ class TestDecodeHtmlBody:
     def test_html_with_meta_charset(self):
         """HTML with meta charset should use it."""
         from ownmail.web import _decode_html_body
+
         html = b'<html><head><meta charset="utf-8"></head><body>Hello</body></html>'
         result = _decode_html_body(html, None)
         assert "Hello" in result
@@ -397,6 +398,7 @@ class TestDecodeHtmlBody:
     def test_html_with_header_charset(self):
         """HTML with header charset should use it."""
         from ownmail.web import _decode_html_body
+
         html = "Hello 안녕".encode()
         result = _decode_html_body(html, "utf-8")
         assert "Hello" in result
@@ -404,6 +406,7 @@ class TestDecodeHtmlBody:
     def test_html_no_charset_fallback(self):
         """HTML without charset should fallback."""
         from ownmail.web import _decode_html_body
+
         html = b"<html><body>Hello World</body></html>"
         result = _decode_html_body(html, None)
         assert "Hello" in result
@@ -415,21 +418,25 @@ class TestValidateDecodedText:
     def test_valid_ascii_text(self):
         """Valid ASCII text should pass."""
         from ownmail.web import _validate_decoded_text
+
         assert _validate_decoded_text("Hello World") is True
 
     def test_valid_korean_text(self):
         """Valid Korean text should pass."""
         from ownmail.web import _validate_decoded_text
+
         assert _validate_decoded_text("안녕하세요") is True
 
     def test_replacement_characters_fail(self):
         """Text with replacement characters should fail."""
         from ownmail.web import _validate_decoded_text
+
         assert _validate_decoded_text("Hello\ufffd\ufffd") is False
 
     def test_empty_text(self):
         """Empty text should fail."""
         from ownmail.web import _validate_decoded_text
+
         assert _validate_decoded_text("") is False
 
 
@@ -439,12 +446,14 @@ class TestTryDecode:
     def test_valid_decode(self):
         """Valid decoding should return text."""
         from ownmail.web import _try_decode
+
         result = _try_decode(b"Hello", "utf-8")
         assert result == "Hello"
 
     def test_invalid_decode(self):
         """Invalid decoding should return None."""
         from ownmail.web import _try_decode
+
         # EUC-KR bytes that won't decode as UTF-8
         korean_bytes = "안녕".encode("euc-kr")
         result = _try_decode(korean_bytes, "utf-8")
@@ -1064,6 +1073,7 @@ class TestToLocalDatetime:
         assert result.tzinfo is not None
         # The underlying instant should be the same
         from datetime import timezone
+
         assert result.astimezone(timezone.utc).strftime("%H:%M") == "10:30"
 
     def test_converts_different_timezone(self):
@@ -1071,11 +1081,13 @@ class TestToLocalDatetime:
         result = _to_local_datetime("Mon, 15 Jan 2024 19:30:00 +0900")
         assert result is not None
         from datetime import timezone
+
         assert result.astimezone(timezone.utc).strftime("%H:%M") == "10:30"
 
     def test_converts_to_specified_timezone(self):
         """Date is converted to the specified timezone, not local."""
         from zoneinfo import ZoneInfo
+
         tokyo = ZoneInfo("Asia/Tokyo")  # UTC+9
         result = _to_local_datetime("Mon, 15 Jan 2024 10:30:00 +0000", tokyo)
         assert result is not None
@@ -1098,6 +1110,7 @@ class TestFormatDateShort:
     def test_default_format(self):
         """Default format is '%b %d, %Y'."""
         from datetime import datetime, timezone
+
         dt = datetime(2026, 3, 15, tzinfo=timezone.utc)
         result = _format_date_short(dt)
         assert result == "Mar 15, 2026"
@@ -1105,6 +1118,7 @@ class TestFormatDateShort:
     def test_different_year_same_format(self):
         """Dates in other years use same default format."""
         from datetime import datetime, timezone
+
         dt = datetime(2020, 6, 5, tzinfo=timezone.utc)
         result = _format_date_short(dt)
         assert result == "Jun 05, 2020"
@@ -1112,6 +1126,7 @@ class TestFormatDateShort:
     def test_custom_format(self):
         """Custom format string is used when provided."""
         from datetime import datetime, timezone
+
         dt = datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc)
         result = _format_date_short(dt, "%Y-%m-%d")
         assert result == "2024-01-15"
@@ -1123,6 +1138,7 @@ class TestFormatDateLong:
     def test_formats_without_timezone(self):
         """Default format does not include timezone."""
         from datetime import datetime, timezone
+
         dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         result = _format_date_long(dt)
         assert result == "Mon, 15 Jan 2024 10:30:00"
@@ -1130,6 +1146,7 @@ class TestFormatDateLong:
     def test_custom_format(self):
         """Custom format string is used when provided."""
         from datetime import datetime, timezone
+
         dt = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         result = _format_date_long(dt, "%Y-%m-%d %H:%M")
         assert result == "2024-01-15 10:30"
@@ -1140,6 +1157,7 @@ class TestResolveTimezone:
 
     def test_valid_timezone(self):
         from zoneinfo import ZoneInfo
+
         result = _resolve_timezone("America/New_York")
         assert result == ZoneInfo("America/New_York")
 
@@ -1176,6 +1194,7 @@ class TestTimezoneSettings:
     def test_create_app_with_timezone(self, tmp_path):
         """Timezone is set when provided."""
         from zoneinfo import ZoneInfo
+
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         app = create_app(mock_archive, display_timezone="Asia/Tokyo")
@@ -1214,6 +1233,7 @@ class TestTimezoneSettings:
     def test_search_passes_timezone_to_archive(self, tmp_path):
         """Search passes configured timezone to archive.search."""
         from zoneinfo import ZoneInfo
+
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
@@ -1233,36 +1253,39 @@ class TestCleanSnippetLxml:
     def test_strips_truncated_tag_at_end(self):
         """Truncated HTML tag at end of string is removed."""
         from ownmail.web import _clean_snippet_text
+
         text = 'Hello world <meta name="view'
         result = _clean_snippet_text(text)
-        assert '<' not in result
-        assert 'Hello world' in result
+        assert "<" not in result
+        assert "Hello world" in result
 
     def test_strips_complete_and_partial_tags(self):
         """Both complete and partial HTML tags are stripped."""
         from ownmail.web import _clean_snippet_text
+
         text = '<p>Hello</p> world <div class="foo'
         result = _clean_snippet_text(text)
-        assert '<' not in result
-        assert 'Hello' in result
-        assert 'world' in result
+        assert "<" not in result
+        assert "Hello" in result
+        assert "world" in result
 
     def test_strips_style_and_script_blocks(self):
         """Style and script blocks are fully removed by lxml."""
         from ownmail.web import _clean_snippet_text
-        text = '<style>.foo{color:red}</style>Hello<script>alert(1)</script> world'
+
+        text = "<style>.foo{color:red}</style>Hello<script>alert(1)</script> world"
         result = _clean_snippet_text(text)
-        assert 'color' not in result
-        assert 'alert' not in result
-        assert 'Hello' in result
-        assert 'world' in result
+        assert "color" not in result
+        assert "alert" not in result
+        assert "Hello" in result
+        assert "world" in result
 
     def test_plain_text_without_html_unchanged(self):
         """Plain text without HTML tags passes through unchanged."""
         from ownmail.web import _clean_snippet_text
-        text = 'Just plain text here'
-        assert _clean_snippet_text(text) == 'Just plain text here'
 
+        text = "Just plain text here"
+        assert _clean_snippet_text(text) == "Just plain text here"
 
 
 class TestTrashRoutes:
@@ -1300,9 +1323,16 @@ class TestTrashRoutes:
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 1
         mock_archive.db.get_trashed_emails.return_value = [
-            ("abc123", "trash/abc123.eml", "Test Subject", "sender@test.com",
-             "2024-01-15T10:00:00", "This is a snippet...", "2024-01-15T10:00:00",
-             "sources/gmail/2024/01/test.eml")
+            (
+                "abc123",
+                "trash/abc123.eml",
+                "Test Subject",
+                "sender@test.com",
+                "2024-01-15T10:00:00",
+                "This is a snippet...",
+                "2024-01-15T10:00:00",
+                "sources/gmail/2024/01/test.eml",
+            )
         ]
         mock_archive.auto_expire_trash.return_value = 0
 

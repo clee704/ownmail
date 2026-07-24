@@ -24,18 +24,18 @@ from ownmail.parser import EmailParser
 from ownmail.web import _extract_attachment_filename, decode_header
 
 # Pattern for MIME encoded-word that wasn't decoded
-MIME_ENCODED_RE = re.compile(r'=\?[^?]+\?[BbQq]\?[^?]+\?=')
+MIME_ENCODED_RE = re.compile(r"=\?[^?]+\?[BbQq]\?[^?]+\?=")
 
 # Pattern for potential mojibake (high latin-1 sequences)
 # These are common EUC-KR byte patterns when misread as latin-1
 MOJIBAKE_PATTERNS = [
-    re.compile(r'[\xc0-\xff][\x80-\xff]{2,}'),  # Multiple high bytes in a row
+    re.compile(r"[\xc0-\xff][\x80-\xff]{2,}"),  # Multiple high bytes in a row
 ]
 
 
 def has_replacement_chars(text: str) -> bool:
     """Check if text contains Unicode replacement characters."""
-    return '\ufffd' in text if text else False
+    return "\ufffd" in text if text else False
 
 
 def has_mime_encoded(text: str) -> bool:
@@ -51,14 +51,18 @@ def has_mojibake(text: str) -> bool:
     # Check if text can be encoded to latin-1 and has high bytes
     # (indicator of potential mojibake)
     try:
-        encoded = text.encode('latin-1')
+        encoded = text.encode("latin-1")
         high_bytes = sum(1 for b in encoded if b >= 0x80)
         # If more than 30% high bytes and no CJK characters, likely mojibake
         if high_bytes > len(encoded) * 0.3:
             # But check if it has actual CJK characters (then it's fine)
-            cjk_chars = sum(1 for c in text if '\uAC00' <= c <= '\uD7AF'  # Hangul
-                           or '\u4E00' <= c <= '\u9FFF'  # CJK
-                           or '\u3040' <= c <= '\u30FF')  # Japanese
+            cjk_chars = sum(
+                1
+                for c in text
+                if "\uac00" <= c <= "\ud7af"  # Hangul
+                or "\u4e00" <= c <= "\u9fff"  # CJK
+                or "\u3040" <= c <= "\u30ff"
+            )  # Japanese
             if cjk_chars == 0:
                 return True
     except UnicodeEncodeError:
@@ -79,84 +83,85 @@ def check_email(filepath: Path, verbose: bool = False) -> list[dict]:
         parsed = EmailParser.parse_file(filepath=filepath)
 
         # Check subject - apply same decode_header as web interface
-        subject = parsed.get('subject', '')
-        if subject and '=?' in subject:
+        subject = parsed.get("subject", "")
+        if subject and "=?" in subject:
             subject = decode_header(subject)
 
         if has_replacement_chars(subject):
-            issues.append({'field': 'subject', 'type': 'replacement_char', 'value': subject[:100]})
+            issues.append({"field": "subject", "type": "replacement_char", "value": subject[:100]})
         if has_mime_encoded(subject):
-            issues.append({'field': 'subject', 'type': 'mime_encoded', 'value': subject[:100]})
+            issues.append({"field": "subject", "type": "mime_encoded", "value": subject[:100]})
         if has_mojibake(subject):
-            issues.append({'field': 'subject', 'type': 'mojibake', 'value': subject[:100]})
+            issues.append({"field": "subject", "type": "mojibake", "value": subject[:100]})
 
         # Check sender - apply same decode_header as web interface
-        sender = parsed.get('sender', '')
-        if sender and '=?' in sender:
+        sender = parsed.get("sender", "")
+        if sender and "=?" in sender:
             sender = decode_header(sender)
 
         if has_replacement_chars(sender):
-            issues.append({'field': 'sender', 'type': 'replacement_char', 'value': sender[:100]})
+            issues.append({"field": "sender", "type": "replacement_char", "value": sender[:100]})
         if has_mime_encoded(sender):
-            issues.append({'field': 'sender', 'type': 'mime_encoded', 'value': sender[:100]})
+            issues.append({"field": "sender", "type": "mime_encoded", "value": sender[:100]})
         if has_mojibake(sender):
-            issues.append({'field': 'sender', 'type': 'mojibake', 'value': sender[:100]})
+            issues.append({"field": "sender", "type": "mojibake", "value": sender[:100]})
 
         # Check attachment filenames - use our proper extraction function
         import email
         from email.policy import default as email_policy
 
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             msg = email.message_from_binary_file(f, policy=email_policy)
 
         for part in msg.walk():
-            content_disposition = str(part.get('Content-Disposition', ''))
-            if 'attachment' in content_disposition:
+            content_disposition = str(part.get("Content-Disposition", ""))
+            if "attachment" in content_disposition:
                 # Use our proper extraction function (same as web interface)
                 filename = _extract_attachment_filename(part)
 
                 if has_replacement_chars(filename):
-                    issues.append({'field': 'attachment', 'type': 'replacement_char', 'value': filename[:100]})
+                    issues.append({"field": "attachment", "type": "replacement_char", "value": filename[:100]})
                 if has_mime_encoded(filename):
-                    issues.append({'field': 'attachment', 'type': 'mime_encoded', 'value': filename[:100]})
+                    issues.append({"field": "attachment", "type": "mime_encoded", "value": filename[:100]})
                 if has_mojibake(filename):
-                    issues.append({'field': 'attachment', 'type': 'mojibake', 'value': filename[:100]})
+                    issues.append({"field": "attachment", "type": "mojibake", "value": filename[:100]})
 
     except Exception as e:
         if verbose:
-            issues.append({'field': 'parse_error', 'type': 'error', 'value': str(e)[:100]})
+            issues.append({"field": "parse_error", "type": "error", "value": str(e)[:100]})
 
     return issues
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Audit email archive for encoding issues')
-    parser.add_argument('--limit', type=int, help='Limit number of emails to check')
-    parser.add_argument('--verbose', '-v', action='store_true', help='Show progress')
-    parser.add_argument('--config', type=str, help='Path to config file')
+    parser = argparse.ArgumentParser(description="Audit email archive for encoding issues")
+    parser.add_argument("--limit", type=int, help="Limit number of emails to check")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show progress")
+    parser.add_argument("--config", type=str, help="Path to config file")
     args = parser.parse_args()
 
     # Load config
-    config_path = Path(args.config) if args.config else Path('config.yaml')
+    config_path = Path(args.config) if args.config else Path("config.yaml")
     if config_path.exists():
         config = load_config(config_path)
-        archive_root = Path(config.get('archive_root', '.'))
+        archive_root = Path(config.get("archive_root", "."))
     else:
         print(f"Config not found at {config_path}, using current directory")
-        archive_root = Path('.')
+        archive_root = Path(".")
 
     # Open archive
     archive = EmailArchive(archive_root)
 
     # Get all emails from database
     import sqlite3
+
     conn = sqlite3.connect(archive.db.db_path)
-    cursor = conn.execute('SELECT message_id, filename FROM emails ORDER BY email_date DESC')
+    cursor = conn.execute("SELECT message_id, filename FROM emails ORDER BY email_date DESC")
     emails = cursor.fetchall()
     conn.close()
 
     if args.limit:
-        emails = emails[:args.limit]
+        emails = emails[: args.limit]
 
     print(f"Auditing {len(emails)} emails for encoding issues...\n")
 
@@ -175,11 +180,13 @@ def main():
         issues = check_email(filepath, verbose=args.verbose)
 
         if issues:
-            all_issues.append({
-                'message_id': message_id,
-                'filename': filename,
-                'issues': issues,
-            })
+            all_issues.append(
+                {
+                    "message_id": message_id,
+                    "filename": filename,
+                    "issues": issues,
+                }
+            )
             if args.verbose:
                 print(f"  ISSUE: {filename}")
                 for issue in issues:
@@ -190,9 +197,9 @@ def main():
             print(f"  Checked {checked}/{len(emails)}...")
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("AUDIT COMPLETE")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Emails checked: {checked}")
     print(f"Emails with issues: {len(all_issues)}")
 
@@ -200,7 +207,7 @@ def main():
         # Group by issue type
         by_type = {}
         for item in all_issues:
-            for issue in item['issues']:
+            for issue in item["issues"]:
                 key = f"{issue['field']}:{issue['type']}"
                 if key not in by_type:
                     by_type[key] = []
@@ -210,14 +217,14 @@ def main():
         for key, items in sorted(by_type.items()):
             print(f"  {key}: {len(items)}")
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("SAMPLE ISSUES (first 10)")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         for item in all_issues[:10]:
             print(f"\nMessage ID: {item['message_id']}")
             print(f"File: {item['filename']}")
-            for issue in item['issues']:
+            for issue in item["issues"]:
                 print(f"  [{issue['field']}] {issue['type']}: {issue['value']}")
 
         if len(all_issues) > 10:
@@ -230,5 +237,5 @@ def main():
         sys.exit(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

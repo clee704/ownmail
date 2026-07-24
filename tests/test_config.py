@@ -209,10 +209,18 @@ class TestValidateConfig:
         """Test error on duplicate source names."""
         config = {
             "sources": [
-                {"name": "same_name", "type": "gmail_api", "account": "a@test.com",
-                 "auth": {"secret_ref": "keychain:a"}},
-                {"name": "same_name", "type": "gmail_api", "account": "b@test.com",
-                 "auth": {"secret_ref": "keychain:b"}},
+                {
+                    "name": "same_name",
+                    "type": "gmail_api",
+                    "account": "a@test.com",
+                    "auth": {"secret_ref": "keychain:a"},
+                },
+                {
+                    "name": "same_name",
+                    "type": "gmail_api",
+                    "account": "b@test.com",
+                    "auth": {"secret_ref": "keychain:b"},
+                },
             ]
         }
         errors = validate_config(config)
@@ -220,12 +228,7 @@ class TestValidateConfig:
 
     def test_missing_type_field(self):
         """Test error when source missing type."""
-        config = {
-            "sources": [
-                {"name": "test", "account": "test@test.com",
-                 "auth": {"secret_ref": "keychain:test"}}
-            ]
-        }
+        config = {"sources": [{"name": "test", "account": "test@test.com", "auth": {"secret_ref": "keychain:test"}}]}
         errors = validate_config(config)
         assert any("missing 'type'" in e for e in errors)
 
@@ -233,8 +236,7 @@ class TestValidateConfig:
         """Test error on unknown source type."""
         config = {
             "sources": [
-                {"name": "test", "type": "unknown", "account": "test@test.com",
-                 "auth": {"secret_ref": "keychain:test"}}
+                {"name": "test", "type": "unknown", "account": "test@test.com", "auth": {"secret_ref": "keychain:test"}}
             ]
         }
         errors = validate_config(config)
@@ -242,22 +244,13 @@ class TestValidateConfig:
 
     def test_missing_account_field(self):
         """Test error when source missing account."""
-        config = {
-            "sources": [
-                {"name": "test", "type": "gmail_api",
-                 "auth": {"secret_ref": "keychain:test"}}
-            ]
-        }
+        config = {"sources": [{"name": "test", "type": "gmail_api", "auth": {"secret_ref": "keychain:test"}}]}
         errors = validate_config(config)
         assert any("missing 'account'" in e for e in errors)
 
     def test_missing_auth_secret_ref(self):
         """Test error when source missing auth.secret_ref."""
-        config = {
-            "sources": [
-                {"name": "test", "type": "gmail_api", "account": "test@test.com"}
-            ]
-        }
+        config = {"sources": [{"name": "test", "type": "gmail_api", "account": "test@test.com"}]}
         errors = validate_config(config)
         assert any("missing 'auth.secret_ref'" in e for e in errors)
 
@@ -265,8 +258,12 @@ class TestValidateConfig:
         """Test error on invalid secret_ref format."""
         config = {
             "sources": [
-                {"name": "test", "type": "gmail_api", "account": "test@test.com",
-                 "auth": {"secret_ref": "invalid-no-colon"}}
+                {
+                    "name": "test",
+                    "type": "gmail_api",
+                    "account": "test@test.com",
+                    "auth": {"secret_ref": "invalid-no-colon"},
+                }
             ]
         }
         errors = validate_config(config)
@@ -276,8 +273,7 @@ class TestValidateConfig:
         """Test error when IMAP source missing host."""
         config = {
             "sources": [
-                {"name": "test", "type": "imap", "account": "test@test.com",
-                 "auth": {"secret_ref": "keychain:test"}}
+                {"name": "test", "type": "imap", "account": "test@test.com", "auth": {"secret_ref": "keychain:test"}}
             ]
         }
         errors = validate_config(config)
@@ -287,9 +283,13 @@ class TestValidateConfig:
         """Test that valid IMAP config returns no errors."""
         config = {
             "sources": [
-                {"name": "work_imap", "type": "imap", "account": "test@company.com",
-                 "host": "imap.company.com",
-                 "auth": {"secret_ref": "keychain:imap-password/test@company.com"}}
+                {
+                    "name": "work_imap",
+                    "type": "imap",
+                    "account": "test@company.com",
+                    "host": "imap.company.com",
+                    "auth": {"secret_ref": "keychain:imap-password/test@company.com"},
+                }
             ]
         }
         errors = validate_config(config)

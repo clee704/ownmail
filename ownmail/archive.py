@@ -293,10 +293,10 @@ class EmailArchive:
         # Check if provider supports batch downloads
         # Use download_batch_size property (int) as the signal — avoids
         # false positives from MagicMock which creates attributes on access.
-        batch_size = getattr(provider, 'download_batch_size', None)
+        batch_size = getattr(provider, "download_batch_size", None)
         if not isinstance(batch_size, int) or batch_size < 1:
             batch_size = 1
-        has_batch = batch_size > 1 and hasattr(provider, 'download_messages_batch')
+        has_batch = batch_size > 1 and hasattr(provider, "download_messages_batch")
 
         # Track failed message IDs for reporting
         failed_ids: list[str] = []
@@ -305,11 +305,15 @@ class EmailArchive:
             i = 0
             while i < len(new_ids) and not interrupted:
                 # Get batch of IDs to download
-                batch_ids = new_ids[i:i + batch_size]
+                batch_ids = new_ids[i : i + batch_size]
 
                 # Show progress
                 if success_count > 0 and last_rate > 0:
-                    print(f"\r\033[K  [{i + 1}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | downloading batch...", end="", flush=True)
+                    print(
+                        f"\r\033[K  [{i + 1}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | downloading batch...",
+                        end="",
+                        flush=True,
+                    )
                 else:
                     print(f"\r\033[K  [{i + 1}/{len(new_ids)}] downloading...", end="", flush=True)
 
@@ -349,7 +353,11 @@ class EmailArchive:
                         error_msg = result[2] if result else "Unknown error"
                         # Treat 404 (message deleted/trashed) as a soft skip
                         if "404" in str(error_msg) and "not found" in str(error_msg).lower():
-                            print(f"\r\033[K  [{current_idx}/{len(new_ids)}] skipped {msg_id} (deleted from server)", end="", flush=True)
+                            print(
+                                f"\r\033[K  [{current_idx}/{len(new_ids)}] skipped {msg_id} (deleted from server)",
+                                end="",
+                                flush=True,
+                            )
                             continue
                         print(f"\n  Error downloading {msg_id}: {error_msg}")
                         if msg_id not in failed_ids:
@@ -368,13 +376,15 @@ class EmailArchive:
                         if success_count > 0:
                             elapsed = time.time() - start_time
                             last_rate = success_count / elapsed if elapsed > 0 else 0
-                        print(f"\r\033[K  [{i_skipped}/{len(new_ids)}] {last_rate:.1f}/s | skipped (already downloaded)", end="", flush=True)
+                        print(
+                            f"\r\033[K  [{i_skipped}/{len(new_ids)}] {last_rate:.1f}/s | skipped (already downloaded)",
+                            end="",
+                            flush=True,
+                        )
                         continue
 
                     # Save to file
-                    filepath, email_date = self._save_email(
-                        raw_data, msg_id, account, emails_dir
-                    )
+                    filepath, email_date = self._save_email(raw_data, msg_id, account, emails_dir)
 
                     if filepath:
                         size_bytes = filepath.stat().st_size
@@ -395,20 +405,18 @@ class EmailArchive:
                         )
 
                         # Index the email (updates the row with parsed metadata + FTS)
-                        self._index_email(email_id, filepath, raw_data,
-                                          skip_delete=True)
+                        self._index_email(email_id, filepath, raw_data, skip_delete=True)
 
                         # Store labels in email_labels table
                         if labels:
                             rowid_row = self._batch_conn.execute(
-                                "SELECT rowid, email_date FROM emails WHERE email_id = ?",
-                                (email_id,)
+                                "SELECT rowid, email_date FROM emails WHERE email_id = ?", (email_id,)
                             ).fetchone()
                             if rowid_row:
                                 for label in labels:
                                     self._batch_conn.execute(
                                         "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                                        (rowid_row[0], label, rowid_row[1])
+                                        (rowid_row[0], label, rowid_row[1]),
                                     )
 
                         # Sidecar file is the source of truth for labels/tags
@@ -418,8 +426,7 @@ class EmailArchive:
 
                         # Set indexed_hash to mark as indexed
                         self._batch_conn.execute(
-                            "UPDATE emails SET indexed_hash = ? WHERE email_id = ?",
-                            (content_hash, email_id)
+                            "UPDATE emails SET indexed_hash = ? WHERE email_id = ?", (content_hash, email_id)
                         )
 
                         success_count += 1
@@ -437,7 +444,11 @@ class EmailArchive:
                         eta = remaining / last_rate if last_rate > 0 else 0
                         last_eta_str = self._format_eta(eta, current_idx)
 
-                        print(f"\r\033[K  [{current_idx}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | {size_str:>7}", end="", flush=True)
+                        print(
+                            f"\r\033[K  [{current_idx}/{len(new_ids)}] {last_rate:.1f}/s | ETA {last_eta_str:>5} | {size_str:>7}",
+                            end="",
+                            flush=True,
+                        )
                     else:
                         error_count += 1
 
@@ -494,10 +505,13 @@ class EmailArchive:
 
     @staticmethod
     def _is_already_tracked(conn: sqlite3.Connection, provider_id: str, account: str) -> bool:
-        return conn.execute(
-            "SELECT 1 FROM emails WHERE provider_id = ? AND account = ?",
-            (provider_id, account),
-        ).fetchone() is not None
+        return (
+            conn.execute(
+                "SELECT 1 FROM emails WHERE provider_id = ? AND account = ?",
+                (provider_id, account),
+            ).fetchone()
+            is not None
+        )
 
     def _register_and_index(
         self,
@@ -790,8 +804,7 @@ class EmailArchive:
         """
         tracked = self.db.get_tracked_filenames()
         files = [
-            f for f in sorted(self.archive_dir.rglob("*.eml"))
-            if str(f.relative_to(self.archive_dir)) not in tracked
+            f for f in sorted(self.archive_dir.rglob("*.eml")) if str(f.relative_to(self.archive_dir)) not in tracked
         ]
 
         if not files:
@@ -930,7 +943,9 @@ class EmailArchive:
     # Search
     # -------------------------------------------------------------------------
 
-    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance", tz=None) -> list:
+    def search(
+        self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance", tz=None
+    ) -> list:
         """Search emails.
 
         Args:
@@ -966,8 +981,8 @@ class EmailArchive:
         if iteration < 3:
             return "..."
         elif eta_seconds > 3600:
-            return f"{eta_seconds/3600:.1f}h"
+            return f"{eta_seconds / 3600:.1f}h"
         elif eta_seconds > 60:
-            return f"{eta_seconds/60:.0f}m"
+            return f"{eta_seconds / 60:.0f}m"
         else:
             return f"{eta_seconds:.0f}s"
