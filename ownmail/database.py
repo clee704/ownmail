@@ -5,7 +5,6 @@ import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from ownmail.query import parse_query
 
@@ -291,7 +290,7 @@ class ArchiveDatabase:
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def _extract_email(sender_str: str) -> Optional[str]:
+    def _extract_email(sender_str: str) -> str | None:
         """Extract email from 'Name <email>' or just 'email'."""
         if not sender_str:
             return None
@@ -305,7 +304,7 @@ class ArchiveDatabase:
         return None
 
     @staticmethod
-    def _normalize_recipients(recipients_str: str) -> Optional[str]:
+    def _normalize_recipients(recipients_str: str) -> str | None:
         """Convert 'a@b.com, Name <c@d.com>' to ',a@b.com,c@d.com,' for exact matching."""
         if not recipients_str:
             return None
@@ -332,7 +331,7 @@ class ArchiveDatabase:
     # Sync State (per-account)
     # -------------------------------------------------------------------------
 
-    def get_sync_state(self, account: str, key: str) -> Optional[str]:
+    def get_sync_state(self, account: str, key: str) -> str | None:
         """Get sync state value for an account.
 
         Args:
@@ -392,7 +391,7 @@ class ArchiveDatabase:
             conn.commit()
 
     # Legacy methods for backward compatibility
-    def get_history_id(self, account: str = None) -> Optional[str]:
+    def get_history_id(self, account: str = None) -> str | None:
         """Get Gmail history ID for an account."""
         if account:
             return self.get_sync_state(account, "history_id")
@@ -458,7 +457,7 @@ class ArchiveDatabase:
                 ).fetchall()
             return {row[0] for row in results}
 
-    def get_tracked_filenames(self, account: Optional[str] = None) -> set:
+    def get_tracked_filenames(self, account: str | None = None) -> set:
         """Get all filenames currently tracked in the database.
 
         Used by `scan` to find .eml files present in the archive dir but
@@ -498,7 +497,7 @@ class ArchiveDatabase:
             ).fetchall()
             return {row[0] for row in results}
 
-    def get_email_by_id(self, email_id: str) -> Optional[tuple]:
+    def get_email_by_id(self, email_id: str) -> tuple | None:
         """Get email info by email_id.
 
         Args:
@@ -537,7 +536,7 @@ class ArchiveDatabase:
     # Trash operations
     # -------------------------------------------------------------------------
 
-    def trash_email(self, email_id: str, trash_filename: str) -> Optional[str]:
+    def trash_email(self, email_id: str, trash_filename: str) -> str | None:
         """Move an email to trash.
 
         Args:
@@ -567,7 +566,7 @@ class ArchiveDatabase:
             conn.commit()
             return original_filename
 
-    def restore_email(self, email_id: str) -> Optional[tuple]:
+    def restore_email(self, email_id: str) -> tuple | None:
         """Restore an email from trash.
 
         Returns:
@@ -594,7 +593,7 @@ class ArchiveDatabase:
             conn.commit()
             return row  # (current_filename, original_filename)
 
-    def permanently_delete_emails(self, email_ids: List[str]) -> int:
+    def permanently_delete_emails(self, email_ids: list[str]) -> int:
         """Permanently delete emails from the database.
 
         Deletes from emails table (triggers handle labels/recipients).
@@ -616,7 +615,7 @@ class ArchiveDatabase:
 
     def get_trashed_emails(
         self, limit: int = 50, offset: int = 0
-    ) -> List[tuple]:
+    ) -> list[tuple]:
         """List trashed emails, newest first.
 
         Returns:
@@ -640,7 +639,7 @@ class ArchiveDatabase:
                 "SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL"
             ).fetchone()[0]
 
-    def get_expired_trash(self, days: int = 30) -> List[tuple]:
+    def get_expired_trash(self, days: int = 30) -> list[tuple]:
         """Get trashed emails older than N days.
 
         Returns:
@@ -836,7 +835,7 @@ class ArchiveDatabase:
         sort: str = "relevance",
         include_unknown: bool = False,
         tz=None,
-    ) -> List[Tuple]:
+    ) -> list[tuple]:
         """Search emails.
 
         Args:
@@ -1248,7 +1247,7 @@ class ArchiveDatabase:
     # Account Management
     # -------------------------------------------------------------------------
 
-    def get_accounts(self) -> List[str]:
+    def get_accounts(self) -> list[str]:
         """Get list of unique accounts in the database."""
         with sqlite3.connect(self.db_path) as conn:
             results = conn.execute(

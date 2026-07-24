@@ -1271,6 +1271,7 @@ class TestTrashRoutes:
     def test_view_trash_empty(self, tmp_path):
         """Test viewing empty trash."""
         from unittest.mock import MagicMock
+
         from ownmail.web import create_app
 
         mock_archive = MagicMock()
@@ -1290,6 +1291,7 @@ class TestTrashRoutes:
     def test_view_trash_with_items(self, tmp_path):
         """Test viewing trash with items."""
         from unittest.mock import MagicMock
+
         from ownmail.web import create_app
 
         mock_archive = MagicMock()
@@ -1313,6 +1315,7 @@ class TestTrashRoutes:
     def test_trash_email_route(self, tmp_path):
         """Test POST /trash/<email_id>."""
         from unittest.mock import MagicMock
+
         from ownmail.web import create_app
 
         mock_archive = MagicMock()
@@ -1332,6 +1335,7 @@ class TestTrashRoutes:
     def test_restore_email_route(self, tmp_path):
         """Test POST /restore/<email_id>."""
         from unittest.mock import MagicMock
+
         from ownmail.web import create_app
 
         mock_archive = MagicMock()
@@ -1351,6 +1355,7 @@ class TestTrashRoutes:
     def test_trash_bulk_route(self, tmp_path):
         """Test POST /trash-bulk."""
         from unittest.mock import MagicMock
+
         from ownmail.web import create_app
 
         mock_archive = MagicMock()
@@ -1369,6 +1374,7 @@ class TestTrashRoutes:
     def test_empty_trash_route(self, tmp_path):
         """Test POST /empty-trash."""
         from unittest.mock import MagicMock
+
         from ownmail.web import create_app
 
         mock_archive = MagicMock()
@@ -1388,6 +1394,7 @@ class TestTrashRoutes:
     def test_delete_forever_route(self, tmp_path):
         """Test POST /delete-forever."""
         from unittest.mock import MagicMock
+
         from ownmail.web import create_app
 
         mock_archive = MagicMock()

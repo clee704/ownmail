@@ -1,7 +1,6 @@
 """Secure credential storage using system keychain."""
 
 import json
-from typing import Optional
 
 import keyring
 from google.oauth2.credentials import Credentials
@@ -52,7 +51,7 @@ class KeychainStorage:
         account_key = f"client-credentials/{provider}"
         keyring.set_password(self.service, account_key, credentials_json)
 
-    def load_client_credentials(self, provider: str) -> Optional[str]:
+    def load_client_credentials(self, provider: str) -> str | None:
         """Load OAuth client credentials for a provider.
 
         Args:
@@ -99,7 +98,7 @@ class KeychainStorage:
         keyring.set_password(self.service, account_key, json.dumps(token_data))
         print(f"✓ OAuth token saved for {account}")
 
-    def load_gmail_token(self, account: str) -> Optional[Credentials]:
+    def load_gmail_token(self, account: str) -> Credentials | None:
         """Load Gmail OAuth token for an account.
 
         Args:
@@ -149,7 +148,7 @@ class KeychainStorage:
         account_key = f"imap-password/{account}"
         keyring.set_password(self.service, account_key, password)
 
-    def load_imap_password(self, account: str) -> Optional[str]:
+    def load_imap_password(self, account: str) -> str | None:
         """Load IMAP password for an account.
 
         Returns:
@@ -170,7 +169,7 @@ class KeychainStorage:
     # Legacy compatibility (single-account)
     # -------------------------------------------------------------------------
 
-    def load_legacy_token(self) -> Optional[Credentials]:
+    def load_legacy_token(self) -> Credentials | None:
         """Load legacy single-account OAuth token.
 
         For backward compatibility with v0.1.x archives.
@@ -192,7 +191,7 @@ class KeychainStorage:
         except (json.JSONDecodeError, KeyError):
             return None
 
-    def load_legacy_client_credentials(self) -> Optional[str]:
+    def load_legacy_client_credentials(self) -> str | None:
         """Load legacy single-account client credentials.
 
         For backward compatibility with v0.1.x archives.

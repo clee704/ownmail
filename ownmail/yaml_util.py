@@ -2,7 +2,7 @@
 
 from io import StringIO
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any
 
 from ruamel.yaml import YAML
 
@@ -14,7 +14,7 @@ def _make_yaml() -> YAML:
     return yml
 
 
-def load_yaml(source: Union[str, Path, StringIO]) -> Dict[str, Any]:
+def load_yaml(source: str | Path | StringIO) -> dict[str, Any]:
     """Load YAML from a file path or string content.
 
     Args:
@@ -31,7 +31,7 @@ def load_yaml(source: Union[str, Path, StringIO]) -> Dict[str, Any]:
         return yml.load(f) or {}
 
 
-def save_yaml(data: Dict[str, Any], dest: Union[str, Path]) -> None:
+def save_yaml(data: dict[str, Any], dest: str | Path) -> None:
     """Save data to a YAML file, preserving comments and formatting.
 
     Args:

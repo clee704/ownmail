@@ -12,9 +12,9 @@ import webbrowser
 from datetime import datetime
 from email.policy import default as email_policy
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, g, redirect, render_template, request, send_file
-from zoneinfo import ZoneInfo
 
 from ownmail.archive import EmailArchive
 from ownmail.parser import EmailParser

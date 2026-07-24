@@ -11,7 +11,6 @@ import imaplib
 import json
 import re
 import time
-from typing import Dict, List, Optional, Tuple
 
 from ownmail.providers.base import EmailProvider
 
@@ -45,7 +44,7 @@ class ImapProvider(EmailProvider):
         keychain,
         host: str = GMAIL_IMAP_HOST,
         port: int = DEFAULT_PORT,
-        exclude_folders: Optional[List[str]] = None,
+        exclude_folders: list[str] | None = None,
         source_name: str = "imap",
     ):
         """Initialize IMAP provider.
@@ -64,7 +63,7 @@ class ImapProvider(EmailProvider):
         self._port = port
         self._exclude_folders = exclude_folders or DEFAULT_EXCLUDE_FOLDERS
         self._source_name = source_name
-        self._conn: Optional[imaplib.IMAP4_SSL] = None
+        self._conn: imaplib.IMAP4_SSL | None = None
 
     @property
     def name(self) -> str:
@@ -106,7 +105,7 @@ class ImapProvider(EmailProvider):
                 ) from e
             raise RuntimeError(f"IMAP connection failed: {e}") from e
 
-    def _list_folders(self) -> List[str]:
+    def _list_folders(self) -> list[str]:
         """List all IMAP folders, excluding configured ones.
 
         Returns:
@@ -140,7 +139,7 @@ class ImapProvider(EmailProvider):
 
         return folders
 
-    def _get_folder_uids(self, folder: str) -> List[int]:
+    def _get_folder_uids(self, folder: str) -> list[int]:
         """Get all UIDs in a folder.
 
         Args:
@@ -160,8 +159,8 @@ class ImapProvider(EmailProvider):
         return [int(uid) for uid in data[0].split()]
 
     def _get_message_ids_for_uids(
-        self, folder: str, uids: List[int]
-    ) -> Dict[int, str]:
+        self, folder: str, uids: list[int]
+    ) -> dict[int, str]:
         """Fetch Message-ID headers for a batch of UIDs.
 
         Args:
@@ -204,7 +203,7 @@ class ImapProvider(EmailProvider):
 
         return result
 
-    def _extract_message_id(self, header_bytes: bytes) -> Optional[str]:
+    def _extract_message_id(self, header_bytes: bytes) -> str | None:
         """Extract Message-ID value from header bytes."""
         try:
             msg = email.message_from_bytes(header_bytes)
@@ -216,7 +215,7 @@ class ImapProvider(EmailProvider):
         """Check if this is a Gmail IMAP connection."""
         return self._host == GMAIL_IMAP_HOST
 
-    def _get_all_mail_folder(self, folders: List[str]) -> Optional[str]:
+    def _get_all_mail_folder(self, folders: list[str]) -> str | None:
         """Find the [Gmail]/All Mail folder if it exists."""
         for f in folders:
             if f in ("[Gmail]/All Mail", "[Gmail]/Tous les messages",
@@ -225,8 +224,8 @@ class ImapProvider(EmailProvider):
         return None
 
     def get_all_message_ids(
-        self, since: Optional[str] = None, until: Optional[str] = None
-    ) -> List[str]:
+        self, since: str | None = None, until: str | None = None
+    ) -> list[str]:
         """Scan all folders and return deduplicated message identifiers.
 
         For Gmail: uses [Gmail]/All Mail as sole download source (it contains
@@ -248,11 +247,11 @@ class ImapProvider(EmailProvider):
 
     def _scan_gmail(
         self,
-        folders: List[str],
+        folders: list[str],
         all_mail: str,
-        since: Optional[str],
-        until: Optional[str],
-    ) -> List[str]:
+        since: str | None,
+        until: str | None,
+    ) -> list[str]:
         """Gmail-optimized scan: use [Gmail]/All Mail as sole download source.
 
         [Gmail]/All Mail contains every message, so no dedup is needed.
@@ -270,7 +269,7 @@ class ImapProvider(EmailProvider):
 
         # Phase 2: Scan other folders for label mapping
         # Build message_id -> [folders] from smaller folders
-        message_id_to_folders: Dict[str, List[str]] = {}
+        message_id_to_folders: dict[str, list[str]] = {}
         other_folders = [f for f in folders if f != all_mail]
         total_label_msgs = 0
 
@@ -300,15 +299,15 @@ class ImapProvider(EmailProvider):
 
     def _scan_standard(
         self,
-        folders: List[str],
-        since: Optional[str],
-        until: Optional[str],
-    ) -> List[str]:
+        folders: list[str],
+        since: str | None,
+        until: str | None,
+    ) -> list[str]:
         """Standard IMAP scan with Message-ID deduplication across folders."""
 
         # Phase 1: Scan all folders for UIDs and Message-IDs
         # message_id -> {"primary": "folder:uid", "folders": ["folder1", ...]}
-        seen: Dict[str, Dict] = {}
+        seen: dict[str, dict] = {}
         all_ids = []
 
         for folder in folders:
@@ -360,10 +359,10 @@ class ImapProvider(EmailProvider):
     def _filter_uids_by_date(
         self,
         folder: str,
-        uids: List[int],
-        since: Optional[str],
-        until: Optional[str],
-    ) -> List[int]:
+        uids: list[int],
+        since: str | None,
+        until: str | None,
+    ) -> list[int]:
         """Filter UIDs by date using IMAP SEARCH.
 
         Args:
@@ -406,10 +405,10 @@ class ImapProvider(EmailProvider):
 
     def get_new_message_ids(
         self,
-        since_state: Optional[str],
-        since: Optional[str] = None,
-        until: Optional[str] = None,
-    ) -> Tuple[List[str], Optional[str]]:
+        since_state: str | None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> tuple[list[str], str | None]:
         """Get new message IDs since the last sync.
 
         Uses UID-based incremental sync. The sync state is a JSON dict
@@ -444,9 +443,9 @@ class ImapProvider(EmailProvider):
         all_mail = self._get_all_mail_folder(folders) if self._is_gmail() else None
 
         # For dedup across folders (standard path only)
-        seen: Dict[str, Dict] = {}
+        seen: dict[str, dict] = {}
         # For Gmail label mapping
-        message_id_to_folders: Dict[str, List[str]] = {}
+        message_id_to_folders: dict[str, list[str]] = {}
 
         for folder in folders:
             print(f"  Checking: {folder}...\033[K", end="\r", flush=True)
@@ -538,7 +537,7 @@ class ImapProvider(EmailProvider):
 
         return new_ids, json.dumps(new_state)
 
-    def _get_uidvalidity(self, select_data) -> Optional[str]:
+    def _get_uidvalidity(self, select_data) -> str | None:
         """Extract UIDVALIDITY from SELECT response."""
         # select_data is a list like [b'12345']
         # But UIDVALIDITY comes from the response code, not the data
@@ -551,7 +550,7 @@ class ImapProvider(EmailProvider):
             pass
         return None
 
-    def _get_labels_for_downloaded(self, composite_id: str, raw_data: bytes, folder: str) -> List[str]:
+    def _get_labels_for_downloaded(self, composite_id: str, raw_data: bytes, folder: str) -> list[str]:
         """Determine labels for a downloaded message.
 
         For standard IMAP: uses _folder_lookup from dedup scan.
@@ -576,7 +575,7 @@ class ImapProvider(EmailProvider):
 
         return [folder]
 
-    def download_message(self, msg_id: str) -> Tuple[bytes, List[str]]:
+    def download_message(self, msg_id: str) -> tuple[bytes, list[str]]:
         """Download a message by its composite ID (folder:uid).
 
         Returns:
@@ -612,8 +611,8 @@ class ImapProvider(EmailProvider):
         return raw_data, labels
 
     def download_messages_batch(
-        self, msg_ids: List[str]
-    ) -> Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]]:
+        self, msg_ids: list[str]
+    ) -> dict[str, tuple[bytes | None, list[str], str | None]]:
         """Download multiple messages, grouped by folder for efficiency.
 
         Groups message IDs by folder to minimize SELECT calls, then uses
@@ -625,10 +624,10 @@ class ImapProvider(EmailProvider):
         Returns:
             Dict mapping msg_id -> (raw_data, labels, error_msg)
         """
-        results: Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]] = {}
+        results: dict[str, tuple[bytes | None, list[str], str | None]] = {}
 
         # Group by folder to minimize SELECT calls
-        folder_groups: Dict[str, List[Tuple[str, int]]] = {}
+        folder_groups: dict[str, list[tuple[str, int]]] = {}
         for msg_id in msg_ids:
             folder, uid_str = msg_id.rsplit(":", 1)
             uid = int(uid_str)
@@ -688,7 +687,7 @@ class ImapProvider(EmailProvider):
 
         return results
 
-    def get_current_sync_state(self) -> Optional[str]:
+    def get_current_sync_state(self) -> str | None:
         """Get current sync state (per-folder max UID + UIDVALIDITY).
 
         Returns:

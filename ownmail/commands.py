@@ -15,7 +15,6 @@ import time
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Optional
 
 from ownmail import sidecar
 from ownmail.archive import EmailArchive
@@ -25,11 +24,11 @@ from ownmail.parser import EmailParser
 
 def cmd_rebuild(
     archive: EmailArchive,
-    file_path: Optional[Path] = None,
-    pattern: Optional[str] = None,
+    file_path: Path | None = None,
+    pattern: str | None = None,
     force: bool = False,
     debug: bool = False,
-    only: Optional[str] = None,
+    only: str | None = None,
 ) -> None:
     """Rebuild the search index and populate metadata.
 
@@ -269,7 +268,7 @@ def cmd_rebuild(
 
 def _populate_dates_only(
     archive: EmailArchive,
-    pattern: Optional[str] = None,
+    pattern: str | None = None,
     force: bool = False,
     debug: bool = False,
 ) -> None:
@@ -416,7 +415,7 @@ def _populate_dates_only(
 
 def _reconcile_label_sidecars(
     archive: EmailArchive,
-    pattern: Optional[str] = None,
+    pattern: str | None = None,
     debug: bool = False,
 ) -> None:
     """Reconcile per-email label sidecar files with the email_labels table.
@@ -1458,7 +1457,7 @@ def cmd_list_unknown(
 def cmd_import(
     archive: EmailArchive,
     path: Path,
-    account: Optional[str] = None,
+    account: str | None = None,
     move: bool = False,
     dry_run: bool = False,
 ) -> None:
@@ -1485,7 +1484,7 @@ def cmd_import(
 
 def cmd_scan(
     archive: EmailArchive,
-    account: Optional[str] = None,
+    account: str | None = None,
     dry_run: bool = False,
 ) -> None:
     """Register .eml files present in the archive dir but untracked in the DB.

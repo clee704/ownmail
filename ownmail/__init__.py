@@ -23,7 +23,7 @@ def _create_gmail_archive_compat():
     import sqlite3
     import time
     from pathlib import Path
-    from typing import Any, Dict, Optional
+    from typing import Any
 
     class GmailArchiveCompat:
         """Backward-compatible wrapper for GmailArchive.
@@ -31,14 +31,14 @@ def _create_gmail_archive_compat():
         Deprecated: Use EmailArchive + GmailProvider instead.
         """
 
-        def __init__(self, archive_dir: Path, config: Dict[str, Any] = None):
+        def __init__(self, archive_dir: Path, config: dict[str, Any] = None):
             self.archive_dir = archive_dir
             self.emails_dir = archive_dir / "emails"
             self.keychain = KeychainStorage()
             self.db = ArchiveDatabase(archive_dir)
             self.config = config or {}
             self.include_labels = self.config.get("include_labels", True)
-            self._batch_conn: Optional[sqlite3.Connection] = None
+            self._batch_conn: sqlite3.Connection | None = None
 
         def index_email(
             self,

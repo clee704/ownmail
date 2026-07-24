@@ -1,7 +1,7 @@
 """Configuration loading and validation."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Optional YAML support
 try:
@@ -13,7 +13,7 @@ except ImportError:
 DEFAULT_CONFIG_FILENAME = "config.yaml"
 
 
-def load_config(config_path: Optional[Path] = None, script_dir: Path = None) -> Dict[str, Any]:
+def load_config(config_path: Path | None = None, script_dir: Path = None) -> dict[str, Any]:
     """Load configuration from YAML file.
 
     Search order:
@@ -54,7 +54,7 @@ def load_config(config_path: Optional[Path] = None, script_dir: Path = None) -> 
     return {}
 
 
-def get_archive_root(config: Dict[str, Any], default: Path = None) -> Path:
+def get_archive_root(config: dict[str, Any], default: Path = None) -> Path:
     """Get archive root directory from config.
 
     Args:
@@ -72,7 +72,7 @@ def get_archive_root(config: Dict[str, Any], default: Path = None) -> Path:
     return default or Path.cwd() / "archive"
 
 
-def get_db_dir(config: Dict[str, Any]) -> Optional[Path]:
+def get_db_dir(config: dict[str, Any]) -> Path | None:
     """Get optional database directory from config.
 
     When set, the database is stored in this directory instead of archive_root.
@@ -91,7 +91,7 @@ def get_db_dir(config: Dict[str, Any]) -> Optional[Path]:
     return None
 
 
-def get_sources(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+def get_sources(config: dict[str, Any]) -> list[dict[str, Any]]:
     """Get list of source configurations.
 
     Args:
@@ -103,7 +103,7 @@ def get_sources(config: Dict[str, Any]) -> List[Dict[str, Any]]:
     return config.get("sources", [])
 
 
-def get_source_by_name(config: Dict[str, Any], name: str) -> Optional[Dict[str, Any]]:
+def get_source_by_name(config: dict[str, Any], name: str) -> dict[str, Any] | None:
     """Get a specific source by name.
 
     Args:
@@ -119,7 +119,7 @@ def get_source_by_name(config: Dict[str, Any], name: str) -> Optional[Dict[str, 
     return None
 
 
-def get_source_by_account(config: Dict[str, Any], account: str) -> Optional[Dict[str, Any]]:
+def get_source_by_account(config: dict[str, Any], account: str) -> dict[str, Any] | None:
     """Get a specific source by account email.
 
     Args:
@@ -135,7 +135,7 @@ def get_source_by_account(config: Dict[str, Any], account: str) -> Optional[Dict
     return None
 
 
-def parse_secret_ref(secret_ref: str) -> Dict[str, str]:
+def parse_secret_ref(secret_ref: str) -> dict[str, str]:
     """Parse a secret reference string.
 
     Formats:
@@ -158,7 +158,7 @@ def parse_secret_ref(secret_ref: str) -> Dict[str, str]:
         raise ValueError(f"Unsupported secret_ref type: {ref_type}")
 
 
-def validate_config(config: Dict[str, Any]) -> List[str]:
+def validate_config(config: dict[str, Any]) -> list[str]:
     """Validate configuration and return list of errors.
 
     Args:

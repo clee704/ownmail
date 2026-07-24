@@ -3,7 +3,6 @@
 import base64
 import json
 import time
-from typing import Dict, List, Optional, Tuple
 
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -118,8 +117,8 @@ class GmailProvider(EmailProvider):
         return creds
 
     def get_all_message_ids(
-        self, since: Optional[str] = None, until: Optional[str] = None
-    ) -> List[str]:
+        self, since: str | None = None, until: str | None = None
+    ) -> list[str]:
         """Get all message IDs from Gmail.
 
         Args:
@@ -171,10 +170,10 @@ class GmailProvider(EmailProvider):
 
     def get_new_message_ids(
         self,
-        since_state: Optional[str],
-        since: Optional[str] = None,
-        until: Optional[str] = None,
-    ) -> Tuple[List[str], Optional[str]]:
+        since_state: str | None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> tuple[list[str], str | None]:
         """Get new message IDs since the given history ID.
 
         Args:
@@ -205,7 +204,7 @@ class GmailProvider(EmailProvider):
                 return self.get_all_message_ids(), None
             raise
 
-    def _get_messages_since_history(self, history_id: str) -> List[str]:
+    def _get_messages_since_history(self, history_id: str) -> list[str]:
         """Get new messages since the given history ID."""
         new_ids = []
         page_token = None
@@ -242,7 +241,7 @@ class GmailProvider(EmailProvider):
 
         return new_ids
 
-    def download_message(self, msg_id: str) -> Tuple[bytes, List[str]]:
+    def download_message(self, msg_id: str) -> tuple[bytes, list[str]]:
         """Download a message from Gmail.
 
         Returns:
@@ -266,8 +265,8 @@ class GmailProvider(EmailProvider):
         return raw_data, labels
 
     def download_messages_batch(
-        self, msg_ids: List[str]
-    ) -> Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]]:
+        self, msg_ids: list[str]
+    ) -> dict[str, tuple[bytes | None, list[str], str | None]]:
         """Download multiple messages in a batch request.
 
         Args:
@@ -278,7 +277,7 @@ class GmailProvider(EmailProvider):
             If successful, error_message is None.
             If failed, raw_data is None and error_message contains the error.
         """
-        results: Dict[str, Tuple[Optional[bytes], List[str], Optional[str]]] = {}
+        results: dict[str, tuple[bytes | None, list[str], str | None]] = {}
 
         # Pre-load label cache if needed
         if self._include_labels and not self._label_cache:
@@ -353,7 +352,7 @@ class GmailProvider(EmailProvider):
 
         return results
 
-    def get_labels_for_message(self, message_id: str) -> List[str]:
+    def get_labels_for_message(self, message_id: str) -> list[str]:
         """Fetch Gmail labels for a message.
 
         Args:
@@ -377,7 +376,7 @@ class GmailProvider(EmailProvider):
     # Alias for backward compatibility
     _get_labels_for_message = get_labels_for_message
 
-    def _resolve_label_names(self, label_ids: List[str]) -> List[str]:
+    def _resolve_label_names(self, label_ids: list[str]) -> list[str]:
         """Convert label IDs to human-readable names."""
         # Cache labels on first use
         if not self._label_cache:
@@ -396,7 +395,7 @@ class GmailProvider(EmailProvider):
                 names.append(lid)
         return names
 
-    def get_current_sync_state(self) -> Optional[str]:
+    def get_current_sync_state(self) -> str | None:
         """Get current Gmail history ID."""
         try:
             profile = self._service.users().getProfile(userId="me").execute()

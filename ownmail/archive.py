@@ -13,9 +13,10 @@ import sys
 import tempfile
 import time
 from datetime import datetime, timezone
-from email.utils import parseaddr, parsedate_to_datetime as _parsedate_to_datetime
+from email.utils import parseaddr
+from email.utils import parsedate_to_datetime as _parsedate_to_datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ownmail import sidecar
 from ownmail.config import get_db_dir
@@ -38,7 +39,7 @@ class EmailArchive:
     def __init__(
         self,
         archive_dir: Path,
-        config: Dict[str, Any] = None,
+        config: dict[str, Any] = None,
     ):
         """Initialize the email archive.
 
@@ -53,7 +54,7 @@ class EmailArchive:
         self.keychain = KeychainStorage()
 
         # Batch connection for fast writes
-        self._batch_conn: Optional[sqlite3.Connection] = None
+        self._batch_conn: sqlite3.Connection | None = None
 
     def get_emails_dir(self, source_name: str) -> Path:
         """Get emails directory for a source.
@@ -123,7 +124,7 @@ class EmailArchive:
             src_sidecar.rename(sidecar.sidecar_path(dst))
         return True
 
-    def permanently_delete_emails(self, email_ids: List[str]) -> int:
+    def permanently_delete_emails(self, email_ids: list[str]) -> int:
         """Permanently delete emails (files + DB records).
 
         Returns:
@@ -194,8 +195,8 @@ class EmailArchive:
     def backup(
         self,
         provider: EmailProvider,
-        since: Optional[str] = None,
-        until: Optional[str] = None,
+        since: str | None = None,
+        until: str | None = None,
         verbose: bool = False,
     ) -> dict:
         """Backup emails from a provider.
@@ -553,9 +554,9 @@ class EmailArchive:
     def import_email(
         self,
         filepath: Path,
-        account: Optional[str] = None,
+        account: str | None = None,
         move: bool = False,
-        conn: Optional[sqlite3.Connection] = None,
+        conn: sqlite3.Connection | None = None,
     ) -> str:
         """Import a single external .eml file into the archive.
 
@@ -619,8 +620,8 @@ class EmailArchive:
     def register_scanned_email(
         self,
         filepath: Path,
-        account: Optional[str] = None,
-        conn: Optional[sqlite3.Connection] = None,
+        account: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> str:
         """Register an .eml file already sitting in the archive dir, in place.
 
@@ -664,7 +665,7 @@ class EmailArchive:
     def _empty_batch_result() -> dict:
         return {"imported_count": 0, "duplicate_count": 0, "error_count": 0, "interrupted": False}
 
-    def _run_batch(self, files: List[Path], process_fn, noun: str, count_label: str) -> dict:
+    def _run_batch(self, files: list[Path], process_fn, noun: str, count_label: str) -> dict:
         """Shared progress/Ctrl-C/batch-commit loop for import_path and scan_archive.
 
         Args:
@@ -732,7 +733,7 @@ class EmailArchive:
     def import_path(
         self,
         path: Path,
-        account: Optional[str] = None,
+        account: str | None = None,
         move: bool = False,
         dry_run: bool = False,
     ) -> dict:
@@ -772,7 +773,7 @@ class EmailArchive:
 
     def scan_archive(
         self,
-        account: Optional[str] = None,
+        account: str | None = None,
         dry_run: bool = False,
     ) -> dict:
         """Register .eml files present in the archive dir but untracked by the DB.
@@ -811,7 +812,7 @@ class EmailArchive:
         )
 
     @staticmethod
-    def _parse_email_datetime(email_msg) -> Optional[datetime]:
+    def _parse_email_datetime(email_msg) -> datetime | None:
         """Parse an email's date, in UTC, using the same robust logic as
         EmailParser (Korean weekday prefixes, numeric months, Received-header
         fallback, etc.).
@@ -929,7 +930,7 @@ class EmailArchive:
     # Search
     # -------------------------------------------------------------------------
 
-    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance", tz=None) -> List:
+    def search(self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance", tz=None) -> list:
         """Search emails.
 
         Args:

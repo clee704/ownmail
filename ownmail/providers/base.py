@@ -1,7 +1,6 @@
 """Abstract base class for email providers."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
 
 
 class EmailProvider(ABC):
@@ -57,7 +56,7 @@ class EmailProvider(ABC):
         ...
 
     @abstractmethod
-    def get_all_message_ids(self) -> List[str]:
+    def get_all_message_ids(self) -> list[str]:
         """Get all message IDs from the mailbox.
 
         Used for initial full sync.
@@ -68,7 +67,7 @@ class EmailProvider(ABC):
         ...
 
     @abstractmethod
-    def get_new_message_ids(self, since_state: Optional[str]) -> Tuple[List[str], Optional[str]]:
+    def get_new_message_ids(self, since_state: str | None) -> tuple[list[str], str | None]:
         """Get message IDs added since the given sync state.
 
         Used for incremental sync.
@@ -85,7 +84,7 @@ class EmailProvider(ABC):
         ...
 
     @abstractmethod
-    def download_message(self, msg_id: str) -> Tuple[bytes, List[str]]:
+    def download_message(self, msg_id: str) -> tuple[bytes, list[str]]:
         """Download a message.
 
         Args:
@@ -102,7 +101,7 @@ class EmailProvider(ABC):
         ...
 
     @abstractmethod
-    def get_current_sync_state(self) -> Optional[str]:
+    def get_current_sync_state(self) -> str | None:
         """Get current sync state from the provider.
 
         For incremental sync support. Each provider has its own sync state format:

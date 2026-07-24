@@ -3,7 +3,6 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
 
 from ownmail import __version__
 from ownmail.archive import EmailArchive
@@ -48,9 +47,9 @@ sources:
 def cmd_setup(
     keychain: KeychainStorage,
     config: dict,
-    config_path: Optional[Path],
+    config_path: Path | None,
     source_name: str = None,
-    method: Optional[str] = None,
+    method: str | None = None,
 ) -> None:
     """Set up email source credentials.
 
@@ -88,7 +87,7 @@ def cmd_setup(
 
 def _update_or_create_config(
     config: dict,
-    config_path: Optional[Path],
+    config_path: Path | None,
     source_name: str,
     source_snippet: str,
 ) -> None:
@@ -149,7 +148,7 @@ def _update_or_create_config(
 def _setup_imap(
     keychain: KeychainStorage,
     config: dict,
-    config_path: Optional[Path],
+    config_path: Path | None,
     source_name: str = None,
 ) -> None:
     """Set up IMAP with App Password."""
@@ -248,7 +247,7 @@ def _setup_imap(
 def _setup_oauth(
     keychain: KeychainStorage,
     config: dict,
-    config_path: Optional[Path],
+    config_path: Path | None,
     source_name: str = None,
 ) -> None:
     """Set up Gmail API with OAuth (advanced)."""
@@ -372,9 +371,9 @@ def _setup_oauth(
 def cmd_download(
     archive: EmailArchive,
     config: dict,
-    source_name: Optional[str] = None,
-    since: Optional[str] = None,
-    until: Optional[str] = None,
+    source_name: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
     verbose: bool = False,
 ) -> None:
     """Run download for one or all sources.
@@ -565,7 +564,7 @@ def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
         print()
 
 
-def cmd_stats(archive: EmailArchive, config: dict, source_name: Optional[str] = None) -> None:
+def cmd_stats(archive: EmailArchive, config: dict, source_name: str | None = None) -> None:
     """Show archive statistics."""
     print("\n" + "=" * 50)
     print("ownmail - Statistics")
@@ -649,7 +648,7 @@ def cmd_trash(archive: EmailArchive, empty: bool = False, expire: bool = False) 
 def cmd_reset_sync(
     archive: EmailArchive,
     config: dict,
-    source_name: Optional[str] = None
+    source_name: str | None = None
 ) -> None:
     """Reset sync state to force a full re-sync.
 
