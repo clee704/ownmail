@@ -2689,3 +2689,153 @@ class TestDecodeHeaderFallback:
     def test_quoted_printable_encoded_word(self):
         """A Q-encoded word should decode."""
         assert decode_header("=?utf-8?Q?caf=C3=A9?=") == "café"
+
+
+class TestInlineImagesAndSanitizer:
+    """Tests for cid: image inlining and the sanitizer hook in view_email."""
+
+    @pytest.fixture
+    def archive(self, tmp_path):
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = MagicMock()
+        archive.db.get_email_count.return_value = 1
+        archive.db.get_trash_count.return_value = 0
+        archive.db.get_labels_for_email.return_value = []
+        archive.auto_expire_trash.return_value = 0
+        return archive
+
+    def _store(self, archive, raw, name="mail.eml"):
+        (archive.archive_dir / name).write_bytes(raw)
+        archive.db.get_email_by_id.return_value = ("id1", name, "2024-01-01", "hash", "a@example.com", None)
+
+    CID_EML = (
+        b"From: a@example.com\r\nSubject: Inline\r\n"
+        b'MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="b1"\r\n\r\n'
+        b"--b1\r\nContent-Type: text/html\r\n\r\n"
+        b'<p>See <img src="cid:logo123"></p>\r\n'
+        b"--b1\r\nContent-Type: image/gif\r\nContent-ID: <logo123>\r\n"
+        b"Content-Transfer-Encoding: base64\r\n\r\n"
+        b"R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7\r\n"
+        b"--b1--\r\n"
+    )
+
+    def test_cid_reference_becomes_data_uri(self, archive):
+        """A cid: image reference should be replaced with an inline data URI."""
+        self._store(archive, self.CID_EML)
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"cid:logo123" not in response.data
+        assert b"data:image/gif;base64," in response.data
+
+    def test_sanitizer_is_applied_to_html_bodies(self, archive):
+        """The configured sanitizer should receive the HTML body."""
+        self._store(archive, self.CID_EML)
+        sanitizer = MagicMock()
+        sanitizer.sanitize.return_value = ("<p>sanitized</p>", False, True)
+        app = create_app(archive, sanitizer=sanitizer)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        sanitizer.sanitize.assert_called_once()
+        assert b"sanitized" in response.data
+
+    def test_verbose_logs_sanitization(self, archive, capsys):
+        """Verbose mode should log the sanitization step."""
+        self._store(archive, self.CID_EML)
+        app = create_app(archive, verbose=True)
+        with app.test_client() as client:
+            client.get("/email/id1")
+        assert "Sanitizing HTML" in capsys.readouterr().out
+
+    def test_plain_text_body_skips_the_sanitizer(self, archive):
+        """A message with no HTML part should not invoke the sanitizer."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\njust text\r\n")
+        sanitizer = MagicMock()
+        app = create_app(archive, sanitizer=sanitizer)
+        with app.test_client() as client:
+            client.get("/email/id1")
+        sanitizer.sanitize.assert_not_called()
+
+    def test_external_images_blocked_for_untrusted_sender(self, archive):
+        """An untrusted sender's external images should be swapped for data-src."""
+        raw = (
+            b"From: spam@example.com\r\nSubject: S\r\nContent-Type: text/html\r\n\r\n"
+            b'<p><img src="https://tracker.example.com/px.gif"></p>\r\n'
+        )
+        self._store(archive, raw)
+        app = create_app(archive, block_images=True)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b'data-src="https://tracker.example.com/px.gif"' in response.data
+
+    def test_trusted_sender_images_are_not_blocked(self, archive):
+        """A trusted sender's images should be left intact."""
+        raw = (
+            b"From: friend@example.com\r\nSubject: S\r\nContent-Type: text/html\r\n\r\n"
+            b'<p><img src="https://cdn.example.com/pic.gif"></p>\r\n'
+        )
+        self._store(archive, raw)
+        app = create_app(archive, block_images=True, trusted_senders=["friend@example.com"])
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b'src="https://cdn.example.com/pic.gif"' in response.data
+
+
+class TestBlockExternalImagesMore:
+    """Further tests for block_external_images."""
+
+    def test_multiple_images_all_blocked(self):
+        """Every external image in the document should be blocked."""
+        html = '<img src="https://a.example.com/1.png"><img src="http://b.example.com/2.png">'
+        result, has_external = block_external_images(html)
+        assert has_external is True
+        assert result.count("data-src=") == 2
+
+    def test_attributes_before_src_are_preserved(self):
+        """Attributes preceding src should survive the rewrite."""
+        html = '<img width="10" src="https://a.example.com/1.png">'
+        result, _ = block_external_images(html)
+        assert 'width="10"' in result
+        assert 'data-src="https://a.example.com/1.png"' in result
+
+    def test_relative_image_is_untouched(self):
+        """A relative image src is not external and should be left alone."""
+        html = '<img src="/local/pic.png">'
+        result, has_external = block_external_images(html)
+        assert result == html
+        assert has_external is False
+
+    def test_style_and_img_together(self):
+        """A document with both forms should have both blocked."""
+        html = '<div style="background:url(https://a.example.com/bg.png)"><img src="https://a.example.com/1.png"></div>'
+        result, has_external = block_external_images(html)
+        assert has_external is True
+        assert "data-src=" in result
+        assert "data-bg-urls=" in result
+
+
+class TestTimezoneOffsetHelpers:
+    """Tests for the timezone offset helpers."""
+
+    def test_offset_for_known_zone(self):
+        """A valid IANA zone should produce a signed HH:MM offset."""
+        from ownmail.web import _get_timezone_offset
+
+        offset = _get_timezone_offset("Asia/Seoul")
+        assert offset == "+09:00"
+
+    def test_offset_for_unknown_zone_is_empty(self):
+        """An unresolvable zone name should yield an empty offset."""
+        from ownmail.web import _get_timezone_offset
+
+        assert _get_timezone_offset("Not/AZone") == ""
+
+    def test_timezone_list_is_labelled(self):
+        """The settings dropdown list should carry value/label pairs."""
+        from ownmail.web import _get_timezone_list_with_offsets
+
+        items = _get_timezone_list_with_offsets()
+        assert items
+        assert all(set(item) == {"value", "label"} for item in items)
+        assert any(item["value"] == "Asia/Seoul" and "+09:00" in item["label"] for item in items)

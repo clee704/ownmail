@@ -1616,3 +1616,73 @@ class TestCmdDownloadSources:
                     cmd_download(archive, self._gmail_config())
 
         mock_backup.assert_called_once()
+
+
+class TestCmdResetSync:
+    """Tests for the reset-sync command."""
+
+    def _archive(self, temp_dir):
+        from ownmail.archive import EmailArchive
+
+        return EmailArchive(temp_dir, {})
+
+    def test_no_sources_configured(self, temp_dir, capsys):
+        """With no sources there is nothing to reset."""
+        from ownmail.cli import cmd_reset_sync
+
+        cmd_reset_sync(self._archive(temp_dir), {})
+
+        assert "No sources configured." in capsys.readouterr().out
+
+    def test_unknown_source_name_exits(self, temp_dir, capsys):
+        """An unknown --source should exit with an error."""
+        from ownmail.cli import cmd_reset_sync
+
+        config = {"sources": [{"name": "g", "type": "gmail_api", "account": "a@example.com"}]}
+        with pytest.raises(SystemExit):
+            cmd_reset_sync(self._archive(temp_dir), config, source_name="nope")
+
+        assert "not found in config" in capsys.readouterr().out
+
+    def test_clears_gmail_history_id(self, temp_dir):
+        """A gmail_api source should have its history_id cleared."""
+        from ownmail.cli import cmd_reset_sync
+
+        archive = self._archive(temp_dir)
+        archive.db.set_sync_state("a@example.com", "history_id", "12345")
+        config = {"sources": [{"name": "g", "type": "gmail_api", "account": "a@example.com"}]}
+
+        cmd_reset_sync(archive, config)
+
+        assert archive.db.get_sync_state("a@example.com", "history_id") is None
+
+    def test_clears_imap_sync_state(self, temp_dir):
+        """An imap source should have its sync_state cleared."""
+        from ownmail.cli import cmd_reset_sync
+
+        archive = self._archive(temp_dir)
+        archive.db.set_sync_state("a@example.com", "sync_state", "{}")
+        config = {"sources": [{"name": "w", "type": "imap", "account": "a@example.com"}]}
+
+        cmd_reset_sync(archive, config)
+
+        assert archive.db.get_sync_state("a@example.com", "sync_state") is None
+
+    def test_named_source_only_resets_that_one(self, temp_dir):
+        """--source should leave other sources' state intact."""
+        from ownmail.cli import cmd_reset_sync
+
+        archive = self._archive(temp_dir)
+        archive.db.set_sync_state("a@example.com", "history_id", "1")
+        archive.db.set_sync_state("b@example.com", "history_id", "2")
+        config = {
+            "sources": [
+                {"name": "one", "type": "gmail_api", "account": "a@example.com"},
+                {"name": "two", "type": "gmail_api", "account": "b@example.com"},
+            ]
+        }
+
+        cmd_reset_sync(archive, config, source_name="one")
+
+        assert archive.db.get_sync_state("a@example.com", "history_id") is None
+        assert archive.db.get_sync_state("b@example.com", "history_id") == "2"

@@ -1491,3 +1491,113 @@ class TestImapFolderListing:
         assert "INBOX" in folders
         assert "Work" in folders
         assert "[Gmail]" not in folders
+
+
+class TestImapIncrementalScan:
+    """Tests for the UID-based incremental sync scan."""
+
+    def _conn(self, folders, uids_by_folder, uidvalidity="100"):
+        """A connection whose LIST/SELECT/SEARCH replay the given folders."""
+        conn = MagicMock()
+        conn.list.return_value = ("OK", [f'(\\HasNoChildren) "/" "{f}"'.encode() for f in folders])
+        conn.select.return_value = ("OK", [b"1"])
+        conn.response.return_value = ("OK", [uidvalidity.encode()])
+
+        selected = {"folder": None}
+
+        def select(spec, readonly=False):
+            selected["folder"] = spec.strip('"')
+            return ("OK", [b"1"])
+
+        def uid(command, *args):
+            folder = selected["folder"]
+            if command == "search":
+                uids = uids_by_folder.get(folder, [])
+                return ("OK", [b" ".join(str(u).encode() for u in uids)])
+            return ("OK", [])
+
+        conn.select.side_effect = select
+        conn.uid.side_effect = uid
+        return conn
+
+    def test_only_uids_above_the_watermark_are_returned(self):
+        """Messages at or below the stored max_uid should be skipped."""
+        conn = self._conn(["INBOX"], {"INBOX": [8, 9, 10, 11]})
+        provider = _imap_provider(conn, exclude_folders=[])
+        state = json.dumps({"INBOX": {"max_uid": 9, "uidvalidity": "100"}})
+
+        with patch("time.sleep"):
+            new_ids, new_state = provider.get_new_message_ids(state)
+
+        assert new_ids == ["INBOX:10", "INBOX:11"]
+        assert json.loads(new_state)["INBOX"]["max_uid"] == 11
+
+    def test_changed_uidvalidity_forces_full_rescan(self, capsys):
+        """A rebuilt folder (new UIDVALIDITY) should be rescanned from zero."""
+        conn = self._conn(["INBOX"], {"INBOX": [1, 2]}, uidvalidity="999")
+        provider = _imap_provider(conn, exclude_folders=[])
+        state = json.dumps({"INBOX": {"max_uid": 5, "uidvalidity": "100"}})
+
+        with patch("time.sleep"):
+            new_ids, _ = provider.get_new_message_ids(state)
+
+        assert new_ids == ["INBOX:1", "INBOX:2"]
+        assert "UIDVALIDITY changed for INBOX" in capsys.readouterr().out
+
+    def test_invalid_sync_state_falls_back_to_full_scan(self, capsys):
+        """Unparseable state should trigger a full scan, not a crash."""
+        conn = self._conn(["INBOX"], {"INBOX": [1]})
+        provider = _imap_provider(conn, exclude_folders=[])
+
+        with patch("time.sleep"):
+            with patch.object(provider, "get_all_message_ids", return_value=["INBOX:1"]) as mock_full:
+                new_ids, new_state = provider.get_new_message_ids("{not json")
+
+        mock_full.assert_called_once()
+        assert new_ids == ["INBOX:1"]
+        assert new_state is None
+        assert "Invalid sync state" in capsys.readouterr().out
+
+    def test_date_filter_forces_full_scan(self):
+        """A date filter should bypass incremental sync entirely."""
+        provider = _imap_provider(self._conn(["INBOX"], {}))
+
+        with patch.object(provider, "get_all_message_ids", return_value=[]) as mock_full:
+            new_ids, new_state = provider.get_new_message_ids("{}", since="2024-01-01")
+
+        mock_full.assert_called_once_with(since="2024-01-01", until=None)
+        assert new_state is None
+
+    def test_unselectable_folder_is_skipped(self):
+        """A folder that cannot be selected should not abort the scan."""
+        conn = self._conn(["INBOX", "Broken"], {"INBOX": [1]})
+        selected = {"folder": None}
+
+        def select(spec, readonly=False):
+            folder = spec.strip('"')
+            selected["folder"] = folder
+            return ("NO", [b""]) if folder == "Broken" else ("OK", [b"1"])
+
+        def uid(command, *args):
+            if command == "search":
+                return ("OK", [b"1"]) if selected["folder"] == "INBOX" else ("OK", [b""])
+            return ("OK", [])
+
+        conn.select.side_effect = select
+        conn.uid.side_effect = uid
+        provider = _imap_provider(conn, exclude_folders=[])
+
+        with patch("time.sleep"):
+            new_ids, _ = provider.get_new_message_ids(json.dumps({}))
+
+        assert new_ids == ["INBOX:1"]
+
+    def test_empty_search_result_yields_nothing(self):
+        """A folder with no matching UIDs should contribute no ids."""
+        conn = self._conn(["INBOX"], {"INBOX": []})
+        provider = _imap_provider(conn, exclude_folders=[])
+
+        with patch("time.sleep"):
+            new_ids, _ = provider.get_new_message_ids(json.dumps({}))
+
+        assert new_ids == []

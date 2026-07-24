@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ownmail import commands, sidecar
 from ownmail.archive import EmailArchive
 from ownmail.commands import (
@@ -2384,3 +2386,71 @@ class TestPopulateDatesOnly:
         assert "[205/205]" in captured.out
         assert "Updated: 205 emails" in captured.out
         assert all(v == "2024-01-01T10:00:00+00:00" for v in self._dates(archive).values())
+
+
+class TestUpdateLabelsGmailEdgeCases:
+    """Tests for _update_labels_gmail's skip and force-quit paths."""
+
+    def _archive(self, temp_dir):
+        return EmailArchive(temp_dir, {"sources": [{"name": "g", "type": "gmail_api", "account": "a@example.com"}]})
+
+    def _seed(self, archive, count):
+        with sqlite3.connect(archive.db.db_path) as conn:
+            for i in range(count):
+                conn.execute(
+                    "INSERT OR REPLACE INTO emails (email_id, provider_id, filename, account) VALUES (?, ?, ?, ?)",
+                    (f"e{i}", f"msg{i}", f"{i}.eml", "a@example.com"),
+                )
+        for i in range(count):
+            (archive.archive_dir / f"{i}.eml").write_bytes(b"From: x@example.com\n\nbody\n")
+
+    def test_row_deleted_mid_run_is_skipped(self, temp_dir, capsys):
+        """An email removed from the DB during the run should be skipped."""
+        archive = self._archive(temp_dir)
+        self._seed(archive, 1)
+
+        provider = MagicMock()
+        provider.get_labels_for_message.return_value = ["INBOX"]
+
+        def delete_then_return(_provider_id):
+            with sqlite3.connect(archive.db.db_path) as conn:
+                conn.execute("DELETE FROM emails WHERE email_id = 'e0'")
+            return ["INBOX"]
+
+        provider.get_labels_for_message.side_effect = delete_then_return
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            cmd_update_labels(archive)
+
+        assert "Skipped (no labels): 1" in capsys.readouterr().out
+
+    def test_second_interrupt_forces_quit(self, temp_dir):
+        """A second Ctrl-C should exit immediately rather than finish the batch."""
+        import signal as signal_module
+
+        archive = self._archive(temp_dir)
+        self._seed(archive, 3)
+
+        def interrupt_twice(_provider_id):
+            signal_module.raise_signal(signal_module.SIGINT)
+            signal_module.raise_signal(signal_module.SIGINT)
+            return ["INBOX"]
+
+        provider = MagicMock()
+        provider.get_labels_for_message.side_effect = interrupt_twice
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            with pytest.raises(SystemExit) as exc:
+                cmd_update_labels(archive)
+
+        assert exc.value.code == 1
+
+    def test_batch_commit_during_long_run(self, temp_dir, capsys):
+        """A run past the commit interval should still report every update."""
+        archive = self._archive(temp_dir)
+        self._seed(archive, 55)
+
+        provider = MagicMock()
+        provider.get_labels_for_message.return_value = ["INBOX"]
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            cmd_update_labels(archive)
+
+        assert "Updated: 55 emails" in capsys.readouterr().out
