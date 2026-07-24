@@ -995,8 +995,9 @@ Examples:
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Error: {e}")
-        raise  # For debugging during development
-        # sys.exit(1)
+        if args.verbose:
+            raise
+        sys.exit(1)
 
 
 if __name__ == "__main__":

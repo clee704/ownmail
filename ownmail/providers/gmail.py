@@ -102,7 +102,10 @@ class GmailProvider(EmailProvider):
         client_credentials = self._keychain.load_client_credentials("gmail")
         if not client_credentials:
             raise RuntimeError(
-                "No OAuth credentials found. Run 'ownmail setup' first."
+                f"No Gmail OAuth app credentials found in keychain for account '{self._account}'.\n"
+                "  This is the client_id/client_secret from your Google Cloud OAuth app "
+                "(different from the per-account token saved after you authorize access).\n"
+                "  Run 'ownmail setup' to store them."
             )
 
         print("\nStarting OAuth authentication flow...")
