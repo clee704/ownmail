@@ -112,7 +112,7 @@ class TestGmailProviderAuthentication:
                 keychain=mock_keychain,
             )
 
-            with pytest.raises(RuntimeError, match="No OAuth credentials"):
+            with pytest.raises(RuntimeError, match="No Gmail OAuth app credentials found in keychain"):
                 provider.authenticate()
 
 

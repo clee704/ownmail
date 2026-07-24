@@ -33,7 +33,7 @@ class TestGmailProviderAuthentication:
                 keychain=mock_keychain,
             )
 
-            with pytest.raises(RuntimeError, match="No OAuth credentials"):
+            with pytest.raises(RuntimeError, match="No Gmail OAuth app credentials found in keychain"):
                 provider.authenticate()
 
     def test_authenticate_with_expired_token_refresh_fails(self, capsys):
