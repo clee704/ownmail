@@ -2476,3 +2476,216 @@ class TestLinkify:
         result = _linkify("> quoted reply\nnormal line")
         assert "quoted reply" in result
         assert "normal line" in result
+
+
+class TestSearchRoute:
+    """Tests for the /search route's sorting, paging and formatting."""
+
+    @pytest.fixture
+    def archive(self, tmp_path):
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = MagicMock()
+        archive.db.get_email_count.return_value = 100
+        archive.db.get_trash_count.return_value = 0
+        archive.auto_expire_trash.return_value = 0
+        archive.search.return_value = []
+        return archive
+
+    def _row(self, i=1, subject="Subject", sender="a@example.com", date="Mon, 1 Jan 2024 10:00:00 +0000", snippet="s"):
+        return (f"id{i}", f"f{i}.eml", subject, sender, date, snippet)
+
+    def test_empty_query_lists_newest_first(self, archive):
+        """With no query, results should be sorted newest-first."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            client.get("/search")
+        assert archive.search.call_args.kwargs["sort"] == "date_desc"
+
+    def test_filter_only_query_switches_off_relevance(self, archive):
+        """A query with only filters has no relevance signal, so sort by date."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            client.get("/search?q=label:Work")
+        assert archive.search.call_args.kwargs["sort"] == "date_desc"
+
+    def test_text_query_keeps_relevance(self, archive):
+        """A query with real search terms should keep relevance ordering."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            client.get("/search?q=invoice")
+        assert archive.search.call_args.kwargs["sort"] == "relevance"
+
+    def test_date_filter_alone_sorts_by_date(self, archive):
+        """before:/after: filters alone should not use relevance."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            client.get("/search?q=after:2024-01-01")
+        assert archive.search.call_args.kwargs["sort"] == "date_desc"
+
+    def test_invalid_sort_falls_back(self, archive):
+        """An unrecognized sort value should fall back to relevance."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            client.get("/search?q=invoice&sort=bogus")
+        assert archive.search.call_args.kwargs["sort"] == "relevance"
+
+    def test_explicit_sort_is_honoured(self, archive):
+        """A valid sort parameter should be passed through."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            client.get("/search?q=invoice&sort=date_asc")
+        assert archive.search.call_args.kwargs["sort"] == "date_asc"
+
+    def test_pagination_offset(self, archive):
+        """Page 3 at 20 per page should request offset 40."""
+        app = create_app(archive, page_size=20)
+        with app.test_client() as client:
+            client.get("/search?q=invoice&page=3")
+        assert archive.search.call_args.kwargs["offset"] == 40
+        assert archive.search.call_args.kwargs["limit"] == 21
+
+    def test_extra_row_signals_more_pages(self, archive):
+        """Fetching per_page+1 rows should trim the extra and offer page 2."""
+        archive.search.return_value = [self._row(i, subject=f"Subject {i}") for i in range(4)]
+        app = create_app(archive, page_size=3)
+        with app.test_client() as client:
+            response = client.get("/search?q=invoice")
+        assert response.status_code == 200
+        assert b"Subject 2" in response.data
+        assert b"Subject 3" not in response.data
+        assert b"page=2" in response.data
+
+    def test_mime_headers_in_results_are_decoded(self, archive):
+        """Encoded-word subject/sender/snippet should be decoded in the list."""
+        archive.search.return_value = [
+            self._row(
+                subject="=?UTF-8?B?7YWM7Iqk7Yq4?=",
+                sender="=?UTF-8?B?7YWM7Iqk7Yq4?= <k@e.com>",
+                snippet="=?UTF-8?B?7YWM7Iqk7Yq4?=",
+            )
+        ]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/search?q=x")
+        assert "테스트".encode() in response.data
+        assert b"=?UTF-8?B?" not in response.data
+
+    def test_missing_subject_placeholder(self, archive):
+        """A result with no subject should show a placeholder."""
+        archive.search.return_value = [self._row(subject="")]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/search?q=x")
+        assert b"(No subject)" in response.data
+
+    def test_unparseable_date_degrades_to_first_token(self, archive):
+        """A date that cannot be parsed should show its leading token."""
+        archive.search.return_value = [self._row(date="20240101 garbage")]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/search?q=x")
+        assert b"20240101" in response.data
+
+    def test_verbose_logs_search_timing(self, archive, capsys):
+        """Verbose mode should log the query and its duration."""
+        app = create_app(archive, verbose=True)
+        with app.test_client() as client:
+            client.get("/search?q=invoice")
+        out = capsys.readouterr().out
+        assert "Searching for: invoice" in out
+        assert "Search took" in out
+
+    def test_verbose_logs_search_error(self, archive, capsys):
+        """A search failure should be logged and rendered as an error."""
+        archive.search.side_effect = RuntimeError("fts5 syntax error")
+        app = create_app(archive, verbose=True)
+        with app.test_client() as client:
+            response = client.get("/search?q=bad(")
+        assert response.status_code == 200
+        assert b"fts5 syntax error" in response.data
+        assert "Search error: fts5 syntax error" in capsys.readouterr().out
+
+
+class TestTrashMutationRoutes:
+    """Tests for the trash/restore/bulk routes' failure paths."""
+
+    @pytest.fixture
+    def archive(self, tmp_path):
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = MagicMock()
+        archive.db.get_email_count.return_value = 1
+        archive.db.get_trash_count.return_value = 0
+        archive.auto_expire_trash.return_value = 0
+        return archive
+
+    def test_trash_unknown_email_is_404(self, archive):
+        """Trashing an email that isn't there should 404."""
+        archive.trash_email.return_value = False
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.post("/trash/nope").status_code == 404
+
+    def test_restore_unknown_email_is_404(self, archive):
+        """Restoring an email that isn't in trash should 404."""
+        archive.restore_email.return_value = False
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.post("/restore/nope").status_code == 404
+
+    def test_restore_bulk(self, archive):
+        """Bulk restore should restore each listed id."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.post("/restore-bulk", data={"ids": "a,b,c"})
+        assert response.status_code == 204
+        assert archive.restore_email.call_count == 3
+
+    def test_bulk_routes_ignore_blank_ids(self, archive):
+        """Empty segments in the id list should be skipped."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            client.post("/trash-bulk", data={"ids": "a,,  ,b"})
+        assert archive.trash_email.call_count == 2
+
+    def test_delete_forever_with_no_ids_does_nothing(self, archive):
+        """An empty id list should not call through to the archive."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.post("/delete-forever", data={"ids": ""})
+        assert response.status_code == 204
+        archive.permanently_delete_emails.assert_not_called()
+
+
+class TestDecodeHeaderFallback:
+    """Tests for decode_header's manual regrouping fallback."""
+
+    def test_split_multibyte_across_encoded_words(self):
+        """A multi-byte char split across encoded-words should be rejoined."""
+        import base64 as b64
+
+        raw = "테스트 제목".encode()
+        first = b64.b64encode(raw[:5]).decode().rstrip("=")
+        second = b64.b64encode(raw[5:]).decode().rstrip("=")
+        result = decode_header(f"=?utf-8?B?{first}?= =?utf-8?B?{second}?=")
+        assert "=?" not in result
+
+    def test_non_encoded_value_passes_through(self):
+        """A value with no encoded-words should be returned unchanged."""
+        assert decode_header("Plain Subject") == "Plain Subject"
+
+    def test_header_object_is_stringified(self):
+        """A Header object should be converted before decoding."""
+        from email.header import Header
+
+        assert decode_header(Header("Plain Subject", "us-ascii")) == "Plain Subject"
+
+    def test_none_and_empty_return_empty(self):
+        """Falsy header values should yield an empty string."""
+        assert decode_header(None) == ""
+        assert decode_header("") == ""
+
+    def test_quoted_printable_encoded_word(self):
+        """A Q-encoded word should decode."""
+        assert decode_header("=?utf-8?Q?caf=C3=A9?=") == "café"
