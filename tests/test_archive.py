@@ -1136,4 +1136,280 @@ class TestArchiveTrash:
         archive.trash_email(eid)
         count = archive.empty_trash(expired_only=False)
         assert count == 1
+
+
+class TestImportEmail:
+    """Tests for import_email (single-file import)."""
+
+    def test_import_derives_local_provider_id_from_message_id(self, temp_dir, sample_eml_simple):
+        """Imported email gets a local:{Message-ID} provider_id."""
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "src.eml"
+        src.write_bytes(sample_eml_simple)
+
+        status = archive.import_email(src, account="me@example.com")
+
+        assert status == "imported"
+        eid = _eid("local:<test123@example.com>", "me@example.com")
+        row = archive.db.get_email_by_id(eid)
+        assert row is not None
+
+    def test_import_falls_back_to_content_hash_when_no_message_id(self, temp_dir):
+        """Missing Message-ID falls back to local:sha256:{hash}."""
+        import hashlib
+
+        archive = EmailArchive(temp_dir, {})
+        raw = b"""From: sender@example.com\nTo: recipient@example.com\nSubject: No ID\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nNo message id here.\n"""
+        src = temp_dir / "src.eml"
+        src.write_bytes(raw)
+
+        status = archive.import_email(src, account="me@example.com")
+
+        assert status == "imported"
+        expected_id = f"local:sha256:{hashlib.sha256(raw).hexdigest()}"
+        eid = _eid(expected_id, "me@example.com")
+        assert archive.db.get_email_by_id(eid) is not None
+
+    def test_import_defaults_account_to_from_header(self, temp_dir, sample_eml_simple):
+        """When --account isn't given, the email's own From header is used."""
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "src.eml"
+        src.write_bytes(sample_eml_simple)
+
+        status = archive.import_email(src)
+
+        assert status == "imported"
+        eid = _eid("local:<test123@example.com>", "sender@example.com")
+        assert archive.db.get_email_by_id(eid) is not None
+
+    def test_import_copies_file_into_archive_layout(self, temp_dir, sample_eml_simple):
+        """The source file is copied into sources/local/YYYY/MM/."""
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "src.eml"
+        src.write_bytes(sample_eml_simple)
+
+        archive.import_email(src, account="me@example.com")
+
+        assert src.exists()  # copy, not move, by default
+        copied = list((temp_dir / "sources" / "local" / "2024" / "01").glob("*.eml"))
+        assert len(copied) == 1
+        assert copied[0].read_bytes() == sample_eml_simple
+
+    def test_import_move_deletes_source(self, temp_dir, sample_eml_simple):
+        """--move deletes the source file after a successful import."""
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "src.eml"
+        src.write_bytes(sample_eml_simple)
+
+        status = archive.import_email(src, account="me@example.com", move=True)
+
+        assert status == "imported"
+        assert not src.exists()
+
+    def test_import_duplicate_is_skipped(self, temp_dir, sample_eml_simple):
+        """Importing the same email twice is a no-op the second time."""
+        archive = EmailArchive(temp_dir, {})
+        src1 = temp_dir / "src1.eml"
+        src1.write_bytes(sample_eml_simple)
+        src2 = temp_dir / "src2.eml"
+        src2.write_bytes(sample_eml_simple)
+
+        first = archive.import_email(src1, account="me@example.com")
+        second = archive.import_email(src2, account="me@example.com")
+
+        assert first == "imported"
+        assert second == "duplicate"
+        # Only one copy should exist in the archive
+        copied = list((temp_dir / "sources" / "local").rglob("*.eml"))
+        assert len(copied) == 1
+
+    def test_import_missing_file_is_an_error(self, temp_dir):
+        """Importing a nonexistent file returns 'error', not a crash."""
+        archive = EmailArchive(temp_dir, {})
+        status = archive.import_email(temp_dir / "does_not_exist.eml", account="me@example.com")
+        assert status == "error"
+
+    def test_imported_email_is_searchable(self, temp_dir, sample_eml_simple):
+        """Imported emails are indexed and show up in search."""
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "src.eml"
+        src.write_bytes(sample_eml_simple)
+
+        archive.import_email(src, account="me@example.com")
+
+        results = archive.search("test email")
+        assert len(results) == 1
+
+
+class TestImportPath:
+    """Tests for import_path (directory-level import with progress/Ctrl-C)."""
+
+    def test_import_path_directory(self, temp_dir, capsys):
+        """Recursively imports all .eml files under a directory."""
+        archive = EmailArchive(temp_dir, {})
+        src_dir = temp_dir / "external"
+        (src_dir / "nested").mkdir(parents=True)
+        (src_dir / "one.eml").write_bytes(
+            b"From: a@example.com\nMessage-ID: <one@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nOne\n"
+        )
+        (src_dir / "nested" / "two.eml").write_bytes(
+            b"From: b@example.com\nMessage-ID: <two@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nTwo\n"
+        )
+
+        result = archive.import_path(src_dir, account="me@example.com")
+
+        assert result["imported_count"] == 2
+        assert result["duplicate_count"] == 0
+        assert result["error_count"] == 0
+        assert result["interrupted"] is False
+
+    def test_import_path_dry_run_does_not_import(self, temp_dir, capsys):
+        """--dry-run reports files without importing them."""
+        archive = EmailArchive(temp_dir, {})
+        src_dir = temp_dir / "external"
+        src_dir.mkdir()
+        (src_dir / "one.eml").write_bytes(
+            b"From: a@example.com\nMessage-ID: <one@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nOne\n"
+        )
+
+        result = archive.import_path(src_dir, account="me@example.com", dry_run=True)
+
+        assert result["imported_count"] == 0
+        assert archive.db.get_email_count() == 0
+        captured = capsys.readouterr()
+        assert "would import" in captured.out
+
+    def test_import_path_single_file(self, temp_dir):
+        """A single .eml file path (not a directory) is imported directly."""
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "one.eml"
+        src.write_bytes(
+            b"From: a@example.com\nMessage-ID: <one@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nOne\n"
+        )
+
+        result = archive.import_path(src, account="me@example.com")
+
+        assert result["imported_count"] == 1
+
+    def test_import_path_no_eml_files(self, temp_dir, capsys):
+        """A directory with no .eml files imports nothing and doesn't crash."""
+        archive = EmailArchive(temp_dir, {})
+        src_dir = temp_dir / "external"
+        src_dir.mkdir()
+        (src_dir / "notes.txt").write_text("not an email")
+
+        result = archive.import_path(src_dir, account="me@example.com")
+
+        assert result["imported_count"] == 0
+        captured = capsys.readouterr()
+        assert "No .eml files found" in captured.out
+
+    def test_import_path_sigint_stops_after_current_file(self, temp_dir):
+        """SIGINT mid-import stops after the current file and is resumable."""
+        import os
+        import signal
+
+        archive = EmailArchive(temp_dir, {})
+        src_dir = temp_dir / "external"
+        src_dir.mkdir()
+        for i in range(5):
+            (src_dir / f"{i}.eml").write_bytes(
+                f"From: a{i}@example.com\nMessage-ID: <{i}@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nBody {i}\n".encode()
+            )
+
+        original_import_email = archive.import_email
+        call_count = 0
+
+        def import_and_interrupt(filepath, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                os.kill(os.getpid(), signal.SIGINT)
+            return original_import_email(filepath, **kwargs)
+
+        archive.import_email = import_and_interrupt
+
+        result = archive.import_path(src_dir, account="me@example.com")
+
+        assert result["interrupted"] is True
+        assert 0 < result["imported_count"] < 5
+
+        # Resuming picks up where it left off (already-imported files are skipped)
+        archive.import_email = original_import_email
+        second_result = archive.import_path(src_dir, account="me@example.com")
+        assert result["imported_count"] + second_result["imported_count"] == 5
+
+
+class TestScanArchive:
+    """Tests for scan_archive (registering untracked in-place .eml files)."""
+
+    def test_scan_registers_untracked_file(self, temp_dir):
+        """A manually-placed .eml file in the archive dir gets registered."""
+        archive = EmailArchive(temp_dir, {})
+        placed_dir = temp_dir / "sources" / "local" / "2024" / "01"
+        placed_dir.mkdir(parents=True)
+        (placed_dir / "manual.eml").write_bytes(
+            b"From: a@example.com\nMessage-ID: <manual@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nManual\n"
+        )
+
+        result = archive.scan_archive(account="me@example.com")
+
+        assert result["imported_count"] == 1
+        eid = _eid("local:<manual@example.com>", "me@example.com")
+        assert archive.db.get_email_by_id(eid) is not None
+
+    def test_scan_skips_already_tracked_files(self, temp_dir, sample_eml_simple):
+        """Files already tracked in the DB are not re-registered."""
+        archive = EmailArchive(temp_dir, {})
+        emails_dir = archive.get_emails_dir("gmail")
+        emails_dir.mkdir(parents=True)
+        filepath = emails_dir / "existing.eml"
+        filepath.write_bytes(sample_eml_simple)
+        rel_path = str(filepath.relative_to(temp_dir))
+        archive.db.mark_downloaded(_eid("msg1", "me@example.com"), "msg1", rel_path, account="me@example.com")
+
+        result = archive.scan_archive(account="me@example.com")
+
+        assert result["imported_count"] == 0
+
+    def test_scan_does_not_move_or_copy_files(self, temp_dir):
+        """scan registers files in place; the file never moves."""
+        archive = EmailArchive(temp_dir, {})
+        placed_dir = temp_dir / "sources" / "local" / "2024" / "01"
+        placed_dir.mkdir(parents=True)
+        placed_file = placed_dir / "manual.eml"
+        placed_file.write_bytes(
+            b"From: a@example.com\nMessage-ID: <manual@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nManual\n"
+        )
+
+        archive.scan_archive(account="me@example.com")
+
+        eid = _eid("local:<manual@example.com>", "me@example.com")
+        row = archive.db.get_email_by_id(eid)
+        assert row[1] == str(placed_file.relative_to(temp_dir))
+        assert placed_file.exists()
+
+    def test_scan_dry_run_does_not_register(self, temp_dir, capsys):
+        """--dry-run reports untracked files without registering them."""
+        archive = EmailArchive(temp_dir, {})
+        placed_dir = temp_dir / "sources" / "local" / "2024" / "01"
+        placed_dir.mkdir(parents=True)
+        (placed_dir / "manual.eml").write_bytes(
+            b"From: a@example.com\nMessage-ID: <manual@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nManual\n"
+        )
+
+        result = archive.scan_archive(account="me@example.com", dry_run=True)
+
+        assert result["imported_count"] == 0
+        assert archive.db.get_email_count() == 0
+        captured = capsys.readouterr()
+        assert "would register" in captured.out
+
+    def test_scan_no_untracked_files(self, temp_dir, capsys):
+        """No untracked files scans cleanly without crashing."""
+        archive = EmailArchive(temp_dir, {})
+        result = archive.scan_archive()
+        assert result["imported_count"] == 0
+        captured = capsys.readouterr()
+        assert "No untracked .eml files found" in captured.out
         assert archive.db.get_trash_count() == 0

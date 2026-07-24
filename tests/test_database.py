@@ -77,6 +77,17 @@ class TestArchiveDatabaseOperations:
 
         assert ids == {"msg1", "msg2", "msg3"}
 
+    def test_get_tracked_filenames(self, temp_dir):
+        """Test getting all tracked filenames."""
+        db = ArchiveDatabase(temp_dir)
+
+        db.mark_downloaded(_eid("msg1"), "msg1", "file1.eml", account="alice@example.com")
+        db.mark_downloaded(_eid("msg2"), "msg2", "file2.eml", account="bob@example.com")
+
+        assert db.get_tracked_filenames() == {"file1.eml", "file2.eml"}
+        assert db.get_tracked_filenames(account="alice@example.com") == {"file1.eml"}
+        assert db.get_tracked_filenames(account="nobody@example.com") == set()
+
     def test_history_id(self, temp_dir):
         """Test history ID get/set."""
         db = ArchiveDatabase(temp_dir)

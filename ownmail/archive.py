@@ -12,8 +12,8 @@ import sqlite3
 import sys
 import tempfile
 import time
-from datetime import timezone
-from email.utils import parsedate_to_datetime as _parsedate_to_datetime
+from datetime import datetime, timezone
+from email.utils import parseaddr, parsedate_to_datetime as _parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -468,6 +468,366 @@ class EmailArchive:
             "failed_ids": failed_ids,
         }
 
+    # -------------------------------------------------------------------------
+    # Import / Scan (externally-sourced .eml files)
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _local_provider_id(email_msg, raw_data: bytes) -> str:
+        """Derive a provider_id for an externally-sourced .eml file.
+
+        Uses the Message-ID header when present, falling back to a content
+        hash. The 'local:' prefix keeps these ids from ever colliding with
+        gmail/imap provider ids.
+        """
+        message_id = (email_msg.get("Message-ID") or "").strip()
+        if message_id:
+            return f"local:{message_id}"
+        return f"local:sha256:{hashlib.sha256(raw_data).hexdigest()}"
+
+    @staticmethod
+    def _derive_account_from_from_header(email_msg) -> str:
+        """Default account for an imported email: the address in its own From header."""
+        _, addr = parseaddr(email_msg.get("From", ""))
+        return addr.lower() if addr else "unknown"
+
+    @staticmethod
+    def _is_already_tracked(conn: sqlite3.Connection, provider_id: str, account: str) -> bool:
+        return conn.execute(
+            "SELECT 1 FROM emails WHERE provider_id = ? AND account = ?",
+            (provider_id, account),
+        ).fetchone() is not None
+
+    def _register_and_index(
+        self,
+        filepath: Path,
+        raw_data: bytes,
+        provider_id: str,
+        account: str,
+        conn: sqlite3.Connection,
+    ) -> str:
+        """Register a file already at its final archive location and index it.
+
+        Returns:
+            "imported" or "duplicate"
+        """
+        if self._is_already_tracked(conn, provider_id, account):
+            return "duplicate"
+
+        content_hash = hashlib.sha256(raw_data).hexdigest()
+        email_msg = email.message_from_bytes(raw_data)
+        msg_date_utc = self._parse_email_datetime(email_msg)
+        email_date = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00") if msg_date_utc else None
+
+        email_id = ArchiveDatabase.make_email_id(account, provider_id)
+
+        self.db.mark_downloaded(
+            email_id=email_id,
+            provider_id=provider_id,
+            filename=str(filepath.relative_to(self.archive_dir)),
+            content_hash=content_hash,
+            account=account,
+            conn=conn,
+            email_date=email_date,
+        )
+
+        parsed = EmailParser.parse_file(content=raw_data)
+        self.db.index_email(
+            email_id=email_id,
+            subject=parsed["subject"],
+            sender=parsed["sender"],
+            recipients=parsed["recipients"],
+            date_str=parsed["date_str"],
+            body=parsed["body"],
+            attachments=parsed["attachments"],
+            conn=conn,
+            skip_delete=True,
+            email_date=email_date,
+        )
+        conn.execute(
+            "UPDATE emails SET indexed_hash = ? WHERE email_id = ?",
+            (content_hash, email_id),
+        )
+        return "imported"
+
+    def import_email(
+        self,
+        filepath: Path,
+        account: Optional[str] = None,
+        move: bool = False,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> str:
+        """Import a single external .eml file into the archive.
+
+        Copies (or moves) the file into the standard archive layout, derives
+        a provider_id as local:{Message-ID} (falling back to
+        local:sha256:{content_hash} when Message-ID is missing), and
+        registers + indexes it in the database.
+
+        Args:
+            filepath: Path to the source .eml file
+            account: Account to associate the email with. Defaults to the
+                address in the email's own From header.
+            move: Delete the source file after a successful import (default: copy)
+            conn: Optional shared connection for batching
+
+        Returns:
+            "imported", "duplicate", or "error"
+        """
+        try:
+            raw_data = filepath.read_bytes()
+        except OSError as e:
+            print(f"\n  Error reading {filepath}: {e}")
+            return "error"
+
+        email_msg = email.message_from_bytes(raw_data)
+        provider_id = self._local_provider_id(email_msg, raw_data)
+        if not account:
+            account = self._derive_account_from_from_header(email_msg)
+
+        should_close = conn is None
+        if conn is None:
+            conn = sqlite3.connect(self.db.db_path)
+
+        try:
+            if self._is_already_tracked(conn, provider_id, account):
+                return "duplicate"
+
+            emails_dir = self.get_emails_dir("local")
+            emails_dir.mkdir(parents=True, exist_ok=True)
+            dest_filepath, _ = self._save_email(raw_data, provider_id, account, emails_dir)
+            if not dest_filepath:
+                return "error"
+
+            result = self._register_and_index(dest_filepath, raw_data, provider_id, account, conn)
+
+            if result == "imported" and move:
+                try:
+                    filepath.unlink()
+                except OSError:
+                    pass
+
+            return result
+        except Exception as e:
+            print(f"\n  Error importing {filepath}: {e}")
+            return "error"
+        finally:
+            if should_close:
+                conn.commit()
+                conn.close()
+
+    def register_scanned_email(
+        self,
+        filepath: Path,
+        account: Optional[str] = None,
+        conn: Optional[sqlite3.Connection] = None,
+    ) -> str:
+        """Register an .eml file already sitting in the archive dir, in place.
+
+        No file is moved or copied - the file is indexed where it sits.
+
+        Args:
+            filepath: Path to the (already archived) .eml file
+            account: Account to associate the email with. Defaults to the
+                address in the email's own From header.
+            conn: Optional shared connection for batching
+
+        Returns:
+            "imported", "duplicate", or "error"
+        """
+        try:
+            raw_data = filepath.read_bytes()
+        except OSError as e:
+            print(f"\n  Error reading {filepath}: {e}")
+            return "error"
+
+        email_msg = email.message_from_bytes(raw_data)
+        provider_id = self._local_provider_id(email_msg, raw_data)
+        if not account:
+            account = self._derive_account_from_from_header(email_msg)
+
+        should_close = conn is None
+        if conn is None:
+            conn = sqlite3.connect(self.db.db_path)
+
+        try:
+            return self._register_and_index(filepath, raw_data, provider_id, account, conn)
+        except Exception as e:
+            print(f"\n  Error registering {filepath}: {e}")
+            return "error"
+        finally:
+            if should_close:
+                conn.commit()
+                conn.close()
+
+    @staticmethod
+    def _empty_batch_result() -> dict:
+        return {"imported_count": 0, "duplicate_count": 0, "error_count": 0, "interrupted": False}
+
+    def _run_batch(self, files: List[Path], process_fn, noun: str, count_label: str) -> dict:
+        """Shared progress/Ctrl-C/batch-commit loop for import_path and scan_archive.
+
+        Args:
+            files: Files to process, in order
+            process_fn: Callable(filepath, conn) -> "imported" | "duplicate" | "error"
+            noun: Operation name for the summary header (e.g. "Import", "Scan")
+            count_label: Label for the success count line (e.g. "Imported", "Registered")
+        """
+        result = self._empty_batch_result()
+        print("(Press Ctrl-C to stop - progress is saved, you can resume anytime)\n")
+
+        interrupted = False
+        start_time = time.time()
+        last_commit_count = 0
+        COMMIT_INTERVAL = 10
+
+        def signal_handler(signum, frame):
+            nonlocal interrupted
+            if interrupted:
+                print("\n\nForce quit.")
+                sys.exit(1)
+            interrupted = True
+            print("\n\n⏸ Stopping after current email... (Ctrl-C again to force quit)")
+
+        original_handler = signal.signal(signal.SIGINT, signal_handler)
+
+        conn = sqlite3.connect(self.db.db_path)
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+
+        try:
+            for i, filepath in enumerate(files, 1):
+                if interrupted:
+                    break
+
+                print(f"\r\033[K  [{i}/{len(files)}] {filepath.name[:40]}", end="", flush=True)
+
+                status = process_fn(filepath, conn)
+                result[f"{status}_count"] += 1
+
+                processed = result["imported_count"] + result["duplicate_count"] + result["error_count"]
+                if processed - last_commit_count >= COMMIT_INTERVAL:
+                    conn.commit()
+                    last_commit_count = processed
+        finally:
+            conn.commit()
+            conn.close()
+            signal.signal(signal.SIGINT, original_handler)
+
+        result["interrupted"] = interrupted
+        elapsed = time.time() - start_time
+        print("\n" + "-" * 50)
+        print(f"{noun} {'Paused' if interrupted else 'Complete'}!")
+        print(f"  {count_label}: {result['imported_count']} in {elapsed:.1f}s")
+        if result["duplicate_count"]:
+            print(f"  Skipped (duplicate): {result['duplicate_count']}")
+        if result["error_count"]:
+            print(f"  Errors: {result['error_count']}")
+        if result["interrupted"]:
+            print(f"\n  Run 'ownmail {noun.lower()}' again to resume.")
+        print("-" * 50 + "\n")
+
+        return result
+
+    def import_path(
+        self,
+        path: Path,
+        account: Optional[str] = None,
+        move: bool = False,
+        dry_run: bool = False,
+    ) -> dict:
+        """Import .eml file(s) from an external path into the archive.
+
+        Args:
+            path: A single .eml file, or a directory to scan recursively
+            account: Associate all imported emails with this account. If not
+                given, each email's own From header address is used.
+            move: Delete source files after a successful import (default: copy)
+            dry_run: List what would be imported without doing it
+
+        Returns:
+            Dict with imported_count, duplicate_count, error_count, interrupted
+        """
+        if path.is_file():
+            files = [path] if path.suffix.lower() == ".eml" else []
+        else:
+            files = sorted(path.rglob("*.eml"))
+
+        if not files:
+            print(f"No .eml files found under {path}")
+            return self._empty_batch_result()
+
+        print(f"Found {len(files)} .eml file(s)")
+        if dry_run:
+            for f in files:
+                print(f"  would import: {f}")
+            return self._empty_batch_result()
+
+        return self._run_batch(
+            files,
+            lambda filepath, conn: self.import_email(filepath, account=account, move=move, conn=conn),
+            noun="Import",
+            count_label="Imported",
+        )
+
+    def scan_archive(
+        self,
+        account: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> dict:
+        """Register .eml files present in the archive dir but untracked by the DB.
+
+        Files are registered in place - nothing is moved or copied.
+
+        Args:
+            account: Associate all registered emails with this account. If
+                not given, each email's own From header address is used.
+            dry_run: List what would be registered without doing it
+
+        Returns:
+            Dict with imported_count, duplicate_count, error_count, interrupted
+        """
+        tracked = self.db.get_tracked_filenames()
+        files = [
+            f for f in sorted(self.archive_dir.rglob("*.eml"))
+            if str(f.relative_to(self.archive_dir)) not in tracked
+        ]
+
+        if not files:
+            print("No untracked .eml files found.")
+            return self._empty_batch_result()
+
+        print(f"Found {len(files)} untracked .eml file(s)")
+        if dry_run:
+            for f in files:
+                print(f"  would register: {f}")
+            return self._empty_batch_result()
+
+        return self._run_batch(
+            files,
+            lambda filepath, conn: self.register_scanned_email(filepath, account=account, conn=conn),
+            noun="Scan",
+            count_label="Registered",
+        )
+
+    @staticmethod
+    def _parse_email_datetime(email_msg) -> Optional[datetime]:
+        """Parse an email's date, in UTC, using the same robust logic as
+        EmailParser (Korean weekday prefixes, numeric months, Received-header
+        fallback, etc.).
+
+        Returns:
+            A UTC datetime, or None if the date couldn't be parsed.
+        """
+        date_str = email_msg.get("Date", "")
+        if not date_str:
+            date_str = EmailParser._extract_date_from_received(email_msg)
+        date_str = EmailParser._normalize_date(date_str)
+        try:
+            return _parsedate_to_datetime(date_str).astimezone(timezone.utc)
+        except Exception:
+            return None
+
     def _save_email(
         self,
         raw_data: bytes,
@@ -481,24 +841,15 @@ class EmailArchive:
             Tuple of (filepath, email_date_iso) or (None, None) on error
         """
         try:
-            # Parse date for directory structure using the same robust
-            # logic as EmailParser (Korean weekday prefixes, numeric months,
-            # Received-header fallback, etc.)
             email_msg = email.message_from_bytes(raw_data)
-            date_str = email_msg.get("Date", "")
-            if not date_str:
-                date_str = EmailParser._extract_date_from_received(email_msg)
-            date_str = EmailParser._normalize_date(date_str)
+            msg_date_utc = self._parse_email_datetime(email_msg)
             email_date_iso = None
 
-            try:
-                msg_date = _parsedate_to_datetime(date_str)
-                # Normalize to UTC for consistent sorting across timezones
-                msg_date_utc = msg_date.astimezone(timezone.utc)
+            if msg_date_utc:
                 date_prefix = msg_date_utc.strftime("%Y%m%d_%H%M%S")
                 year_month = msg_date_utc.strftime("%Y/%m")
                 email_date_iso = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-            except Exception:
+            else:
                 date_prefix = "unknown"
                 year_month = "unknown"
 

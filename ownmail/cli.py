@@ -702,6 +702,8 @@ Examples:
   %(prog)s search "invoice from:amazon"   Search emails
   %(prog)s stats                           Show statistics
   %(prog)s sources list                    List configured sources
+  %(prog)s import ~/exports/tuta           Import externally-sourced .eml files
+  %(prog)s scan                            Register untracked .eml files in the archive
         """,
     )
 
@@ -876,6 +878,28 @@ Examples:
     trash_parser.add_argument("--expire", action="store_true", help="Delete only expired trash (>30 days)")
     _add_global_opts(trash_parser)
 
+    # import command
+    import_parser = subparsers.add_parser(
+        "import",
+        help="Import external .eml files into the archive",
+        description="Recursively import .eml files (e.g. exports from Tuta, Thunderbird) into the archive.",
+    )
+    import_parser.add_argument("path", type=Path, help="File or directory of .eml files to import")
+    import_parser.add_argument("--account", type=str, help="Associate imported emails with this account (default: From header of each email)")
+    import_parser.add_argument("--move", action="store_true", help="Delete source files after a successful import (default: copy)")
+    import_parser.add_argument("--dry-run", action="store_true", help="Show what would be imported without doing it")
+    _add_global_opts(import_parser)
+
+    # scan command
+    scan_parser = subparsers.add_parser(
+        "scan",
+        help="Register untracked .eml files already in the archive dir",
+        description="Detect .eml files present in the archive directory but not tracked in the database, and register them in place.",
+    )
+    scan_parser.add_argument("--account", type=str, help="Associate registered emails with this account (default: From header of each email)")
+    scan_parser.add_argument("--dry-run", action="store_true", help="Show what would be registered without doing it")
+    _add_global_opts(scan_parser)
+
     args = parser.parse_args()
 
     if not args.command:
@@ -954,6 +978,12 @@ Examples:
                 cmd_list_unknown(archive, args.verbose)
             elif args.command == "trash":
                 cmd_trash(archive, args.empty, args.expire)
+            elif args.command == "import":
+                from ownmail.commands import cmd_import
+                cmd_import(archive, args.path, args.account, args.move, args.dry_run)
+            elif args.command == "scan":
+                from ownmail.commands import cmd_scan
+                cmd_scan(archive, args.account, args.dry_run)
             elif args.command == "serve":
                 from ownmail.web import run_server
                 # serve can use its own archive-dir or fall back to global

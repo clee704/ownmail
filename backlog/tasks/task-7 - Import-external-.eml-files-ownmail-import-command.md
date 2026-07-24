@@ -1,10 +1,10 @@
 ---
 id: TASK-7
 title: Import external .eml files (ownmail import command)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-24 05:04'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-24 05:53'
 labels: []
 milestone: m-0
 dependencies: []
@@ -20,8 +20,8 @@ ownmail currently only recognizes emails downloaded via its own download command
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ownmail import <path> ingests a directory of external .eml files into the archive with dedup, following the local: provider_id scheme
-- [ ] #2 ownmail scan registers untracked .eml files already present in the archive dir
-- [ ] #3 Both commands are resumable (Ctrl-C safe, batch-committed)
-- [ ] #4 Verified end-to-end against a real email export
+- [x] #1 ownmail import <path> ingests a directory of external .eml files into the archive with dedup, following the local: provider_id scheme
+- [x] #2 ownmail scan registers untracked .eml files already present in the archive dir
+- [x] #3 Both commands are resumable (Ctrl-C safe, batch-committed)
+- [x] #4 Verified end-to-end against a real email export
 <!-- AC:END -->

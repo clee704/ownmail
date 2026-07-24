@@ -1454,3 +1454,51 @@ def cmd_list_unknown(
     print("To include them, use: search --include-unknown")
     print("-" * 50 + "\n")
 
+
+def cmd_import(
+    archive: EmailArchive,
+    path: Path,
+    account: Optional[str] = None,
+    move: bool = False,
+    dry_run: bool = False,
+) -> None:
+    """Import external .eml file(s) into the archive.
+
+    Args:
+        archive: EmailArchive instance
+        path: File or directory of .eml files to import
+        account: Associate all imported emails with this account
+            (default: From header of each email)
+        move: Delete source files after a successful import (default: copy)
+        dry_run: Show what would be imported without doing it
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Import")
+    print("=" * 50 + "\n")
+
+    if not path.exists():
+        print(f"❌ Error: Path not found: {path}")
+        sys.exit(1)
+
+    archive.import_path(path, account=account, move=move, dry_run=dry_run)
+
+
+def cmd_scan(
+    archive: EmailArchive,
+    account: Optional[str] = None,
+    dry_run: bool = False,
+) -> None:
+    """Register .eml files present in the archive dir but untracked in the DB.
+
+    Args:
+        archive: EmailArchive instance
+        account: Associate registered emails with this account
+            (default: From header of each email)
+        dry_run: Show what would be registered without doing it
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Scan")
+    print("=" * 50 + "\n")
+
+    archive.scan_archive(account=account, dry_run=dry_run)
+

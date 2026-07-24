@@ -9,7 +9,9 @@ from ownmail.archive import EmailArchive
 from ownmail.commands import (
     _print_file_list,
     _reconcile_label_sidecars,
+    cmd_import,
     cmd_rebuild,
+    cmd_scan,
     cmd_verify,
 )
 from ownmail.database import ArchiveDatabase
@@ -1739,3 +1741,51 @@ class TestVerifyEndToEnd:
             assert b"Moved Email Test" in response.data
             assert b"sender@example.com" in response.data
             assert b"This email was moved on disk." in response.data
+
+
+class TestCmdImport:
+    """Tests for the cmd_import CLI wrapper."""
+
+    def test_import_missing_path_exits(self, temp_dir, capsys):
+        """A nonexistent path exits with an error instead of crashing."""
+        import pytest
+
+        archive = EmailArchive(temp_dir, {})
+        with pytest.raises(SystemExit):
+            cmd_import(archive, temp_dir / "nope")
+        out = capsys.readouterr().out
+        assert "not found" in out.lower()
+
+    def test_import_delegates_to_archive(self, temp_dir, capsys):
+        """cmd_import wires args through to archive.import_path."""
+        archive = EmailArchive(temp_dir, {})
+        src_dir = temp_dir / "external"
+        src_dir.mkdir()
+        (src_dir / "one.eml").write_bytes(
+            b"From: a@example.com\nMessage-ID: <one@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nOne\n"
+        )
+
+        cmd_import(archive, src_dir, account="me@example.com")
+
+        assert archive.db.get_email_count("me@example.com") == 1
+        out = capsys.readouterr().out
+        assert "Import" in out
+
+
+class TestCmdScan:
+    """Tests for the cmd_scan CLI wrapper."""
+
+    def test_scan_delegates_to_archive(self, temp_dir, capsys):
+        """cmd_scan wires args through to archive.scan_archive."""
+        archive = EmailArchive(temp_dir, {})
+        placed_dir = temp_dir / "sources" / "local" / "2024" / "01"
+        placed_dir.mkdir(parents=True)
+        (placed_dir / "manual.eml").write_bytes(
+            b"From: a@example.com\nMessage-ID: <manual@example.com>\nDate: Mon, 1 Jan 2024 10:00:00 +0000\n\nManual\n"
+        )
+
+        cmd_scan(archive, account="me@example.com")
+
+        assert archive.db.get_email_count("me@example.com") == 1
+        out = capsys.readouterr().out
+        assert "Scan" in out

@@ -458,6 +458,30 @@ class ArchiveDatabase:
                 ).fetchall()
             return {row[0] for row in results}
 
+    def get_tracked_filenames(self, account: Optional[str] = None) -> set:
+        """Get all filenames currently tracked in the database.
+
+        Used by `scan` to find .eml files present in the archive dir but
+        not yet registered in the database.
+
+        Args:
+            account: Filter to specific account (optional)
+
+        Returns:
+            Set of filename values (relative paths, as stored in the emails table)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            if account:
+                results = conn.execute(
+                    "SELECT filename FROM emails WHERE account = ?",
+                    (account,)
+                ).fetchall()
+            else:
+                results = conn.execute(
+                    "SELECT filename FROM emails"
+                ).fetchall()
+            return {row[0] for row in results}
+
     def get_downloaded_content_hashes(self, account: str) -> set:
         """Get all content hashes for an account.
 
