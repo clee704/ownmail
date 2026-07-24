@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-24 04:54'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-24 23:01'
 labels: []
 milestone: m-1
 dependencies: []
@@ -35,4 +35,12 @@ Today, Gmail's own TRASH/SPAM labels are excluded at download time (gmail.py -in
 
 <!-- SECTION:NOTES:BEGIN -->
 Confirmed, not just theoretical: imap.py:28 DEFAULT_EXCLUDE_FOLDERS = ["[Gmail]/Trash", "[Gmail]/Spam"] is a literal Gmail-only folder-name match. Any IMAP account whose trash folder is named anything else (plain "Trash", "Deleted Items", "INBOX.Trash", etc.) skips the exclusion entirely and gets archived as a normally-labeled email - reported by the user finding a real archived email with label "Trash". No IMAP SPECIAL-USE (RFC 6154) support exists in imap.py either, which is the actual provider-agnostic way to detect \Trash/\Junk/\Sent/\Drafts/\Archive regardless of naming. Fix should probably: (1) use SPECIAL-USE flags from the LIST response when the server advertises them, falling back to (2) a broader default literal-name list covering common providers (plain 'Trash', 'Deleted Items', 'Junk', 'Spam', ...) - and surface exclude_folders in config.example.yaml, which currently doesn't document the option at all even though the per-source parameter already exists in code.
+
+**2026-07-24 — this task now gates TASK-14 (purge).** Originally scoped as a UI/display concern: canonical system labels so a multi-account sidebar doesn't show fragmented per-provider folders.
+
+TASK-14's download filter is configured in terms of system labels (exclude trash, spam, drafts, inbox), and providers spell those differently — `TRASH` vs `Trash` vs `[Gmail]/Trash` vs `Deleted Items`, plus IMAP SPECIAL-USE flags. So the canonical mapping is a correctness precondition for purge, not just presentation: if `inbox` fails to resolve on some provider, inbox messages pass the filter, get downloaded, and get purged from the server — exactly the outcome TASK-14's design exists to prevent.
+
+AC #3 (SPECIAL-USE detection) and AC #5 (`exclude_folders` in config.example.yaml) are the parts TASK-14 leans on most directly.
+
+Sharpened: the mapping must be **semantic (a per-message role)**, not a folder-name lookup table. Evidence that names don't work — IMAP INBOX is a folder while Gmail INBOX is a label with different membership semantics; IMAP names are case-insensitive per RFC 3501; Gmail-over-IMAP has a message in both INBOX and [Gmail]/All Mail simultaneously; and folder names are localized (imap.py:211-219 hardcodes four language variants of All Mail and misses many more). AC #3's SPECIAL-USE detection is the right primitive for this, with a role fallback where the server doesn't advertise it.
 <!-- SECTION:NOTES:END -->

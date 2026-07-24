@@ -46,14 +46,21 @@ behind the order, tracked mechanically via each task's `milestone` and
   CLAUDE.md/copilot pointer, then ROADMAP.md retirement and README trim.
 - **Phase 4 — UI features** (TASK-5.1, TASK-6.1, TASK-6.2): label sidebar,
   then thread grouping, then the threaded list view.
-- **Phase 5 — Remote drain** (TASK-14, TASK-15): added 2026-07-24 after the
-  stack architecture was settled in doc-6. TASK-14 (the drain) is the only
-  net-new capability that decision produced; TASK-15 (whether client-side
-  deletions reach the archive) is a gap discovered alongside it. Both are
-  free of hard dependencies — in particular the drain does *not* depend on
-  TASK-5.2, since INBOX is the one system folder already standardized
-  across providers — so this phase is orderable against Phase 4 purely by
-  preference. TASK-14 is a STOP item and lands via PR.
+- **Phase 5 — Remote drain** (TASK-14): added 2026-07-24 after the stack
+  architecture was settled in doc-6. TASK-14 (optional purge + configurable
+  download filter) is the only net-new capability that decision produced.
+  TASK-15 was filed alongside it and then closed — the two-knob design
+  turned it into a config value rather than a code decision.
+
+  **TASK-14 depends on TASK-5.2, so Phase 5 follows Phase 2.** An earlier
+  version of this doc said otherwise, on the grounds that INBOX is already
+  standardized across providers. That claim was wrong even for INBOX — see
+  doc-6 for why. Canonical system-label mapping is a correctness
+  precondition for purge: a label that fails to resolve means messages get
+  purged that shouldn't be.
+
+  TASK-14 is a STOP item on two counts — it deletes user email and changes
+  OAuth scopes — so it needs sign-off and lands via PR.
 - **Ongoing — no fixed slot** (TASK-3): coverage push, independent of the
   phases, no urgency.
 

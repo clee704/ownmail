@@ -95,54 +95,134 @@ benefits don't survive contact with this stack:
 Original NO-GO trigger still stands: revisit only if `providers/imap.py`
 hits a real, specific problem cheaper to fix via mbsync than directly.
 
-## The drain
+## The drain: two orthogonal knobs
 
-The one net-new capability: delete mail from remote servers once it is
-safely archived locally.
+The one net-new capability, expressed as two independent settings that
+compose. Neither changes ownmail's current default behaviour.
 
-**One policy rule, one precondition.** These are different kinds of thing
-and shouldn't be presented as a single list of knobs:
+### Knob 1 — purge (opt-in, default off)
 
-- **Policy — skip anything in INBOX.** Age is the wrong predicate. The
-  inbox is a decision queue kept near-empty, so a message still sitting in
-  it is undecided *at any age*, and a message that's been archived is
-  decided. Triage is already the signal; no heuristic needed. This is the
-  only user-facing rule.
-- **Precondition — content verifies locally.** Hash the local `.eml` and
-  confirm it matches before expunging. No knob, no config, never surfaced.
-  It is the difference between a drain and data loss, and must be a
-  per-message check at drain time using the existing `verify`/`sync-check`
-  machinery (`cli.py:809,818`) — not "synced recently, probably fine."
+Default is exactly today's behaviour: read, never delete. Enabled, ownmail
+removes a message from the server once it has confirmed the local copy.
 
-**Read INBOX membership live from the server**, in the same session that
-does the delete. This is what makes an age/grace-period buffer
-unnecessary: the only thing a delay would protect against is a stale local
-view of where a message lives, and there's nothing stale about state read
-immediately before expunging. It also removes any "days since it left the
-inbox" bookkeeping.
+- **Purge means move to Trash, not hard delete.** This is what makes
+  "servers own the grace period" real — Gmail's 30-day Trash retention *is*
+  the grace period, and ownmail implements no time logic whatsoever. It
+  also closes the loop with knob 2: the default filter excludes trash, so a
+  message ownmail just trashed is not re-downloaded next run.
+- **Confirmation is a per-message content-hash re-check** of the local
+  `.eml` at purge time via the existing `verify`/`sync-check` machinery
+  (`cli.py:809,818`) — not "synced recently, probably fine." This is the
+  difference between a drain and data loss.
+- **Sweep semantics, not download-time-only.** Purge considers every server
+  message that passes the current filter and has a verified local copy, not
+  just what this run downloaded. Download-time-only cannot meet the goal:
+  mail archived before purge was enabled would sit on the server forever.
+  Consequence — **the filter is evaluated live against server state at
+  purge time**, so a message downloaded a year ago while it sat in the
+  inbox becomes purgeable the moment it's archived. This is the generalized
+  form of the earlier "read INBOX membership live" rule.
 
-Explicitly rejected as speculative: exempting `\Flagged`/starred messages
-(archived means decided; the star survives in the archive as a label), a
-`keep` hold label, and any grace period.
+### Knob 2 — download filter (configurable)
 
-Deferred, not needed for v1: a stale-inbox report ("14 messages older than
-30 days"). Addresses mail lingering on Gmail, which is a comfort issue,
-not a data-loss one.
+Which messages get downloaded at all. **Purge requires download**, so
+anything filtered out is automatically never purged. That coupling is what
+keeps the inbox safe without a dedicated inbox rule.
 
-### Notes for implementation
+- **Not new machinery.** The filter already exists in three inconsistent
+  places, none exposed in config: `imap.py:27` `DEFAULT_EXCLUDE_FOLDERS`
+  (configurable, but defaulting to Gmail-specific folder names),
+  `gmail.py:130` hardcoded `-in:trash -in:spam`, and `gmail.py:224`
+  re-checking `TRASH`/`SPAM` on `labelIds`. This unifies and exposes them.
+- **Filter terms are canonical system-label names.** Providers spell the
+  same concept differently — `TRASH` vs `Trash` vs `[Gmail]/Trash` vs
+  `Deleted Items`, plus IMAP SPECIAL-USE flags — so a filter config can't
+  be written against raw provider strings. See the dependency note below.
+- **Default filter excludes trash, spam, and drafts.** Drafts are live
+  working state; purging them would yank an in-progress draft out from
+  under a mail client mid-compose. This is the only default behaviour
+  change in the whole design.
 
-- **Gmail gives a free undo window.** Its IMAP delete semantics route
-  through `[Gmail]/Trash` with 30-day retention, so a drain mistake is
-  recoverable for a month. mailbox.org may not behave the same way — check
-  before pointing the drain at it.
-- **This is a STOP item.** It deletes user email, so it needs explicit
-  human sign-off and lands via PR, not straight to `master`.
+The intended setup is then just: filter excludes inbox + trash (+ spam,
+drafts), purge on. Everything else is downloaded and trashed on the server.
 
-## Known gap in the two-path split
+### Why this beats the earlier single-rule design
+
+An earlier draft had purge carry a hardcoded "skip anything in INBOX"
+policy plus a verification precondition. The two-knob version is strictly
+better: the inbox skip falls out of a general mechanism instead of being a
+special case, the filter is independently useful, and purge stays opt-in so
+no existing behaviour changes.
+
+Still explicitly rejected as speculative: exempting `\Flagged`/starred
+messages (archived means decided, and the star survives in the archive as a
+label), a `keep` hold label, and any ownmail-side grace period. Deferred: a
+stale-inbox report — that addresses mail lingering on Gmail, a comfort
+issue rather than a data-loss one.
+
+### Consequences to handle
+
+- **Editing the filter is destructive.** Under sweep semantics, removing
+  `inbox` from the exclude list means the next purge trashes the entire
+  inbox. Dry-run-by-default covers most of it; the config docs must say so.
+- **OAuth scope.** `gmail.py:16` requests `gmail.readonly`. Trash needs
+  `gmail.modify`; hard delete would need full `https://mail.google.com/`,
+  another reason to prefer trash. Scope changes are a STOP item and force
+  every existing token to re-consent — contained by purge being opt-in, so
+  readonly stays the default and only purge users take the wider scope.
+- **Retention is provider-specific.** Gmail's 30-day Trash gives a free
+  undo window. mailbox.org may not behave the same way — confirm before
+  pointing purge at it.
+- **This is a STOP item** on two counts (deletes user email, changes OAuth
+  scopes): explicit sign-off, and it lands via PR.
+
+### Dependency on TASK-5.2 (corrected)
+
+An earlier version of this doc claimed the drain had no dependency on
+TASK-5.2, reasoning that INBOX is the one system folder already
+standardized across providers. **That claim is wrong, including for
+INBOX.** Recording why, since it's the reasoning that produced the bad
+dependency call:
+
+What's actually true is narrow — RFC 3501 mandates an IMAP mailbox literally
+named `INBOX`, and Gmail's API happens to use `INBOX` as a system label ID.
+That's naming, and naming is not the hard part:
+
+- **The semantics differ.** IMAP `INBOX` is a *folder* — a message is in
+  exactly one place. Gmail `INBOX` is a *label* — a message carries it
+  alongside others, and "archived" means the label is gone while the message
+  still lives in All Mail. "Is this in the inbox" is a different question in
+  each model.
+- **Even within IMAP, names need normalization.** `INBOX` is case-insensitive
+  per spec, so `inbox`/`Inbox`/`INBOX` are the same mailbox and a raw string
+  compare is already wrong.
+- **Gmail-over-IMAP makes "not in INBOX" ambiguous.** The same message is in
+  `INBOX` and `[Gmail]/All Mail` simultaneously. `imap.py:236` downloads from
+  All Mail as the sole source precisely because of this, treating other
+  folders only as label sources.
+- **Folder names are localized.** `imap.py:211-219` hardcodes four language
+  variants of All Mail (`[Gmail]/All Mail`, `[Gmail]/Tous les messages`,
+  `[Gmail]/Alle Nachrichten`, `[Gmail]/Toda la correspondencia`) and misses
+  many others. Direct in-repo evidence that name matching doesn't hold.
+
+So canonical mapping is a **correctness precondition for purge**, not a
+presentation nicety: if `inbox` fails to resolve on some provider, inbox
+messages pass the filter, get downloaded, and get trashed on the server —
+precisely the outcome this design exists to prevent.
+
+This also constrains *how* TASK-5.2 solves it. The mapping has to be
+semantic — a **role** per message (JMAP's model, and what IMAP SPECIAL-USE
+advertises: `\Trash`, `\Junk`, `\Drafts`) — resolved per provider, not a
+lookup table of folder-name strings. TASK-14 depends on TASK-5.2.
+
+## Resolved: client-side deletions and the archive
 
 The two paths are independent, so path B can destroy mail before path A
-captures it: `gmail.py:130` hardcodes `-in:trash -in:spam`, so a message
-deleted on a phone before ownmail's next sync is gone permanently, with no
-archive copy. Nothing to do with the drain. Whether that's correct depends
-on whether "delete" means "I don't want this" or "get it out of my inbox"
-— filed separately rather than assumed.
+captures it — `gmail.py:130` hardcodes `-in:trash -in:spam`, so a message
+deleted on a phone before ownmail's next sync leaves no archive copy. This
+was filed as TASK-15, a code decision about what "delete" should mean.
+
+The two-knob design dissolves it into config: whether `trash` appears in the
+download filter. Excluded (the default) means deletions stay deleted;
+removed from the filter means Trash is downloaded and deletions are captured
+within the provider's retention window. TASK-15 closed, folded into TASK-14.

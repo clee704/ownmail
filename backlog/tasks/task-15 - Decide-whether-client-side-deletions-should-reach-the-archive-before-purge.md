@@ -1,9 +1,10 @@
 ---
 id: TASK-15
 title: Decide whether client-side deletions should reach the archive before purge
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-24 22:46'
+updated_date: '2026-07-24 22:59'
 labels: []
 milestone: m-5
 dependencies: []
@@ -37,3 +38,13 @@ Related but distinct from TASK-5.2, which covers canonical naming/display of pro
 - [ ] #2 If adopted: Trash sync is configurable per source rather than hardcoded, and documented in config.example.yaml
 - [ ] #3 If rejected: the permanent-loss window is documented so the behaviour is a known choice, not a surprise
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Dissolved into TASK-14 rather than implemented separately.
+
+The question 'should client-side deletions reach the archive?' was filed as a code decision. Under TASK-14's two-knob design (optional purge + configurable download filter) it stops being one: it is simply whether 'trash' appears in the configured download filter. Excluded (the default) means deletions stay deleted and never enter the archive; removed from the filter means Trash is downloaded and deletions are captured within the provider's retention window.
+
+No behaviour was decided away - the choice is now a documented config knob rather than a hardcoded query string, which is what the original task was asking for. TASK-14 AC #8 covers the default value and AC #12 covers documenting it.
+<!-- SECTION:NOTES:END -->
