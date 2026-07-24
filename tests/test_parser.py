@@ -713,3 +713,230 @@ Body.
         result = EmailParser.parse_file(content=content)
         # Just verify parsing completes
         assert result["subject"] == "No Message-ID"
+
+
+class TestNormalizeDate:
+    """Tests for EmailParser._normalize_date."""
+
+    def test_standard_rfc2822_date(self):
+        """A well-formed date should be normalized in place."""
+        assert EmailParser._normalize_date("Mon, 1 Jan 2024 10:00:00 +0000") == "Mon, 01 Jan 2024 10:00:00 +0000"
+
+    def test_non_ascii_weekday_prefix_is_stripped(self):
+        """A Korean weekday prefix should be removed before parsing."""
+        assert EmailParser._normalize_date("월, 15 Mar 2024 10:30:00 +0900") == "Fri, 15 Mar 2024 10:30:00 +0900"
+
+    def test_numeric_month_format(self):
+        """A numeric 'DD M YYYY H:MM:SS +ZZZZ' date should be parsed."""
+        assert EmailParser._normalize_date("15 3 2024 10:30:00 +0900") == "Fri, 15 Mar 2024 10:30:00 +0900"
+
+    def test_two_digit_year_below_50_is_2000s(self):
+        """A 2-digit year under 50 should expand into the 2000s."""
+        assert EmailParser._normalize_date("15 3 24 10:30:00 +0000") == "Fri, 15 Mar 2024 10:30:00 +0000"
+
+    def test_two_digit_year_from_50_is_1900s(self):
+        """A 2-digit year of 50 or more should expand into the 1900s."""
+        assert EmailParser._normalize_date("15 3 99 10:30:00 +0000") == "Mon, 15 Mar 1999 10:30:00 +0000"
+
+    def test_short_hour_only_timezone(self):
+        """A '+9' timezone should expand to +0900."""
+        assert EmailParser._normalize_date("15 3 24 10:30:00 +9") == "Fri, 15 Mar 2024 10:30:00 +0900"
+
+    def test_three_digit_timezone(self):
+        """A '+530' timezone should expand to +0530."""
+        assert EmailParser._normalize_date("15 3 24 10:30:00 +530") == "Fri, 15 Mar 2024 10:30:00 +0530"
+
+    def test_negative_timezone(self):
+        """A negative offset should keep its sign."""
+        assert EmailParser._normalize_date("15 3 24 10:30:00 -0500") == "Fri, 15 Mar 2024 10:30:00 -0500"
+
+    def test_missing_timezone_defaults_to_utc(self):
+        """A numeric date with no offset should default to +0000."""
+        assert EmailParser._normalize_date("15 3 24 10:30:00") == "Fri, 15 Mar 2024 10:30:00 +0000"
+
+    def test_out_of_range_numeric_date_returns_original(self):
+        """An impossible month/day should fall through unchanged."""
+        assert EmailParser._normalize_date("99 99 24 10:30:00 +0000") == "99 99 24 10:30:00 +0000"
+
+    def test_unparseable_returns_original(self):
+        """A date nothing can parse should be returned as-is."""
+        assert EmailParser._normalize_date("totally unparseable") == "totally unparseable"
+
+    def test_empty_returns_empty(self):
+        """An empty date string should stay empty."""
+        assert EmailParser._normalize_date("") == ""
+
+
+class TestExtractDateFromReceived:
+    """Tests for EmailParser._extract_date_from_received."""
+
+    def _msg(self, raw):
+        import email as email_mod
+
+        return email_mod.message_from_string(raw)
+
+    def test_extracts_date_after_semicolon(self):
+        """The date following the final ';' should be parsed."""
+        msg = self._msg("Received: from a.example.com by b.example.com; Mon, 1 Jan 2024 10:00:00 +0000\n\nbody")
+        assert EmailParser._extract_date_from_received(msg) == "Mon, 01 Jan 2024 10:00:00 +0000"
+
+    def test_no_received_header(self):
+        """A message with no Received header should yield an empty string."""
+        assert EmailParser._extract_date_from_received(self._msg("Subject: x\n\nbody")) == ""
+
+    def test_received_without_semicolon(self):
+        """A Received header with no ';' should yield an empty string."""
+        assert EmailParser._extract_date_from_received(self._msg("Received: from a by b\n\nbody")) == ""
+
+    def test_unparseable_date_part(self):
+        """An unparseable trailing date should yield an empty string."""
+        msg = self._msg("Received: from a by b; not a date\n\nbody")
+        assert EmailParser._extract_date_from_received(msg) == ""
+
+
+class TestStripHtml:
+    """Tests for EmailParser._strip_html."""
+
+    def test_removes_tags_and_normalizes_whitespace(self):
+        """Tags should be dropped and whitespace collapsed."""
+        assert EmailParser._strip_html("<p>Hello   <b>World</b></p>\n<p>Again</p>") == "Hello World Again"
+
+    def test_drops_style_and_script_content(self):
+        """style/script/head contents must not appear in the text."""
+        html = "<html><head><title>T</title></head><body><style>p{color:red}</style>"
+        html += "<script>var x=1;</script><p>Visible</p></body></html>"
+        result = EmailParser._strip_html(html)
+        assert result == "Visible"
+
+    def test_regex_fallback_when_lxml_fails(self):
+        """If lxml raises, the regex fallback should still strip tags."""
+        from unittest.mock import patch
+
+        html = "<style>p{color:red}</style><script>x</script><p>Hello &amp; bye</p>"
+        with patch("ownmail.parser.lxml_html.fromstring", side_effect=ValueError("bad html")):
+            result = EmailParser._strip_html(html)
+        assert result == "Hello & bye"
+
+    def test_empty_input(self):
+        """Empty HTML should produce an empty string via the fallback."""
+        assert EmailParser._strip_html("") == ""
+
+
+class TestDetectCharset:
+    """Tests for the _detect_charset helper."""
+
+    def test_declared_charset_is_preferred(self):
+        """A declared charset that decodes cleanly should win."""
+        from ownmail.parser import _detect_charset
+
+        assert _detect_charset("Привет".encode("cp1251"), "cp1251") == "cp1251"
+
+    def test_euc_kr_is_widened_to_cp949(self):
+        """EUC-KR is mapped to CP949, its superset."""
+        from ownmail.parser import _detect_charset
+
+        assert _detect_charset("한글".encode("euc-kr"), "euc-kr") == "cp949"
+
+    def test_charset_alias_is_mapped(self):
+        """ks_c_5601-1987 should map onto cp949."""
+        from ownmail.parser import _detect_charset
+
+        assert _detect_charset("한글".encode("cp949"), "ks_c_5601-1987") == "cp949"
+
+    def test_unknown_declared_charset_is_ignored(self):
+        """A declared charset of 'unknown' should fall back to detection."""
+        from ownmail.parser import _detect_charset
+
+        assert _detect_charset(b"hello", "unknown") == "utf-8"
+
+    def test_unknown_8bit_is_ignored(self):
+        """'unknown-8bit' should likewise be ignored."""
+        from ownmail.parser import _detect_charset
+
+        assert _detect_charset(b"hello", "unknown-8bit") == "utf-8"
+
+    def test_wrong_declared_charset_falls_through(self):
+        """A declared charset that produces garbage should not be used."""
+        from ownmail.parser import _detect_charset
+
+        # Valid UTF-8 that is not decodable as ascii.
+        assert _detect_charset("한글".encode(), "ascii") == "utf-8"
+
+    def test_arbitrary_bytes_land_on_a_single_byte_encoding(self):
+        """Bytes no multi-byte encoding accepts settle on a single-byte one.
+
+        The chain ends in single-byte codecs that decode any byte sequence
+        without error, so detection always returns a usable encoding rather
+        than reaching the utf-8 backstop.
+        """
+        from ownmail.parser import _detect_charset
+
+        assert _detect_charset(b"\xff\xfe\xfd\xfc") in ("cp1251", "koi8-r", "iso-8859-1", "cp1252")
+
+
+class TestValidateDecodedText:
+    """Tests for the _validate_decoded_text helper."""
+
+    def test_plain_ascii_is_readable(self):
+        """Normal ASCII text should validate."""
+        from ownmail.parser import _validate_decoded_text
+
+        assert _validate_decoded_text("Hello, this is a normal sentence.") is True
+
+    def test_replacement_characters_fail(self):
+        """Text containing U+FFFD should not validate."""
+        from ownmail.parser import _validate_decoded_text
+
+        assert _validate_decoded_text("Hel�lo") is False
+
+    def test_empty_text_is_not_readable(self):
+        """Empty text carries no readable content, so it fails validation."""
+        from ownmail.parser import _validate_decoded_text
+
+        assert _validate_decoded_text("") is False
+
+    def test_korean_text_is_readable(self):
+        """Hangul should count as readable."""
+        from ownmail.parser import _validate_decoded_text
+
+        assert _validate_decoded_text("안녕하세요 반갑습니다") is True
+
+
+class TestSafeGetContentCharsets:
+    """Tests for EmailParser._safe_get_content charset handling."""
+
+    def _part(self, raw):
+        import email as email_mod
+
+        return email_mod.message_from_bytes(raw)
+
+    def test_uses_declared_header_charset(self):
+        """A correct Content-Type charset should be used directly."""
+        raw = b'Content-Type: text/plain; charset="euc-kr"\r\n\r\n' + "안녕하세요 반갑습니다".encode("euc-kr")
+        assert "안녕하세요" in EmailParser._safe_get_content(self._part(raw))
+
+    def test_html_meta_charset_is_used(self):
+        """A meta charset should rescue an unlabelled HTML part."""
+        body = '<html><head><meta charset="euc-kr"></head><body>안녕하세요 반갑습니다</body></html>'
+        raw = b"Content-Type: text/html\r\n\r\n" + body.encode("euc-kr")
+        assert "안녕하세요" in EmailParser._safe_get_content(self._part(raw))
+
+    def test_detects_cjk_without_any_declaration(self):
+        """An undeclared CJK part should be detected by content sniffing."""
+        raw = b"Content-Type: text/plain\r\n\r\n" + ("안녕하세요 반갑습니다 " * 5).encode("euc-kr")
+        assert "안녕하세요" in EmailParser._safe_get_content(self._part(raw))
+
+    def test_wrong_declared_charset_is_overridden(self):
+        """A wrong declared charset should fall through to detection."""
+        raw = b'Content-Type: text/plain; charset="ascii"\r\n\r\n' + ("안녕하세요 " * 5).encode("utf-8")
+        assert "안녕하세요" in EmailParser._safe_get_content(self._part(raw))
+
+    def test_plain_ascii_body(self):
+        """An ASCII body should come through unchanged."""
+        raw = b"Content-Type: text/plain\r\n\r\nHello world"
+        assert EmailParser._safe_get_content(self._part(raw)) == "Hello world"
+
+    def test_undecodable_bytes_do_not_raise(self):
+        """Bytes no encoding handles should degrade, not raise."""
+        raw = b"Content-Type: text/plain\r\n\r\n" + bytes(range(0x80, 0x100))
+        assert isinstance(EmailParser._safe_get_content(self._part(raw)), str)
