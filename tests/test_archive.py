@@ -1573,3 +1573,209 @@ class TestIndexEmailFailure:
             assert archive._index_email("id1", filepath) is False
 
         assert "Error indexing" in capsys.readouterr().out
+
+
+class TestTrashSidecarHandling:
+    """Tests for label sidecars travelling with trashed/restored emails."""
+
+    def _archive_with_email(self, temp_dir, labels=("Work",)):
+        from ownmail import sidecar as sidecar_mod
+
+        archive = EmailArchive(temp_dir, {})
+        rel = "emails/2024/01/mail.eml"
+        filepath = temp_dir / rel
+        filepath.parent.mkdir(parents=True)
+        filepath.write_bytes(b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        email_id = _eid("msg1")
+        archive.db.mark_downloaded(email_id, "msg1", rel, email_date="2024-01-01T00:00:00+00:00")
+        if labels:
+            sidecar_mod.write_labels(filepath, list(labels))
+        return archive, email_id, filepath
+
+    def test_trash_moves_file_and_sidecar(self, temp_dir):
+        """Trashing should move both the .eml and its sidecar."""
+        from ownmail import sidecar as sidecar_mod
+
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+
+        assert archive.trash_email(email_id) is True
+
+        assert not filepath.exists()
+        trashed = temp_dir / "trash" / f"{email_id}.eml"
+        assert trashed.exists()
+        assert sidecar_mod.read_labels(trashed) == ["Work"]
+
+    def test_restore_moves_file_and_sidecar_back(self, temp_dir):
+        """Restoring should return both files to their original location."""
+        from ownmail import sidecar as sidecar_mod
+
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+        archive.trash_email(email_id)
+
+        assert archive.restore_email(email_id) is True
+
+        assert filepath.exists()
+        assert sidecar_mod.read_labels(filepath) == ["Work"]
+
+    def test_trash_unknown_email_returns_false(self, temp_dir):
+        """Trashing an unknown id should report failure."""
+        archive = EmailArchive(temp_dir, {})
+        assert archive.trash_email("nope") is False
+
+    def test_restore_untrashed_email_returns_false(self, temp_dir):
+        """Restoring an email that isn't trashed should report failure."""
+        archive, email_id, _ = self._archive_with_email(temp_dir)
+        assert archive.restore_email(email_id) is False
+
+    def test_trash_tolerates_missing_file(self, temp_dir):
+        """A DB row whose file is gone should still be trashed in the DB."""
+        archive, email_id, filepath = self._archive_with_email(temp_dir, labels=())
+        filepath.unlink()
+
+        assert archive.trash_email(email_id) is True
+
+    def test_permanent_delete_removes_file_and_sidecar(self, temp_dir):
+        """Permanent deletion should remove both files from disk."""
+        from ownmail import sidecar as sidecar_mod
+
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+        sidecar_file = sidecar_mod.sidecar_path(filepath)
+
+        assert archive.permanently_delete_emails([email_id]) == 1
+
+        assert not filepath.exists()
+        assert not sidecar_file.exists()
+
+    def test_permanent_delete_ignores_unknown_ids(self, temp_dir):
+        """Unknown ids should not raise during permanent deletion."""
+        archive = EmailArchive(temp_dir, {})
+        assert archive.permanently_delete_emails(["nope"]) == 0
+
+    def test_empty_trash_removes_files_and_directory(self, temp_dir):
+        """Emptying trash should delete the files and prune the directory."""
+        archive, email_id, _ = self._archive_with_email(temp_dir)
+        archive.trash_email(email_id)
+
+        assert archive.empty_trash() == 1
+        assert not archive.trash_dir.exists()
+
+    def test_empty_trash_when_already_empty(self, temp_dir):
+        """Emptying an empty trash should be a no-op returning zero."""
+        archive = EmailArchive(temp_dir, {})
+        assert archive.empty_trash() == 0
+
+    def test_auto_expire_only_removes_old_entries(self, temp_dir):
+        """A freshly trashed email should survive auto-expiry."""
+        archive, email_id, _ = self._archive_with_email(temp_dir)
+        archive.trash_email(email_id)
+
+        assert archive.auto_expire_trash(days=30) == 0
+        assert (temp_dir / "trash" / f"{email_id}.eml").exists()
+
+    def test_auto_expire_removes_entries_past_the_threshold(self, temp_dir):
+        """An email trashed longer ago than the window should be expired."""
+        import sqlite3
+
+        archive, email_id, _ = self._archive_with_email(temp_dir)
+        archive.trash_email(email_id)
+        with sqlite3.connect(archive.db.db_path) as conn:
+            conn.execute(
+                "UPDATE emails SET trashed_at = datetime('now', '-45 days') WHERE email_id = ?",
+                (email_id,),
+            )
+
+        assert archive.auto_expire_trash(days=30) == 1
+        assert not (temp_dir / "trash" / f"{email_id}.eml").exists()
+
+
+class TestImportAndScanErrors:
+    """Tests for error paths in import_email and register_scanned_email."""
+
+    RAW = b"From: a@example.com\r\nSubject: S\r\nDate: Mon, 1 Jan 2024 10:00:00 +0000\r\n\r\nbody\r\n"
+
+    def test_import_unreadable_file_reports_error(self, temp_dir, capsys):
+        """A file that cannot be read should be counted as an error."""
+        archive = EmailArchive(temp_dir, {})
+        assert archive.import_email(temp_dir / "gone.eml") == "error"
+        assert "Error reading" in capsys.readouterr().out
+
+    def test_import_duplicate_is_detected(self, temp_dir):
+        """Importing the same file twice should report a duplicate."""
+        archive = EmailArchive(temp_dir, {})
+        source = temp_dir / "incoming.eml"
+        source.write_bytes(self.RAW)
+
+        assert archive.import_email(source) == "imported"
+        assert archive.import_email(source) == "duplicate"
+
+    def test_import_with_move_deletes_source(self, temp_dir):
+        """--move should remove the source file after a successful import."""
+        archive = EmailArchive(temp_dir, {})
+        source = temp_dir / "incoming.eml"
+        source.write_bytes(self.RAW)
+
+        assert archive.import_email(source, move=True) == "imported"
+        assert not source.exists()
+
+    def test_import_move_tolerates_undeletable_source(self, temp_dir):
+        """A failure deleting the source must not fail the import."""
+        from unittest.mock import patch
+
+        archive = EmailArchive(temp_dir, {})
+        source = temp_dir / "incoming.eml"
+        source.write_bytes(self.RAW)
+
+        with patch("pathlib.Path.unlink", side_effect=OSError("read-only")):
+            assert archive.import_email(source, move=True) == "imported"
+
+    def test_import_failure_is_reported(self, temp_dir, capsys):
+        """An unexpected error during import should be caught and reported."""
+        from unittest.mock import patch
+
+        archive = EmailArchive(temp_dir, {})
+        source = temp_dir / "incoming.eml"
+        source.write_bytes(self.RAW)
+
+        with patch.object(archive, "_save_email", side_effect=RuntimeError("boom")):
+            assert archive.import_email(source) == "error"
+
+        assert "Error importing" in capsys.readouterr().out
+
+    def test_import_save_failure_returns_error(self, temp_dir):
+        """A save that yields no path should be reported as an error."""
+        from unittest.mock import patch
+
+        archive = EmailArchive(temp_dir, {})
+        source = temp_dir / "incoming.eml"
+        source.write_bytes(self.RAW)
+
+        with patch.object(archive, "_save_email", return_value=(None, None)):
+            assert archive.import_email(source) == "error"
+
+    def test_register_scanned_unreadable_file(self, temp_dir, capsys):
+        """A scan of an unreadable file should be counted as an error."""
+        archive = EmailArchive(temp_dir, {})
+        assert archive.register_scanned_email(temp_dir / "gone.eml") == "error"
+        assert "Error reading" in capsys.readouterr().out
+
+    def test_register_scanned_failure_is_reported(self, temp_dir, capsys):
+        """An unexpected error while registering should be caught."""
+        from unittest.mock import patch
+
+        archive = EmailArchive(temp_dir, {})
+        filepath = temp_dir / "sitting.eml"
+        filepath.write_bytes(self.RAW)
+
+        with patch.object(archive, "_register_and_index", side_effect=RuntimeError("boom")):
+            assert archive.register_scanned_email(filepath) == "error"
+
+        assert "Error registering" in capsys.readouterr().out
+
+    def test_register_scanned_indexes_in_place(self, temp_dir):
+        """A scanned file should be registered without being moved."""
+        archive = EmailArchive(temp_dir, {})
+        filepath = temp_dir / "sitting.eml"
+        filepath.write_bytes(self.RAW)
+
+        assert archive.register_scanned_email(filepath) == "imported"
+        assert filepath.exists()
