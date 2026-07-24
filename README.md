@@ -77,13 +77,19 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | `download` | Download new emails (with content-hash dedup) |
 | `search "query"` | Full-text search |
 | `serve` | Browse and read your archive in the browser |
+| `import <path>` | Import external `.eml` files (Tuta, Thunderbird, any export) |
+| `scan` | Register `.eml` files already in the archive but untracked |
 | `stats` | Show archive statistics |
 | `verify` | Check file integrity (hashes, moved files, orphans, DB health) |
 | `sync-check` | Compare local archive with server to find missing emails |
+| `trash` | View and manage trashed emails |
 | `update-labels` | Update labels on existing emails |
 | `rebuild` | Rebuild search index and populate metadata |
 | `reset-sync` | Reset sync state to force full re-download |
+| `list-unknown` | List emails with unparseable dates |
 | `sources list` | List configured email sources |
+
+Run `ownmail <command> --help` for the full options on any of these.
 
 ## Setup
 
@@ -259,12 +265,12 @@ When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify
 
 **Requires [Node.js](https://nodejs.org) (v18+).** Dependencies are installed automatically on first run.
 
-## Roadmap
+## Contributing
 
-- [x] IMAP support (Gmail, Outlook, Fastmail, any IMAP server)
-- [x] Gmail API (OAuth, batch downloads, native labels)
-- [x] Web UI for browsing and search
-- [ ] Local .eml import
+See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup and repo conventions, and
+[AGENTS.md](AGENTS.md) if you're pointing an AI coding agent at this repo.
+Planned and in-flight work lives in [`backlog/`](backlog/tasks) — browse it with
+the [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI.
 
 ## License
 
