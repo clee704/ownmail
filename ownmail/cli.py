@@ -954,12 +954,7 @@ Examples:
             elif args.command == "trash":
                 cmd_trash(archive, args.empty, args.expire)
             elif args.command == "serve":
-                try:
-                    from ownmail.web import run_server
-                except ImportError:
-                    print("❌ Flask is required for the web interface.")
-                    print("   Install with: pip install ownmail[web]")
-                    sys.exit(1)
+                from ownmail.web import run_server
                 # serve can use its own archive-dir or fall back to global
                 serve_archive_root = args.archive_dir if args.archive_dir else archive_root
                 serve_archive = EmailArchive(serve_archive_root, config)
