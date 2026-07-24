@@ -383,6 +383,31 @@ class TestDecodeTextBody:
         result = _decode_text_body(payload, "invalid-charset-xyz")
         assert "Hello" in result
 
+    def test_charset_alias_is_mapped(self):
+        """ks_c_5601-1987 should be treated as cp949."""
+        from ownmail.web import _decode_text_body
+
+        assert _decode_text_body("안녕하세요".encode("cp949"), "ks_c_5601-1987") == "안녕하세요"
+
+    def test_wrong_declared_charset_falls_through_to_detection(self):
+        """A wrong declared charset should not corrupt the output."""
+        from ownmail.web import _decode_text_body
+
+        assert _decode_text_body("안녕하세요 반갑습니다".encode(), "euc-kr") == "안녕하세요 반갑습니다"
+
+    def test_undeclared_cjk_is_detected(self):
+        """CJK bytes with no declared charset should still decode."""
+        from ownmail.web import _decode_text_body
+
+        payload = ("안녕하세요 반갑습니다 " * 5).encode("euc-kr")
+        assert "안녕하세요" in _decode_text_body(payload, None)
+
+    def test_undecodable_bytes_degrade(self):
+        """Bytes nothing decodes cleanly should still return a string."""
+        from ownmail.web import _decode_text_body
+
+        assert isinstance(_decode_text_body(bytes(range(0x80, 0x100)), None), str)
+
 
 class TestDecodeHtmlBody:
     """Tests for _decode_html_body function."""
@@ -410,6 +435,26 @@ class TestDecodeHtmlBody:
         html = b"<html><body>Hello World</body></html>"
         result = _decode_html_body(html, None)
         assert "Hello" in result
+
+    def test_wrong_declared_charset_falls_back_to_meta(self):
+        """A bad header charset should not prevent meta-tag detection."""
+        from ownmail.web import _decode_html_body
+
+        html = '<html><head><meta charset="euc-kr"></head><body>안녕하세요 반갑습니다</body></html>'
+        assert "안녕하세요" in _decode_html_body(html.encode("euc-kr"), "utf-8")
+
+    def test_undeclared_cjk_is_detected(self):
+        """CJK HTML with no charset anywhere should still decode."""
+        from ownmail.web import _decode_html_body
+
+        payload = ("<p>안녕하세요 반갑습니다</p>" * 5).encode("euc-kr")
+        assert "안녕하세요" in _decode_html_body(payload, None)
+
+    def test_unknown_charset_name_falls_back(self):
+        """An unrecognized charset name should not raise."""
+        from ownmail.web import _decode_html_body
+
+        assert _decode_html_body(b"<p>Hello</p>", "not-a-real-charset") == "<p>Hello</p>"
 
 
 class TestValidateDecodedText:
@@ -569,6 +614,15 @@ Content-Type: text/html
         msg = email.message_from_bytes(content)
         snippet = _extract_snippet(msg)
         assert "plain text" in snippet.lower()
+
+    def test_html_only_message_yields_nothing(self):
+        """A message with no text/plain part should produce no snippet."""
+        raw = "Content-Type: text/html\n\n<p>only html</p>"
+        assert _extract_snippet(email.message_from_string(raw)) == ""
+
+    def test_empty_payload_yields_nothing(self):
+        """An empty body should produce an empty snippet."""
+        assert _extract_snippet(email.message_from_string("Content-Type: text/plain\n\n")) == ""
 
 
 class TestViewEmailRoute:
@@ -2068,3 +2122,357 @@ class TestRunServer:
                 with patch("threading.Timer") as mock_timer:
                     run_server(archive, debug=True, open_browser=True)
         mock_timer.assert_not_called()
+
+
+class TestViewEmailRendering:
+    """Tests for /email/<id> against real .eml files on disk."""
+
+    @pytest.fixture
+    def archive(self, tmp_path):
+        """A mock archive backed by a real directory of .eml files."""
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = MagicMock()
+        archive.db.get_email_count.return_value = 1
+        archive.db.get_trash_count.return_value = 0
+        archive.db.get_labels_for_email.return_value = []
+        archive.auto_expire_trash.return_value = 0
+        return archive
+
+    def _store(self, archive, raw, name="mail.eml", trashed_at=None):
+        """Write `raw` to the archive dir and wire up the DB lookup."""
+        (archive.archive_dir / name).write_bytes(raw)
+        archive.db.get_email_by_id.return_value = ("id1", name, "2024-01-01", "hash", "a@example.com", trashed_at)
+        return name
+
+    def test_plain_text_email(self, archive):
+        """A simple text email should render its subject, sender and body."""
+        self._store(
+            archive,
+            b"From: Alice <alice@example.com>\r\nTo: bob@example.com\r\n"
+            b"Subject: Hello\r\nDate: Mon, 1 Jan 2024 10:00:00 +0000\r\n\r\n"
+            b"This is the body text.\r\n",
+        )
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert response.status_code == 200
+        assert b"Hello" in response.data
+        assert b"alice@example.com" in response.data
+        assert b"This is the body text." in response.data
+
+    def test_missing_file_is_404(self, archive):
+        """A DB row whose file is gone should 404 rather than error."""
+        archive.db.get_email_by_id.return_value = ("id1", "gone.eml", "d", "h", "a@example.com", None)
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/email/id1").status_code == 404
+
+    def test_mime_encoded_headers_are_decoded(self, archive):
+        """Encoded-word subject and sender should be decoded for display."""
+        self._store(
+            archive,
+            b"From: =?UTF-8?B?7YWM7Iqk7Yq4?= <k@example.com>\r\n"
+            b"Subject: =?UTF-8?B?7YWM7Iqk7Yq4?=\r\n"
+            b"Date: Mon, 1 Jan 2024 10:00:00 +0000\r\n\r\nbody\r\n",
+        )
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert "테스트".encode() in response.data
+        assert b"=?UTF-8?B?" not in response.data
+
+    def test_html_body_preferred_over_plain_text(self, archive):
+        """When both parts exist, the HTML alternative should win."""
+        raw = (
+            b"From: a@example.com\r\nSubject: Multi\r\n"
+            b"Date: Mon, 1 Jan 2024 10:00:00 +0000\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nplain version\r\n"
+            b"--b1\r\nContent-Type: text/html\r\n\r\n<p>html version</p>\r\n"
+            b"--b1--\r\n"
+        )
+        self._store(archive, raw)
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"html version" in response.data
+
+    def test_attachments_are_listed(self, archive):
+        """An attachment part should appear with its name and size."""
+        raw = (
+            b"From: a@example.com\r\nSubject: With attachment\r\n"
+            b"Date: Mon, 1 Jan 2024 10:00:00 +0000\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nsee attached\r\n"
+            b"--b1\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="report.pdf"\r\n\r\n'
+            b"PDFDATA\r\n--b1--\r\n"
+        )
+        self._store(archive, raw)
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"report.pdf" in response.data
+
+    def test_embedded_digest_message_is_rendered(self, archive):
+        """A message/rfc822 part should be surfaced as a digest entry."""
+        raw = (
+            b"From: list@example.com\r\nSubject: Digest\r\n"
+            b"Date: Mon, 1 Jan 2024 10:00:00 +0000\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/digest; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: message/rfc822\r\n\r\n"
+            b"From: inner@example.com\r\nSubject: Inner subject\r\n"
+            b"To: list@example.com\r\nReply-To: inner@example.com\r\n"
+            b"Date: Mon, 1 Jan 2024 09:00:00 +0000\r\n"
+            b"Content-Type: text/plain\r\n\r\ninner body text\r\n"
+            b"--b1--\r\n"
+        )
+        self._store(archive, raw)
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"inner@example.com" in response.data
+        assert b"Inner subject" in response.data
+        assert b"inner body text" in response.data
+
+    def test_labels_are_shown(self, archive):
+        """Labels from the database should render on the page."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.get_labels_for_email.return_value = ["Work", "Important"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"Work" in response.data
+        assert b"Important" in response.data
+
+    def test_trashed_email_renders(self, archive):
+        """A trashed email should still be viewable."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n", trashed_at="2024-02-01")
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/email/id1").status_code == 200
+
+    def test_verbose_logs_timings(self, archive, capsys):
+        """Verbose mode should print lookup and parse timings."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        app = create_app(archive, verbose=True)
+        with app.test_client() as client:
+            client.get("/email/id1")
+        out = capsys.readouterr().out
+        assert "DB lookup took" in out
+        assert "Email parsing took" in out
+
+
+class TestRawAndDownloadRoutes:
+    """Tests for /raw, /download and /attachment."""
+
+    @pytest.fixture
+    def archive(self, tmp_path):
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = MagicMock()
+        archive.db.get_email_count.return_value = 1
+        archive.db.get_trash_count.return_value = 0
+        archive.auto_expire_trash.return_value = 0
+        return archive
+
+    ATTACHMENT_EML = (
+        b"From: a@example.com\r\nSubject: With attachment\r\n"
+        b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+        b"--b1\r\nContent-Type: text/plain\r\n\r\nsee attached\r\n"
+        b"--b1\r\nContent-Type: application/pdf\r\n"
+        b'Content-Disposition: attachment; filename="report.pdf"\r\n\r\n'
+        b"PDFDATA\r\n--b1--\r\n"
+    )
+
+    def _store(self, archive, raw, name="mail.eml"):
+        (archive.archive_dir / name).write_bytes(raw)
+        archive.db.get_email_by_id.return_value = ("id1", name, "2024-01-01", "hash", "a@example.com", None)
+
+    def test_raw_shows_source(self, archive):
+        """The raw view should show the file path and message source."""
+        self._store(archive, b"From: a@example.com\r\nSubject: Raw test\r\n\r\nbody\r\n")
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/raw/id1")
+        assert response.status_code == 200
+        assert b"Subject: Raw test" in response.data
+        assert b"mail.eml" in response.data
+
+    def test_raw_unknown_id_is_404(self, archive):
+        """An unknown email id should 404."""
+        archive.db.get_email_by_id.return_value = None
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/raw/nope").status_code == 404
+
+    def test_raw_missing_file_is_404(self, archive):
+        """A missing file should 404 rather than raise."""
+        archive.db.get_email_by_id.return_value = ("id1", "gone.eml", "d", "h", "a@example.com", None)
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/raw/id1").status_code == 404
+
+    def test_raw_rejects_path_traversal(self, archive, tmp_path):
+        """A filename escaping the archive dir must be refused."""
+        outside = tmp_path.parent / "outside.eml"
+        outside.write_bytes(b"secret")
+        archive.db.get_email_by_id.return_value = (
+            "id1",
+            f"../{outside.name}",
+            "d",
+            "h",
+            "a@example.com",
+            None,
+        )
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/raw/id1").status_code == 404
+
+    def test_download_returns_eml(self, archive):
+        """The download route should return the .eml as an attachment."""
+        self._store(archive, b"From: a@example.com\r\nSubject: D\r\n\r\nbody\r\n")
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/download/id1")
+        assert response.status_code == 200
+        assert b"Subject: D" in response.data
+        assert "attachment" in response.headers["Content-Disposition"]
+
+    def test_download_unknown_id_is_404(self, archive):
+        """An unknown id should 404."""
+        archive.db.get_email_by_id.return_value = None
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/download/nope").status_code == 404
+
+    def test_attachment_download(self, archive):
+        """The attachment route should return the decoded payload."""
+        self._store(archive, self.ATTACHMENT_EML)
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/attachment/id1/0")
+        assert response.status_code == 200
+        assert response.data == b"PDFDATA"
+        assert "report.pdf" in response.headers["Content-Disposition"]
+
+    def test_attachment_index_out_of_range_is_404(self, archive):
+        """An index past the last attachment should 404."""
+        self._store(archive, self.ATTACHMENT_EML)
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/attachment/id1/5").status_code == 404
+
+    def test_attachment_unknown_id_is_404(self, archive):
+        """An unknown email id should 404."""
+        archive.db.get_email_by_id.return_value = None
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/attachment/nope/0").status_code == 404
+
+    def test_attachment_missing_file_is_404(self, archive):
+        """A missing .eml file should 404."""
+        archive.db.get_email_by_id.return_value = ("id1", "gone.eml", "d", "h", "a@example.com", None)
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/attachment/id1/0").status_code == 404
+
+    def test_attachment_rejects_path_traversal(self, archive, tmp_path):
+        """A filename escaping the archive dir must be refused."""
+        outside = tmp_path.parent / "outside2.eml"
+        outside.write_bytes(b"secret")
+        archive.db.get_email_by_id.return_value = ("id1", f"../{outside.name}", "d", "h", "a@example.com", None)
+        app = create_app(archive)
+        with app.test_client() as client:
+            assert client.get("/attachment/id1/0").status_code == 404
+
+
+class TestCleanSnippetText:
+    """Tests for _clean_snippet_text."""
+
+    def test_strips_leading_mime_headers(self):
+        """MIME headers leaked into the body should be removed."""
+        from ownmail.web import _clean_snippet_text
+
+        text = "Content-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 7bit\nReal body here"
+        assert _clean_snippet_text(text) == "Real body here"
+
+    def test_strips_html_tags(self):
+        """HTML tags should be removed, keeping visible text."""
+        from ownmail.web import _clean_snippet_text
+
+        assert _clean_snippet_text("<p>Hello <b>World</b></p>") == "Hello World"
+
+    def test_drops_style_and_script_but_keeps_tail_text(self):
+        """Text after a removed element must not be lost."""
+        from ownmail.web import _clean_snippet_text
+
+        result = _clean_snippet_text("<div><style>p{color:red}</style>Visible text</div>")
+        assert "Visible text" in result
+        assert "color:red" not in result
+
+    def test_removes_zero_width_padding(self):
+        """Invisible preheader padding should be stripped."""
+        from ownmail.web import _clean_snippet_text
+
+        assert _clean_snippet_text("Real​‌‍﻿ text") == "Real text"
+
+    def test_regex_fallback_when_lxml_fails(self):
+        """If lxml raises, tags should still be stripped by regex."""
+        from unittest.mock import patch
+
+        from ownmail.web import _clean_snippet_text
+
+        with patch("lxml.html.fromstring", side_effect=ValueError("bad")):
+            result = _clean_snippet_text("<style>x{}</style><script>y</script><p>Hello</p>")
+        assert "Hello" in result
+        assert "<p>" not in result
+
+    def test_empty_input(self):
+        """Empty text should stay empty."""
+        from ownmail.web import _clean_snippet_text
+
+        assert _clean_snippet_text("") == ""
+
+
+class TestLinkify:
+    """Tests for _linkify."""
+
+    def test_urls_become_links(self):
+        """A bare URL should be wrapped in an anchor."""
+        from ownmail.web import _linkify
+
+        result = _linkify("Visit https://example.com/page today")
+        assert '<a href="https://example.com/page"' in result
+        assert 'rel="noopener noreferrer"' in result
+
+    def test_emails_become_mailto_links(self):
+        """A bare email address should become a mailto link."""
+        from ownmail.web import _linkify
+
+        assert '<a href="mailto:alice@example.com"' in _linkify("Contact alice@example.com now")
+
+    @pytest.mark.xfail(strict=True, reason="TASK-13: nested anchor inside href")
+    def test_email_inside_url_is_not_double_linked(self):
+        """An address already inside a link href must not be re-linked."""
+        from ownmail.web import _linkify
+
+        result = _linkify("https://example.com/unsubscribe?email=alice@example.com")
+        assert "mailto:" not in result
+
+    def test_html_is_escaped(self):
+        """Raw HTML in the text must be escaped, not emitted."""
+        from ownmail.web import _linkify
+
+        result = _linkify("<script>alert(1)</script>")
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+
+    def test_quoted_lines_are_marked_up(self):
+        """Quote levels should be rendered rather than left as raw '>'."""
+        from ownmail.web import _linkify
+
+        result = _linkify("> quoted reply\nnormal line")
+        assert "quoted reply" in result
+        assert "normal line" in result
