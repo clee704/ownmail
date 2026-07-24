@@ -1,10 +1,10 @@
 ---
 id: TASK-3
 title: Raise test coverage minimum from 80% to 95%
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-24 04:46'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-24 20:44'
 labels: []
 milestone: m-4
 dependencies:
