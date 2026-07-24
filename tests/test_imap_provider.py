@@ -1248,3 +1248,246 @@ class TestImapFilterByDate:
 
         result = provider._filter_uids_by_date("INBOX", [1, 2, 3], None, None)
         assert result == [1, 2, 3]
+
+
+def _imap_provider(conn, **kwargs):
+    """Build an authenticated ImapProvider wired to a mock connection."""
+    from ownmail.providers.imap import ImapProvider
+
+    keychain = MagicMock()
+    keychain.load_imap_password.return_value = "pw"
+    provider = ImapProvider(account="alice@gmail.com", keychain=keychain, **kwargs)
+    provider._conn = conn
+    return provider
+
+
+class TestImapBatchDownload:
+    """Tests for download_messages_batch."""
+
+    def test_groups_by_folder_and_returns_payloads(self):
+        """Messages in one folder should need only a single SELECT."""
+        conn = MagicMock()
+        conn.select.return_value = ("OK", [b"2"])
+        conn.uid.return_value = (
+            "OK",
+            [(b"1 (UID 10 RFC822 {5}", b"body1"), (b"2 (UID 11 RFC822 {5}", b"body2")],
+        )
+        provider = _imap_provider(conn)
+
+        results = provider.download_messages_batch(["INBOX:10", "INBOX:11"])
+
+        assert conn.select.call_count == 1
+        assert results["INBOX:10"][0] == b"body1"
+        assert results["INBOX:11"][0] == b"body2"
+        assert results["INBOX:10"][2] is None
+
+    def test_unselectable_folder_errors_every_message(self):
+        """If SELECT fails, every message in that folder should error."""
+        conn = MagicMock()
+        conn.select.return_value = ("NO", [b""])
+        provider = _imap_provider(conn)
+
+        results = provider.download_messages_batch(["Gone:1", "Gone:2"])
+
+        assert all(r[0] is None for r in results.values())
+        assert "Cannot select folder: Gone" in results["Gone:1"][2]
+
+    def test_fetch_exception_is_recorded(self):
+        """An exception during FETCH should be captured per message."""
+        conn = MagicMock()
+        conn.select.return_value = ("OK", [b"1"])
+        conn.uid.side_effect = OSError("connection reset")
+        provider = _imap_provider(conn)
+
+        results = provider.download_messages_batch(["INBOX:10"])
+
+        assert results["INBOX:10"][0] is None
+        assert results["INBOX:10"][2] == "connection reset"
+
+    def test_fetch_failure_status_is_recorded(self):
+        """A non-OK FETCH status should be reported for the batch."""
+        conn = MagicMock()
+        conn.select.return_value = ("OK", [b"1"])
+        conn.uid.return_value = ("NO", [None])
+        provider = _imap_provider(conn)
+
+        results = provider.download_messages_batch(["INBOX:10"])
+
+        assert "FETCH failed in INBOX" in results["INBOX:10"][2]
+
+    def test_missing_uid_in_response_is_flagged(self):
+        """A UID the server never returned should be reported as missing."""
+        conn = MagicMock()
+        conn.select.return_value = ("OK", [b"2"])
+        conn.uid.return_value = ("OK", [(b"1 (UID 10 RFC822 {5}", b"body1")])
+        provider = _imap_provider(conn)
+
+        results = provider.download_messages_batch(["INBOX:10", "INBOX:11"])
+
+        assert results["INBOX:10"][0] == b"body1"
+        assert results["INBOX:11"][0] is None
+        assert "No data for UID 11" in results["INBOX:11"][2]
+
+    def test_labels_default_to_the_source_folder(self):
+        """Without a dedup map, a message is labelled with its folder."""
+        conn = MagicMock()
+        conn.select.return_value = ("OK", [b"1"])
+        conn.uid.return_value = ("OK", [(b"1 (UID 10 RFC822 {5}", b"body1")])
+        provider = _imap_provider(conn)
+
+        results = provider.download_messages_batch(["INBOX:10"])
+
+        assert results["INBOX:10"][1] == ["INBOX"]
+
+
+class TestImapLabelResolution:
+    """Tests for _get_labels_for_downloaded."""
+
+    def test_folder_lookup_wins(self):
+        """A composite id present in the dedup lookup should use it."""
+        provider = _imap_provider(MagicMock())
+        provider._folder_lookup = {"INBOX:10": ["INBOX", "Work"]}
+
+        assert provider._get_labels_for_downloaded("INBOX:10", b"", "INBOX") == ["INBOX", "Work"]
+
+    def test_gmail_message_id_lookup(self):
+        """The Gmail path should add folders matched by Message-ID."""
+        provider = _imap_provider(MagicMock())
+        provider._message_id_to_folders = {"<abc@example.com>": ["Work", "Starred"]}
+        raw = b"Message-ID: <abc@example.com>\r\nSubject: S\r\n\r\nbody\r\n"
+
+        labels = provider._get_labels_for_downloaded("[Gmail]/All Mail:10", raw, "[Gmail]/All Mail")
+
+        assert labels == ["[Gmail]/All Mail", "Work", "Starred"]
+
+    def test_unknown_message_id_falls_back_to_folder(self):
+        """A Message-ID not in the map should yield just the folder."""
+        provider = _imap_provider(MagicMock())
+        provider._message_id_to_folders = {"<other@example.com>": ["Work"]}
+        raw = b"Message-ID: <abc@example.com>\r\n\r\nbody\r\n"
+
+        assert provider._get_labels_for_downloaded("INBOX:10", raw, "INBOX") == ["INBOX"]
+
+    def test_unparseable_raw_falls_back_to_folder(self):
+        """Raw bytes that fail to parse should not break label resolution."""
+        from unittest.mock import patch
+
+        provider = _imap_provider(MagicMock())
+        provider._message_id_to_folders = {"<abc@example.com>": ["Work"]}
+
+        with patch("email.message_from_bytes", side_effect=ValueError("bad")):
+            assert provider._get_labels_for_downloaded("INBOX:10", b"junk", "INBOX") == ["INBOX"]
+
+
+class TestImapMessageIdExtraction:
+    """Tests for _extract_message_id and _get_message_ids_for_uids."""
+
+    def test_extracts_message_id(self):
+        """A Message-ID header should be returned stripped."""
+        provider = _imap_provider(MagicMock())
+        assert provider._extract_message_id(b"Message-ID: <abc@example.com>\r\n") == "<abc@example.com>"
+
+    def test_missing_message_id_returns_empty(self):
+        """Headers without a Message-ID should yield an empty string."""
+        provider = _imap_provider(MagicMock())
+        assert provider._extract_message_id(b"Subject: no id\r\n") == ""
+
+    def test_parse_failure_returns_none(self):
+        """A parse failure should return None rather than raise."""
+        from unittest.mock import patch
+
+        provider = _imap_provider(MagicMock())
+        with patch("email.message_from_bytes", side_effect=ValueError("bad")):
+            assert provider._extract_message_id(b"junk") is None
+
+    def test_empty_uid_list_short_circuits(self):
+        """No UIDs means no FETCH should be issued."""
+        conn = MagicMock()
+        provider = _imap_provider(conn)
+
+        assert provider._get_message_ids_for_uids("INBOX", []) == {}
+        conn.uid.assert_not_called()
+
+    def test_maps_uids_to_message_ids(self):
+        """Each fetched UID should map to its Message-ID."""
+        conn = MagicMock()
+        conn.uid.return_value = (
+            "OK",
+            [
+                (b"1 (UID 10 BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <a@example.com>\r\n"),
+                (b"2 (UID 11 BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <b@example.com>\r\n"),
+            ],
+        )
+        provider = _imap_provider(conn)
+
+        result = provider._get_message_ids_for_uids("INBOX", [10, 11])
+
+        assert result == {1: "<a@example.com>", 2: "<b@example.com>"}
+
+    def test_failed_fetch_batch_is_skipped(self):
+        """A non-OK FETCH should contribute nothing rather than raise."""
+        conn = MagicMock()
+        conn.uid.return_value = ("NO", [None])
+        provider = _imap_provider(conn)
+
+        assert provider._get_message_ids_for_uids("INBOX", [10]) == {}
+
+
+class TestImapUidValidity:
+    """Tests for _get_uidvalidity."""
+
+    def test_reads_uidvalidity_response(self):
+        """The UIDVALIDITY response code should be decoded."""
+        conn = MagicMock()
+        conn.response.return_value = ("OK", [b"12345"])
+        provider = _imap_provider(conn)
+
+        assert provider._get_uidvalidity(None) == "12345"
+
+    def test_missing_uidvalidity_returns_none(self):
+        """An empty response should yield None."""
+        conn = MagicMock()
+        conn.response.return_value = ("OK", [None])
+        provider = _imap_provider(conn)
+
+        assert provider._get_uidvalidity(None) is None
+
+    def test_error_returns_none(self):
+        """An exception reading the response should yield None."""
+        conn = MagicMock()
+        conn.response.side_effect = OSError("closed")
+        provider = _imap_provider(conn)
+
+        assert provider._get_uidvalidity(None) is None
+
+
+class TestImapFolderListing:
+    """Tests for _list_folders."""
+
+    def test_failed_list_raises(self):
+        """A non-OK LIST should raise rather than return partial data."""
+        conn = MagicMock()
+        conn.list.return_value = ("NO", [])
+        provider = _imap_provider(conn)
+
+        with pytest.raises(RuntimeError, match="Failed to list IMAP folders"):
+            provider._list_folders()
+
+    def test_noselect_folders_are_skipped(self):
+        """Container folders marked \\Noselect should be excluded."""
+        conn = MagicMock()
+        conn.list.return_value = (
+            "OK",
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\Noselect \\HasChildren) "/" "[Gmail]"',
+                b'(\\HasNoChildren) "/" "Work"',
+            ],
+        )
+        provider = _imap_provider(conn)
+
+        folders = provider._list_folders()
+
+        assert "INBOX" in folders
+        assert "Work" in folders
+        assert "[Gmail]" not in folders

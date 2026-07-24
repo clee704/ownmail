@@ -1409,3 +1409,167 @@ class TestScanArchive:
         captured = capsys.readouterr()
         assert "No untracked .eml files found" in captured.out
         assert archive.db.get_trash_count() == 0
+
+
+class TestBackupVerboseAndInterrupt:
+    """Tests for backup's verbose logging and cancellation handling."""
+
+    def _provider(self, **kwargs):
+        from unittest.mock import MagicMock
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
+        provider.name = kwargs.pop("name", "gmail")
+        provider.get_new_message_ids.return_value = kwargs.pop("new_ids", ([], None))
+        provider.get_current_sync_state.return_value = kwargs.pop("sync_state", "12345")
+        for key, value in kwargs.items():
+            setattr(provider, key, value)
+        return provider
+
+    def test_verbose_logs_each_stage(self, temp_dir, capsys):
+        """Verbose mode should narrate the setup steps before downloading."""
+        archive = EmailArchive(temp_dir, {})
+
+        archive.backup(self._provider(), verbose=True)
+
+        out = capsys.readouterr().out
+        assert "Loading downloaded IDs from database" in out
+        assert "Getting sync state" in out
+        assert "Calling provider.get_new_message_ids()" in out
+        assert "Provider returned 0 message IDs" in out
+
+    def test_cancel_during_id_listing(self, temp_dir, capsys):
+        """Ctrl-C while listing IDs should return an interrupted result."""
+        archive = EmailArchive(temp_dir, {})
+        provider = self._provider()
+        provider.get_new_message_ids.side_effect = KeyboardInterrupt
+
+        result = archive.backup(provider)
+
+        assert result["interrupted"] is True
+        assert result["success_count"] == 0
+        assert "Backup cancelled" in capsys.readouterr().out
+
+    def test_imap_provider_uses_sync_state_key(self, temp_dir):
+        """An IMAP provider should read and write the sync_state key."""
+        archive = EmailArchive(temp_dir, {})
+        archive.db.set_sync_state("test@gmail.com", "sync_state", "prior")
+        provider = self._provider(name="imap")
+
+        archive.backup(provider)
+
+        provider.get_new_message_ids.assert_called_once()
+        assert provider.get_new_message_ids.call_args.args[0] == "prior"
+
+    def test_gmail_provider_uses_history_id_key(self, temp_dir):
+        """A Gmail provider should read and write the history_id key."""
+        archive = EmailArchive(temp_dir, {})
+        archive.db.set_sync_state("test@gmail.com", "history_id", "prior")
+        provider = self._provider(name="gmail")
+
+        archive.backup(provider)
+
+        assert provider.get_new_message_ids.call_args.args[0] == "prior"
+
+    def test_sync_state_recorded_after_first_full_sync(self, temp_dir):
+        """With no prior state, the provider's current state should be stored."""
+        archive = EmailArchive(temp_dir, {})
+        provider = self._provider(sync_state="99")
+
+        archive.backup(provider)
+
+        assert archive.db.get_sync_state("test@gmail.com", "history_id") == "99"
+
+    def test_provider_supplied_state_is_stored(self, temp_dir):
+        """A state returned alongside the IDs should be persisted."""
+        archive = EmailArchive(temp_dir, {})
+        provider = self._provider(new_ids=([], "from-provider"))
+
+        archive.backup(provider)
+
+        assert archive.db.get_sync_state("test@gmail.com", "history_id") == "from-provider"
+
+    def test_date_filtered_run_does_not_touch_sync_state(self, temp_dir):
+        """A partial (date-filtered) sync must not advance the sync state."""
+        archive = EmailArchive(temp_dir, {})
+        provider = self._provider(new_ids=([], "from-provider"))
+
+        archive.backup(provider, since="2024-01-01")
+
+        assert archive.db.get_sync_state("test@gmail.com", "history_id") is None
+
+    def test_already_downloaded_ids_are_filtered_out(self, temp_dir, capsys):
+        """IDs already in the database should not be downloaded again."""
+        archive = EmailArchive(temp_dir, {})
+        archive.db.mark_downloaded(_eid("msg1", "test@gmail.com"), "msg1", "a.eml", account="test@gmail.com")
+        provider = self._provider(new_ids=(["msg1"], None))
+
+        result = archive.backup(provider)
+
+        assert result["success_count"] == 0
+        assert "up to date" in capsys.readouterr().out.lower()
+
+
+class TestSaveEmailAtomicWrite:
+    """Tests for _save_email's atomic write behaviour."""
+
+    RAW = b"From: a@example.com\r\nSubject: S\r\nDate: Mon, 15 Jan 2024 10:00:00 +0000\r\n\r\nbody\r\n"
+
+    def test_writes_into_year_month_directory(self, temp_dir):
+        """Saved emails should land under emails/<year>/<month>/."""
+        archive = EmailArchive(temp_dir, {})
+        emails_dir = archive.get_emails_dir("src")
+        emails_dir.mkdir(parents=True, exist_ok=True)
+
+        filepath, date_iso = archive._save_email(self.RAW, "msg1", "a@example.com", emails_dir)
+
+        assert filepath is not None
+        assert filepath.parts[-3:-1] == ("2024", "01")
+        assert filepath.read_bytes() == self.RAW
+        assert date_iso.startswith("2024-01-15")
+
+    def test_temp_file_cleaned_up_on_write_failure(self, temp_dir, capsys):
+        """A failed write must not leave a .tmp file behind."""
+        from unittest.mock import patch
+
+        archive = EmailArchive(temp_dir, {})
+        emails_dir = archive.get_emails_dir("src")
+        emails_dir.mkdir(parents=True, exist_ok=True)
+
+        with patch("os.write", side_effect=OSError("disk full")):
+            filepath, date_iso = archive._save_email(self.RAW, "msg1", "a@example.com", emails_dir)
+
+        assert filepath is None
+        assert date_iso is None
+        assert list(emails_dir.rglob("*.tmp")) == []
+        assert "Error saving msg1" in capsys.readouterr().out
+
+    def test_unparseable_date_still_saves(self, temp_dir):
+        """An email with no usable date should still be archived."""
+        archive = EmailArchive(temp_dir, {})
+        emails_dir = archive.get_emails_dir("src")
+        emails_dir.mkdir(parents=True, exist_ok=True)
+        raw = b"From: a@example.com\r\nSubject: No date\r\n\r\nbody\r\n"
+
+        filepath, _ = archive._save_email(raw, "msg1", "a@example.com", emails_dir)
+
+        assert filepath is not None
+        assert filepath.exists()
+
+
+class TestIndexEmailFailure:
+    """Tests for _index_email error handling."""
+
+    def test_index_failure_is_reported_not_raised(self, temp_dir, capsys):
+        """A parse failure should be reported and return False."""
+        from unittest.mock import patch
+
+        archive = EmailArchive(temp_dir, {})
+        filepath = temp_dir / "bad.eml"
+        filepath.write_bytes(b"whatever")
+
+        with patch("ownmail.archive.EmailParser.parse_file", side_effect=ValueError("bad email")):
+            assert archive._index_email("id1", filepath) is False
+
+        assert "Error indexing" in capsys.readouterr().out
