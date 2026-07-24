@@ -1402,3 +1402,217 @@ class TestMainErrorHandling:
             with patch.object(sys, "argv", ["ownmail", "verify", "--verbose"]):
                 with pytest.raises(RuntimeError, match="kaboom"):
                     main()
+
+
+class TestCmdDownloadSources:
+    """Tests for cmd_download's per-source-type handling."""
+
+    def _archive(self, temp_dir):
+        from ownmail.archive import EmailArchive
+
+        return EmailArchive(temp_dir, {})
+
+    def _result(self, success=2, errors=0, interrupted=False):
+        return {"success_count": success, "error_count": errors, "interrupted": interrupted, "failed_ids": []}
+
+    def _gmail_config(self, **overrides):
+        source = {
+            "name": "personal",
+            "type": "gmail_api",
+            "account": "alice@gmail.com",
+            "auth": {"secret_ref": "keychain:oauth-token/alice@gmail.com"},
+        }
+        source.update(overrides)
+        return {"sources": [source]}
+
+    def _imap_config(self, **overrides):
+        source = {
+            "name": "work",
+            "type": "imap",
+            "account": "alice@example.com",
+            "host": "imap.example.com",
+            "auth": {"secret_ref": "keychain:imap-password/alice@example.com"},
+        }
+        source.update(overrides)
+        return {"sources": [source]}
+
+    def test_gmail_source_downloads(self, temp_dir, capsys):
+        """A gmail_api source should authenticate and back up."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        provider = MagicMock()
+        with patch("ownmail.cli.GmailProvider", return_value=provider):
+            with patch.object(archive, "backup", return_value=self._result()) as mock_backup:
+                cmd_download(archive, self._gmail_config())
+
+        provider.authenticate.assert_called_once()
+        mock_backup.assert_called_once()
+        out = capsys.readouterr().out
+        assert "Download Complete!" in out
+        assert "Downloaded: 2 emails" in out
+
+    def test_gmail_missing_secret_ref_is_skipped(self, temp_dir, capsys):
+        """A source without auth.secret_ref should be skipped with a message."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider") as mock_provider:
+            cmd_download(archive, self._gmail_config(auth={}))
+
+        mock_provider.assert_not_called()
+        assert "missing auth.secret_ref" in capsys.readouterr().out
+
+    def test_gmail_malformed_secret_ref_is_skipped(self, temp_dir, capsys):
+        """An unparseable secret_ref should be reported and skipped."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider") as mock_provider:
+            with patch("ownmail.cli.parse_secret_ref", side_effect=ValueError("bad ref")):
+                cmd_download(archive, self._gmail_config())
+
+        mock_provider.assert_not_called()
+        assert "bad ref" in capsys.readouterr().out
+
+    def test_interrupted_download_reports_resume(self, temp_dir, capsys):
+        """An interrupted run should tell the user how to resume."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider"):
+            with patch.object(archive, "backup", return_value=self._result(success=1, interrupted=True)):
+                cmd_download(archive, self._gmail_config())
+
+        out = capsys.readouterr().out
+        assert "Download Paused!" in out
+        assert "Run 'download' again to resume" in out
+
+    def test_errors_are_reported(self, temp_dir, capsys):
+        """A run with errors should surface the error count."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider"):
+            with patch.object(archive, "backup", return_value=self._result(errors=3)):
+                cmd_download(archive, self._gmail_config())
+
+        assert "Errors: 3" in capsys.readouterr().out
+
+    def test_date_filter_is_shown_and_passed_through(self, temp_dir, capsys):
+        """since/until should be echoed and forwarded to backup."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider"):
+            with patch.object(archive, "backup", return_value=self._result()) as mock_backup:
+                cmd_download(archive, self._gmail_config(), since="2024-01-01", until="2024-02-01")
+
+        out = capsys.readouterr().out
+        assert "Date filter: from 2024-01-01 until 2024-02-01" in out
+        assert mock_backup.call_args.kwargs["since"] == "2024-01-01"
+        assert mock_backup.call_args.kwargs["until"] == "2024-02-01"
+
+    def test_verbose_narrates_provider_setup(self, temp_dir, capsys):
+        """Verbose mode should log provider creation and authentication."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider"):
+            with patch.object(archive, "backup", return_value=self._result()):
+                cmd_download(archive, self._gmail_config(), verbose=True)
+
+        out = capsys.readouterr().out
+        assert "Creating Gmail provider" in out
+        assert "Authenticating" in out
+        assert "Starting download" in out
+
+    def test_imap_source_downloads(self, temp_dir, capsys):
+        """An imap source should build an ImapProvider from config."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        provider = MagicMock()
+        with patch("ownmail.providers.imap.ImapProvider", return_value=provider) as mock_cls:
+            with patch.object(archive, "backup", return_value=self._result()):
+                cmd_download(archive, self._imap_config(port=1993, exclude_folders=["Spam"]))
+
+        kwargs = mock_cls.call_args.kwargs
+        assert kwargs["host"] == "imap.example.com"
+        assert kwargs["port"] == 1993
+        assert kwargs["exclude_folders"] == ["Spam"]
+        provider.authenticate.assert_called_once()
+        provider.close.assert_called_once()
+        assert "Download Complete!" in capsys.readouterr().out
+
+    def test_imap_defaults(self, temp_dir):
+        """Omitted host/port should fall back to the Gmail IMAP defaults."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        config = self._imap_config()
+        del config["sources"][0]["host"]
+        with patch("ownmail.providers.imap.ImapProvider") as mock_cls:
+            with patch.object(archive, "backup", return_value=self._result()):
+                cmd_download(archive, config)
+
+        kwargs = mock_cls.call_args.kwargs
+        assert kwargs["host"] == "imap.gmail.com"
+        assert kwargs["port"] == 993
+
+    def test_unknown_source_type_is_skipped(self, temp_dir, capsys):
+        """An unrecognized source type should be reported, not crash."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        cmd_download(archive, {"sources": [{"name": "x", "type": "pop3", "account": "a@example.com"}]})
+
+        assert "Unknown source type: pop3" in capsys.readouterr().out
+
+    def test_named_source_selects_one(self, temp_dir, capsys):
+        """--source should restrict the run to that source."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        config = {"sources": self._gmail_config()["sources"] + self._imap_config()["sources"]}
+        with patch("ownmail.providers.imap.ImapProvider"):
+            with patch("ownmail.cli.GmailProvider") as mock_gmail:
+                with patch.object(archive, "backup", return_value=self._result()):
+                    cmd_download(archive, config, source_name="work")
+
+        mock_gmail.assert_not_called()
+        assert "Source: work" in capsys.readouterr().out
+
+    def test_unknown_source_name_exits(self, temp_dir, capsys):
+        """An unknown --source name should exit with an error."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with pytest.raises(SystemExit):
+            cmd_download(archive, self._gmail_config(), source_name="nope")
+
+        assert "not found in config" in capsys.readouterr().out
+
+    def test_expired_trash_is_reported(self, temp_dir, capsys):
+        """Auto-expired trash should be announced before downloading."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider"):
+            with patch.object(archive, "auto_expire_trash", return_value=4):
+                with patch.object(archive, "backup", return_value=self._result()):
+                    cmd_download(archive, self._gmail_config())
+
+        assert "Auto-expired 4 email(s) from trash" in capsys.readouterr().out
+
+    def test_trash_expiry_failure_does_not_block_download(self, temp_dir):
+        """A failure expiring trash must not stop the download."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        with patch("ownmail.cli.GmailProvider"):
+            with patch.object(archive, "auto_expire_trash", side_effect=OSError("locked")):
+                with patch.object(archive, "backup", return_value=self._result()) as mock_backup:
+                    cmd_download(archive, self._gmail_config())
+
+        mock_backup.assert_called_once()

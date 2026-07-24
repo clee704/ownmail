@@ -940,3 +940,191 @@ class TestSafeGetContentCharsets:
         """Bytes no encoding handles should degrade, not raise."""
         raw = b"Content-Type: text/plain\r\n\r\n" + bytes(range(0x80, 0x100))
         assert isinstance(EmailParser._safe_get_content(self._part(raw)), str)
+
+
+class TestDecodeGroupedRfc2047Parts:
+    """Tests for _decode_grouped_rfc2047_parts."""
+
+    def _decode(self, parts, fallback=None):
+        from ownmail.parser import _decode_grouped_rfc2047_parts
+
+        return _decode_grouped_rfc2047_parts(parts, fallback)
+
+    def test_empty_parts(self):
+        """No parts should decode to an empty string."""
+        assert self._decode([]) == ""
+
+    def test_plain_string_part(self):
+        """A non-bytes part should pass through as text."""
+        assert self._decode([("Hello", None)]) == "Hello"
+
+    def test_single_encoded_part(self):
+        """A single encoded part should decode with its charset."""
+        assert self._decode([("한글".encode("euc-kr"), "euc-kr")]) == "한글"
+
+    def test_adjacent_same_charset_parts_are_joined(self):
+        """A multi-byte char split across encoded-words should be rejoined."""
+        raw = "한글".encode("euc-kr")
+        assert self._decode([(raw[:1], "euc-kr"), (raw[1:], "euc-kr")]) == "한글"
+
+    def test_different_charsets_are_decoded_separately(self):
+        """Parts with different charsets must not be concatenated."""
+        assert self._decode([("한".encode("euc-kr"), "euc-kr"), ("글".encode(), "utf-8")]) == "한글"
+
+    def test_unknown_charset_falls_back(self):
+        """A charset of 'unknown' should be ignored in favour of detection."""
+        assert self._decode([("한글".encode("euc-kr"), "unknown")]) == "한글"
+
+    def test_unknown_8bit_charset_falls_back(self):
+        """'unknown-8bit' should likewise be ignored."""
+        assert self._decode([("한글".encode("euc-kr"), "unknown-8bit")]) == "한글"
+
+    def test_fallback_charset_is_tried_second(self):
+        """An explicit fallback should be preferred over the default chain."""
+        assert self._decode([("Привет".encode("koi8-r"), None)], fallback="koi8-r") == "Привет"
+
+    def test_undecodable_bytes_degrade_without_raising(self):
+        """Bytes nothing decodes cleanly should still produce a string."""
+        assert isinstance(self._decode([(b"\xff\xfe\xfd", "utf-8")]), str)
+
+    def test_mixed_text_and_encoded_parts(self):
+        """Text and encoded parts should be concatenated in order."""
+        assert self._decode([("Re: ", None), ("한글".encode("euc-kr"), "euc-kr")]) == "Re: 한글"
+
+
+class TestExtractRawHeader:
+    """Tests for EmailParser._extract_raw_header."""
+
+    def test_extracts_simple_header(self):
+        """A header should be read straight from the raw bytes."""
+        raw = b"From: alice@example.com\r\nSubject: Hello\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject") == "Hello"
+
+    def test_header_name_is_case_insensitive(self):
+        """Header lookup should ignore case."""
+        raw = b"subject: Hello\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject") == "Hello"
+
+    def test_folded_header_is_joined(self):
+        """Continuation lines should be folded into one value."""
+        raw = b"Subject: First part\r\n continued here\r\n\tand more\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject") == "First part continued here and more"
+
+    def test_stops_at_next_header(self):
+        """A following header must not leak into the value."""
+        raw = b"Subject: Hello\r\nFrom: alice@example.com\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject") == "Hello"
+
+    def test_missing_header_returns_empty(self):
+        """An absent header should yield an empty string."""
+        assert EmailParser._extract_raw_header(b"From: a@example.com\r\n\r\nbody", "Subject") == ""
+
+    def test_lf_only_line_endings(self):
+        """Bare-LF emails should parse as well as CRLF ones."""
+        assert EmailParser._extract_raw_header(b"Subject: Hello\nFrom: a@b.com\n\nbody", "Subject") == "Hello"
+
+    def test_declared_charset_is_used(self):
+        """A declared charset should decode raw non-ASCII header bytes."""
+        raw = b"Subject: " + "한글".encode("euc-kr") + b"\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject", "euc-kr") == "한글"
+
+    def test_charset_alias_is_mapped(self):
+        """ks_c_5601-1987 should be treated as cp949."""
+        raw = b"Subject: " + "한글".encode("cp949") + b"\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject", "ks_c_5601-1987") == "한글"
+
+    def test_charset_already_in_chain_is_promoted(self):
+        """A declared charset already in the chain should be tried first."""
+        raw = b"Subject: " + "한글".encode("euc-kr") + b"\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject", "euc-kr") == "한글"
+
+    def test_undecodable_bytes_degrade(self):
+        """Bytes nothing decodes cleanly should still return a string."""
+        raw = b"Subject: \xff\xfe\xfd\r\n\r\nbody"
+        assert isinstance(EmailParser._extract_raw_header(raw, "Subject"), str)
+
+
+class TestSafeGetHeaderFallbacks:
+    """Tests for EmailParser._safe_get_header's raw-extraction fallbacks."""
+
+    def _msg(self, raw):
+        import email as email_mod
+
+        return email_mod.message_from_bytes(raw)
+
+    def test_clean_header_is_returned(self):
+        """A clean header needs no fallback."""
+        raw = b"Subject: Hello\r\n\r\nbody"
+        assert EmailParser._safe_get_header(self._msg(raw), "Subject", raw_content=raw) == "Hello"
+
+    def test_corrupt_header_recovered_from_raw_bytes(self):
+        """A header the email library mangles should be re-read from bytes."""
+        raw = b"Subject: " + "한글 제목".encode("euc-kr") + b"\r\n\r\nbody"
+        result = EmailParser._safe_get_header(self._msg(raw), "Subject", "euc-kr", raw_content=raw)
+        assert result == "한글 제목"
+
+    def test_missing_header_returns_empty(self):
+        """An absent header should yield an empty string."""
+        raw = b"From: a@example.com\r\n\r\nbody"
+        assert EmailParser._safe_get_header(self._msg(raw), "Subject", raw_content=raw) == ""
+
+    def test_parse_failure_falls_back_to_raw(self):
+        """If header decoding raises, raw extraction should be used."""
+        from unittest.mock import patch
+
+        raw = b"Subject: Hello\r\n\r\nbody"
+        msg = self._msg(raw)
+        with patch.object(EmailParser, "_decode_header_value", side_effect=ValueError("boom")):
+            assert EmailParser._safe_get_header(msg, "Subject", raw_content=raw) == "Hello"
+
+    def test_parse_failure_without_raw_returns_empty(self):
+        """With no raw content to fall back on, the result should be empty."""
+        from unittest.mock import patch
+
+        msg = self._msg(b"Subject: Hello\r\n\r\nbody")
+        with patch.object(EmailParser, "_decode_header_value", side_effect=ValueError("boom")):
+            assert EmailParser._safe_get_header(msg, "Subject") == ""
+
+
+class TestParseFileBodyExtraction:
+    """Tests for parse_file's body and attachment collection."""
+
+    def test_multipart_prefers_plain_text(self):
+        """text/plain should be indexed in preference to text/html."""
+        raw = (
+            b'Content-Type: multipart/alternative; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nplain body\r\n"
+            b"--b1\r\nContent-Type: text/html\r\n\r\n<p>html body</p>\r\n--b1--\r\n"
+        )
+        result = EmailParser.parse_file(content=raw)
+        assert "plain body" in result["body"]
+        assert "html body" not in result["body"]
+
+    def test_html_only_multipart_is_stripped(self):
+        """With no plain part, HTML should be stripped and indexed."""
+        raw = (
+            b'Content-Type: multipart/alternative; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/html\r\n\r\n<p>html <b>body</b></p>\r\n--b1--\r\n"
+        )
+        result = EmailParser.parse_file(content=raw)
+        assert result["body"].strip() == "html body"
+
+    def test_html_only_singlepart_is_stripped(self):
+        """A non-multipart HTML message should also be stripped."""
+        raw = b"Content-Type: text/html\r\n\r\n<p>hello <b>world</b></p>\r\n"
+        assert EmailParser.parse_file(content=raw)["body"].strip() == "hello world"
+
+    def test_attachment_filenames_are_collected(self):
+        """Attachment filenames should be recorded for indexing."""
+        raw = (
+            b'Content-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nbody\r\n"
+            b"--b1\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="report.pdf"\r\n\r\nDATA\r\n--b1--\r\n'
+        )
+        assert "report.pdf" in EmailParser.parse_file(content=raw)["attachments"]
+
+    def test_malformed_message_returns_empty_fields(self):
+        """Garbage input should produce a result dict, not an exception."""
+        result = EmailParser.parse_file(content=b"\xff\xfe not an email at all")
+        assert set(result) == {"subject", "sender", "recipients", "date_str", "body", "attachments"}
