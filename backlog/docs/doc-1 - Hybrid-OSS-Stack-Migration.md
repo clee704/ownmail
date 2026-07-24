@@ -5,6 +5,14 @@ type: specification
 created_date: '2026-07-23 18:43'
 ---
 
+> **Status: proposals rejected, except sidecars.** Read this as a record of
+> what was evaluated, not as a plan. All three proposals below were decided
+> in TASK-1: notmuch NO-GO (TASK-1.1 — FTS5 already wins or ties), mbsync
+> NO-GO (TASK-1.2, re-affirmed 2026-07-24 on stronger grounds), label
+> sidecars shipped (TASK-1.3). The sync framing here is superseded by
+> **doc-6**, which fixes ownmail's role in the overall stack and rejects the
+> Dovecot/Maildir architecture that prompted the mbsync revisit.
+
 ## Goal
 
 Keep the custom Flask web UI (that's the part worth owning), but stop
