@@ -1,5 +1,8 @@
 # Archive directory (if using default location)
-archive/
+/archive/
+
+# Backlog.md runtime lock files
+backlog/.locks/
 
 # Config file (contains personal paths)
 config.yaml
