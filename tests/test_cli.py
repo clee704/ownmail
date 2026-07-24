@@ -1162,3 +1162,243 @@ sources:
         assert (
             "error" in captured.out.lower() or "invalid" in captured.out.lower() or "keychain:" in captured.out.lower()
         )
+
+
+class TestCmdTrash:
+    """Tests for the trash CLI command."""
+
+    def _archive(self):
+        archive = MagicMock()
+        archive.db = MagicMock()
+        return archive
+
+    def test_empty_permanently_deletes(self, capsys):
+        """--empty should permanently delete everything in trash."""
+        from ownmail.cli import cmd_trash
+
+        archive = self._archive()
+        archive.empty_trash.return_value = 7
+
+        cmd_trash(archive, empty=True)
+
+        archive.empty_trash.assert_called_once_with(expired_only=False)
+        assert "Permanently deleted 7 email(s)" in capsys.readouterr().out
+
+    def test_expire_removes_old_entries(self, capsys):
+        """--expire should drop entries older than the retention window."""
+        from ownmail.cli import cmd_trash
+
+        archive = self._archive()
+        archive.auto_expire_trash.return_value = 3
+
+        cmd_trash(archive, expire=True)
+
+        archive.auto_expire_trash.assert_called_once_with(days=30)
+        assert "Expired 3 email(s) from trash" in capsys.readouterr().out
+
+    def test_empty_trash_reports_nothing(self, capsys):
+        """An empty trash should say so and list nothing."""
+        from ownmail.cli import cmd_trash
+
+        archive = self._archive()
+        archive.db.get_trashed_emails.return_value = []
+        archive.db.get_trash_count.return_value = 0
+
+        cmd_trash(archive)
+
+        assert "Trash is empty" in capsys.readouterr().out
+
+    def test_lists_trashed_emails(self, capsys):
+        """Trashed emails should be listed with date, sender and subject."""
+        from ownmail.cli import cmd_trash
+
+        archive = self._archive()
+        archive.db.get_trashed_emails.return_value = [
+            ("id1", "f1.eml", "Hello there", "someone@example.com", "2024-03-04T05:06:07", "o1.eml"),
+        ]
+        archive.db.get_trash_count.return_value = 1
+
+        cmd_trash(archive)
+
+        out = capsys.readouterr().out
+        assert "Trash (1 email(s))" in out
+        assert "2024-03-04" in out
+        assert "someone@example.com" in out
+        assert "Hello there" in out
+
+    def test_missing_subject_and_sender_get_placeholders(self, capsys):
+        """Rows with no subject/sender should render placeholders."""
+        from ownmail.cli import cmd_trash
+
+        archive = self._archive()
+        archive.db.get_trashed_emails.return_value = [
+            ("id1", "f1.eml", None, None, "2024-03-04T05:06:07", "o1.eml"),
+        ]
+        archive.db.get_trash_count.return_value = 1
+
+        cmd_trash(archive)
+
+        out = capsys.readouterr().out
+        assert "(No subject)" in out
+        assert "(Unknown)" in out
+
+    def test_truncation_notice_beyond_page(self, capsys):
+        """More than 50 trashed emails should show a '... and N more' notice."""
+        from ownmail.cli import cmd_trash
+
+        archive = self._archive()
+        archive.db.get_trashed_emails.return_value = [
+            (f"id{i}", f"f{i}.eml", "Subj", "a@example.com", "2024-03-04T05:06:07", f"o{i}.eml") for i in range(50)
+        ]
+        archive.db.get_trash_count.return_value = 63
+
+        cmd_trash(archive)
+
+        assert "... and 13 more" in capsys.readouterr().out
+
+
+class TestMainServeCommand:
+    """Tests for the `serve` dispatch in main()."""
+
+    def _write_config(self, temp_dir, body):
+        config = temp_dir / "config.yaml"
+        config.write_text(body)
+        return config
+
+    def test_serve_passes_web_config_through(self, temp_dir, monkeypatch):
+        """Values from config.yaml [web] should reach run_server."""
+        from ownmail.cli import main
+
+        self._write_config(
+            temp_dir,
+            "archive_root: .\n"
+            "web:\n"
+            "  page_size: 33\n"
+            "  block_images: false\n"
+            "  trusted_senders:\n"
+            "    - a@example.com\n"
+            "  date_format: '%Y-%m-%d'\n"
+            "  detail_date_format: '%Y-%m-%d %H:%M'\n"
+            "  auto_scale: false\n"
+            "  brand_name: MyMail\n"
+            "  timezone: Asia/Seoul\n",
+        )
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.web.run_server") as mock_run:
+            with patch.object(sys, "argv", ["ownmail", "serve"]):
+                main()
+
+        args, kwargs = mock_run.call_args
+        assert args[1] == "127.0.0.1"  # host
+        assert args[2] == 8080  # port
+        assert args[6] == 33  # page_size
+        assert args[7] == ["a@example.com"]  # trusted_senders
+        assert args[9] == "%Y-%m-%d"  # date_format
+        assert args[10] is False  # auto_scale
+        assert args[11] == "MyMail"  # brand_name
+        assert args[12] == "Asia/Seoul"  # display_timezone
+        assert args[13] == "%Y-%m-%d %H:%M"  # detail_date_format
+        assert kwargs["open_browser"] is True
+
+    def test_serve_defaults_without_web_config(self, temp_dir, monkeypatch):
+        """With no [web] section, run_server should get the documented defaults."""
+        from ownmail.cli import main
+
+        self._write_config(temp_dir, "archive_root: .\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.web.run_server") as mock_run:
+            with patch.object(sys, "argv", ["ownmail", "serve"]):
+                main()
+
+        args, _ = mock_run.call_args
+        assert args[5] is True  # block_images defaults on
+        assert args[6] == 20  # page_size
+        assert args[7] == []  # trusted_senders
+        assert args[10] is True  # auto_scale
+        assert args[11] == "ownmail"  # brand_name
+
+    def test_serve_cli_flags_override(self, temp_dir, monkeypatch):
+        """--host/--port/--no-browser should be honoured."""
+        from ownmail.cli import main
+
+        self._write_config(temp_dir, "archive_root: .\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.web.run_server") as mock_run:
+            with patch.object(sys, "argv", ["ownmail", "serve", "--host", "0.0.0.0", "--port", "9000", "--no-browser"]):
+                main()
+
+        args, kwargs = mock_run.call_args
+        assert args[1] == "0.0.0.0"
+        assert args[2] == 9000
+        assert kwargs["open_browser"] is False
+
+    def test_serve_archive_dir_overrides_root(self, temp_dir, monkeypatch):
+        """serve --archive-dir should serve that directory instead of the root."""
+        from ownmail.cli import main
+
+        self._write_config(temp_dir, "archive_root: .\n")
+        other = temp_dir / "other-archive"
+        other.mkdir()
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.web.run_server") as mock_run:
+            with patch.object(sys, "argv", ["ownmail", "serve", "--archive-dir", str(other)]):
+                main()
+
+        served = mock_run.call_args.args[0]
+        assert served.archive_dir == other
+
+
+class TestMainErrorHandling:
+    """Tests for main()'s top-level error handling."""
+
+    def _config(self, temp_dir):
+        (temp_dir / "config.yaml").write_text("archive_root: .\n")
+
+    def test_keyboard_interrupt_exits_1(self, temp_dir, capsys, monkeypatch):
+        """Ctrl-C should exit cleanly with status 1."""
+        from ownmail.cli import main
+
+        self._config(temp_dir)
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.cli.cmd_search", side_effect=KeyboardInterrupt):
+            with patch.object(sys, "argv", ["ownmail", "search", "x"]):
+                with pytest.raises(SystemExit) as exc:
+                    main()
+
+        assert exc.value.code == 1
+        assert "interrupted by user" in capsys.readouterr().out
+
+    def test_unexpected_error_is_reported_and_exits_1(self, temp_dir, capsys, monkeypatch):
+        """An unexpected error should print a message and exit 1."""
+        from ownmail.cli import main
+
+        self._config(temp_dir)
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.cli.cmd_search", side_effect=RuntimeError("kaboom")):
+            with patch.object(sys, "argv", ["ownmail", "search", "x"]):
+                with pytest.raises(SystemExit) as exc:
+                    main()
+
+        assert exc.value.code == 1
+        assert "Error: kaboom" in capsys.readouterr().out
+
+    def test_verbose_reraises_for_traceback(self, temp_dir, monkeypatch):
+        """--verbose should re-raise so the traceback is visible."""
+        from ownmail.cli import main
+
+        self._config(temp_dir)
+        monkeypatch.chdir(temp_dir)
+
+        # cmd_verify is imported lazily inside main(), so patch it at its source.
+        # --verbose must follow the subcommand here: see TASK-12, the global
+        # form is currently swallowed by the subparser's duplicate flag.
+        with patch("ownmail.commands.cmd_verify", side_effect=RuntimeError("kaboom")):
+            with patch.object(sys, "argv", ["ownmail", "verify", "--verbose"]):
+                with pytest.raises(RuntimeError, match="kaboom"):
+                    main()
