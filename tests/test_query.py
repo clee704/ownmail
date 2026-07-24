@@ -588,3 +588,204 @@ class TestDateFilterTimezone:
         tz = ZoneInfo("UTC")
         result = parse_query("before:2024-01-15", tz=tz)
         assert result.params[0] == "2024-01-15T00:00:00+00:00"
+
+
+class TestNegatedFilters:
+    """Tests for negated filters and phrases in the tokenizer."""
+
+    def test_negated_phrase(self):
+        """-"exact phrase" should become a NEGATION token."""
+        tokens, error = _tokenize('-"exact phrase"')
+        assert error is None
+        assert tokens == [Token(TokenType.NEGATION, "exact phrase")]
+
+    def test_negated_phrase_unclosed_quote(self):
+        """An unclosed negated phrase should report the error."""
+        _, error = _tokenize('-"unclosed')
+        assert error is not None
+        assert "Unclosed quote" in error
+
+    def test_negated_filter(self):
+        """-from:alice should produce a negated FILTER token."""
+        tokens, error = _tokenize("-from:alice@example.com")
+        assert error is None
+        assert tokens == [Token(TokenType.FILTER, "alice@example.com", field="from", negated=True)]
+
+    def test_negated_filter_aliases_are_normalized(self):
+        """Negated field aliases should normalize like their positive forms."""
+        for query, field in [
+            ("-sender:alice", "from"),
+            ("-recipients:bob", "to"),
+            ("-tag:Work", "label"),
+            ("-attachments:pdf", "attachment"),
+        ]:
+            tokens, error = _tokenize(query)
+            assert error is None, query
+            assert tokens[0].field == field, query
+            assert tokens[0].negated is True, query
+
+    def test_negated_filter_with_quoted_value(self):
+        """A quoted negated filter value should be captured whole."""
+        tokens, error = _tokenize('-label:"[Gmail]/All Mail"')
+        assert error is None
+        assert tokens == [Token(TokenType.FILTER, "[Gmail]/All Mail", field="label", negated=True)]
+
+    def test_negated_filter_quoted_value_unclosed(self):
+        """An unclosed quoted negated filter value should report the error."""
+        _, error = _tokenize('-label:"[Gmail]/All Mail')
+        assert error is not None
+        assert "Unclosed quote" in error
+
+    def test_negated_filter_empty_value(self):
+        """A negated filter with no value should report the error."""
+        _, error = _tokenize("-from:")
+        assert error == "Empty value for '-from:' filter"
+
+    def test_negated_unknown_field_is_a_plain_negation(self):
+        """An unrecognized field should be treated as a negated word."""
+        tokens, error = _tokenize("-nosuchfield:value")
+        assert error is None
+        assert tokens[0].type == TokenType.NEGATION
+
+    def test_negated_word(self):
+        """-word should become a NEGATION token."""
+        tokens, error = _tokenize("-spam")
+        assert error is None
+        assert tokens == [Token(TokenType.NEGATION, "spam")]
+
+    def test_bare_dash_is_a_word(self):
+        """A lone '-' is not a negation and should be treated as a word."""
+        tokens, error = _tokenize("- invoice")
+        assert error is None
+        assert tokens[-1] == Token(TokenType.WORD, "invoice")
+
+    def test_positive_filter_quoted_value_unclosed(self):
+        """An unclosed quoted filter value should report the error."""
+        _, error = _tokenize('label:"[Gmail]/All Mail')
+        assert error is not None
+        assert "Unclosed quote" in error
+
+    def test_positive_filter_empty_value(self):
+        """A filter with no value should report the error."""
+        _, error = _tokenize("subject:")
+        assert error == "Empty value for 'subject:' filter"
+
+    def test_long_unclosed_quote_is_truncated_in_error(self):
+        """A long unclosed phrase should be elided in the error message."""
+        _, error = _tokenize('"' + "x" * 60)
+        assert error is not None
+        assert "..." in error
+
+
+class TestParseQueryNegation:
+    """Tests for how parse_query renders negated filters into SQL/FTS."""
+
+    def test_negated_from_address(self):
+        """-from: with an address should produce an inequality clause."""
+        result = parse_query("-from:alice@example.com")
+        assert result.error is None
+        assert any("!=" in c or "NOT" in c for c in result.where_clauses)
+
+    def test_negated_subject_becomes_fts_not(self):
+        """-subject: should render as an FTS NOT term."""
+        result = parse_query("-subject:invoice")
+        assert result.error is None
+        assert "NOT subject:" in result.fts_query
+
+    def test_negated_label_uses_placeholder(self):
+        """-label: should emit the negated-label placeholder clause."""
+        result = parse_query("-label:Work")
+        assert result.error is None
+        assert "__NOT_LABEL__" in result.where_clauses
+        assert "Work" in result.params
+
+    def test_negated_attachment_becomes_fts_not(self):
+        """-attachment: should render as an FTS NOT term."""
+        result = parse_query("-attachment:pdf")
+        assert result.error is None
+        assert "NOT attachments:" in result.fts_query
+
+    def test_negated_has_attachment(self):
+        """-has:attachment should select emails without attachments."""
+        result = parse_query("-has:attachment")
+        assert result.error is None
+        assert "e.has_attachments = 0" in result.where_clauses
+
+    def test_negated_before_inverts_comparison(self):
+        """-before: should become a >= comparison."""
+        result = parse_query("-before:2024-01-15")
+        assert result.error is None
+        assert "e.email_date >= ?" in result.where_clauses
+
+    def test_negated_after_inverts_comparison(self):
+        """-after: should become a < comparison."""
+        result = parse_query("-after:2024-01-15")
+        assert result.error is None
+        assert "e.email_date < ?" in result.where_clauses
+
+    def test_invalid_before_date(self):
+        """An unparseable before: date should be an error."""
+        result = parse_query("before:not-a-date")
+        assert result.error is not None
+        assert "Invalid date format for 'before:'" in result.error
+
+    def test_invalid_after_date(self):
+        """An unparseable after: date should be an error."""
+        result = parse_query("after:2024-13-45")
+        assert result.error is not None
+        assert "Invalid date format for 'after:'" in result.error
+
+
+class TestNormalizeDateBounds:
+    """Tests for _normalize_date range validation."""
+
+    def test_valid_date(self):
+        """A well-formed date should normalize unchanged."""
+        assert _normalize_date("2024-01-15") == "2024-01-15"
+
+    def test_month_zero_rejected(self):
+        """Month 0 is out of range."""
+        assert _normalize_date("2024-00-15") is None
+
+    def test_month_thirteen_rejected(self):
+        """Month 13 is out of range."""
+        assert _normalize_date("2024-13-15") is None
+
+    def test_day_zero_rejected(self):
+        """Day 0 is out of range."""
+        assert _normalize_date("2024-01-00") is None
+
+    def test_day_thirtytwo_rejected(self):
+        """Day 32 is out of range."""
+        assert _normalize_date("2024-01-32") is None
+
+    def test_garbage_rejected(self):
+        """A non-date string should be rejected."""
+        assert _normalize_date("yesterday") is None
+
+
+class TestDateToUtcIso:
+    """Tests for _date_to_utc_iso timezone conversion."""
+
+    def test_without_timezone_returns_input(self):
+        """With no timezone the date should pass through unchanged."""
+        from ownmail.query import _date_to_utc_iso
+
+        assert _date_to_utc_iso("2024-01-15") == "2024-01-15"
+
+    def test_converts_local_midnight_to_utc(self):
+        """Midnight in a +09:00 zone is 15:00 UTC the previous day."""
+        from zoneinfo import ZoneInfo
+
+        from ownmail.query import _date_to_utc_iso
+
+        result = _date_to_utc_iso("2024-01-15", ZoneInfo("Asia/Seoul"))
+        assert result == "2024-01-14T15:00:00+00:00"
+
+    def test_malformed_date_falls_back_to_input(self):
+        """An unparseable date should be returned as-is rather than raising."""
+        from zoneinfo import ZoneInfo
+
+        from ownmail.query import _date_to_utc_iso
+
+        assert _date_to_utc_iso("not-a-date", ZoneInfo("UTC")) == "not-a-date"

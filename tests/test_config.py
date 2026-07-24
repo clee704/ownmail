@@ -300,3 +300,27 @@ class TestValidateConfig:
         config = {"sources": []}
         errors = validate_config(config)
         assert errors == []
+
+
+class TestGetDbDir:
+    """Tests for get_db_dir."""
+
+    def test_returns_none_when_unset(self):
+        """With no db_dir configured, the archive root should be used."""
+        from ownmail.config import get_db_dir
+
+        assert get_db_dir({}) is None
+
+    def test_returns_configured_path(self):
+        """A configured db_dir should come back as a Path."""
+        from pathlib import Path
+
+        from ownmail.config import get_db_dir
+
+        assert get_db_dir({"db_dir": "/var/lib/ownmail"}) == Path("/var/lib/ownmail")
+
+    def test_empty_string_is_treated_as_unset(self):
+        """An empty db_dir should fall back to the default."""
+        from ownmail.config import get_db_dir
+
+        assert get_db_dir({"db_dir": ""}) is None

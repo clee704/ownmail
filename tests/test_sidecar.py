@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from ownmail import sidecar
 
 
@@ -72,3 +74,43 @@ class TestWriteLabels:
         eml = temp_dir / "2024" / "01" / "msg.eml"
         sidecar.write_labels(eml, ["INBOX"])
         assert sidecar.sidecar_path(eml).exists()
+
+
+class TestSidecarWriteFailure:
+    """Tests for the atomic write path in write_labels."""
+
+    def test_temp_file_is_cleaned_up_on_failure(self, tmp_path):
+        """A failed write must not leave a .json.tmp file behind."""
+        from unittest.mock import patch
+
+        eml = tmp_path / "mail.eml"
+        eml.write_bytes(b"From: a@example.com\n\nbody\n")
+
+        with patch("json.dump", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                sidecar.write_labels(eml, ["Work"])
+
+        assert list(tmp_path.glob("*.json.tmp")) == []
+        assert not sidecar.sidecar_path(eml).exists()
+
+    def test_rename_failure_cleans_up_and_raises(self, tmp_path):
+        """A failed rename should clean up and propagate the error."""
+        from unittest.mock import patch
+
+        eml = tmp_path / "mail.eml"
+        eml.write_bytes(b"From: a@example.com\n\nbody\n")
+
+        with patch("os.rename", side_effect=OSError("cross-device link")):
+            with pytest.raises(OSError, match="cross-device link"):
+                sidecar.write_labels(eml, ["Work"])
+
+        assert list(tmp_path.glob("*.json.tmp")) == []
+
+    def test_labels_are_deduplicated_preserving_order(self, tmp_path):
+        """Duplicate labels should collapse, keeping first-seen order."""
+        eml = tmp_path / "mail.eml"
+        eml.write_bytes(b"From: a@example.com\n\nbody\n")
+
+        sidecar.write_labels(eml, ["Work", "Personal", "Work", "Archive", "Personal"])
+
+        assert sidecar.read_labels(eml) == ["Work", "Personal", "Archive"]

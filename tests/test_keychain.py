@@ -261,3 +261,47 @@ class TestLegacyCompatibility:
 
             assert creds == '{"installed": {}}'
             mock_keyring.get_password.assert_called_with("test-service", "client-credentials")
+
+
+class TestKeychainDeletion:
+    """Tests for credential deletion."""
+
+    def test_delete_gmail_token(self):
+        """Deleting a Gmail token should target the oauth-token key."""
+        from ownmail.keychain import KeychainStorage
+
+        storage = KeychainStorage()
+        with patch("keyring.delete_password") as mock_delete:
+            storage.delete_gmail_token("alice@gmail.com")
+
+        mock_delete.assert_called_once_with(storage.service, "oauth-token/alice@gmail.com")
+
+    def test_delete_missing_gmail_token_is_quiet(self):
+        """Deleting a token that isn't stored should not raise."""
+        import keyring
+
+        from ownmail.keychain import KeychainStorage
+
+        storage = KeychainStorage()
+        with patch("keyring.delete_password", side_effect=keyring.errors.PasswordDeleteError):
+            storage.delete_gmail_token("alice@gmail.com")  # must not raise
+
+    def test_delete_imap_password(self):
+        """Deleting an IMAP password should target the imap-password key."""
+        from ownmail.keychain import KeychainStorage
+
+        storage = KeychainStorage()
+        with patch("keyring.delete_password") as mock_delete:
+            storage.delete_imap_password("alice@example.com")
+
+        mock_delete.assert_called_once_with(storage.service, "imap-password/alice@example.com")
+
+    def test_delete_missing_imap_password_is_quiet(self):
+        """Deleting an absent IMAP password should not raise."""
+        import keyring
+
+        from ownmail.keychain import KeychainStorage
+
+        storage = KeychainStorage()
+        with patch("keyring.delete_password", side_effect=keyring.errors.PasswordDeleteError):
+            storage.delete_imap_password("alice@example.com")  # must not raise

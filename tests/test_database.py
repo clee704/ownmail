@@ -675,3 +675,199 @@ class TestTrashOperations:
             columns = {row[1] for row in info}
         assert "trashed_at" in columns
         assert "original_filename" in columns
+
+
+LEGACY_SCHEMA = """
+    CREATE TABLE emails (
+        message_id TEXT PRIMARY KEY,
+        filename TEXT,
+        downloaded_at TEXT,
+        content_hash TEXT,
+        indexed_hash TEXT,
+        account TEXT,
+        labels TEXT,
+        email_date TEXT,
+        subject TEXT,
+        sender TEXT,
+        recipients TEXT,
+        date_str TEXT,
+        snippet TEXT,
+        sender_email TEXT,
+        recipient_emails TEXT,
+        has_attachments INTEGER DEFAULT 0
+    )
+"""
+
+
+class TestMessageIdMigration:
+    """Tests for the message_id -> email_id schema migration."""
+
+    def _legacy_db(self, temp_dir, rows=()):
+        """Write a pre-migration database file and return its path."""
+        db_path = temp_dir / "ownmail.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(LEGACY_SCHEMA)
+            for rowid, message_id, account in rows:
+                conn.execute(
+                    "INSERT INTO emails (rowid, message_id, filename, account, subject) VALUES (?, ?, ?, ?, ?)",
+                    (rowid, message_id, f"{message_id}.eml", account, f"Subject {message_id}"),
+                )
+            conn.commit()
+        return db_path
+
+    def _columns(self, db_path):
+        with sqlite3.connect(db_path) as conn:
+            return {row[1] for row in conn.execute("PRAGMA table_info(emails)")}
+
+    def test_migrates_legacy_schema(self, temp_dir, capsys):
+        """A legacy database should gain email_id/provider_id columns."""
+        db_path = self._legacy_db(temp_dir, [(1, "msg1", "a@example.com")])
+
+        ArchiveDatabase(temp_dir)
+
+        cols = self._columns(db_path)
+        assert "email_id" in cols
+        assert "provider_id" in cols
+        assert "message_id" not in cols
+        assert "migrated 1 rows" in capsys.readouterr().out
+
+    def test_email_id_derived_from_account_and_message_id(self, temp_dir):
+        """Each migrated row's email_id should match make_email_id."""
+        db_path = self._legacy_db(temp_dir, [(1, "msg1", "a@example.com")])
+
+        ArchiveDatabase(temp_dir)
+
+        with sqlite3.connect(db_path) as conn:
+            email_id, provider_id = conn.execute("SELECT email_id, provider_id FROM emails").fetchone()
+        assert email_id == ArchiveDatabase.make_email_id("a@example.com", "msg1")
+        assert provider_id == "msg1"
+
+    def test_null_account_migrates_as_empty_string(self, temp_dir):
+        """A row with no account should hash against an empty account."""
+        db_path = self._legacy_db(temp_dir, [(1, "msg1", None)])
+
+        ArchiveDatabase(temp_dir)
+
+        with sqlite3.connect(db_path) as conn:
+            (email_id,) = conn.execute("SELECT email_id FROM emails").fetchone()
+        assert email_id == ArchiveDatabase.make_email_id("", "msg1")
+
+    def test_rowids_are_preserved(self, temp_dir):
+        """rowids must survive so FTS5 and junction tables stay valid."""
+        db_path = self._legacy_db(temp_dir, [(5, "msg5", "a@example.com"), (9, "msg9", "a@example.com")])
+
+        ArchiveDatabase(temp_dir)
+
+        with sqlite3.connect(db_path) as conn:
+            rows = dict(conn.execute("SELECT rowid, provider_id FROM emails").fetchall())
+        assert rows == {5: "msg5", 9: "msg9"}
+
+    def test_other_columns_survive(self, temp_dir):
+        """Non-key columns should carry across the migration."""
+        db_path = self._legacy_db(temp_dir, [(1, "msg1", "a@example.com")])
+
+        ArchiveDatabase(temp_dir)
+
+        with sqlite3.connect(db_path) as conn:
+            filename, subject = conn.execute("SELECT filename, subject FROM emails").fetchone()
+        assert filename == "msg1.eml"
+        assert subject == "Subject msg1"
+
+    def test_empty_legacy_table_migrates(self, temp_dir, capsys):
+        """A legacy database with no rows should still be migrated."""
+        db_path = self._legacy_db(temp_dir)
+
+        ArchiveDatabase(temp_dir)
+
+        assert "email_id" in self._columns(db_path)
+        assert "migrated 0 rows" in capsys.readouterr().out
+
+    def test_fresh_database_is_not_migrated(self, temp_dir, capsys):
+        """A brand new database should skip the migration entirely."""
+        ArchiveDatabase(temp_dir)
+        assert "Migrating database schema" not in capsys.readouterr().out
+
+    def test_already_migrated_database_is_untouched(self, temp_dir, capsys):
+        """Reopening a migrated database must not re-run the migration."""
+        self._legacy_db(temp_dir, [(1, "msg1", "a@example.com")])
+        ArchiveDatabase(temp_dir)
+        capsys.readouterr()
+
+        ArchiveDatabase(temp_dir)
+
+        assert "Migrating database schema" not in capsys.readouterr().out
+
+    def test_unexpected_schema_is_left_alone(self, temp_dir, capsys):
+        """A table with neither key column should be skipped, not rewritten.
+
+        Driven through the migration directly: such a table cannot support
+        the rest of _init_db, so the guard is what matters here.
+        """
+        db = ArchiveDatabase(temp_dir)
+        foreign = temp_dir / "foreign.db"
+        with sqlite3.connect(foreign) as conn:
+            conn.execute("CREATE TABLE emails (something_else TEXT)")
+            conn.commit()
+            capsys.readouterr()
+
+            db._migrate_message_id_to_email_id(conn)
+
+            assert "Migrating database schema" not in capsys.readouterr().out
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(emails)")}
+        assert cols == {"something_else"}
+
+
+class TestSearchNegatedFilters:
+    """Tests for negated label and recipient filters in search."""
+
+    def _db_with_email(self, temp_dir, *, labels=(), recipients=()):
+        db = ArchiveDatabase(temp_dir)
+        email_id = _eid("msg1")
+        db.mark_downloaded(email_id, "msg1", "msg1.eml", email_date="2024-01-15T00:00:00+00:00")
+        db.index_email(
+            email_id=email_id,
+            subject="Quarterly invoice",
+            sender="billing@example.com",
+            recipients=", ".join(recipients) or "user@example.com",
+            date_str="2024-01-15",
+            body="invoice body",
+            attachments="",
+        )
+        if labels:
+            with sqlite3.connect(db.db_path) as conn:
+                (rowid,) = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (email_id,)).fetchone()
+                for label in labels:
+                    conn.execute(
+                        "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                        (rowid, label, "2024-01-15T00:00:00+00:00"),
+                    )
+                conn.commit()
+        return db
+
+    def test_negated_label_excludes_match(self, temp_dir):
+        """-label: should drop emails carrying that label."""
+        db = self._db_with_email(temp_dir, labels=["Work"])
+        assert db.search("invoice") != []
+        assert db.search("invoice -label:Work") == []
+
+    def test_negated_label_keeps_non_match(self, temp_dir):
+        """-label: should keep emails without that label."""
+        db = self._db_with_email(temp_dir, labels=["Work"])
+        assert db.search("invoice -label:Personal") != []
+
+    def test_negated_recipient_excludes_match(self, temp_dir):
+        """-to: with an address should drop emails sent to it."""
+        db = self._db_with_email(temp_dir, recipients=["bob@example.com"])
+        assert db.search("invoice") != []
+        assert db.search("invoice -to:bob@example.com") == []
+
+    def test_negated_recipient_keeps_non_match(self, temp_dir):
+        """-to: should keep emails sent to a different address."""
+        db = self._db_with_email(temp_dir, recipients=["bob@example.com"])
+        assert db.search("invoice -to:carol@example.com") != []
+
+    def test_parse_error_returns_no_results(self, temp_dir, capsys):
+        """A malformed query should return nothing and report the error."""
+        db = ArchiveDatabase(temp_dir)
+        assert db.search('"unclosed') == []
+        assert "Parse error" in capsys.readouterr().out
