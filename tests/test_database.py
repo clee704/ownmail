@@ -512,3 +512,141 @@ class TestSearchWithAccount:
         assert len(results_bob) == 1
         assert results_bob[0][0] == _eid("msg2", "bob@gmail.com")
         assert len(results_all) == 2
+
+
+class TestTrashOperations:
+    """Tests for trash/restore/delete operations."""
+
+    def test_trash_email(self, temp_dir):
+        """Test trashing an email updates DB correctly."""
+        db = ArchiveDatabase(temp_dir)
+        eid = _eid("msg1")
+        db.mark_downloaded(eid, "msg1", "sources/gmail/2024/01/test.eml")
+
+        original = db.trash_email(eid, "trash/test.eml")
+        assert original == "sources/gmail/2024/01/test.eml"
+
+        info = db.get_email_by_id(eid)
+        assert info[1] == "trash/test.eml"  # filename updated
+        assert info[5] is not None  # trashed_at set
+
+    def test_trash_email_not_found(self, temp_dir):
+        """Test trashing a non-existent email returns None."""
+        db = ArchiveDatabase(temp_dir)
+        assert db.trash_email("nonexistent", "trash/x.eml") is None
+
+    def test_trash_already_trashed(self, temp_dir):
+        """Test trashing an already-trashed email returns None."""
+        db = ArchiveDatabase(temp_dir)
+        eid = _eid("msg1")
+        db.mark_downloaded(eid, "msg1", "sources/gmail/2024/01/test.eml")
+        db.trash_email(eid, "trash/test.eml")
+        assert db.trash_email(eid, "trash/test2.eml") is None
+
+    def test_restore_email(self, temp_dir):
+        """Test restoring an email from trash."""
+        db = ArchiveDatabase(temp_dir)
+        eid = _eid("msg1")
+        db.mark_downloaded(eid, "msg1", "sources/gmail/2024/01/test.eml")
+        db.trash_email(eid, "trash/test.eml")
+
+        result = db.restore_email(eid)
+        assert result == ("trash/test.eml", "sources/gmail/2024/01/test.eml")
+
+        info = db.get_email_by_id(eid)
+        assert info[1] == "sources/gmail/2024/01/test.eml"
+        assert info[5] is None  # trashed_at cleared
+
+    def test_restore_not_trashed(self, temp_dir):
+        """Test restoring a non-trashed email returns None."""
+        db = ArchiveDatabase(temp_dir)
+        eid = _eid("msg1")
+        db.mark_downloaded(eid, "msg1", "test.eml")
+        assert db.restore_email(eid) is None
+
+    def test_permanently_delete(self, temp_dir):
+        """Test permanently deleting emails."""
+        db = ArchiveDatabase(temp_dir)
+        eid1 = _eid("msg1")
+        eid2 = _eid("msg2")
+        db.mark_downloaded(eid1, "msg1", "f1.eml")
+        db.mark_downloaded(eid2, "msg2", "f2.eml")
+
+        count = db.permanently_delete_emails([eid1, eid2])
+        assert count == 2
+        assert db.get_email_by_id(eid1) is None
+        assert db.get_email_by_id(eid2) is None
+
+    def test_permanently_delete_empty(self, temp_dir):
+        """Test permanently deleting empty list."""
+        db = ArchiveDatabase(temp_dir)
+        assert db.permanently_delete_emails([]) == 0
+
+    def test_get_trashed_emails(self, temp_dir):
+        """Test listing trashed emails."""
+        db = ArchiveDatabase(temp_dir)
+        eid = _eid("msg1")
+        db.mark_downloaded(eid, "msg1", "test.eml")
+        db.trash_email(eid, "trash/test.eml")
+
+        rows = db.get_trashed_emails()
+        assert len(rows) == 1
+        assert rows[0][0] == eid
+
+    def test_get_trash_count(self, temp_dir):
+        """Test counting trashed emails."""
+        db = ArchiveDatabase(temp_dir)
+        assert db.get_trash_count() == 0
+
+        eid = _eid("msg1")
+        db.mark_downloaded(eid, "msg1", "test.eml")
+        db.trash_email(eid, "trash/test.eml")
+        assert db.get_trash_count() == 1
+
+    def test_search_excludes_trashed(self, temp_dir):
+        """Test that search excludes trashed emails."""
+        db = ArchiveDatabase(temp_dir)
+        eid1 = _eid("msg1")
+        eid2 = _eid("msg2")
+        db.mark_downloaded(eid1, "msg1", "f1.eml")
+        db.mark_downloaded(eid2, "msg2", "f2.eml")
+        db.index_email(eid1, "Hello World", "sender", "rcpt", "2024-01-01", "body", "")
+        db.index_email(eid2, "Hello Again", "sender", "rcpt", "2024-01-02", "body", "")
+
+        # Both should appear before trash
+        results = db.search("Hello", include_unknown=True)
+        assert len(results) == 2
+
+        # Trash one
+        db.trash_email(eid1, "trash/f1.eml")
+
+        # Only one should appear
+        results = db.search("Hello", include_unknown=True)
+        assert len(results) == 1
+        assert results[0][0] == eid2
+
+    def test_get_stats_excludes_trashed(self, temp_dir):
+        """Test that stats exclude trashed emails."""
+        db = ArchiveDatabase(temp_dir)
+        eid1 = _eid("msg1")
+        eid2 = _eid("msg2")
+        db.mark_downloaded(eid1, "msg1", "f1.eml")
+        db.mark_downloaded(eid2, "msg2", "f2.eml")
+
+        stats = db.get_stats()
+        assert stats["total_emails"] == 2
+        assert stats["trash_count"] == 0
+
+        db.trash_email(eid1, "trash/f1.eml")
+        stats = db.get_stats()
+        assert stats["total_emails"] == 1
+        assert stats["trash_count"] == 1
+
+    def test_schema_has_trash_columns(self, temp_dir):
+        """Test that trash columns exist in schema."""
+        db = ArchiveDatabase(temp_dir)
+        with sqlite3.connect(db.db_path) as conn:
+            info = conn.execute("PRAGMA table_info(emails)").fetchall()
+            columns = {row[1] for row in info}
+        assert "trashed_at" in columns
+        assert "original_filename" in columns

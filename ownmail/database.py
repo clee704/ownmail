@@ -110,6 +110,13 @@ class ArchiveDatabase:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Trash support columns
+            for col in ['trashed_at', 'original_filename']:
+                try:
+                    conn.execute(f"ALTER TABLE emails ADD COLUMN {col} TEXT")
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+
             # Sync state for incremental backup (per-account)
             # Key format: "<account>/<key>" e.g., "alice@gmail.com/history_id"
             conn.execute("""
@@ -474,12 +481,12 @@ class ArchiveDatabase:
             email_id: 24-char hex hash
 
         Returns:
-            Tuple of (email_id, filename, downloaded_at, content_hash, account)
+            Tuple of (email_id, filename, downloaded_at, content_hash, account, trashed_at)
             or None if not found
         """
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(
-                "SELECT email_id, filename, downloaded_at, content_hash, account FROM emails WHERE email_id = ?",
+                "SELECT email_id, filename, downloaded_at, content_hash, account, trashed_at FROM emails WHERE email_id = ?",
                 (email_id,)
             ).fetchone()
             return result
@@ -501,6 +508,127 @@ class ArchiveDatabase:
                 (email_id,)
             ).fetchall()
             return [row[0] for row in rows]
+
+    # -------------------------------------------------------------------------
+    # Trash operations
+    # -------------------------------------------------------------------------
+
+    def trash_email(self, email_id: str, trash_filename: str) -> Optional[str]:
+        """Move an email to trash.
+
+        Args:
+            email_id: Email ID to trash
+            trash_filename: New relative path in trash directory
+
+        Returns:
+            Original filename (for file move), or None if not found
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT filename FROM emails WHERE email_id = ? AND trashed_at IS NULL",
+                (email_id,)
+            ).fetchone()
+            if not row:
+                return None
+
+            original_filename = row[0]
+            conn.execute(
+                """UPDATE emails
+                   SET trashed_at = datetime('now'),
+                       original_filename = filename,
+                       filename = ?
+                   WHERE email_id = ?""",
+                (trash_filename, email_id),
+            )
+            conn.commit()
+            return original_filename
+
+    def restore_email(self, email_id: str) -> Optional[tuple]:
+        """Restore an email from trash.
+
+        Returns:
+            Tuple of (current_filename, original_filename) for file move,
+            or None if not found/not trashed
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT filename, original_filename FROM emails "
+                "WHERE email_id = ? AND trashed_at IS NOT NULL",
+                (email_id,)
+            ).fetchone()
+            if not row:
+                return None
+
+            conn.execute(
+                """UPDATE emails
+                   SET trashed_at = NULL,
+                       filename = original_filename,
+                       original_filename = NULL
+                   WHERE email_id = ?""",
+                (email_id,),
+            )
+            conn.commit()
+            return row  # (current_filename, original_filename)
+
+    def permanently_delete_emails(self, email_ids: List[str]) -> int:
+        """Permanently delete emails from the database.
+
+        Deletes from emails table (triggers handle labels/recipients).
+        FTS is contentless so it can't be cleaned here — run rebuild after.
+
+        Returns:
+            Number of emails deleted
+        """
+        if not email_ids:
+            return 0
+        with sqlite3.connect(self.db_path) as conn:
+            placeholders = ",".join("?" for _ in email_ids)
+            cursor = conn.execute(
+                f"DELETE FROM emails WHERE email_id IN ({placeholders})",
+                email_ids,
+            )
+            conn.commit()
+            return cursor.rowcount
+
+    def get_trashed_emails(
+        self, limit: int = 50, offset: int = 0
+    ) -> List[tuple]:
+        """List trashed emails, newest first.
+
+        Returns:
+            List of (email_id, filename, subject, sender, date_str, snippet, trashed_at, original_filename)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            return conn.execute(
+                """SELECT email_id, filename, subject, sender, date_str, snippet,
+                          trashed_at, original_filename
+                   FROM emails
+                   WHERE trashed_at IS NOT NULL
+                   ORDER BY trashed_at DESC
+                   LIMIT ? OFFSET ?""",
+                (limit, offset),
+            ).fetchall()
+
+    def get_trash_count(self) -> int:
+        """Get number of trashed emails."""
+        with sqlite3.connect(self.db_path) as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL"
+            ).fetchone()[0]
+
+    def get_expired_trash(self, days: int = 30) -> List[tuple]:
+        """Get trashed emails older than N days.
+
+        Returns:
+            List of (email_id, filename)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            return conn.execute(
+                """SELECT email_id, filename FROM emails
+                   WHERE trashed_at IS NOT NULL
+                     AND trashed_at < datetime('now', ? || ' days')""",
+                (f"-{days}",),
+            ).fetchall()
 
     def mark_downloaded(
         self,
@@ -717,6 +845,9 @@ class ArchiveDatabase:
             # Build WHERE clause for emails table
             where_clauses = []
             params = []
+
+            # Exclude trashed emails from search
+            where_clauses.append("e.trashed_at IS NULL")
 
             # Exclude emails without parsed dates unless explicitly requested
             if not include_unknown:
@@ -1031,27 +1162,30 @@ class ArchiveDatabase:
             account: Filter to specific account (optional)
 
         Returns:
-            Dictionary with total_emails, indexed_emails, oldest_backup, newest_backup
+            Dictionary with total_emails, indexed_emails, oldest_backup,
+            newest_backup, trash_count
         """
         with sqlite3.connect(self.db_path, timeout=5.0) as conn:
             if account:
-                # Single query for all stats
                 row = conn.execute(
                     """SELECT COUNT(*), MIN(downloaded_at), MAX(downloaded_at)
-                       FROM emails WHERE account = ?""",
+                       FROM emails WHERE account = ? AND trashed_at IS NULL""",
                     (account,)
                 ).fetchone()
                 email_count, oldest, newest = row
             else:
                 row = conn.execute(
-                    "SELECT COUNT(*), MIN(downloaded_at), MAX(downloaded_at) FROM emails"
+                    """SELECT COUNT(*), MIN(downloaded_at), MAX(downloaded_at)
+                       FROM emails WHERE trashed_at IS NULL"""
                 ).fetchone()
                 email_count, oldest, newest = row
 
-            # Count indexed emails (those with indexed_hash set)
-            # This is faster than counting FTS5 rows
             indexed_count = conn.execute(
-                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL"
+                "SELECT COUNT(*) FROM emails WHERE indexed_hash IS NOT NULL AND trashed_at IS NULL"
+            ).fetchone()[0]
+
+            trash_count = conn.execute(
+                "SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL"
             ).fetchone()[0]
 
             return {
@@ -1059,6 +1193,7 @@ class ArchiveDatabase:
                 "indexed_emails": indexed_count,
                 "oldest_backup": oldest,
                 "newest_backup": newest,
+                "trash_count": trash_count,
             }
 
     def clear_index(self) -> None:

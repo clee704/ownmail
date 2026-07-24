@@ -2,8 +2,8 @@
 
 {% block title %}Search - {{ brand_name }}{% endblock %}
 
-{% block content %}
-    <div class="ownmail-sticky-header">
+{% block searchbar %}
+<div class="ownmail-searchbar">
     <form class="ownmail-search-form" action="/search" method="get">
         <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search emails..." autofocus>
         <select name="sort" class="ownmail-sort-select" id="sort-select">
@@ -13,53 +13,58 @@
         </select>
         <button type="submit">Search</button>
     </form>
-    <script>
-    // Enable/disable Relevance option based on search input
-    (function() {
-        var input = document.getElementById('search-input');
-        var relevanceOpt = document.getElementById('relevance-option');
-        var sortSelect = document.getElementById('sort-select');
+</div>
+<script>
+// Enable/disable Relevance option based on search input
+(function() {
+    var input = document.getElementById('search-input');
+    var relevanceOpt = document.getElementById('relevance-option');
+    var sortSelect = document.getElementById('sort-select');
 
-        function updateRelevanceOption() {
-            var query = input.value.trim();
-            // Remove date/label filters to check for FTS terms
-            var withoutFilters = query
-                .replace(/\b(before|after):\d{4}-?\d{2}-?\d{2}\b/gi, '')
-                .replace(/\b(label|tag):\S+\b/gi, '')
-                .replace(/\bAND\b/gi, '')
-                .trim();
-            var hasFtsTerms = withoutFilters.length > 0;
+    function updateRelevanceOption() {
+        var query = input.value.trim();
+        // Remove date/label filters to check for FTS terms
+        var withoutFilters = query
+            .replace(/\b(before|after):\d{4}-?\d{2}-?\d{2}\b/gi, '')
+            .replace(/\b(label|tag):\S+\b/gi, '')
+            .replace(/\bAND\b/gi, '')
+            .trim();
+        var hasFtsTerms = withoutFilters.length > 0;
 
-            relevanceOpt.disabled = !hasFtsTerms;
+        relevanceOpt.disabled = !hasFtsTerms;
 
-            // If relevance is selected but disabled, switch to date_desc
-            if (!hasFtsTerms && sortSelect.value === 'relevance') {
-                sortSelect.value = 'date_desc';
-            }
+        // If relevance is selected but disabled, switch to date_desc
+        if (!hasFtsTerms && sortSelect.value === 'relevance') {
+            sortSelect.value = 'date_desc';
         }
+    }
 
-        input.addEventListener('input', updateRelevanceOption);
-        // Run on page load too
-        updateRelevanceOption();
-    })();
-    </script>
+    input.addEventListener('input', updateRelevanceOption);
+    // Run on page load too
+    updateRelevanceOption();
+})();
+</script>
+{% endblock %}
+
+{% block content %}
     {% if results %}
-        <div class="ownmail-results-header">
-            <p>{% if query %}Showing{% else %}Recent emails:{% endif %} {{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more %}+{% endif %}{% if query %} (took {{ "%.2f"|format(search_time) }}s){% endif %}</p>
-            {% if has_prev or has_more %}
-            <div class="ownmail-pagination">
-                {% if has_prev %}
-                    <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
-                {% endif %}
-                <span class="ownmail-current">Page {{ page }}</span>
-                {% if has_more %}
-                        <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}">Next &raquo;</a>
-                    {% endif %}
-                </div>
-                {% endif %}
+        <div class="ownmail-toolbar" id="ownmail-toolbar">
+            <div class="ownmail-toolbar-left">
+                <label class="ownmail-toolbar-checkbox"><input type="checkbox" id="ownmail-select-all" onchange="toggleSelectAll(this)"></label>
+                <a href="javascript:location.reload()" class="ownmail-toolbar-btn" title="Refresh">↻</a>
+                <span class="ownmail-toolbar-actions" id="ownmail-toolbar-actions">
+                    <span><span id="ownmail-selected-count">0</span> selected</span>
+                    <button onclick="trashSelected()" class="ownmail-bulk-delete-btn">Delete</button>
+                    <button onclick="clearSelection()" class="ownmail-bulk-cancel-btn">Cancel</button>
+                </span>
             </div>
+            <div class="ownmail-toolbar-right">
+                <span class="ownmail-toolbar-range">{{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more or has_prev %} of {% if query %}many{% else %}{{ stats.total_emails | default(0) | int }}{% endif %}{% endif %}</span>
+                {% if has_prev %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">‹</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">‹</span>{% endif %}
+                {% if has_more %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">›</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">›</span>{% endif %}
+            </div>
+        </div>
     {% endif %}
-    </div>
 
     {% if search_error %}
         <div class="ownmail-search-error">
@@ -67,29 +72,64 @@
             <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
         </div>
     {% elif results %}
-            <ul class="ownmail-email-list">
-            {% for result in results %}
-                <li class="ownmail-email-row">
-                    <a href="/email/{{ result.email_id }}" class="ownmail-email-row-link">
-                        <span class="ownmail-email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
-                        <span class="ownmail-email-row-content">
-                            <span class="ownmail-email-subject">{{ result.subject or '(No subject)' }}</span>
-                            {% if result.snippet %}<span class="ownmail-email-snippet">{{ result.snippet }}</span>{% endif %}
-                        </span>
-                        <span class="ownmail-email-date">{{ result.date_short }}</span>
-                    </a>
-                </li>
-            {% endfor %}
-            </ul>
+            {% include '_email_list.html' %}
+            <script>
+            var lastCheckedIdx = null;
+            var allCheckboxes = Array.from(document.querySelectorAll('.ownmail-email-checkbox input'));
+
+            function getChecked() {
+                return allCheckboxes.filter(function(cb) { return cb.checked; });
+            }
+            function updateToolbar() {
+                var checked = getChecked();
+                var actions = document.getElementById('ownmail-toolbar-actions');
+                var count = document.getElementById('ownmail-selected-count');
+                count.textContent = checked.length;
+                actions.style.display = checked.length > 0 ? 'flex' : 'none';
+                var selectAll = document.getElementById('ownmail-select-all');
+                if (selectAll) selectAll.checked = checked.length === allCheckboxes.length;
+            }
+            function onCheckboxChange(event, cb) {
+                var idx = allCheckboxes.indexOf(cb);
+                if (event.shiftKey && lastCheckedIdx !== null && idx !== lastCheckedIdx) {
+                    var start = Math.min(lastCheckedIdx, idx);
+                    var end = Math.max(lastCheckedIdx, idx);
+                    for (var i = start; i <= end; i++) {
+                        allCheckboxes[i].checked = cb.checked;
+                    }
+                }
+                lastCheckedIdx = idx;
+                updateToolbar();
+            }
+            function toggleSelectAll(selectAllCb) {
+                allCheckboxes.forEach(function(cb) { cb.checked = selectAllCb.checked; });
+                updateToolbar();
+            }
+            function clearSelection() {
+                allCheckboxes.forEach(function(cb) { cb.checked = false; });
+                var selectAll = document.getElementById('ownmail-select-all');
+                if (selectAll) selectAll.checked = false;
+                lastCheckedIdx = null;
+                updateToolbar();
+            }
+            function trashSelected() {
+                var ids = getChecked().map(function(cb) { return cb.value; }).join(',');
+                if (!ids || !confirm('Move ' + getChecked().length + ' email(s) to trash?')) return;
+                fetch('/trash-bulk', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: 'ids=' + encodeURIComponent(ids)
+                }).then(function(r) { if (r.ok) location.href = location.href; });
+            }
+            </script>
             {% if has_prev or has_more %}
-            <div class="ownmail-pagination ownmail-pagination-bottom">
-                {% if has_prev %}
-                    <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}">&laquo; Previous</a>
-                {% endif %}
-                <span class="ownmail-current">Page {{ page }}</span>
-                {% if has_more %}
-                    <a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}">Next &raquo;</a>
-                {% endif %}
+            <div class="ownmail-toolbar ownmail-toolbar-bottom">
+                <div></div>
+                <div class="ownmail-toolbar-right">
+                    <span class="ownmail-toolbar-range">{{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more or has_prev %} of {% if query %}many{% else %}{{ stats.total_emails | default(0) | int }}{% endif %}{% endif %}</span>
+                    {% if has_prev %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">‹</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">‹</span>{% endif %}
+                    {% if has_more %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">›</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">›</span>{% endif %}
+                </div>
             </div>
             {% endif %}
     {% elif query %}

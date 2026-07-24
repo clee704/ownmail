@@ -324,7 +324,7 @@ class TestCreateApp:
         with app.test_client() as client:
             response = client.get("/search?q=test&page=1")
             assert response.status_code == 200
-            assert b"Next" in response.data  # Has pagination
+            assert b"ownmail-toolbar-arrow" in response.data  # Has pagination
 
     def test_search_sort_options(self, mock_archive):
         """Search with different sort options should work."""
@@ -470,7 +470,7 @@ class TestRawEmailRoute:
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -526,7 +526,7 @@ class TestAttachmentRoute:
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "missing.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "missing.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -587,7 +587,7 @@ This is the email body.
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -617,7 +617,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg2", "emails/html.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg2", "emails/html.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -655,7 +655,7 @@ PDF content here
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg3", "emails/attach.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg3", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -673,7 +673,7 @@ PDF content here
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/missing.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/missing.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -710,7 +710,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg4", "emails/multipart.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg4", "emails/multipart.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -751,7 +751,7 @@ PDF CONTENT HERE
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -789,7 +789,7 @@ PDF CONTENT
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -907,7 +907,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/img.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/img.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive, block_images=True)
@@ -936,7 +936,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/trusted.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/trusted.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive, block_images=True, trusted_senders=["trusted@example.com"])
@@ -965,7 +965,7 @@ Content-Type: text/html
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/rt.eml")
+        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/rt.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
         # Start with block_images=True
@@ -1263,3 +1263,142 @@ class TestCleanSnippetLxml:
         text = 'Just plain text here'
         assert _clean_snippet_text(text) == 'Just plain text here'
 
+
+
+class TestTrashRoutes:
+    """Tests for trash web routes."""
+
+    def test_view_trash_empty(self, tmp_path):
+        """Test viewing empty trash."""
+        from unittest.mock import MagicMock
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 10
+        mock_archive.db.get_trash_count.return_value = 0
+        mock_archive.db.get_trashed_emails.return_value = []
+        mock_archive.auto_expire_trash.return_value = 0
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/trash")
+            assert response.status_code == 200
+            assert b"Trash is empty" in response.data
+
+    def test_view_trash_with_items(self, tmp_path):
+        """Test viewing trash with items."""
+        from unittest.mock import MagicMock
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 10
+        mock_archive.db.get_trash_count.return_value = 1
+        mock_archive.db.get_trashed_emails.return_value = [
+            ("abc123", "trash/abc123.eml", "Test Subject", "sender@test.com",
+             "2024-01-15T10:00:00", "This is a snippet...", "2024-01-15T10:00:00",
+             "sources/gmail/2024/01/test.eml")
+        ]
+        mock_archive.auto_expire_trash.return_value = 0
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.get("/trash")
+            assert response.status_code == 200
+            assert b"Test Subject" in response.data
+
+    def test_trash_email_route(self, tmp_path):
+        """Test POST /trash/<email_id>."""
+        from unittest.mock import MagicMock
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 10
+        mock_archive.db.get_trash_count.return_value = 0
+        mock_archive.trash_email.return_value = True
+        mock_archive.auto_expire_trash.return_value = 0
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.post("/trash/abc123")
+            assert response.status_code == 204
+            mock_archive.trash_email.assert_called_once_with("abc123")
+
+    def test_restore_email_route(self, tmp_path):
+        """Test POST /restore/<email_id>."""
+        from unittest.mock import MagicMock
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 10
+        mock_archive.db.get_trash_count.return_value = 0
+        mock_archive.restore_email.return_value = True
+        mock_archive.auto_expire_trash.return_value = 0
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.post("/restore/abc123")
+            assert response.status_code == 204
+            mock_archive.restore_email.assert_called_once_with("abc123")
+
+    def test_trash_bulk_route(self, tmp_path):
+        """Test POST /trash-bulk."""
+        from unittest.mock import MagicMock
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 10
+        mock_archive.db.get_trash_count.return_value = 0
+        mock_archive.auto_expire_trash.return_value = 0
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.post("/trash-bulk", data={"ids": "abc,def"})
+            assert response.status_code == 204
+            assert mock_archive.trash_email.call_count == 2
+
+    def test_empty_trash_route(self, tmp_path):
+        """Test POST /empty-trash."""
+        from unittest.mock import MagicMock
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 10
+        mock_archive.db.get_trash_count.return_value = 0
+        mock_archive.empty_trash.return_value = 5
+        mock_archive.auto_expire_trash.return_value = 0
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.post("/empty-trash")
+            assert response.status_code == 302  # redirect to /trash
+            mock_archive.empty_trash.assert_called_once()
+
+    def test_delete_forever_route(self, tmp_path):
+        """Test POST /delete-forever."""
+        from unittest.mock import MagicMock
+        from ownmail.web import create_app
+
+        mock_archive = MagicMock()
+        mock_archive.archive_dir = tmp_path
+        mock_archive.db = MagicMock()
+        mock_archive.db.get_email_count.return_value = 10
+        mock_archive.db.get_trash_count.return_value = 0
+        mock_archive.auto_expire_trash.return_value = 0
+
+        app = create_app(mock_archive)
+        with app.test_client() as client:
+            response = client.post("/delete-forever", data={"ids": "abc,def"})
+            assert response.status_code == 204
+            mock_archive.permanently_delete_emails.assert_called_once_with(["abc", "def"])

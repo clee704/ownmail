@@ -35,7 +35,19 @@
         </div>
         <h1><a href="/">{{ brand_name }}</a></h1>
     </div>
-    {% block content %}{% endblock %}
+    {% block searchbar %}{% endblock %}
+    <div class="ownmail-layout">
+        <nav class="ownmail-sidebar" id="ownmail-sidebar">
+            <button class="ownmail-sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">◀</button>
+            <ul class="ownmail-sidebar-nav">
+                <li><a href="/" class="{% if request.path == '/' or request.path.startswith('/search') %}active{% endif %}">📬 <span class="ownmail-sidebar-label">All Mail</span></a></li>
+                <li><a href="/trash" class="{% if request.path == '/trash' %}active{% endif %}">🗑️ <span class="ownmail-sidebar-label">Trash</span>{% if stats.trash_count %}<span class="ownmail-sidebar-badge">{{ stats.trash_count }}</span>{% endif %}</a></li>
+            </ul>
+        </nav>
+        <main class="ownmail-main">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
     <script>
     // Theme: reads localStorage preference (auto/light/dark)
     function isDarkMode() {
@@ -97,10 +109,10 @@
             dropdown.classList.remove('ownmail-show');
         }
     });
-    // Show loading on form submit
+    // Show loading on form submit (skip if onsubmit handler cancelled it)
     document.querySelectorAll('form').forEach(function(form) {
         form.addEventListener('submit', function(e) {
-            showLoading(e);
+            if (!e.defaultPrevented) showLoading(e);
         });
     });
     // Show loading on email item click
@@ -115,6 +127,19 @@
             showLoading(e);
         });
     });
+    // Sidebar toggle with localStorage persistence
+    function toggleSidebar() {
+        var sidebar = document.getElementById('ownmail-sidebar');
+        var collapsed = sidebar.classList.toggle('collapsed');
+        localStorage.setItem('ownmail-sidebar', collapsed ? 'collapsed' : 'expanded');
+    }
+    (function() {
+        var pref = localStorage.getItem('ownmail-sidebar');
+        var sidebar = document.getElementById('ownmail-sidebar');
+        if (sidebar && pref === 'collapsed') {
+            sidebar.classList.add('collapsed');
+        }
+    })();
     </script>
 </body>
 </html>

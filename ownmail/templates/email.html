@@ -21,6 +21,13 @@
                         {% endif %}
                         <a href="/raw/{{ email_id }}">Show original</a>
                         <a href="/download/{{ email_id }}">Download message</a>
+                        <hr class="ownmail-email-menu-divider">
+                        {% if is_trashed %}
+                        <a href="#" onclick="restoreEmail('{{ email_id }}'); return false;">Restore from trash</a>
+                        <a href="#" class="ownmail-menu-danger" onclick="deleteForever('{{ email_id }}'); return false;">Delete forever</a>
+                        {% else %}
+                        <a href="#" class="ownmail-menu-danger" onclick="trashEmail('{{ email_id }}'); return false;">Delete</a>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -283,5 +290,23 @@ document.addEventListener('click', function(event) {
         dropdown.classList.remove('ownmail-show');
     }
 });
+
+function trashEmail(emailId) {
+    if (!confirm('Move this email to trash?')) return;
+    fetch('/trash/' + emailId, { method: 'POST' })
+        .then(function(r) { if (r.ok) window.location.href = document.referrer || '/'; });
+}
+function restoreEmail(emailId) {
+    fetch('/restore/' + emailId, { method: 'POST' })
+        .then(function(r) { if (r.ok) location.href = location.href; });
+}
+function deleteForever(emailId) {
+    if (!confirm('Permanently delete this email? This cannot be undone.')) return;
+    fetch('/delete-forever', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'ids=' + encodeURIComponent(emailId)
+    }).then(function(r) { if (r.ok) window.location.href = '/trash'; });
+}
 </script>
 {% endblock %}

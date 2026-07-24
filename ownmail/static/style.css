@@ -1,7 +1,7 @@
 * { box-sizing: border-box; }
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    max-width: 960px;
+    max-width: 1100px;
     margin: 0 auto;
     padding: 10px 20px 15px 20px;
     background: #f5f5f5;
@@ -11,6 +11,90 @@ body {
 }
 a { color: #0066cc; text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+/* Layout: sidebar + main */
+.ownmail-layout {
+    display: flex;
+    gap: 0;
+}
+.ownmail-main {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Search bar (above sidebar) */
+.ownmail-searchbar {
+    margin-bottom: 10px;
+}
+
+/* Sidebar */
+.ownmail-sidebar {
+    width: 140px;
+    flex-shrink: 0;
+    padding-top: 2px;
+    transition: width 0.15s ease;
+}
+.ownmail-sidebar.collapsed {
+    width: 28px;
+}
+.ownmail-sidebar-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    color: #bbb;
+    padding: 2px 4px;
+    margin-bottom: 2px;
+    transition: transform 0.15s ease;
+}
+.ownmail-sidebar.collapsed .ownmail-sidebar-toggle {
+    transform: rotate(180deg);
+}
+.ownmail-sidebar-toggle:hover { color: #666; }
+.ownmail-sidebar-nav {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.ownmail-sidebar-nav li a {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    color: #666;
+    text-decoration: none;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.ownmail-sidebar-nav li a:hover {
+    background: #e8e8e8;
+    text-decoration: none;
+    color: #333;
+}
+.ownmail-sidebar-nav li a.active {
+    background: #e8e8e8;
+    color: #333;
+    font-weight: 500;
+}
+.ownmail-sidebar-label {
+    transition: opacity 0.15s ease;
+}
+.ownmail-sidebar.collapsed .ownmail-sidebar-label,
+.ownmail-sidebar.collapsed .ownmail-sidebar-badge {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+}
+.ownmail-sidebar-badge {
+    background: #888;
+    color: #fff;
+    font-size: 10px;
+    padding: 0 5px;
+    border-radius: 8px;
+    margin-left: auto;
+    line-height: 16px;
+}
 
 .ownmail-header {
     display: flex;
@@ -131,13 +215,29 @@ a:hover { text-decoration: underline; }
 }
 .ownmail-email-row {
     border-bottom: 1px solid #eee;
+    display: flex;
+    align-items: center;
+    position: relative;
+    padding-left: 6px;
 }
 .ownmail-email-row:last-child { border-bottom: none; }
 .ownmail-email-row:hover { background: #f8f9fa; }
+/* Checkbox: always visible in row, like Gmail */
+.ownmail-email-checkbox {
+    flex: 0 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.ownmail-email-checkbox input { cursor: pointer; }
 .ownmail-email-row-link {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     padding: 10px 12px;
+    padding-left: 6px;
     color: inherit;
     text-decoration: none;
     cursor: pointer;
@@ -194,6 +294,131 @@ a:hover { text-decoration: underline; }
 }
 .ownmail-search-error code { background: #ffdddd; padding: 2px 5px; border-radius: 3px; }
 .ownmail-no-results { text-align: center; padding: 40px; color: #666; }
+
+/* Toolbar — Gmail-style row above email list */
+.ownmail-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 13px;
+    color: #666;
+}
+.ownmail-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ownmail-toolbar-checkbox {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 4px;
+    padding-left: 8px;
+}
+.ownmail-toolbar-checkbox input { cursor: pointer; }
+.ownmail-toolbar-actions {
+    display: none;
+    align-items: center;
+    gap: 6px;
+}
+.ownmail-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+.ownmail-toolbar-range {
+    margin-right: 6px;
+}
+.ownmail-toolbar-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: #555;
+    font-size: 16px;
+    text-decoration: none;
+    user-select: none;
+}
+.ownmail-toolbar-arrow:hover { background: #e8e8e8; text-decoration: none; }
+.ownmail-toolbar-arrow.ownmail-disabled { color: #ccc; pointer-events: none; }
+.ownmail-toolbar-bottom { justify-content: flex-end; margin-top: 6px; }
+.ownmail-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: #555;
+    font-size: 15px;
+    text-decoration: none;
+    cursor: pointer;
+    background: none;
+    border: none;
+}
+.ownmail-toolbar-btn:hover { background: #e8e8e8; text-decoration: none; }
+.ownmail-bulk-delete-btn {
+    background: none;
+    color: #dc2626;
+    border: 1px solid #ddd;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.ownmail-bulk-delete-btn:hover { background: #fef2f2; border-color: #fca5a5; }
+.ownmail-bulk-cancel-btn {
+    background: none;
+    border: 1px solid #ddd;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #555;
+}
+.ownmail-bulk-cancel-btn:hover { background: #f0f0f0; }
+
+/* Menu danger item */
+.ownmail-menu-danger { color: #dc2626 !important; }
+
+/* Trash page */
+.ownmail-trash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.ownmail-trash-header h2 { margin: 0; font-size: 1.3em; }
+.ownmail-empty-trash-btn {
+    background: #dc2626;
+    color: #fff;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+.ownmail-empty-trash-btn:hover { background: #b91c1c; }
+.ownmail-bulk-restore-btn {
+    background: #0066cc;
+    color: #fff;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.ownmail-bulk-restore-btn:hover { background: #0052a3; }
+.ownmail-trash-notice {
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    margin-top: 15px;
+}
+
 .ownmail-pagination {
     display: flex;
     gap: 15px;
@@ -212,15 +437,6 @@ a:hover { text-decoration: underline; }
     color: #666;
     justify-content: flex-end;
 }
-.ownmail-results-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: end;
-    font-size: 0.85em;
-    color: #666;
-    margin-bottom: 5px;
-}
-.ownmail-results-header p { margin: 0; }
 .ownmail-email-detail, .ownmail-help-page, .ownmail-settings-page {
     background: white;
     border: 1px solid #ddd;
@@ -519,6 +735,9 @@ a:hover { text-decoration: underline; }
 
 /* Mobile responsive: 2-line layout */
 @media screen and (max-width: 600px) {
+    .ownmail-sidebar {
+        display: none;
+    }
     html, body {
         overflow-x: hidden;
         -webkit-text-size-adjust: 100%;
@@ -552,10 +771,6 @@ a:hover { text-decoration: underline; }
         padding: 8px 6px;
         flex-shrink: 0;
     }
-    .ownmail-results-header {
-        flex-wrap: wrap;
-    }
-    .ownmail-results-header .ownmail-pagination { margin-left: auto; }
     .ownmail-email-list,
     .ownmail-email-detail,
     .ownmail-help-page,
@@ -613,6 +828,11 @@ html.ownmail-dark {
         color: #e0e0e0;
     }
     .ownmail-header h1 a { color: #e0e0e0; }
+    .ownmail-sidebar-nav li a { color: #999; }
+    .ownmail-sidebar-nav li a:hover { background: #333; color: #ddd; }
+    .ownmail-sidebar-nav li a.active { background: #333; color: #e0e0e0; }
+    .ownmail-sidebar-toggle { color: #555; }
+    .ownmail-sidebar-toggle:hover { color: #aaa; }
     .ownmail-hamburger-dropdown {
         background: #2d2d2d;
         border-color: #444;
@@ -635,7 +855,6 @@ html.ownmail-dark {
         border-color: #444;
         color: #e0e0e0;
     }
-    .ownmail-results-header { color: #999; }
     .ownmail-email-list, .ownmail-email-detail, .ownmail-help-page, .ownmail-settings-page {
         background: #242424;
         border-color: #333;
@@ -646,6 +865,16 @@ html.ownmail-dark {
     .ownmail-email-sender { color: #e0e0e0; }
     .ownmail-email-subject { color: #e0e0e0; }
     .ownmail-email-snippet { color: #888; }
+    .ownmail-toolbar { color: #999; }
+    .ownmail-toolbar-btn { color: #999; }
+    .ownmail-toolbar-btn:hover { background: #333; }
+    .ownmail-toolbar-arrow { color: #999; }
+    .ownmail-toolbar-arrow:hover { background: #333; }
+    .ownmail-toolbar-arrow.ownmail-disabled { color: #555; }
+    .ownmail-bulk-delete-btn { color: #ff6b6b; border-color: #555; }
+    .ownmail-bulk-delete-btn:hover { background: #3d2020; border-color: #884444; }
+    .ownmail-bulk-cancel-btn { color: #ccc; border-color: #555; }
+    .ownmail-bulk-cancel-btn:hover { background: #333; }
     .ownmail-email-snippet::before { color: #888; }
     .ownmail-email-date { color: #888; }
     .ownmail-email-header { border-bottom-color: #333; }
@@ -753,6 +982,7 @@ html.ownmail-dark {
     body { background: none; padding: 0; max-width: none; }
     .ownmail-header,
     .ownmail-hamburger,
+    .ownmail-sidebar,
     .ownmail-email-menu,
     .ownmail-image-banner,
     .ownmail-loading-overlay { display: none !important; }

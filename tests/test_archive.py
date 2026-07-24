@@ -964,3 +964,78 @@ class TestBackupContentDedup:
         # First batch (msg0+msg1) failed, second batch (msg2+msg3) succeeded
         assert result["error_count"] == 2
         assert result["success_count"] == 2
+
+
+class TestArchiveTrash:
+    """Tests for archive trash operations."""
+
+    def test_trash_and_restore_email(self, temp_dir, sample_eml_simple):
+        """Test trashing and restoring moves files correctly."""
+        from ownmail.archive import EmailArchive
+
+        archive = EmailArchive(temp_dir)
+        # Create source dir and file
+        src_dir = temp_dir / "sources" / "gmail" / "2024" / "01"
+        src_dir.mkdir(parents=True)
+        eml_path = src_dir / "test.eml"
+        eml_path.write_bytes(sample_eml_simple)
+
+        # Register in DB
+        eid = archive.db.make_email_id("", "msg1")
+        rel_path = str(eml_path.relative_to(temp_dir))
+        archive.db.mark_downloaded(eid, "msg1", rel_path)
+
+        # Trash
+        assert archive.trash_email(eid)
+        assert not eml_path.exists()
+        assert (temp_dir / "trash" / f"{eid}.eml").exists()
+
+        # Restore
+        assert archive.restore_email(eid)
+        assert eml_path.exists()
+        assert not (temp_dir / "trash" / f"{eid}.eml").exists()
+
+    def test_trash_nonexistent(self, temp_dir):
+        """Test trashing a non-existent email returns False."""
+        from ownmail.archive import EmailArchive
+
+        archive = EmailArchive(temp_dir)
+        assert not archive.trash_email("nonexistent")
+
+    def test_permanently_delete(self, temp_dir, sample_eml_simple):
+        """Test permanently deleting removes file and DB record."""
+        from ownmail.archive import EmailArchive
+
+        archive = EmailArchive(temp_dir)
+        trash_dir = temp_dir / "trash"
+        trash_dir.mkdir()
+
+        eid = archive.db.make_email_id("", "msg1")
+        trash_file = trash_dir / f"{eid}.eml"
+        trash_file.write_bytes(sample_eml_simple)
+        rel_path = str(trash_file.relative_to(temp_dir))
+        archive.db.mark_downloaded(eid, "msg1", rel_path)
+
+        count = archive.permanently_delete_emails([eid])
+        assert count == 1
+        assert not trash_file.exists()
+        assert archive.db.get_email_by_id(eid) is None
+
+    def test_empty_trash(self, temp_dir, sample_eml_simple):
+        """Test emptying trash deletes all trashed emails."""
+        from ownmail.archive import EmailArchive
+
+        archive = EmailArchive(temp_dir)
+        src_dir = temp_dir / "sources" / "gmail" / "2024" / "01"
+        src_dir.mkdir(parents=True)
+
+        eid = archive.db.make_email_id("", "msg1")
+        eml_path = src_dir / "test.eml"
+        eml_path.write_bytes(sample_eml_simple)
+        rel_path = str(eml_path.relative_to(temp_dir))
+        archive.db.mark_downloaded(eid, "msg1", rel_path)
+
+        archive.trash_email(eid)
+        count = archive.empty_trash(expired_only=False)
+        assert count == 1
+        assert archive.db.get_trash_count() == 0

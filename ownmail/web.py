@@ -1123,10 +1123,22 @@ def create_app(
     app.config["auto_scale"] = auto_scale
     app.config["brand_name"] = brand_name
     app.config["sanitizer"] = sanitizer or _PassthroughSanitizer()
+    app.config["trash_expiry_days"] = 30
+
+    # Auto-expire old trash on startup
+    try:
+        expired = archive.auto_expire_trash(days=30)
+        if expired > 0:
+            print(f"🗑️ Auto-expired {expired} email(s) from trash", flush=True)
+    except Exception:
+        pass  # Don't prevent startup
 
     @app.context_processor
     def inject_brand():
-        return {"brand_name": app.config["brand_name"]}
+        return {
+            "brand_name": app.config["brand_name"],
+            "stats": get_stats(),
+        }
 
     # CSRF protection: validate Origin/Referer on POST requests
     @app.before_request
@@ -1147,7 +1159,10 @@ def create_app(
 
     def get_stats():
         """Get email count stats."""
-        return {"total_emails": archive.db.get_email_count()}
+        return {
+            "total_emails": archive.db.get_email_count(),
+            "trash_count": archive.db.get_trash_count(),
+        }
 
     if verbose:
         @app.before_request
@@ -1332,6 +1347,7 @@ def create_app(
             abort(404)
 
         filename = email_info[1]  # filename is second column
+        is_trashed = email_info[5] is not None  # trashed_at
         filepath = archive.archive_dir / filename
 
         if not filepath.exists():
@@ -1513,6 +1529,7 @@ def create_app(
             "body_html": body_html,
             "attachments": attachments,
             "cid_images": cid_images,
+            "is_trashed": is_trashed,
         }
 
         # Block external images if configured
@@ -1586,6 +1603,7 @@ def create_app(
             supports_dark=supports_dark,
             auto_scale=app.config["auto_scale"],
             back_url=back_url,
+            is_trashed=email_data.get("is_trashed", False),
         )
 
     @app.route("/raw/<email_id>")
@@ -1809,6 +1827,109 @@ def create_app(
                 print(f"[verbose] Error saving settings: {e}", flush=True)
 
         return redirect("/settings?saved=1")
+
+    # ── Trash routes ─────────────────────────────────────────────────────
+
+    @app.route("/trash")
+    def view_trash():
+        """View trashed emails."""
+        rows = archive.db.get_trashed_emails(limit=200)
+        trash_count = archive.db.get_trash_count()
+        tz = app.config.get("timezone")
+        expiry_days = app.config.get("trash_expiry_days", 30)
+
+        results = []
+        for row in rows:
+            email_id, filename, subject, sender, date_str, snippet, trashed_at, original_filename = row
+
+            # Decode MIME headers if present
+            if subject and '=?' in subject:
+                subject = decode_header(subject)
+            if sender and '=?' in sender:
+                sender = decode_header(sender)
+            if snippet and '=?' in snippet:
+                snippet = decode_header(snippet)
+
+            # Clean up snippet
+            if snippet:
+                snippet = _clean_snippet_text(snippet)
+
+            # Extract sender name (without email address)
+            sender_name, sender_email_parsed = parse_email_address(sender) if sender else ("", "")
+            if not sender_name:
+                sender_name = sender_email_parsed or sender or ""
+
+            # Format date
+            local_dt = _to_local_datetime(date_str, tz)
+            if local_dt:
+                date_short = _format_date_short(local_dt, app.config.get("date_format"))
+            elif date_str:
+                date_short = date_str.split()[0]
+            else:
+                date_short = ""
+
+            results.append({
+                "email_id": email_id,
+                "subject": subject or "(No subject)",
+                "sender": sender,
+                "sender_name": sender_name,
+                "snippet": snippet,
+                "date_short": date_short,
+            })
+
+        return render_template(
+            "trash.html",
+            results=results,
+            trash_count=trash_count,
+            expiry_days=expiry_days,
+        )
+
+    @app.route("/trash/<email_id>", methods=["POST"])
+    def trash_email(email_id: str):
+        """Move an email to trash."""
+        if archive.trash_email(email_id):
+            return "", 204
+        abort(404)
+
+    @app.route("/restore/<email_id>", methods=["POST"])
+    def restore_email(email_id: str):
+        """Restore an email from trash."""
+        if archive.restore_email(email_id):
+            return "", 204
+        abort(404)
+
+    @app.route("/trash-bulk", methods=["POST"])
+    def trash_bulk():
+        """Trash multiple emails."""
+        ids = request.form.get("ids", "")
+        email_ids = [eid.strip() for eid in ids.split(",") if eid.strip()]
+        for eid in email_ids:
+            archive.trash_email(eid)
+        return "", 204
+
+    @app.route("/restore-bulk", methods=["POST"])
+    def restore_bulk():
+        """Restore multiple emails from trash."""
+        ids = request.form.get("ids", "")
+        email_ids = [eid.strip() for eid in ids.split(",") if eid.strip()]
+        for eid in email_ids:
+            archive.restore_email(eid)
+        return "", 204
+
+    @app.route("/delete-forever", methods=["POST"])
+    def delete_forever():
+        """Permanently delete emails."""
+        ids = request.form.get("ids", "")
+        email_ids = [eid.strip() for eid in ids.split(",") if eid.strip()]
+        if email_ids:
+            archive.permanently_delete_emails(email_ids)
+        return "", 204
+
+    @app.route("/empty-trash", methods=["POST"])
+    def empty_trash():
+        """Permanently delete all trashed emails."""
+        archive.empty_trash(expired_only=False)
+        return redirect("/trash")
 
     @app.route("/trust-sender", methods=["POST"])
     def trust_sender():

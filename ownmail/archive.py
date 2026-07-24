@@ -65,6 +65,115 @@ class EmailArchive:
         """
         return self.archive_dir / "sources" / source_name
 
+    @property
+    def trash_dir(self) -> Path:
+        """Get the trash directory path."""
+        return self.archive_dir / "trash"
+
+    # -------------------------------------------------------------------------
+    # Trash operations
+    # -------------------------------------------------------------------------
+
+    def trash_email(self, email_id: str) -> bool:
+        """Move an email to trash.
+
+        Moves the .eml file to trash/ and updates the database.
+
+        Returns:
+            True if successful, False if email not found
+        """
+        # Build trash filename from email_id
+        trash_filename = f"trash/{email_id}.eml"
+        original_filename = self.db.trash_email(email_id, trash_filename)
+        if not original_filename:
+            return False
+
+        # Move file
+        src = self.archive_dir / original_filename
+        dst = self.archive_dir / trash_filename
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.exists():
+            src.rename(dst)
+        return True
+
+    def restore_email(self, email_id: str) -> bool:
+        """Restore an email from trash.
+
+        Moves the .eml file back to its original location.
+
+        Returns:
+            True if successful, False if email not found/not trashed
+        """
+        result = self.db.restore_email(email_id)
+        if not result:
+            return False
+
+        current_filename, original_filename = result
+        src = self.archive_dir / current_filename
+        dst = self.archive_dir / original_filename
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.exists():
+            src.rename(dst)
+        return True
+
+    def permanently_delete_emails(self, email_ids: List[str]) -> int:
+        """Permanently delete emails (files + DB records).
+
+        Returns:
+            Number of emails deleted
+        """
+        # Delete files first
+        for eid in email_ids:
+            info = self.db.get_email_by_id(eid)
+            if info:
+                filepath = self.archive_dir / info[1]  # filename
+                if filepath.exists():
+                    filepath.unlink()
+
+        return self.db.permanently_delete_emails(email_ids)
+
+    def empty_trash(self, expired_only: bool = False, days: int = 30) -> int:
+        """Empty the trash.
+
+        Args:
+            expired_only: If True, only delete emails trashed > N days ago
+            days: Expiry threshold (default 30)
+
+        Returns:
+            Number of emails deleted
+        """
+        if expired_only:
+            rows = self.db.get_expired_trash(days=days)
+        else:
+            rows = self.db.get_trashed_emails(limit=100000, offset=0)
+
+        if not rows:
+            return 0
+
+        email_ids = [row[0] for row in rows]
+        # Delete files
+        for row in rows:
+            filename = row[1]
+            filepath = self.archive_dir / filename
+            if filepath.exists():
+                filepath.unlink()
+
+        count = self.db.permanently_delete_emails(email_ids)
+
+        # Clean up empty trash directory
+        if self.trash_dir.exists() and not any(self.trash_dir.iterdir()):
+            self.trash_dir.rmdir()
+
+        return count
+
+    def auto_expire_trash(self, days: int = 30) -> int:
+        """Delete emails that have been in trash longer than N days.
+
+        Returns:
+            Number of emails expired
+        """
+        return self.empty_trash(expired_only=True, days=days)
+
     # -------------------------------------------------------------------------
     # Backup
     # -------------------------------------------------------------------------

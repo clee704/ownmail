@@ -408,6 +408,14 @@ def cmd_download(
             sys.exit(1)
         sources = [source]
 
+    # Auto-expire old trash
+    try:
+        expired = archive.auto_expire_trash(days=30)
+        if expired > 0:
+            print(f"🗑️ Auto-expired {expired} email(s) from trash\n", flush=True)
+    except Exception:
+        pass
+
 
     for source in sources:
         name = source["name"]
@@ -583,6 +591,10 @@ def cmd_stats(archive: EmailArchive, config: dict, source_name: Optional[str] = 
         print(f"Total emails: {stats['total_emails']}")
         print(f"Indexed for search: {stats['indexed_emails']}")
 
+    trash_count = archive.db.get_trash_count()
+    if trash_count > 0:
+        print(f"\nTrash: {trash_count} email(s)")
+
 
 def cmd_sources_list(config: dict) -> None:
     """List configured sources."""
@@ -599,6 +611,39 @@ def cmd_sources_list(config: dict) -> None:
         source_type = source.get("type", "?")
         account = source.get("account", "?")
         print(f"  - {name}: {source_type} ({account})")
+
+
+def cmd_trash(archive: EmailArchive, empty: bool = False, expire: bool = False) -> None:
+    """View or manage trashed emails."""
+    if empty:
+        count = archive.empty_trash(expired_only=False)
+        print(f"🗑️ Permanently deleted {count} email(s) from trash")
+        return
+
+    if expire:
+        count = archive.auto_expire_trash(days=30)
+        print(f"🗑️ Expired {count} email(s) from trash (>30 days)")
+        return
+
+    # List trashed emails
+    rows = archive.db.get_trashed_emails(limit=50)
+    trash_count = archive.db.get_trash_count()
+
+    if not rows:
+        print("\nTrash is empty")
+        return
+
+    print(f"\nTrash ({trash_count} email(s)):")
+    print("-" * 70)
+    for row in rows:
+        email_id, filename, subject, sender, trashed_at, original_filename = row
+        subject = subject or "(No subject)"
+        sender = sender or "(Unknown)"
+        print(f"  {trashed_at[:10]}  {sender[:25]:<25}  {subject[:40]}")
+
+    if trash_count > 50:
+        print(f"\n  ... and {trash_count - 50} more")
+    print("\nUse --empty to permanently delete all, or --expire to delete >30 days old")
 
 
 def cmd_reset_sync(
@@ -821,6 +866,14 @@ Examples:
     sources_sub.add_parser("list", help="List configured sources")
     _add_global_opts(sources_parser)
 
+    trash_parser = subparsers.add_parser(
+        "trash",
+        help="View and manage trashed emails",
+    )
+    trash_parser.add_argument("--empty", action="store_true", help="Empty all trash")
+    trash_parser.add_argument("--expire", action="store_true", help="Delete only expired trash (>30 days)")
+    _add_global_opts(trash_parser)
+
     args = parser.parse_args()
 
     if not args.command:
@@ -895,6 +948,8 @@ Examples:
             elif args.command == "list-unknown":
                 from ownmail.commands import cmd_list_unknown
                 cmd_list_unknown(archive, args.verbose)
+            elif args.command == "trash":
+                cmd_trash(archive, args.empty, args.expire)
             elif args.command == "serve":
                 try:
                     from ownmail.web import run_server

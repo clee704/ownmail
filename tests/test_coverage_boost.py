@@ -1745,7 +1745,7 @@ Email body with labels.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 100
-        mock_archive.db.get_email_by_id.return_value = ("label123", "label.eml", None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("label123", "label.eml", None, None, None, None)
         mock_archive.db.get_labels_for_email.return_value = ["INBOX", "IMPORTANT", "STARRED"]
 
         app = create_app(mock_archive)
@@ -6093,7 +6093,7 @@ Test body.
         mock_archive.archive_dir = tmp_path
         mock_archive.db = MagicMock()
         mock_archive.db.get_email_count.return_value = 1
-        mock_archive.db.get_email_by_id.return_value = ("labeled", "labeled.eml", None, None, None)
+        mock_archive.db.get_email_by_id.return_value = ("labeled", "labeled.eml", None, None, None, None)
         mock_archive.db.get_labels_for_email.return_value = ["INBOX", "IMPORTANT", "STARRED"]
 
         app = create_app(mock_archive)
