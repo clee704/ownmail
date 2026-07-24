@@ -1,10 +1,10 @@
 ---
 id: TASK-2.2
 title: Rewrite CONTRIBUTING.md as repo rules/conventions for humans and AI
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-24 04:42'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-24 20:21'
 labels: []
 milestone: m-2
 dependencies: []
@@ -23,4 +23,6 @@ Tighten CONTRIBUTING.md to be the shared human+AI rulebook: formalize Convention
 <!-- AC:BEGIN -->
 - [ ] #1 Branch naming convention documented
 - [ ] #2 Squash-merge / 1-PR-1-commit policy stated explicitly, tied to why it matters for changelog generation
+- [ ] #3 1
+- [ ] #4 2
 <!-- AC:END -->

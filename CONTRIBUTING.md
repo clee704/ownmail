@@ -2,7 +2,12 @@
 
 Thanks for your interest in contributing to ownmail!
 
-> **Note:** This guide is for both human and AI contributors. For AI-specific guidelines, see [.github/copilot-instructions.md](.github/copilot-instructions.md).
+This is the rulebook for **everyone working in this repo, human and AI alike** —
+commit and branch conventions, dev setup, testing, and database migrations.
+
+> **AI agents:** read [AGENTS.md](AGENTS.md) as well. It covers the rules that
+> apply only to you (autonomy, session start, the backlog ledger, the
+> STOP-and-ask list) and does not repeat what's here.
 
 ## Development Setup
 
@@ -31,7 +36,8 @@ ownmail --help
 
 ## Code Style
 
-- Follow PEP 8
+- Python 3.10+ (see `requires-python` in `pyproject.toml`)
+- Follow PEP 8, enforced by ruff
 - Use type hints where practical
 - Keep functions focused and small
 - Add docstrings for public methods
@@ -77,9 +83,30 @@ ruff check . && pytest
 
 Fix any lint errors before committing. Most can be auto-fixed with `ruff check . --fix`.
 
+## Branches
+
+Branch off `master`, one branch per change:
+
+```
+<type>/<short-desc>
+```
+
+`<type>` is the same set as the commit types below; `<short-desc>` is a few
+lowercase, hyphenated words.
+
+```
+feat/eml-import
+fix/fts5-orphan-rows
+docs/agents-md
+refactor/extract-email-parser
+```
+
+Don't work directly on `master`.
+
 ## Commit Messages
 
-Use semantic commit messages with a clear, concise description:
+Use [Conventional Commits](https://www.conventionalcommits.org/) with a clear,
+concise description:
 
 ### Format
 
@@ -100,6 +127,7 @@ Use semantic commit messages with a clear, concise description:
 | `refactor` | Code refactoring (no functional change) |
 | `perf` | Performance improvements |
 | `chore` | Maintenance tasks (deps, CI, etc.) |
+| `release` | Version bump for a published release |
 
 ### Examples
 
@@ -122,6 +150,34 @@ perf: batch FTS deletes at end of reindex for 10x speedup
 - Use imperative mood: "add feature" not "added feature"
 - Keep first line under 72 characters
 - Add body for complex changes explaining why, not just what
+- Reference the backlog task ID when there is one: `feat: add import command (TASK-7)`
+
+## Pull Requests
+
+### One PR = one squashed commit
+
+PRs are **squash-merged**. Every PR lands on `master` as exactly one commit, so:
+
+- **The PR title is that commit's Conventional Commits header.** It must follow
+  the `<type>: <description>` format above — it's what ends up in the history,
+  not your individual work-in-progress commit messages.
+- **Keep each PR self-contained and focused on one change.** Don't mix a
+  refactor with a feature, or a bug fix with a dependency bump. If a change
+  needs two Conventional Commits types to describe it, it's two PRs.
+
+This matters because `master`'s history *is* the changelog: release notes are
+generated from the commit headers. One noisy or mistyped PR title puts a wrong
+entry in the changelog permanently, and a PR that mixes concerns can't be
+described by a single type at all.
+
+### Checklist
+
+1. Branch off `master` following the naming convention above
+2. Make your changes
+3. Update documentation if needed
+4. Add tests for new functionality
+5. `ruff check . && pytest` passes
+6. Open the PR with a Conventional Commits title and a description of *why*
 
 ## Database Migrations
 
@@ -155,16 +211,6 @@ For complex migrations, we may add a `schema_version` to `sync_state`:
 ```python
 conn.execute("INSERT OR REPLACE INTO sync_state VALUES ('schema_version', '2')")
 ```
-
-## Pull Request Guidelines
-
-1. Fork the repo and create a feature branch
-2. Make your changes with clear commit messages
-3. Update documentation if needed
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a PR with a clear description
-7. **Keep PRs self-contained** — each PR should be logically independent and focused on one change
 
 ## Philosophy Reminders
 
