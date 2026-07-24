@@ -1,10 +1,10 @@
 ---
 id: TASK-2.3
 title: Retire ROADMAP.md — convert its content into backlog tasks
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-24 04:42'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-24 20:30'
 labels: []
 milestone: m-2
 dependencies: []
@@ -23,4 +23,6 @@ Convert ROADMAP.md's three sections into proper backlog tasks/docs via the backl
 <!-- AC:BEGIN -->
 - [ ] #1 All ROADMAP.md content has a corresponding backlog task or doc
 - [ ] #2 ROADMAP.md deleted, no remaining references to it in the repo
+- [ ] #3 1
+- [ ] #4 2
 <!-- AC:END -->
