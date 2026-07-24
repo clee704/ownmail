@@ -2,6 +2,7 @@
 
 
 
+from ownmail import sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
 
@@ -316,6 +317,62 @@ Body
         # Only msg2 should be downloaded
         assert result["success_count"] == 1
         mock_provider.download_message.assert_called_once_with("msg2")
+
+
+class TestBackupWritesSidecars:
+    """Backup writes a label sidecar file alongside every downloaded .eml,
+    matching what got written to the email_labels DB table."""
+
+    def test_backup_writes_sidecar_with_labels(self, temp_dir):
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        mock_provider = MagicMock()
+        mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
+        mock_provider.get_new_message_ids.return_value = (["msg1"], None)
+        mock_provider.get_current_sync_state.return_value = "12345"
+
+        raw_email = b"""From: sender@example.com
+Subject: Test
+Date: Mon, 15 Jan 2024 10:00:00 +0000
+
+Body content
+"""
+        mock_provider.download_message.return_value = (raw_email, ["INBOX", "IMPORTANT"])
+
+        result = archive.backup(mock_provider)
+        assert result["success_count"] == 1
+
+        eml_files = list(temp_dir.rglob("*.eml"))
+        assert len(eml_files) == 1
+        assert sidecar.read_labels(eml_files[0]) == ["INBOX", "IMPORTANT"]
+
+    def test_backup_writes_empty_sidecar_when_no_labels(self, temp_dir):
+        from unittest.mock import MagicMock
+
+        archive = EmailArchive(temp_dir, {})
+
+        mock_provider = MagicMock()
+        mock_provider.account = "test@gmail.com"
+        mock_provider.source_name = "test_source"
+        mock_provider.get_new_message_ids.return_value = (["msg1"], None)
+        mock_provider.get_current_sync_state.return_value = "12345"
+
+        raw_email = b"""From: sender@example.com
+Subject: Test
+Date: Mon, 15 Jan 2024 10:00:00 +0000
+
+Body content
+"""
+        mock_provider.download_message.return_value = (raw_email, [])
+
+        result = archive.backup(mock_provider)
+        assert result["success_count"] == 1
+
+        eml_files = list(temp_dir.rglob("*.eml"))
+        assert sidecar.read_labels(eml_files[0]) == []
 
 
 class TestSaveEmailEdgeCases:
@@ -994,6 +1051,47 @@ class TestArchiveTrash:
         assert archive.restore_email(eid)
         assert eml_path.exists()
         assert not (temp_dir / "trash" / f"{eid}.eml").exists()
+
+    def test_trash_and_restore_moves_sidecar_with_it(self, temp_dir, sample_eml_simple):
+        """The label sidecar must travel with its .eml through trash/restore."""
+        from ownmail.archive import EmailArchive
+
+        archive = EmailArchive(temp_dir)
+        src_dir = temp_dir / "sources" / "gmail" / "2024" / "01"
+        src_dir.mkdir(parents=True)
+        eml_path = src_dir / "test.eml"
+        eml_path.write_bytes(sample_eml_simple)
+        sidecar.write_labels(eml_path, ["INBOX", "IMPORTANT"])
+
+        eid = archive.db.make_email_id("", "msg1")
+        rel_path = str(eml_path.relative_to(temp_dir))
+        archive.db.mark_downloaded(eid, "msg1", rel_path)
+
+        assert archive.trash_email(eid)
+        trash_eml = temp_dir / "trash" / f"{eid}.eml"
+        assert sidecar.read_labels(trash_eml) == ["INBOX", "IMPORTANT"]
+        assert not sidecar.sidecar_path(eml_path).exists()
+
+        assert archive.restore_email(eid)
+        assert sidecar.read_labels(eml_path) == ["INBOX", "IMPORTANT"]
+        assert not sidecar.sidecar_path(trash_eml).exists()
+
+    def test_permanently_delete_removes_sidecar(self, temp_dir, sample_eml_simple):
+        from ownmail.archive import EmailArchive
+
+        archive = EmailArchive(temp_dir)
+        trash_dir = temp_dir / "trash"
+        trash_dir.mkdir()
+
+        eid = archive.db.make_email_id("", "msg1")
+        trash_file = trash_dir / f"{eid}.eml"
+        trash_file.write_bytes(sample_eml_simple)
+        sidecar.write_labels(trash_file, ["INBOX"])
+        rel_path = str(trash_file.relative_to(temp_dir))
+        archive.db.mark_downloaded(eid, "msg1", rel_path)
+
+        archive.permanently_delete_emails([eid])
+        assert not sidecar.sidecar_path(trash_file).exists()
 
     def test_trash_nonexistent(self, temp_dir):
         """Test trashing a non-existent email returns False."""

@@ -17,6 +17,7 @@ from email.utils import parsedate_to_datetime as _parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ownmail import sidecar
 from ownmail.config import get_db_dir
 from ownmail.database import ArchiveDatabase
 from ownmail.keychain import KeychainStorage
@@ -88,12 +89,15 @@ class EmailArchive:
         if not original_filename:
             return False
 
-        # Move file
+        # Move file (and its label sidecar, if any - they travel together)
         src = self.archive_dir / original_filename
         dst = self.archive_dir / trash_filename
         dst.parent.mkdir(parents=True, exist_ok=True)
         if src.exists():
             src.rename(dst)
+        src_sidecar = sidecar.sidecar_path(src)
+        if src_sidecar.exists():
+            src_sidecar.rename(sidecar.sidecar_path(dst))
         return True
 
     def restore_email(self, email_id: str) -> bool:
@@ -114,6 +118,9 @@ class EmailArchive:
         dst.parent.mkdir(parents=True, exist_ok=True)
         if src.exists():
             src.rename(dst)
+        src_sidecar = sidecar.sidecar_path(src)
+        if src_sidecar.exists():
+            src_sidecar.rename(sidecar.sidecar_path(dst))
         return True
 
     def permanently_delete_emails(self, email_ids: List[str]) -> int:
@@ -122,13 +129,16 @@ class EmailArchive:
         Returns:
             Number of emails deleted
         """
-        # Delete files first
+        # Delete files first (and their label sidecars, if any)
         for eid in email_ids:
             info = self.db.get_email_by_id(eid)
             if info:
                 filepath = self.archive_dir / info[1]  # filename
                 if filepath.exists():
                     filepath.unlink()
+                sidecar_file = sidecar.sidecar_path(filepath)
+                if sidecar_file.exists():
+                    sidecar_file.unlink()
 
         return self.db.permanently_delete_emails(email_ids)
 
@@ -151,12 +161,15 @@ class EmailArchive:
             return 0
 
         email_ids = [row[0] for row in rows]
-        # Delete files
+        # Delete files (and their label sidecars, if any)
         for row in rows:
             filename = row[1]
             filepath = self.archive_dir / filename
             if filepath.exists():
                 filepath.unlink()
+            sidecar_file = sidecar.sidecar_path(filepath)
+            if sidecar_file.exists():
+                sidecar_file.unlink()
 
         count = self.db.permanently_delete_emails(email_ids)
 
@@ -396,6 +409,11 @@ class EmailArchive:
                                         "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                                         (rowid_row[0], label, rowid_row[1])
                                     )
+
+                        # Sidecar file is the source of truth for labels/tags
+                        # (survives even if the DB index is lost). DB stays a
+                        # derived cache, kept in sync above.
+                        sidecar.write_labels(filepath, labels or [])
 
                         # Set indexed_hash to mark as indexed
                         self._batch_conn.execute(

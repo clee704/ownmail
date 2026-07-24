@@ -798,6 +798,7 @@ Examples:
     rebuild_parser.add_argument("--debug", action="store_true", help="Show timing debug info")
     rebuild_parser.add_argument("--index-only", action="store_true", help="Only rebuild the search index (skip date population)")
     rebuild_parser.add_argument("--date-only", action="store_true", help="Only populate email dates (skip indexing)")
+    rebuild_parser.add_argument("--sidecars-only", action="store_true", help="Only reconcile label sidecar files with the DB (sidecar wins on divergence)")
     _add_global_opts(rebuild_parser)
 
     # verify command
@@ -933,6 +934,8 @@ Examples:
                     only = "dates"
                 elif args.index_only:
                     only = "index"
+                elif args.sidecars_only:
+                    only = "sidecars"
                 cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug, only)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify

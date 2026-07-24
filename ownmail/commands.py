@@ -17,6 +17,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
 
+from ownmail import sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
@@ -41,11 +42,18 @@ def cmd_rebuild(
         pattern: Index only files matching this glob pattern (e.g., "2024/09/*")
         force: If True, rebuild all emails regardless of indexed_hash
         debug: If True, show timing info for each email
-        only: If 'dates', only populate email_date; if 'index', only rebuild index
+        only: If 'dates', only populate email_date; if 'index', only rebuild index;
+            if 'sidecars', reconcile label sidecar files with the DB (sidecar wins)
     """
     # Dates-only mode: fast path that skips full reindexing
     if only == "dates":
         _populate_dates_only(archive, pattern, force, debug)
+        return
+
+    # Sidecars-only mode: reconcile label sidecar files with the DB, without
+    # touching FTS/body content
+    if only == "sidecars":
+        _reconcile_label_sidecars(archive, pattern, debug)
         return
 
     print("\n" + "=" * 50)
@@ -403,6 +411,118 @@ def _populate_dates_only(
     print(f"  Updated: {success_count} emails in {elapsed_total:.1f}s")
     if skipped:
         print(f"  Skipped (no parseable date): {skipped}")
+    print("-" * 50 + "\n")
+
+
+def _reconcile_label_sidecars(
+    archive: EmailArchive,
+    pattern: Optional[str] = None,
+    debug: bool = False,
+) -> None:
+    """Reconcile per-email label sidecar files with the email_labels table.
+
+    Sidecar files are the source of truth for labels/tags. For each email:
+    - If a sidecar already exists, its labels overwrite whatever is in the
+      DB (sidecar wins on divergence).
+    - If no sidecar exists yet (e.g. an archive downloaded before sidecars
+      existed), one is created from the email's current DB labels
+      (one-time migration/backfill).
+
+    This makes the DB a fully rebuildable cache of the sidecar files: if
+    the DB were lost, `rebuild --only sidecars` on a fresh DB (after a
+    plain `rebuild`) would restore all label state from disk.
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Reconcile Label Sidecars")
+    print("=" * 50 + "\n")
+
+    db_path = archive.db.db_path
+
+    like_pattern = None
+    if pattern:
+        like_pattern = "%" + pattern.replace("*", "%").replace("?", "_") + "%"
+
+    t0 = time.time()
+    print("Finding emails...", end="", flush=True)
+    with sqlite3.connect(db_path) as conn:
+        if like_pattern:
+            emails = conn.execute(
+                "SELECT rowid, email_id, filename, email_date FROM emails WHERE filename LIKE ?",
+                (like_pattern,)
+            ).fetchall()
+        else:
+            emails = conn.execute(
+                "SELECT rowid, email_id, filename, email_date FROM emails"
+            ).fetchall()
+    print(f" {len(emails)} emails ({time.time()-t0:.1f}s)")
+
+    if not emails:
+        print("\nNo emails to reconcile.")
+        return
+
+    backfilled = 0
+    reconciled = 0
+    unchanged = 0
+    missing_files = 0
+    start_time = time.time()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        for i, (rowid, _email_id, filename, email_date) in enumerate(emails, 1):
+            filepath = archive.archive_dir / filename
+            if not filepath.exists():
+                missing_files += 1
+                continue
+
+            db_labels = [
+                row[0] for row in conn.execute(
+                    "SELECT label FROM email_labels WHERE email_rowid = ? ORDER BY label",
+                    (rowid,)
+                ).fetchall()
+            ]
+
+            sidecar_labels = sidecar.read_labels(filepath)
+
+            if sidecar_labels is None:
+                # No sidecar yet - back-fill it from current DB state.
+                sidecar.write_labels(filepath, db_labels)
+                backfilled += 1
+                if debug:
+                    print(f"\n  Backfilled sidecar for {filename}: {db_labels}")
+            elif sorted(sidecar_labels) != sorted(db_labels):
+                # Sidecar wins - rewrite the DB to match it.
+                conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
+                for label in sidecar_labels:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                        (rowid, label, email_date)
+                    )
+                reconciled += 1
+                if debug:
+                    print(f"\n  Reconciled {filename}: DB {db_labels} -> sidecar {sidecar_labels}")
+            else:
+                unchanged += 1
+
+            if i % 200 == 0:
+                conn.commit()
+
+            if i % 100 == 0 or i == len(emails):
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                print(f"\r\033[K  [{i}/{len(emails)}] {rate:.0f}/s", end="", flush=True)
+    finally:
+        conn.commit()
+        conn.close()
+
+    elapsed_total = time.time() - start_time
+    print("\n" + "-" * 50)
+    print("Reconcile Complete!")
+    print(f"  Backfilled (new sidecar written): {backfilled}")
+    print(f"  Reconciled (DB updated from sidecar): {reconciled}")
+    print(f"  Unchanged: {unchanged}")
+    if missing_files:
+        print(f"  Skipped (file missing on disk): {missing_files}")
+    print(f"  Done in {elapsed_total:.1f}s")
     print("-" * 50 + "\n")
 
 
@@ -1058,8 +1178,9 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
     For Gmail API: fetches labels from server via API.
     For IMAP: derives labels from IMAP folder names (stored in provider_id).
 
-    Labels are stored in the database only, not injected into .eml files.
-    This keeps .eml files as pure RFC 5322 email as received from the server.
+    Labels are stored in the DB and in a per-email JSON sidecar file
+    (source of truth) - never injected into the .eml itself, which stays
+    pure RFC 5322 email exactly as received from the server.
     """
     print("\n" + "=" * 50)
     print("ownmail - Update Labels")
@@ -1092,7 +1213,7 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
     # Get all downloaded emails for this account that don't have labels yet
     with sqlite3.connect(archive.db.db_path) as conn:
         emails = conn.execute(
-            """SELECT e.email_id, e.provider_id FROM emails e
+            """SELECT e.email_id, e.provider_id, e.filename FROM emails e
                WHERE (e.account = ? OR e.account IS NULL)
                AND NOT EXISTS (
                    SELECT 1 FROM email_labels el WHERE el.email_rowid = e.rowid
@@ -1126,7 +1247,7 @@ def _update_labels_imap(
     skip_count = 0
 
     with sqlite3.connect(archive.db.db_path) as conn:
-        for email_id, provider_id in emails:
+        for email_id, provider_id, filename in emails:
             if ":" not in provider_id:
                 skip_count += 1
                 continue
@@ -1152,6 +1273,7 @@ def _update_labels_imap(
                 "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                 (rowid, folder, email_date),
             )
+            sidecar.write_labels(archive.archive_dir / filename, [folder])
 
             success_count += 1
 
@@ -1193,7 +1315,7 @@ def _update_labels_gmail(
 
     try:
         with sqlite3.connect(archive.db.db_path) as conn:
-            for i, (email_id, provider_id) in enumerate(emails, 1):
+            for i, (email_id, provider_id, filename) in enumerate(emails, 1):
                 if interrupted:
                     break
 
@@ -1223,6 +1345,7 @@ def _update_labels_gmail(
                             "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                             (rowid, label, email_date),
                         )
+                    sidecar.write_labels(archive.archive_dir / filename, labels)
 
                     success_count += 1
 

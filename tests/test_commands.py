@@ -4,9 +4,11 @@ import hashlib
 import sqlite3
 from pathlib import Path
 
+from ownmail import sidecar
 from ownmail.archive import EmailArchive
 from ownmail.commands import (
     _print_file_list,
+    _reconcile_label_sidecars,
     cmd_rebuild,
     cmd_verify,
 )
@@ -1302,6 +1304,95 @@ def _make_email(archive, temp_dir, n, account="test@gmail.com"):
     eid = _eid(f"msg{n}", account)
     archive.db.mark_downloaded(eid, f"msg{n}", rel, content_hash=content_hash, account=account)
     return eid
+
+
+class TestReconcileLabelSidecars:
+    """Tests for _reconcile_label_sidecars (rebuild --only sidecars)."""
+
+    def test_backfills_sidecar_from_db_when_missing(self, temp_dir, capsys):
+        """An email with DB labels but no sidecar gets one written (migration)."""
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid, email_date = conn.execute(
+                "SELECT rowid, email_date FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                (rowid, "INBOX", email_date),
+            )
+            filename = conn.execute(
+                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()[0]
+
+        _reconcile_label_sidecars(archive)
+
+        assert sidecar.read_labels(temp_dir / filename) == ["INBOX"]
+        captured = capsys.readouterr()
+        assert "Backfilled (new sidecar written): 1" in captured.out
+
+    def test_sidecar_wins_on_divergence(self, temp_dir, capsys):
+        """If sidecar and DB disagree, DB is rewritten to match the sidecar."""
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid, email_date = conn.execute(
+                "SELECT rowid, email_date FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                (rowid, "OLD_LABEL", email_date),
+            )
+            filename = conn.execute(
+                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()[0]
+
+        sidecar.write_labels(temp_dir / filename, ["NEW_LABEL"])
+
+        _reconcile_label_sidecars(archive)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            labels = [
+                row[0] for row in conn.execute(
+                    "SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,)
+                ).fetchall()
+            ]
+        assert labels == ["NEW_LABEL"]
+        captured = capsys.readouterr()
+        assert "Reconciled (DB updated from sidecar): 1" in captured.out
+
+    def test_unchanged_when_sidecar_matches_db(self, temp_dir, capsys):
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid, email_date = conn.execute(
+                "SELECT rowid, email_date FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                (rowid, "INBOX", email_date),
+            )
+            filename = conn.execute(
+                "SELECT filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()[0]
+
+        sidecar.write_labels(temp_dir / filename, ["INBOX"])
+
+        _reconcile_label_sidecars(archive)
+        captured = capsys.readouterr()
+        assert "Unchanged: 1" in captured.out
+
+    def test_wired_via_rebuild_only_sidecars(self, temp_dir, capsys):
+        """cmd_rebuild(only='sidecars') dispatches to the sidecar reconciler."""
+        archive = EmailArchive(temp_dir, {})
+        _make_email(archive, temp_dir, 1)
+
+        cmd_rebuild(archive, only="sidecars")
+        captured = capsys.readouterr()
+        assert "Reconcile Label Sidecars" in captured.out
 
 
 class TestRebuildCancel:
