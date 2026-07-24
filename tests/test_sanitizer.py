@@ -637,3 +637,267 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         html = "<style>td { font-family: Roboto; }</style><td>Hi</td>"
         result, *_ = self.sanitizer.sanitize(html)
         assert "sans-serif" in result
+
+
+class TestSanitizerLifecycle(unittest.TestCase):
+    """Tests for start/stop/restart with the Node worker mocked out."""
+
+    def _worker(self, ready=True, lines=None):
+        """Build a fake Popen whose stdout replays `lines` after a ready signal."""
+        proc = MagicMock()
+        proc.stderr = iter(())
+        out = []
+        if ready:
+            out.append('{"ready": true}\n')
+        out.extend(lines or [])
+        proc.stdout.readline.side_effect = out + [""] * 10
+        return proc
+
+    def test_start_without_node_stays_unavailable(self):
+        """With no node on PATH, start() should degrade rather than raise."""
+        san = HtmlSanitizer()
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=False):
+            san.start()
+        self.assertFalse(san.available)
+
+    def test_start_aborts_when_deps_unavailable(self):
+        """A failed dependency install should leave the sanitizer unavailable."""
+        san = HtmlSanitizer()
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=False):
+                with patch("subprocess.Popen") as mock_popen:
+                    san.start()
+        self.assertFalse(san.available)
+        mock_popen.assert_not_called()
+
+    def test_start_marks_available_on_ready_signal(self):
+        """A worker that signals ready should mark the sanitizer available."""
+        san = HtmlSanitizer(verbose=True)
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=True):
+                with patch("subprocess.Popen", return_value=self._worker()):
+                    san.start()
+        self.assertTrue(san.available)
+
+    def test_start_without_ready_signal_kills_worker(self):
+        """A worker that never signals ready should be terminated."""
+        san = HtmlSanitizer()
+        proc = self._worker(ready=False)
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=True):
+                with patch("subprocess.Popen", return_value=proc):
+                    san.start()
+        self.assertFalse(san.available)
+        proc.terminate.assert_called_once()
+
+    def test_start_with_garbage_ready_line_kills_worker(self):
+        """Non-JSON on the ready line should be treated as a failed start."""
+        san = HtmlSanitizer()
+        proc = MagicMock()
+        proc.stderr = iter(())
+        proc.stdout.readline.return_value = "not json\n"
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=True):
+                with patch("subprocess.Popen", return_value=proc):
+                    san.start()
+        self.assertFalse(san.available)
+
+    def test_start_handles_missing_node_binary(self):
+        """A FileNotFoundError from Popen should degrade gracefully."""
+        san = HtmlSanitizer()
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=True):
+                with patch("subprocess.Popen", side_effect=FileNotFoundError):
+                    san.start()
+        self.assertFalse(san.available)
+
+    def test_start_handles_unexpected_error(self):
+        """Any other spawn failure should degrade gracefully."""
+        san = HtmlSanitizer()
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=True):
+                with patch("subprocess.Popen", side_effect=OSError("no fork")):
+                    san.start()
+        self.assertFalse(san.available)
+
+    def test_stop_terminates_worker(self):
+        """stop() should terminate the process and clear availability."""
+        san = HtmlSanitizer()
+        proc = self._worker()
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=True):
+                with patch("subprocess.Popen", return_value=proc):
+                    san.start()
+        san.stop()
+        self.assertFalse(san.available)
+        proc.terminate.assert_called_once()
+
+    def test_kill_escalates_to_sigkill_on_timeout(self):
+        """A worker that ignores terminate should be killed."""
+        san = HtmlSanitizer()
+        proc = self._worker()
+        proc.wait.side_effect = [subprocess.TimeoutExpired("node", 3), None]
+        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+            with patch.object(san, "_ensure_deps", return_value=True):
+                with patch("subprocess.Popen", return_value=proc):
+                    san.start()
+        san.stop()
+        proc.kill.assert_called_once()
+
+    def test_stop_without_worker_is_a_noop(self):
+        """Stopping a sanitizer that never started should not raise."""
+        san = HtmlSanitizer()
+        san.stop()
+        self.assertFalse(san.available)
+
+    def test_drain_stderr_logs_and_survives_close(self):
+        """The stderr drain should tolerate the pipe closing mid-read."""
+        san = HtmlSanitizer()
+        proc = MagicMock()
+
+        def lines():
+            yield "  worker warning  "
+            yield ""
+            raise ValueError("closed")
+
+        proc.stderr = lines()
+        san._process = proc
+        san._drain_stderr()  # must not raise
+
+
+class TestSanitizerDeps(unittest.TestCase):
+    """Tests for _ensure_deps."""
+
+    def test_existing_node_modules_short_circuits(self):
+        """An existing node_modules directory means nothing to install."""
+        san = HtmlSanitizer()
+        with patch("os.path.isdir", return_value=True):
+            with patch("subprocess.run") as mock_run:
+                self.assertTrue(san._ensure_deps())
+        mock_run.assert_not_called()
+
+    def test_missing_npm_fails(self):
+        """Without npm, dependency setup cannot proceed."""
+        san = HtmlSanitizer()
+        with patch("os.path.isdir", return_value=False):
+            with patch("shutil.which", return_value=None):
+                self.assertFalse(san._ensure_deps())
+
+    def test_successful_install(self):
+        """A zero exit code from npm install means deps are ready."""
+        san = HtmlSanitizer()
+        result = MagicMock(returncode=0, stderr="")
+        with patch("os.path.isdir", return_value=False):
+            with patch("shutil.which", return_value="/usr/bin/npm"):
+                with patch("subprocess.run", return_value=result):
+                    self.assertTrue(san._ensure_deps())
+
+    def test_failed_install(self):
+        """A non-zero npm exit code should report failure."""
+        san = HtmlSanitizer(verbose=True)
+        result = MagicMock(returncode=1, stderr="EACCES")
+        with patch("os.path.isdir", return_value=False):
+            with patch("shutil.which", return_value="/usr/bin/npm"):
+                with patch("subprocess.run", return_value=result):
+                    self.assertFalse(san._ensure_deps())
+
+    def test_install_timeout(self):
+        """A hung npm install should time out rather than block forever."""
+        san = HtmlSanitizer()
+        with patch("os.path.isdir", return_value=False):
+            with patch("shutil.which", return_value="/usr/bin/npm"):
+                with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("npm", 60)):
+                    self.assertFalse(san._ensure_deps())
+
+    def test_install_unexpected_error(self):
+        """Any other npm failure should report failure, not raise."""
+        san = HtmlSanitizer()
+        with patch("os.path.isdir", return_value=False):
+            with patch("shutil.which", return_value="/usr/bin/npm"):
+                with patch("subprocess.run", side_effect=OSError("boom")):
+                    self.assertFalse(san._ensure_deps())
+
+
+class TestSanitizeErrorHandling(unittest.TestCase):
+    """Tests for sanitize()'s failure paths, with the worker mocked."""
+
+    def _ready(self, san, readline_side_effect):
+        """Put `san` into an available state with a scripted stdout."""
+        proc = MagicMock()
+        proc.stdout.readline.side_effect = readline_side_effect
+        san._process = proc
+        san._available = True
+        return proc
+
+    def test_unavailable_sanitizer_escapes_input(self):
+        """With no worker, HTML must be escaped rather than passed through."""
+        san = HtmlSanitizer()
+        result, needs_padding, dark = san.sanitize("<script>alert(1)</script>")
+        self.assertNotIn("<script>", result)
+        self.assertIn("&lt;script&gt;", result)
+        self.assertTrue(needs_padding)
+        self.assertFalse(dark)
+
+    def test_successful_response_is_returned(self):
+        """A matching response should be returned with its flags."""
+        san = HtmlSanitizer(verbose=True)
+        self._ready(san, ['{"id": 1, "html": "<p>ok</p>", "needsPadding": false, "supportsDarkMode": true}\n'])
+        self.assertEqual(san.sanitize("<p>ok</p>"), ("<p>ok</p>", False, True))
+
+    def test_worker_error_field_escapes_input(self):
+        """An error from DOMPurify should fall back to escaped HTML."""
+        san = HtmlSanitizer()
+        self._ready(san, ['{"id": 1, "error": "jsdom exploded"}\n'])
+        result, needs_padding, dark = san.sanitize("<b>hi</b>")
+        self.assertIn("&lt;b&gt;", result)
+        self.assertTrue(needs_padding)
+
+    def test_invalid_json_lines_are_skipped(self):
+        """Garbage lines should be ignored until a valid response arrives."""
+        san = HtmlSanitizer()
+        self._ready(san, ["not json\n", '{"id": 1, "html": "<p>ok</p>"}\n'])
+        self.assertEqual(san.sanitize("<p>ok</p>")[0], "<p>ok</p>")
+
+    def test_mismatched_ids_are_skipped(self):
+        """A response for a different request should be ignored."""
+        san = HtmlSanitizer()
+        self._ready(san, ['{"id": 99, "html": "stale"}\n', '{"id": 1, "html": "<p>ok</p>"}\n'])
+        self.assertEqual(san.sanitize("<p>ok</p>")[0], "<p>ok</p>")
+
+    def test_dead_worker_triggers_restart(self):
+        """An EOF on stdout means the worker died; it should be restarted."""
+        san = HtmlSanitizer()
+        self._ready(san, [""])
+        with patch.object(san, "start") as mock_start:
+            result, needs_padding, dark = san.sanitize("<b>hi</b>")
+        mock_start.assert_called_once()
+        self.assertIn("&lt;b&gt;", result)
+
+    def test_broken_pipe_triggers_restart(self):
+        """A broken stdin pipe should restart the worker and escape output."""
+        san = HtmlSanitizer()
+        proc = self._ready(san, [])
+        proc.stdin.write.side_effect = BrokenPipeError("gone")
+        with patch.object(san, "start") as mock_start:
+            result, _, _ = san.sanitize("<b>hi</b>")
+        mock_start.assert_called_once()
+        self.assertIn("&lt;b&gt;", result)
+
+    def test_timeout_triggers_restart(self):
+        """A worker that never answers should time out and be restarted."""
+        san = HtmlSanitizer()
+        san._timeout = 0
+        self._ready(san, ['{"id": 1, "html": "too late"}\n'])
+        with patch.object(san, "start") as mock_start:
+            result, _, _ = san.sanitize("<b>hi</b>")
+        mock_start.assert_called_once()
+        self.assertIn("&lt;b&gt;", result)
+
+    def test_restart_failure_is_survivable(self):
+        """If restarting also fails, sanitize should still return escaped HTML."""
+        san = HtmlSanitizer()
+        self._ready(san, [""])
+        with patch.object(san, "start", side_effect=OSError("no fork")):
+            result, _, _ = san.sanitize("<b>hi</b>")
+        self.assertIn("&lt;b&gt;", result)
+        self.assertFalse(san.available)
