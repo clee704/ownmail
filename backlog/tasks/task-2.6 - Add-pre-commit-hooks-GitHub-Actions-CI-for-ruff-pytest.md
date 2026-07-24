@@ -4,7 +4,7 @@ title: Add pre-commit hooks + GitHub Actions CI for ruff/pytest
 status: To Do
 assignee: []
 created_date: '2026-07-24 04:43'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-24 05:31'
 labels: []
 milestone: m-2
 dependencies:
@@ -26,7 +26,10 @@ ownmail documents 'run ruff check && pytest' in CONTRIBUTING.md but has no autom
 - [ ] #2 GitHub Actions workflow runs the same checks on PRs
 - [ ] #3 GitHub Actions CI runs the test suite on a matrix of all Python versions in pyproject.toml's classifiers (3.8, 3.9, 3.10, 3.11, 3.12)
 - [ ] #4 Matrix updated to 3.10, 3.11, 3.12 once TASK-4 lands (not 3.8/3.9 - both past upstream EOL)
+- [ ] #5 ruff check passes clean repo-wide (fix the ~171 pyupgrade/UP findings surfaced by TASK-4's py310 target-version bump, e.g. PEP 604 X | Y unions, before wiring the hook that would otherwise fail on them)
 <!-- AC:END -->
+
+
 
 ## Implementation Notes
 
