@@ -1,10 +1,10 @@
 ---
 id: TASK-4
 title: 'Drop Python 3.8/3.9 support, bump minimum to 3.10'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-24 04:51'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-24 05:30'
 labels: []
 milestone: m-0
 dependencies: []
@@ -20,7 +20,7 @@ Python 3.8 reached EOL 2024-10-07 and 3.9 reached EOL 2025-10-31 - both are past
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 pyproject.toml requires-python is >=3.10
-- [ ] #2 3.8 and 3.9 classifiers removed
-- [ ] #3 ruff target-version bumped to py310
+- [x] #1 pyproject.toml requires-python is >=3.10
+- [x] #2 3.8 and 3.9 classifiers removed
+- [x] #3 ruff target-version bumped to py310
 <!-- AC:END -->
