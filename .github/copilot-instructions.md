@@ -1,64 +1,16 @@
 # Copilot Instructions for ownmail
 
-> **Note:** This file contains AI-specific guidelines. For general contribution guidelines (development setup, code style, testing, etc.), read [CONTRIBUTING.md](../CONTRIBUTING.md) first.
+**Read [AGENTS.md](../AGENTS.md) first.** It is the canonical operating contract
+for every AI tool working in this repo — autonomy policy, session start, code
+and test hygiene, project invariants, and the STOP-and-ask list. This file
+deliberately does not duplicate it.
 
-## Project Overview
+Then read [CONTRIBUTING.md](../CONTRIBUTING.md) for the rules that apply to
+humans and AI alike: dev setup, commit format, branch naming, testing, and
+database migrations.
 
-ownmail is a file-based email backup and search tool. Read [README.md](../README.md) for project philosophy and features.
+## Session start
 
-## Before Contributing
-
-Read [CONTRIBUTING.md](../CONTRIBUTING.md) for:
-- Development setup
-- Code style guidelines
-- Testing requirements
-- Database migration guidelines
-
-## Key Principles
-
-1. **Files are the source of truth** — `.eml` files are the archive, database is just an index
-2. **Fail gracefully** — Handle malformed emails, network errors without crashing
-3. **Resumable operations** — Long-running commands should be safe to Ctrl-C and resume
-4. **Minimal dependencies** — Only add dependencies when truly necessary
-
-## Before Committing
-
-Always run:
-```bash
-ruff check .          # Lint check
-pytest                # Run tests
-```
-
-## Code Style
-
-- Python 3.8+ compatible
-- Follow PEP 8 (enforced by ruff)
-- Use type hints where practical
-- Add docstrings for public methods
-
-## Commit Messages
-
-Use semantic commit messages:
-
-```
-feat: add new feature
-fix: bug fix
-docs: documentation changes
-test: adding or updating tests
-refactor: code refactoring
-perf: performance improvements
-chore: maintenance tasks
-```
-
-Examples:
-- `feat: add db-check command for database integrity`
-- `fix: use NOT IN instead of LEFT JOIN for FTS5 performance`
-- `docs: add detailed help messages for all commands`
-- `test: add unit tests for EmailParser`
-
-## Git Best Practices (AI-specific)
-
-- **Keep commits self-contained** — each commit should be logically independent
-- **Don't mix unrelated changes** — separate bug fixes, features, and refactors into different commits
-- **Avoid `git add -A`** — it can stage unrelated files. Always examine repo state with `git status` before adding files
-- **Stage files explicitly** — use `git add <file>` for specific files you've changed
+If you're given no specific direction, don't ask what to work on — check
+`backlog/` for the next task and start on it. See
+[AGENTS.md § Session start](../AGENTS.md#session-start) for the selection order.

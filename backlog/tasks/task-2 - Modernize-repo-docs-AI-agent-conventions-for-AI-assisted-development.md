@@ -1,9 +1,10 @@
 ---
 id: TASK-2
 title: Modernize repo docs & AI-agent conventions for AI-assisted development
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-24 04:42'
+updated_date: '2026-07-24 20:19'
 labels:
   - docs
   - process

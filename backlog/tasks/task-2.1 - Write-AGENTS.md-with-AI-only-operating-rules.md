@@ -1,10 +1,10 @@
 ---
 id: TASK-2.1
 title: Write AGENTS.md with AI-only operating rules
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-24 04:42'
-updated_date: '2026-07-24 05:23'
+updated_date: '2026-07-24 20:20'
 labels: []
 milestone: m-2
 dependencies: []
@@ -25,7 +25,13 @@ Create AGENTS.md as the canonical AI-only rules file: autonomy policy (commit at
 - [ ] #2 .github/copilot-instructions.md content is merged in, not left duplicated
 - [ ] #3 AGENTS.md documents a zero-prompt session-start rule: no direction given -> check backlog/ for the next To Do task by ordinal/milestone and start on it
 - [ ] #4 .github/copilot-instructions.md and CLAUDE.md (TASK-2.5) both surface this rule, not just AGENTS.md
+- [ ] #5 1
+- [ ] #6 2
+- [ ] #7 3
+- [ ] #8 4
 <!-- AC:END -->
+
+
 
 ## Implementation Notes
 
