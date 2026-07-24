@@ -3,15 +3,18 @@
 import hashlib
 import sqlite3
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from ownmail import sidecar
+from ownmail import commands, sidecar
 from ownmail.archive import EmailArchive
 from ownmail.commands import (
     _print_file_list,
     _reconcile_label_sidecars,
     cmd_import,
+    cmd_list_unknown,
     cmd_rebuild,
     cmd_scan,
+    cmd_update_labels,
     cmd_verify,
 )
 from ownmail.database import ArchiveDatabase
@@ -797,6 +800,134 @@ class TestCmdUpdateLabels:
         assert len(labels) == 1
         assert labels[0][0] == "INBOX"
 
+    def _archive(self, temp_dir, sources):
+        return EmailArchive(temp_dir, {"sources": sources} if sources is not None else {})
+
+    def _seed(self, archive, rows):
+        with sqlite3.connect(archive.db.db_path) as conn:
+            for email_id, provider_id, filename, account in rows:
+                conn.execute(
+                    "INSERT OR REPLACE INTO emails (email_id, provider_id, filename, account) VALUES (?, ?, ?, ?)",
+                    (email_id, provider_id, filename, account),
+                )
+
+    def _labels(self, archive):
+        with sqlite3.connect(archive.db.db_path) as conn:
+            return sorted(
+                conn.execute(
+                    "SELECT e.email_id, el.label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid"
+                ).fetchall()
+            )
+
+    def test_named_source_is_selected(self, temp_dir, capsys):
+        """A valid --source name should select that source."""
+        archive = self._archive(
+            temp_dir,
+            [
+                {"name": "work", "type": "imap", "account": "work@example.com"},
+                {"name": "home", "type": "imap", "account": "home@example.com"},
+            ],
+        )
+        cmd_update_labels(archive, source_name="home")
+        assert "Source: home (home@example.com)" in capsys.readouterr().out
+
+    def test_unsupported_source_type(self, temp_dir, capsys):
+        """A source type with no label support should say so."""
+        archive = self._archive(temp_dir, [{"name": "mbox", "type": "maildir", "account": "a@example.com"}])
+        self._seed(archive, [("a", "INBOX:1", "a.eml", "a@example.com")])
+        cmd_update_labels(archive)
+        assert "not supported for source type 'maildir'" in capsys.readouterr().out
+
+    def test_imap_derives_labels_from_folder(self, temp_dir, capsys):
+        """IMAP labels should come from the folder part of provider_id."""
+        archive = self._archive(temp_dir, [{"name": "work", "type": "imap", "account": "a@example.com"}])
+        (temp_dir / "a.eml").write_bytes(b"From: x@example.com\n\nbody\n")
+        self._seed(archive, [("a", "INBOX/Sub:42", "a.eml", "a@example.com")])
+
+        cmd_update_labels(archive)
+
+        assert self._labels(archive) == [("a", "INBOX/Sub")]
+        assert sidecar.read_labels(temp_dir / "a.eml") == ["INBOX/Sub"]
+        assert "Updated: 1 emails" in capsys.readouterr().out
+
+    def test_imap_skips_malformed_provider_ids(self, temp_dir, capsys):
+        """provider_ids with no folder part should be skipped, not crash."""
+        archive = self._archive(temp_dir, [{"name": "work", "type": "imap", "account": "a@example.com"}])
+        self._seed(
+            archive,
+            [
+                ("a", "nocolon", "a.eml", "a@example.com"),
+                ("b", ":42", "b.eml", "a@example.com"),
+            ],
+        )
+
+        cmd_update_labels(archive)
+
+        assert self._labels(archive) == []
+        assert "Skipped: 2" in capsys.readouterr().out
+
+    def test_gmail_skips_messages_without_labels(self, temp_dir, capsys):
+        """A message the API returns no labels for should be skipped."""
+        archive = self._archive(temp_dir, [{"name": "g", "type": "gmail_api", "account": "a@example.com"}])
+        self._seed(archive, [("a", "msg1", "a.eml", "a@example.com")])
+
+        provider = MagicMock()
+        provider.get_labels_for_message.return_value = []
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            cmd_update_labels(archive)
+
+        assert self._labels(archive) == []
+        assert "Skipped (no labels): 1" in capsys.readouterr().out
+
+    def test_gmail_per_message_errors_are_counted(self, temp_dir, capsys):
+        """An API error on one message should not abort the whole run."""
+        archive = self._archive(temp_dir, [{"name": "g", "type": "gmail_api", "account": "a@example.com"}])
+        (temp_dir / "b.eml").write_bytes(b"From: x@example.com\n\nbody\n")
+        self._seed(
+            archive,
+            [
+                ("a", "msg1", "a.eml", "a@example.com"),
+                ("b", "msg2", "b.eml", "a@example.com"),
+            ],
+        )
+
+        provider = MagicMock()
+        provider.get_labels_for_message.side_effect = [RuntimeError("rate limited"), ["INBOX"]]
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            cmd_update_labels(archive)
+
+        out = capsys.readouterr().out
+        assert "Error processing msg1: rate limited" in out
+        assert "Errors: 1" in out
+        assert self._labels(archive) == [("b", "INBOX")]
+
+    def test_gmail_interrupt_pauses_run(self, temp_dir, capsys):
+        """SIGINT should stop the Gmail run and report it as paused."""
+        import signal as signal_module
+
+        archive = self._archive(temp_dir, [{"name": "g", "type": "gmail_api", "account": "a@example.com"}])
+        for name in ("a", "b", "c"):
+            (temp_dir / f"{name}.eml").write_bytes(b"From: x@example.com\n\nbody\n")
+        self._seed(archive, [(n, f"msg{n}", f"{n}.eml", "a@example.com") for n in ("a", "b", "c")])
+
+        calls = []
+
+        def labels_then_interrupt(provider_id):
+            calls.append(provider_id)
+            if len(calls) == 1:
+                signal_module.raise_signal(signal_module.SIGINT)
+            return ["INBOX"]
+
+        provider = MagicMock()
+        provider.get_labels_for_message.side_effect = labels_then_interrupt
+        before = signal_module.getsignal(signal_module.SIGINT)
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            cmd_update_labels(archive)
+
+        assert "Update Labels Paused!" in capsys.readouterr().out
+        assert len(calls) == 1
+        assert signal_module.getsignal(signal_module.SIGINT) is before
+
 
 class TestCmdVerifyDatabaseVerbose:
     """Additional tests for verify database checks verbose output."""
@@ -1165,48 +1296,87 @@ class TestCmdVerifyMoreEdgeCases:
 class TestCmdListUnknown:
     """Tests for cmd_list_unknown command."""
 
-    def test_list_unknown_empty(self, temp_dir, capsys):
-        """Test list_unknown when no unknown folder exists."""
-        from ownmail.commands import cmd_list_unknown
+    def _seed(self, archive, rows):
+        with sqlite3.connect(archive.db.db_path) as conn:
+            for email_id, filename, account, email_date in rows:
+                conn.execute(
+                    "INSERT OR REPLACE INTO emails (email_id, provider_id, filename, account, email_date) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (email_id, email_id, filename, account, email_date),
+                )
 
+    def test_no_unknown_emails(self, temp_dir, capsys):
+        """With every date known, the command should report nothing to do."""
         archive = EmailArchive(temp_dir, {})
-        cmd_list_unknown(archive)
-        captured = capsys.readouterr()
-        # Should report no unknown files or folder doesn't exist
-        assert "unknown" in captured.out.lower() or "0" in captured.out
-
-    def test_list_unknown_with_files(self, temp_dir, sample_eml_simple, capsys):
-        """Test list_unknown when unknown folder has files."""
-        from ownmail.commands import cmd_list_unknown
-
-        archive = EmailArchive(temp_dir, {})
-
-        # Create unknown folder with some files
-        unknown_dir = temp_dir / "emails" / "unknown"
-        unknown_dir.mkdir(parents=True)
-        (unknown_dir / "unknown1.eml").write_bytes(sample_eml_simple)
-        (unknown_dir / "unknown2.eml").write_bytes(sample_eml_simple)
+        self._seed(archive, [("a", "a.eml", "me@example.com", "2024-01-01T00:00:00+00:00")])
 
         cmd_list_unknown(archive)
-        captured = capsys.readouterr()
-        # Should list the files
-        assert "2" in captured.out or "unknown" in captured.out.lower()
 
-    def test_list_unknown_verbose(self, temp_dir, sample_eml_simple, capsys):
-        """Test list_unknown with verbose flag."""
-        from ownmail.commands import cmd_list_unknown
+        assert "No emails with unparseable dates" in capsys.readouterr().out
 
+    def test_groups_by_account(self, temp_dir, capsys):
+        """Unknown emails should be grouped and counted per account."""
         archive = EmailArchive(temp_dir, {})
+        self._seed(
+            archive,
+            [
+                ("a", "a.eml", "one@example.com", None),
+                ("b", "b.eml", "one@example.com", None),
+                ("c", "c.eml", "two@example.com", None),
+            ],
+        )
 
-        # Create unknown folder with files
-        unknown_dir = temp_dir / "emails" / "unknown"
-        unknown_dir.mkdir(parents=True)
-        (unknown_dir / "test.eml").write_bytes(sample_eml_simple)
+        cmd_list_unknown(archive)
+
+        out = capsys.readouterr().out
+        assert "Found 3 emails with unparseable dates" in out
+        assert "one@example.com: 2 emails" in out
+        assert "two@example.com: 1 emails" in out
+
+    def test_null_account_labelled_legacy(self, temp_dir, capsys):
+        """Rows with no account should be grouped under '(legacy)'."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "a.eml", None, None)])
+
+        cmd_list_unknown(archive)
+
+        assert "(legacy): 1 emails" in capsys.readouterr().out
+
+    def test_verbose_shows_headers(self, temp_dir, capsys, sample_eml_simple):
+        """Verbose mode should print each file's Date and Subject headers."""
+        archive = EmailArchive(temp_dir, {})
+        email_path = temp_dir / "a.eml"
+        email_path.write_bytes(sample_eml_simple)
+        self._seed(archive, [("a", "a.eml", "me@example.com", None)])
 
         cmd_list_unknown(archive, verbose=True)
-        captured = capsys.readouterr()
-        # Verbose should show more details
-        assert "test.eml" in captured.out or "unknown" in captured.out.lower()
+
+        out = capsys.readouterr().out
+        assert "- a.eml" in out
+        assert "Date header: Mon, 1 Jan 2024 10:00:00 +0000" in out
+        assert "Subject: Test Email" in out
+
+    def test_verbose_missing_file_is_skipped(self, temp_dir, capsys):
+        """A row whose file is gone should still list, without headers."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "gone.eml", "me@example.com", None)])
+
+        cmd_list_unknown(archive, verbose=True)
+
+        out = capsys.readouterr().out
+        assert "- gone.eml" in out
+        assert "Date header:" not in out
+
+    def test_verbose_unreadable_file_reports_error(self, temp_dir, capsys):
+        """A file that cannot be read should report the error inline."""
+        archive = EmailArchive(temp_dir, {})
+        (temp_dir / "a.eml").write_bytes(b"whatever")
+        self._seed(archive, [("a", "a.eml", "me@example.com", None)])
+
+        with patch("email.message_from_binary_file", side_effect=OSError("disk gone")):
+            cmd_list_unknown(archive, verbose=True)
+
+        assert "Error reading: disk gone" in capsys.readouterr().out
 
 
 class TestCmdVerifyDedup:
@@ -1862,3 +2032,214 @@ class TestCmdScan:
         assert archive.db.get_email_count("me@example.com") == 1
         out = capsys.readouterr().out
         assert "Scan" in out
+
+
+class TestPopulateDatesOnly:
+    """Tests for cmd_rebuild(only='dates') / _populate_dates_only."""
+
+    def _seed(self, archive, rows):
+        """Insert (email_id, filename, date_str, email_date) rows directly."""
+        with sqlite3.connect(archive.db.db_path) as conn:
+            for email_id, filename, date_str, email_date in rows:
+                conn.execute(
+                    "INSERT OR REPLACE INTO emails (email_id, provider_id, filename, date_str, email_date) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (email_id, email_id, filename, date_str, email_date),
+                )
+
+    def _dates(self, archive):
+        """Return {email_id: email_date} from the database."""
+        with sqlite3.connect(archive.db.db_path) as conn:
+            return dict(conn.execute("SELECT email_id, email_date FROM emails").fetchall())
+
+    def test_no_missing_dates_reports_and_returns(self, temp_dir, capsys):
+        """With every date already populated, nothing should be updated."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", "2024-01-01T10:00:00+00:00")])
+
+        cmd_rebuild(archive, only="dates")
+
+        captured = capsys.readouterr()
+        assert "All emails already have dates." in captured.out
+        assert "--force to repopulate" in captured.out
+
+    def test_populates_from_date_str(self, temp_dir, capsys):
+        """A NULL email_date should be filled in from date_str."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", None)])
+
+        cmd_rebuild(archive, only="dates")
+
+        assert self._dates(archive)["a"] == "2024-01-01T10:00:00+00:00"
+        assert "Updated: 1 emails" in capsys.readouterr().out
+
+    def test_converts_to_utc(self, temp_dir):
+        """A non-UTC date_str should be normalized to UTC."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "a.eml", "Mon, 1 Jan 2024 10:00:00 +0900", None)])
+
+        cmd_rebuild(archive, only="dates")
+
+        assert self._dates(archive)["a"] == "2024-01-01T01:00:00+00:00"
+
+    def test_falls_back_to_parsing_the_eml_file(self, temp_dir, sample_eml_simple):
+        """With no date_str, the .eml file should be parsed for a date."""
+        archive = EmailArchive(temp_dir, {})
+        email_path = temp_dir / "emails" / "2024" / "01" / "a.eml"
+        email_path.parent.mkdir(parents=True)
+        email_path.write_bytes(sample_eml_simple)
+        rel = str(email_path.relative_to(temp_dir))
+        self._seed(archive, [("a", rel, None, None)])
+
+        cmd_rebuild(archive, only="dates")
+
+        assert self._dates(archive)["a"] == "2024-01-01T10:00:00+00:00"
+
+    def test_skips_unparseable_dates(self, temp_dir, capsys):
+        """Rows with no usable date should be counted as skipped, not crash."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "missing.eml", "not a date at all", None)])
+
+        cmd_rebuild(archive, only="dates", debug=True)
+
+        assert self._dates(archive)["a"] is None
+        captured = capsys.readouterr()
+        assert "Skipped (no parseable date): 1" in captured.out
+        assert "No date for: missing.eml" in captured.out
+
+    def test_skips_corrupt_eml_file(self, temp_dir, capsys):
+        """A file that fails to parse should be skipped, not abort the run."""
+        archive = EmailArchive(temp_dir, {})
+        email_path = temp_dir / "bad.eml"
+        email_path.write_bytes(b"\xff\xfe not an email")
+        self._seed(archive, [("a", "bad.eml", None, None)])
+
+        cmd_rebuild(archive, only="dates")
+
+        assert self._dates(archive)["a"] is None
+        assert "Skipped (no parseable date): 1" in capsys.readouterr().out
+
+    def test_force_overwrites_existing_dates(self, temp_dir):
+        """--force should replace an already-populated email_date."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", "1999-01-01T00:00:00+00:00")])
+
+        cmd_rebuild(archive, only="dates", force=True)
+
+        assert self._dates(archive)["a"] == "2024-01-01T10:00:00+00:00"
+
+    def test_without_force_existing_dates_are_kept(self, temp_dir):
+        """Without --force, a populated email_date is not revisited."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(
+            archive,
+            [
+                ("a", "a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", "1999-01-01T00:00:00+00:00"),
+                ("b", "b.eml", "Tue, 2 Jan 2024 10:00:00 +0000", None),
+            ],
+        )
+
+        cmd_rebuild(archive, only="dates")
+
+        dates = self._dates(archive)
+        assert dates["a"] == "1999-01-01T00:00:00+00:00"
+        assert dates["b"] == "2024-01-02T10:00:00+00:00"
+
+    def test_pattern_limits_scope(self, temp_dir):
+        """A pattern should restrict which filenames are processed."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(
+            archive,
+            [
+                ("a", "2024/01/a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", None),
+                ("b", "2023/01/b.eml", "Tue, 2 Jan 2024 10:00:00 +0000", None),
+            ],
+        )
+
+        cmd_rebuild(archive, only="dates", pattern="2024/01/*")
+
+        dates = self._dates(archive)
+        assert dates["a"] == "2024-01-01T10:00:00+00:00"
+        assert dates["b"] is None
+
+    def test_pattern_with_force(self, temp_dir):
+        """Pattern and --force should combine."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(
+            archive,
+            [
+                ("a", "2024/01/a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", "1999-01-01T00:00:00+00:00"),
+                ("b", "2023/01/b.eml", "Tue, 2 Jan 2024 10:00:00 +0000", "1999-01-01T00:00:00+00:00"),
+            ],
+        )
+
+        cmd_rebuild(archive, only="dates", pattern="2024/01/*", force=True)
+
+        dates = self._dates(archive)
+        assert dates["a"] == "2024-01-01T10:00:00+00:00"
+        assert dates["b"] == "1999-01-01T00:00:00+00:00"
+
+    def test_pattern_matching_nothing_reports_done(self, temp_dir, capsys):
+        """A pattern that matches no rows should short-circuit."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "2024/01/a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", None)])
+
+        cmd_rebuild(archive, only="dates", pattern="1998/*")
+
+        assert "All emails already have dates." in capsys.readouterr().out
+
+    def test_interrupt_stops_and_reports_resumable(self, temp_dir, capsys):
+        """SIGINT during the loop should pause and leave progress committed."""
+        import signal as signal_module
+
+        archive = EmailArchive(temp_dir, {})
+        self._seed(
+            archive,
+            [(str(i), f"{i}.eml", "Mon, 1 Jan 2024 10:00:00 +0000", None) for i in range(5)],
+        )
+
+        real_parsedate = commands.parsedate_to_datetime
+        calls = []
+
+        def interrupting_parsedate(value):
+            calls.append(value)
+            if len(calls) == 2:
+                # Deliver a real SIGINT to the handler the command installed.
+                signal_module.raise_signal(signal_module.SIGINT)
+            return real_parsedate(value)
+
+        with patch.object(commands, "parsedate_to_datetime", side_effect=interrupting_parsedate):
+            cmd_rebuild(archive, only="dates")
+
+        captured = capsys.readouterr()
+        assert "Populate Dates Paused!" in captured.out
+        assert "again to resume" in captured.out
+        # The rows processed before the interrupt are persisted.
+        populated = [v for v in self._dates(archive).values() if v is not None]
+        assert 0 < len(populated) < 5
+
+    def test_original_sigint_handler_is_restored(self, temp_dir):
+        """The command must not leave its SIGINT handler installed."""
+        import signal as signal_module
+
+        archive = EmailArchive(temp_dir, {})
+        self._seed(archive, [("a", "a.eml", "Mon, 1 Jan 2024 10:00:00 +0000", None)])
+
+        before = signal_module.getsignal(signal_module.SIGINT)
+        cmd_rebuild(archive, only="dates")
+        assert signal_module.getsignal(signal_module.SIGINT) is before
+
+    def test_progress_is_committed_in_batches(self, temp_dir, capsys):
+        """A run larger than the batch/progress interval should report a rate."""
+        archive = EmailArchive(temp_dir, {})
+        self._seed(
+            archive,
+            [(str(i), f"{i}.eml", "Mon, 1 Jan 2024 10:00:00 +0000", None) for i in range(205)],
+        )
+
+        cmd_rebuild(archive, only="dates")
+
+        captured = capsys.readouterr()
+        assert "[205/205]" in captured.out
+        assert "Updated: 205 emails" in captured.out
+        assert all(v == "2024-01-01T10:00:00+00:00" for v in self._dates(archive).values())
