@@ -6,7 +6,9 @@ import email.header
 import html
 import os
 import re
+import threading
 import time
+import webbrowser
 from datetime import datetime
 from email.policy import default as email_policy
 from email.utils import parsedate_to_datetime
@@ -2041,6 +2043,7 @@ def run_server(
     brand_name: str = "ownmail",
     display_timezone: str = None,
     detail_date_format: str = None,
+    open_browser: bool = True,
 ) -> None:
     """Run the web server.
 
@@ -2059,6 +2062,7 @@ def run_server(
         brand_name: Custom branding name shown in header
         display_timezone: IANA timezone name (default: server local)
         detail_date_format: strftime format for message view dates (default: "%a, %d %b %Y %H:%M:%S")
+        open_browser: Open the web interface in a browser once the server is up
     """
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
     from ownmail.sanitizer import HtmlSanitizer
@@ -2106,6 +2110,13 @@ def run_server(
         return
     print("   HTML sanitization enabled (DOMPurify)")
     print("   Press Ctrl+C to stop\n")
+
+    # With the Werkzeug reloader (debug=True), this whole process re-execs
+    # itself with WERKZEUG_RUN_MAIN set on the actual serving process, so only
+    # open the browser there to avoid launching it twice.
+    if open_browser and (not debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true"):
+        browser_host = "localhost" if host in ("0.0.0.0", "::") else host
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://{browser_host}:{port}")).start()
 
     try:
         app.run(host=host, port=port, debug=debug)
