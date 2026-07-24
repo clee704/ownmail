@@ -1601,3 +1601,28 @@ class TestImapIncrementalScan:
             new_ids, _ = provider.get_new_message_ids(json.dumps({}))
 
         assert new_ids == []
+
+
+class TestImapProviderProperties:
+    """Tests for the provider's identity and batching properties."""
+
+    def test_source_name_defaults_to_imap(self):
+        """With no explicit source name the provider defaults to 'imap'."""
+        provider = _imap_provider(MagicMock())
+        assert provider.source_name == "imap"
+
+    def test_explicit_source_name_is_kept(self):
+        """An explicit source name should be returned as-is."""
+        provider = _imap_provider(MagicMock(), source_name="work")
+        assert provider.source_name == "work"
+
+    def test_download_batch_size_is_the_fetch_batch(self):
+        """The advertised batch size should match the FETCH body batch."""
+        from ownmail.providers.imap import FETCH_BODY_BATCH_SIZE
+
+        assert _imap_provider(MagicMock()).download_batch_size == FETCH_BODY_BATCH_SIZE
+
+    def test_is_gmail_detection(self):
+        """Gmail's IMAP host should be recognised, others not."""
+        assert _imap_provider(MagicMock(), host="imap.gmail.com")._is_gmail() is True
+        assert _imap_provider(MagicMock(), host="imap.example.com")._is_gmail() is False

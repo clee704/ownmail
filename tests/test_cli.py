@@ -1686,3 +1686,47 @@ class TestCmdResetSync:
 
         assert archive.db.get_sync_state("a@example.com", "history_id") is None
         assert archive.db.get_sync_state("b@example.com", "history_id") == "2"
+
+
+class TestImapDownloadSummary:
+    """Tests for the IMAP branch's run summary output."""
+
+    def _run(self, temp_dir, result, **kwargs):
+        from ownmail.archive import EmailArchive
+        from ownmail.cli import cmd_download
+
+        archive = EmailArchive(temp_dir, {})
+        config = {"sources": [{"name": "work", "type": "imap", "account": "a@example.com", "host": "imap.example.com"}]}
+        with patch("ownmail.providers.imap.ImapProvider"):
+            with patch.object(archive, "backup", return_value=result) as mock_backup:
+                cmd_download(archive, config, **kwargs)
+        return mock_backup
+
+    def test_interrupted_imap_run_reports_resume(self, temp_dir, capsys):
+        """An interrupted IMAP run should tell the user how to resume."""
+        self._run(
+            temp_dir,
+            {"success_count": 1, "error_count": 0, "interrupted": True, "failed_ids": []},
+        )
+        out = capsys.readouterr().out
+        assert "Download Paused!" in out
+        assert "Run 'download' again to resume" in out
+
+    def test_imap_errors_are_reported(self, temp_dir, capsys):
+        """Errors during an IMAP run should surface in the summary."""
+        self._run(
+            temp_dir,
+            {"success_count": 2, "error_count": 5, "interrupted": False, "failed_ids": []},
+        )
+        assert "Errors: 5" in capsys.readouterr().out
+
+    def test_imap_date_filter_is_shown(self, temp_dir, capsys):
+        """since/until should be echoed for IMAP sources too."""
+        mock_backup = self._run(
+            temp_dir,
+            {"success_count": 0, "error_count": 0, "interrupted": False, "failed_ids": []},
+            since="2024-01-01",
+            until="2024-02-01",
+        )
+        assert "Date filter: from 2024-01-01 until 2024-02-01" in capsys.readouterr().out
+        assert mock_backup.call_args.kwargs["since"] == "2024-01-01"

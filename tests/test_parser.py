@@ -1128,3 +1128,223 @@ class TestParseFileBodyExtraction:
         """Garbage input should produce a result dict, not an exception."""
         result = EmailParser.parse_file(content=b"\xff\xfe not an email at all")
         assert set(result) == {"subject", "sender", "recipients", "date_str", "body", "attachments"}
+
+
+class TestDecodeHeaderValue:
+    """Tests for EmailParser._decode_header_value across input types."""
+
+    def _decode(self, value, fallback=None):
+        return EmailParser._decode_header_value(value, fallback)
+
+    def test_empty_value(self):
+        """A falsy value should decode to an empty string."""
+        assert self._decode("") == ""
+        assert self._decode(None) == ""
+
+    def test_clean_string_passes_through(self):
+        """A clean string needs no decoding."""
+        assert self._decode("Plain Subject") == "Plain Subject"
+
+    def test_encoded_word_is_decoded(self):
+        """An RFC 2047 encoded-word should be decoded."""
+        assert self._decode("=?UTF-8?B?7YWM7Iqk7Yq4?=") == "테스트"
+
+    def test_encoded_word_failure_falls_through(self):
+        """If encoded-word decoding raises, the value should still come back."""
+        from unittest.mock import patch
+
+        with patch("email.header.decode_header", side_effect=ValueError("bad")):
+            assert self._decode("=?UTF-8?B?7YWM7Iqk7Yq4?=") == "=?UTF-8?B?7YWM7Iqk7Yq4?="
+
+    def test_bytes_are_decoded_with_detection(self):
+        """Raw bytes should be decoded using charset detection."""
+        assert self._decode("한글".encode("euc-kr")) == "한글"
+
+    def test_bytes_with_bad_detection_degrade(self):
+        """Bytes that fail their detected charset should still return a string."""
+        assert isinstance(self._decode(b"\xff\xfe\xfd"), str)
+
+    def test_mojibake_string_is_recovered(self):
+        """A latin-1 mis-decode of EUC-KR bytes should be recovered."""
+        mojibake = "한글".encode("euc-kr").decode("latin-1") + "�"
+        result = self._decode(mojibake)
+        assert isinstance(result, str)
+
+    def test_fallback_charset_is_used_for_bytes(self):
+        """An explicit fallback charset should guide detection."""
+        assert self._decode("Привет".encode("koi8-r"), fallback="koi8-r") == "Привет"
+
+
+class TestParseFileHeaderEdgeCases:
+    """Tests for parse_file's header handling."""
+
+    def test_content_charset_failure_is_survivable(self):
+        """A part whose charset lookup raises should not break parsing."""
+        from unittest.mock import patch
+
+        raw = b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n"
+        with patch("email.message.Message.get_content_charset", side_effect=ValueError("bad")):
+            result = EmailParser.parse_file(content=raw)
+        assert result["subject"] == "S"
+
+    def test_attachment_filename_failure_is_skipped(self):
+        """A part whose filename lookup raises should be skipped silently."""
+        from unittest.mock import patch
+
+        raw = (
+            b'Content-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nbody\r\n"
+            b"--b1\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="r.pdf"\r\n\r\nDATA\r\n--b1--\r\n'
+        )
+        with patch("email.message.Message.get_filename", side_effect=ValueError("bad")):
+            result = EmailParser.parse_file(content=raw)
+        assert result["attachments"] == ""
+        assert "body" in result["body"]
+
+    def test_recipient_fields_are_combined(self):
+        """To and Cc should both appear in the recipients field."""
+        raw = b"From: a@example.com\r\nTo: b@example.com\r\nCc: c@example.com\r\nSubject: S\r\n\r\nbody\r\n"
+        recipients = EmailParser.parse_file(content=raw)["recipients"]
+        assert "b@example.com" in recipients
+        assert "c@example.com" in recipients
+
+    def test_part_level_failure_does_not_abort_the_walk(self):
+        """An exception on one part should not lose the other parts."""
+        from unittest.mock import patch
+
+        raw = (
+            b'Content-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nfirst part\r\n"
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nsecond part\r\n--b1--\r\n"
+        )
+        calls = {"n": 0}
+        real = EmailParser._safe_get_content
+
+        def flaky(part):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise ValueError("bad part")
+            return real(part)
+
+        with patch.object(EmailParser, "_safe_get_content", side_effect=flaky):
+            result = EmailParser.parse_file(content=raw)
+
+        assert "second part" in result["body"]
+
+
+class TestSafeGetContentFallbacks:
+    """Tests for _safe_get_content's remaining fallback paths."""
+
+    def _part(self, raw):
+        import email as email_mod
+
+        return email_mod.message_from_bytes(raw)
+
+    def test_html_without_meta_charset_still_decodes(self):
+        """HTML with no meta charset should fall through to detection."""
+        raw = b"Content-Type: text/html\r\n\r\n<p>hello</p>"
+        assert "hello" in EmailParser._safe_get_content(self._part(raw))
+
+    def test_non_bytes_payload_is_returned(self):
+        """A part whose payload is already text should be returned."""
+        from unittest.mock import MagicMock
+
+        part = MagicMock()
+        part.get_payload.return_value = None
+        part.get_content.return_value = "already text"
+        assert EmailParser._safe_get_content(part) == "already text"
+
+    def test_unreadable_part_returns_empty(self):
+        """A part that raises on access should yield an empty string."""
+        from unittest.mock import MagicMock
+
+        part = MagicMock()
+        part.get_payload.side_effect = ValueError("bad")
+        part.get_content.side_effect = ValueError("bad")
+        assert EmailParser._safe_get_content(part) == ""
+
+
+class TestParseFileEntryPoints:
+    """Tests for parse_file's argument handling and top-level failures."""
+
+    def test_requires_filepath_or_content(self):
+        """Calling with neither source should return a parse-error body."""
+        result = EmailParser.parse_file()
+        assert result["subject"] == ""
+        assert "Parse error" in result["body"]
+
+    def test_unreadable_filepath_reports_parse_error(self, tmp_path):
+        """A file that cannot be opened should degrade to a parse-error body."""
+        result = EmailParser.parse_file(filepath=tmp_path / "missing.eml")
+        assert "Parse error" in result["body"]
+
+    def test_filepath_and_content_agree(self, tmp_path, sample_eml_simple):
+        """Parsing from disk and from bytes should give the same result."""
+        path = tmp_path / "mail.eml"
+        path.write_bytes(sample_eml_simple)
+        assert EmailParser.parse_file(filepath=path) == EmailParser.parse_file(content=sample_eml_simple)
+
+    def test_body_walk_failure_still_returns_headers(self):
+        """A failure collecting the body should not lose the parsed headers."""
+        from unittest.mock import patch
+
+        raw = b"From: a@example.com\r\nSubject: Kept\r\n\r\nbody\r\n"
+        with patch("email.message.Message.is_multipart", side_effect=ValueError("bad")):
+            result = EmailParser.parse_file(content=raw)
+
+        assert result["subject"] == "Kept"
+        assert result["body"] == ""
+
+
+class TestExtractDateFromReceivedFailure:
+    """Tests for _extract_date_from_received's outer guard."""
+
+    def test_header_lookup_failure_returns_empty(self):
+        """An exception reading the header should yield an empty string."""
+        from unittest.mock import MagicMock
+
+        msg = MagicMock()
+        msg.get.side_effect = ValueError("bad")
+        assert EmailParser._extract_date_from_received(msg) == ""
+
+
+class TestExtractRawHeaderCharsetChain:
+    """Tests for _extract_raw_header's charset ordering."""
+
+    def test_charset_not_in_default_chain_is_prepended(self):
+        """A charset absent from the default list should be tried first."""
+        raw = b"Subject: " + "Привет".encode("koi8-r") + b"\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject", "koi8-r") == "Привет"
+
+    def test_charset_already_in_chain_is_moved_to_front(self):
+        """A charset already in the list should be reordered, not duplicated."""
+        raw = b"Subject: " + "한글".encode("cp949") + b"\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject", "cp949") == "한글"
+
+    def test_ks_c_5601_alias_is_mapped(self):
+        """The bare ks_c_5601 alias should map to cp949."""
+        raw = b"Subject: " + "한글".encode("cp949") + b"\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject", "ks_c_5601") == "한글"
+
+    def test_underscore_alias_is_mapped(self):
+        """The ks_c_5601_1987 alias should map to cp949."""
+        raw = b"Subject: " + "한글".encode("cp949") + b"\r\n\r\nbody"
+        assert EmailParser._extract_raw_header(raw, "Subject", "ks_c_5601_1987") == "한글"
+
+
+class TestNormalizeDateCleanedFallback:
+    """Tests for _normalize_date's second parsing attempt."""
+
+    def test_non_ascii_prefix_removed_then_parsed(self):
+        """Stripping a garbled weekday should let standard parsing succeed."""
+        assert EmailParser._normalize_date("화, 15 Mar 2024 10:30:00 +0900") == "Fri, 15 Mar 2024 10:30:00 +0900"
+
+    def test_prefix_removal_that_still_fails_falls_to_numeric(self):
+        """If the cleaned form is numeric, the numeric branch should handle it."""
+        assert EmailParser._normalize_date("화, 15 3 2024 10:30:00 +0900") == "Fri, 15 Mar 2024 10:30:00 +0900"
+
+    def test_prefix_removal_that_fails_entirely_returns_original(self):
+        """A value nothing can parse should come back unchanged."""
+        original = "화, still not a date"
+        assert EmailParser._normalize_date(original) == original

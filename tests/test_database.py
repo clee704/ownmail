@@ -871,3 +871,95 @@ class TestSearchNegatedFilters:
         db = ArchiveDatabase(temp_dir)
         assert db.search('"unclosed') == []
         assert "Parse error" in capsys.readouterr().out
+
+
+class TestSearchLabelSorting:
+    """Tests for label-filtered search ordering and FTS error handling."""
+
+    def _db(self, temp_dir, rows):
+        """Build a database with (provider_id, subject, date, labels) rows."""
+        db = ArchiveDatabase(temp_dir)
+        for provider_id, subject, date, labels in rows:
+            email_id = _eid(provider_id)
+            db.mark_downloaded(email_id, provider_id, f"{provider_id}.eml", email_date=date)
+            db.index_email(
+                email_id=email_id,
+                subject=subject,
+                sender="billing@example.com",
+                recipients="user@example.com",
+                date_str=date,
+                body="invoice body",
+                attachments="",
+            )
+            with sqlite3.connect(db.db_path) as conn:
+                (rowid,) = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (email_id,)).fetchone()
+                for label in labels:
+                    conn.execute(
+                        "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                        (rowid, label, date),
+                    )
+                conn.commit()
+        return db
+
+    ROWS = [
+        ("m1", "Older invoice", "2024-01-01T00:00:00+00:00", ["Work"]),
+        ("m2", "Newer invoice", "2024-06-01T00:00:00+00:00", ["Work"]),
+    ]
+
+    def test_label_filter_with_date_desc(self, temp_dir):
+        """A label filter sorted date_desc should list newest first."""
+        db = self._db(temp_dir, self.ROWS)
+        results = db.search("label:Work", sort="date_desc")
+        assert [r[2] for r in results] == ["Newer invoice", "Older invoice"]
+
+    def test_label_filter_with_date_asc(self, temp_dir):
+        """A label filter sorted date_asc should list oldest first."""
+        db = self._db(temp_dir, self.ROWS)
+        results = db.search("label:Work", sort="date_asc")
+        assert [r[2] for r in results] == ["Older invoice", "Newer invoice"]
+
+    def test_label_filter_with_fts_terms(self, temp_dir):
+        """Combining a label with search terms should use the FTS path."""
+        db = self._db(temp_dir, self.ROWS)
+        assert len(db.search("invoice label:Work")) == 2
+        assert db.search("invoice label:Personal") == []
+
+    def test_recipient_filter_joins(self, temp_dir):
+        """A to: filter with an address should match via the join table."""
+        db = self._db(temp_dir, self.ROWS)
+        assert len(db.search("to:user@example.com")) == 2
+        assert db.search("to:nobody@example.com") == []
+
+    def test_fts_syntax_error_returns_empty(self, temp_dir, capsys):
+        """A malformed FTS query should return nothing rather than raise."""
+        db = self._db(temp_dir, self.ROWS)
+        assert db.search('subject:"unbalanced') == []
+
+    def test_offset_paging(self, temp_dir):
+        """Offset should skip earlier rows in the sorted result."""
+        db = self._db(temp_dir, self.ROWS)
+        page1 = db.search("label:Work", sort="date_desc", limit=1)
+        page2 = db.search("label:Work", sort="date_desc", limit=1, offset=1)
+        assert page1[0][2] == "Newer invoice"
+        assert page2[0][2] == "Older invoice"
+
+
+class TestSeparateDbDir:
+    """Tests for keeping the database outside the archive directory."""
+
+    def test_db_dir_is_created_and_used(self, temp_dir):
+        """A db_dir should be created and hold the database file."""
+        archive_dir = temp_dir / "archive"
+        db_dir = temp_dir / "fast" / "db"
+
+        db = ArchiveDatabase(archive_dir, db_dir=db_dir)
+
+        assert db.db_path == db_dir / "ownmail.db"
+        assert db.db_path.exists()
+        assert not (archive_dir / "ownmail.db").exists()
+        assert archive_dir.is_dir()
+
+    def test_default_places_db_in_archive_dir(self, temp_dir):
+        """Without db_dir the database lives alongside the archive."""
+        db = ArchiveDatabase(temp_dir)
+        assert db.db_path == temp_dir / "ownmail.db"

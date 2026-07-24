@@ -1213,3 +1213,27 @@ class TestGmailBatchDownload(_GmailFixture):
                     provider.download_messages_batch(["m1"])
 
             assert attempts["n"] == 1
+
+
+class TestGmailProviderProperties(_GmailFixture):
+    """Tests for the Gmail provider's identity and batching properties."""
+
+    def test_source_name_defaults_to_gmail(self):
+        """With no explicit source name the provider defaults to 'gmail'."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, _, _ = self._provider(mock_build)
+        assert provider.source_name == "gmail"
+
+    def test_explicit_source_name_is_kept(self):
+        """An explicit source name should be returned as-is."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, _, _ = self._provider(mock_build, source_name="personal")
+        assert provider.source_name == "personal"
+
+    def test_download_batch_size(self):
+        """The advertised batch size should match the module constant."""
+        from ownmail.providers.gmail import BATCH_SIZE
+
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, _, _ = self._provider(mock_build)
+        assert provider.download_batch_size == BATCH_SIZE

@@ -1586,6 +1586,43 @@ class TestExtractAttachmentFilenameEncodings:
         part = self._part(b"Content-Disposition: attachment; filename*=unknown-8bit''%C7%D1%B1%DB.txt")
         assert _extract_attachment_filename(part) == "한글.txt"
 
+    def test_rfc2231_mime_hybrid_quoted_printable(self):
+        """A Q-encoded hybrid continuation should decode."""
+        from ownmail.web import _extract_attachment_filename
+
+        part = self._part(
+            b'Content-Disposition: attachment; filename*0="=?UTF-8?Q?caf=C3=A9?="; filename*1="=?UTF-8?Q?.txt?="'
+        )
+        assert _extract_attachment_filename(part) == "café.txt"
+
+    def test_rfc2231_mime_hybrid_unknown_charset(self):
+        """A hybrid encoded-word declaring 'unknown' should be read as UTF-8."""
+        from ownmail.web import _extract_attachment_filename
+
+        part = self._part(b'Content-Disposition: attachment; filename*0="=?unknown?B?7YWM7Iqk7Yq4?="')
+        assert _extract_attachment_filename(part) == "테스트"
+
+    def test_rfc2231_empty_charset_treated_as_euc_kr(self):
+        """An RFC 2231 value with no charset should be read as EUC-KR."""
+        from ownmail.web import _extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*=''%C7%D1%B1%DB.txt")
+        assert _extract_attachment_filename(part) == "한글.txt"
+
+    def test_rfc2231_continuation_without_charset_prefix(self):
+        """Continuation segments carry no charset and inherit the first one."""
+        from ownmail.web import _extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*0*=euc-kr''%C7%D1; filename*1*=%B1%DB.txt")
+        assert _extract_attachment_filename(part) == "한글.txt"
+
+    def test_rfc2231_ascii_value_is_percent_decoded(self):
+        """A non-CJK RFC 2231 value should still be percent-decoded."""
+        from ownmail.web import _extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*=UTF-8''report%20final.pdf")
+        assert _extract_attachment_filename(part) == "report final.pdf"
+
     def test_rfc2231_mime_hybrid_continuation(self):
         """RFC 2231 continuations holding MIME encoded-words should be joined."""
         from ownmail.web import _extract_attachment_filename
@@ -2839,3 +2876,327 @@ class TestTimezoneOffsetHelpers:
         assert items
         assert all(set(item) == {"value", "label"} for item in items)
         assert any(item["value"] == "Asia/Seoul" and "+09:00" in item["label"] for item in items)
+
+
+class TestLinkifyQuoting:
+    """Tests for _linkify's quote-level rendering."""
+
+    def test_nested_quote_levels_are_nested_divs(self):
+        """Deeper quote levels should open further nested blocks."""
+        from ownmail.web import _linkify
+
+        result = _linkify("> level one\n>> level two\nback to normal")
+        assert result.count("ownmail-quote") >= 2
+        assert "level one" in result
+        assert "level two" in result
+        assert "back to normal" in result
+
+    def test_quote_block_is_closed_when_level_drops(self):
+        """Returning to depth zero should close the opened quote blocks."""
+        from ownmail.web import _linkify
+
+        result = _linkify(">> deep\nshallow")
+        assert result.count("<div") == result.count("</div>")
+
+    def test_blank_quoted_line_gets_nbsp(self):
+        """An empty quoted line should still render a row."""
+        from ownmail.web import _linkify
+
+        assert "&nbsp;" in _linkify(">\n> text")
+
+    def test_blank_plain_line_gets_nbsp(self):
+        """An empty unquoted line should render as a blank row."""
+        from ownmail.web import _linkify
+
+        assert "&nbsp;" in _linkify("first\n\nsecond")
+
+
+class TestParseRecipientsQuoting:
+    """Tests for parse_recipients with quoted display names."""
+
+    def test_comma_inside_quoted_name_is_not_a_separator(self):
+        """A comma inside a quoted display name must not split the entry."""
+        result = parse_recipients('"Doe, John" <john@example.com>, jane@example.com')
+        assert len(result) == 2
+        assert result[0]["email"] == "john@example.com"
+        assert result[1]["email"] == "jane@example.com"
+
+    def test_empty_string_yields_no_recipients(self):
+        """An empty recipients header should produce no entries."""
+        assert parse_recipients("") == []
+
+    def test_blank_segments_are_skipped(self):
+        """Stray commas should not create empty entries."""
+        assert len(parse_recipients("a@example.com, , b@example.com")) == 2
+
+    def test_raw_value_is_preserved(self):
+        """The original text of each entry should be kept."""
+        result = parse_recipients("John <john@example.com>")
+        assert result[0]["raw"] == "John <john@example.com>"
+
+
+class TestCreateAppStartup:
+    """Tests for create_app's startup behaviour."""
+
+    def _archive(self, tmp_path):
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = MagicMock()
+        archive.db.get_email_count.return_value = 1
+        archive.db.get_trash_count.return_value = 0
+        return archive
+
+    def test_expired_trash_is_announced(self, tmp_path, capsys):
+        """Trash expired at startup should be reported."""
+        archive = self._archive(tmp_path)
+        archive.auto_expire_trash.return_value = 6
+
+        create_app(archive)
+
+        assert "Auto-expired 6 email(s) from trash" in capsys.readouterr().out
+
+    def test_expiry_failure_does_not_block_startup(self, tmp_path):
+        """A failure expiring trash must not prevent the app from starting."""
+        archive = self._archive(tmp_path)
+        archive.auto_expire_trash.side_effect = OSError("db locked")
+
+        app = create_app(archive)
+
+        with app.test_client() as client:
+            assert client.get("/search").status_code == 200
+
+    def test_passthrough_sanitizer_is_the_default(self, tmp_path):
+        """Without an explicit sanitizer, HTML should pass through unchanged."""
+        archive = self._archive(tmp_path)
+        archive.auto_expire_trash.return_value = 0
+
+        app = create_app(archive)
+        sanitizer = app.config["sanitizer"]
+
+        assert sanitizer.available is True
+        assert sanitizer.sanitize("<p>x</p>") == ("<p>x</p>", True, False)
+        assert sanitizer.stop() is None
+
+
+class TestDecodeHtmlBodyCharsetEdges:
+    """Tests for _decode_html_body's charset-resolution edge cases."""
+
+    def test_invalid_meta_charset_falls_through(self):
+        """A meta charset naming an unknown codec should not stop decoding."""
+        from ownmail.web import _decode_html_body
+
+        html = '<html><head><meta charset="not-a-codec"></head><body>hello</body></html>'
+        assert "hello" in _decode_html_body(html.encode(), None)
+
+    def test_meta_charset_that_fails_validation_falls_through(self):
+        """A meta charset producing garbage should be rejected in favour of detection."""
+        from ownmail.web import _decode_html_body
+
+        html = '<html><head><meta charset="ascii"></head><body>안녕하세요 반갑습니다</body></html>'
+        assert "안녕하세요" in _decode_html_body(html.encode(), None)
+
+    def test_meta_alias_is_mapped(self):
+        """A ks_c_5601-1987 meta charset should be treated as cp949."""
+        from ownmail.web import _decode_html_body
+
+        html = '<html><head><meta charset="ks_c_5601-1987"></head><body>안녕하세요 반갑습니다</body></html>'
+        assert "안녕하세요" in _decode_html_body(html.encode("cp949"), None)
+
+    def test_undecodable_html_degrades(self):
+        """HTML no codec handles cleanly should still return a string."""
+        from ownmail.web import _decode_html_body
+
+        assert isinstance(_decode_html_body(bytes(range(0x80, 0x100)) * 2, None), str)
+
+
+class TestValidateDecodedTextWeb:
+    """Tests for web._validate_decoded_text character classes."""
+
+    def _validate(self, text, ratio=0.7):
+        from ownmail.web import _validate_decoded_text
+
+        return _validate_decoded_text(text, ratio)
+
+    def test_empty_text_is_not_readable(self):
+        """Empty text carries no readable content."""
+        assert self._validate("") is False
+
+    def test_replacement_characters_fail(self):
+        """U+FFFD means decoding already failed."""
+        assert self._validate("hel�lo") is False
+
+    def test_cjk_and_kana_are_readable(self):
+        """CJK, Hangul and kana should all count as readable."""
+        assert self._validate("漢字 안녕 ひらがな カタカナ") is True
+
+    def test_control_characters_fail(self):
+        """A run of control bytes should not validate as text."""
+        assert self._validate("\x00\x01\x02\x03\x04\x05\x06\x07") is False
+
+    def test_latin_extended_is_readable(self):
+        """Accented Latin text should validate."""
+        assert self._validate("café naïve résumé") is True
+
+
+class TestDecodeHeaderCharsetChain:
+    """Tests for decode_header's charset fallback chain and manual recovery."""
+
+    def test_declared_charset_is_used(self):
+        """A correctly declared charset should decode the encoded-word."""
+        import base64 as b64
+
+        encoded = b64.b64encode("한글".encode("euc-kr")).decode()
+        assert decode_header(f"=?euc-kr?B?{encoded}?=") == "한글"
+
+    def test_charset_unknown_is_skipped(self):
+        """A charset of UNKNOWN should be ignored in favour of the chain."""
+        import base64 as b64
+
+        encoded = b64.b64encode("테스트".encode()).decode()
+        assert decode_header(f"=?unknown?B?{encoded}?=") == "테스트"
+
+    def test_wrong_declared_charset_falls_through(self):
+        """A charset that yields replacement chars should be rejected."""
+        import base64 as b64
+
+        encoded = b64.b64encode("테스트".encode()).decode()
+        result = decode_header(f"=?iso-2022-kr?B?{encoded}?=")
+        assert "�" not in result
+
+    def test_cyrillic_encoded_word(self):
+        """A cp1251 encoded-word should decode to Cyrillic."""
+        import base64 as b64
+
+        encoded = b64.b64encode("Привет".encode("cp1251")).decode()
+        assert decode_header(f"=?cp1251?B?{encoded}?=") == "Привет"
+
+    def test_manual_fallback_when_standard_decoding_raises(self):
+        """If email.header.decode_header raises, the manual path should recover."""
+        import base64 as b64
+        from unittest.mock import patch
+
+        encoded = b64.b64encode("테스트".encode()).decode()
+        value = f"=?utf-8?B?{encoded}?="
+        with patch("email.header.decode_header", side_effect=ValueError("malformed")):
+            assert decode_header(value) == "테스트"
+
+    def test_manual_fallback_without_encoded_words_returns_input(self):
+        """With nothing to regroup, the original value should come back."""
+        from unittest.mock import patch
+
+        with patch("email.header.decode_header", side_effect=ValueError("malformed")):
+            assert decode_header("=?just-a-broken-marker") == "=?just-a-broken-marker"
+
+    def test_manual_fallback_with_undecodable_base64_returns_input(self):
+        """Base64 that will not decode should leave the value untouched."""
+        from unittest.mock import patch
+
+        value = "=?utf-8?B?!!!not-base64!!!?="
+        with patch("email.header.decode_header", side_effect=ValueError("malformed")):
+            assert decode_header(value) == value
+
+    def test_manual_fallback_ignores_q_encoded_words(self):
+        """The manual path only regroups B-encoded words; Q words pass through."""
+        from unittest.mock import patch
+
+        value = "=?utf-8?Q?caf=C3=A9?="
+        with patch("email.header.decode_header", side_effect=ValueError("malformed")):
+            assert decode_header(value) == value
+
+
+class TestViewEmailMultipartVariants:
+    """Further /email/<id> tests across multipart shapes."""
+
+    @pytest.fixture
+    def archive(self, tmp_path):
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = MagicMock()
+        archive.db.get_email_count.return_value = 1
+        archive.db.get_trash_count.return_value = 0
+        archive.db.get_labels_for_email.return_value = []
+        archive.auto_expire_trash.return_value = 0
+        return archive
+
+    def _get(self, archive, raw):
+        (archive.archive_dir / "mail.eml").write_bytes(raw)
+        archive.db.get_email_by_id.return_value = ("id1", "mail.eml", "d", "h", "a@example.com", None)
+        app = create_app(archive)
+        with app.test_client() as client:
+            return client.get("/email/id1")
+
+    def test_attachment_inside_embedded_message_is_listed(self, archive):
+        """An attachment nested in a message/rfc822 part should be listed."""
+        raw = (
+            b"From: list@example.com\r\nSubject: Digest\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/digest; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: message/rfc822\r\n\r\n"
+            b"From: inner@example.com\r\nSubject: Inner\r\n"
+            b'Content-Type: multipart/mixed; boundary="b2"\r\n\r\n'
+            b"--b2\r\nContent-Type: text/plain\r\n\r\ninner body\r\n"
+            b"--b2\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="nested.pdf"\r\n\r\nDATA\r\n'
+            b"--b2--\r\n--b1--\r\n"
+        )
+        response = self._get(archive, raw)
+        assert b"nested.pdf" in response.data
+
+    def test_embedded_message_with_minimal_headers(self, archive):
+        """A digest entry with only a body should still render."""
+        raw = (
+            b"From: list@example.com\r\nSubject: Digest\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/digest; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: message/rfc822\r\n\r\n"
+            b"Content-Type: text/plain\r\n\r\nbare inner body\r\n--b1--\r\n"
+        )
+        response = self._get(archive, raw)
+        assert b"bare inner body" in response.data
+
+    def test_malformed_embedded_message_is_skipped(self, archive):
+        """A message/rfc822 part that cannot be read should not break the page."""
+        raw = (
+            b"From: list@example.com\r\nSubject: Digest\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nmain body\r\n"
+            b"--b1\r\nContent-Type: message/rfc822\r\n\r\n\r\n--b1--\r\n"
+        )
+        response = self._get(archive, raw)
+        assert response.status_code == 200
+        assert b"main body" in response.data
+
+    def test_multiple_text_parts_are_joined(self, archive):
+        """Several text/plain parts should all appear in the body."""
+        raw = (
+            b"From: a@example.com\r\nSubject: S\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nfirst chunk\r\n"
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nsecond chunk\r\n--b1--\r\n"
+        )
+        response = self._get(archive, raw)
+        assert b"first chunk" in response.data
+        assert b"second chunk" in response.data
+
+    def test_non_image_content_id_part_is_not_inlined(self, archive):
+        """A Content-ID on a non-image part should not become a data URI."""
+        raw = (
+            b"From: a@example.com\r\nSubject: S\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/html\r\n\r\n<p>body</p>\r\n"
+            b"--b1\r\nContent-Type: application/pdf\r\nContent-ID: <doc1>\r\n\r\nDATA\r\n--b1--\r\n"
+        )
+        response = self._get(archive, raw)
+        assert response.status_code == 200
+        assert b"data:application/pdf" not in response.data
+
+    def test_html_single_part_message(self, archive):
+        """A non-multipart HTML message should render its HTML body."""
+        raw = b"From: a@example.com\r\nSubject: S\r\nContent-Type: text/html\r\n\r\n<p>single html</p>\r\n"
+        response = self._get(archive, raw)
+        assert b"single html" in response.data
+
+    def test_empty_body_renders(self, archive):
+        """A message with no body at all should still render."""
+        raw = b"From: a@example.com\r\nSubject: Empty\r\n\r\n"
+        response = self._get(archive, raw)
+        assert response.status_code == 200
+        assert b"Empty" in response.data
