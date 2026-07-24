@@ -14,6 +14,7 @@ from ownmail.commands import (
     cmd_list_unknown,
     cmd_rebuild,
     cmd_scan,
+    cmd_sync_check,
     cmd_update_labels,
     cmd_verify,
 )
@@ -620,6 +621,89 @@ class TestCmdSyncCheck:
 
         captured = capsys.readouterr()
         assert "in sync" in captured.out.lower()
+
+    def _archive(self, temp_dir, sources=None):
+        return EmailArchive(temp_dir, {"sources": sources} if sources is not None else {})
+
+    def _gmail_source(self):
+        return [{"name": "g", "type": "gmail_api", "account": "a@example.com"}]
+
+    def _imap_source(self):
+        return [{"name": "w", "type": "imap", "account": "a@example.com", "host": "imap.example.com"}]
+
+    def _provider(self, server_ids):
+        provider = MagicMock()
+        provider.get_all_message_ids.return_value = server_ids
+        return provider
+
+    def test_unknown_source_name(self, temp_dir, capsys):
+        """An unknown --source should be reported."""
+        cmd_sync_check(self._archive(temp_dir, self._gmail_source()), source_name="nope")
+        assert "Source 'nope' not found" in capsys.readouterr().out
+
+    def test_unsupported_source_type(self, temp_dir, capsys):
+        """A source type without sync-check support should say so."""
+        archive = self._archive(temp_dir, [{"name": "m", "type": "maildir", "account": "a@example.com"}])
+        cmd_sync_check(archive)
+        assert "not supported for source type 'maildir'" in capsys.readouterr().out
+
+    def test_reports_emails_missing_locally(self, temp_dir, capsys):
+        """Server-only messages should prompt a backup run."""
+        archive = self._archive(temp_dir, self._gmail_source())
+
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=self._provider(["m1", "m2"])):
+            cmd_sync_check(archive)
+
+        out = capsys.readouterr().out
+        assert "On server but not local: 2" in out
+        assert "Run 'backup' to download these emails." in out
+
+    def test_reports_emails_missing_on_server(self, temp_dir, capsys):
+        """Local-only messages should be listed with their filenames."""
+        archive = self._archive(temp_dir, self._gmail_source())
+        archive.db.mark_downloaded(_eid("m1", "a@example.com"), "m1", "stored.eml", account="a@example.com")
+
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=self._provider([])):
+            cmd_sync_check(archive)
+
+        out = capsys.readouterr().out
+        assert "On local but not on server" in out
+        assert "stored.eml (m1)" in out
+
+    def test_long_lists_are_truncated(self, temp_dir, capsys):
+        """More than five differences should be elided by default."""
+        archive = self._archive(temp_dir, self._gmail_source())
+        server_ids = [f"m{i}" for i in range(9)]
+
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=self._provider(server_ids)):
+            cmd_sync_check(archive)
+
+        assert "... and 4 more (use --verbose to show all)" in capsys.readouterr().out
+
+    def test_verbose_shows_every_difference(self, temp_dir, capsys):
+        """--verbose should list all differing IDs."""
+        archive = self._archive(temp_dir, self._gmail_source())
+        server_ids = [f"m{i}" for i in range(9)]
+
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=self._provider(server_ids)):
+            cmd_sync_check(archive, verbose=True)
+
+        out = capsys.readouterr().out
+        assert "... and" not in out
+        for msg_id in server_ids:
+            assert msg_id in out
+
+    def test_imap_source_is_closed(self, temp_dir):
+        """An IMAP provider should be built from config and closed after use."""
+        archive = self._archive(temp_dir, self._imap_source())
+        provider = self._provider([])
+
+        with patch("ownmail.providers.imap.ImapProvider", return_value=provider) as mock_cls:
+            cmd_sync_check(archive)
+
+        assert mock_cls.call_args.kwargs["host"] == "imap.example.com"
+        provider.authenticate.assert_called_once()
+        provider.close.assert_called_once()
 
 
 class TestCmdUpdateLabels:
@@ -1642,6 +1726,63 @@ class TestReconcileLabelSidecars:
         cmd_rebuild(archive, only="sidecars")
         captured = capsys.readouterr()
         assert "Reconcile Label Sidecars" in captured.out
+
+    def test_no_emails_short_circuits(self, temp_dir, capsys):
+        """An empty database should report nothing to do."""
+        archive = EmailArchive(temp_dir, {})
+
+        _reconcile_label_sidecars(archive)
+
+        assert "No emails to reconcile." in capsys.readouterr().out
+
+    def test_missing_file_is_skipped(self, temp_dir, capsys):
+        """A DB row whose .eml file is gone should be counted, not crash."""
+        archive = EmailArchive(temp_dir, {})
+        archive.db.mark_downloaded(_eid("gone"), "gone", "gone.eml")
+
+        _reconcile_label_sidecars(archive)
+
+        assert "Skipped (file missing on disk): 1" in capsys.readouterr().out
+
+    def test_pattern_limits_scope(self, temp_dir, capsys):
+        """A pattern should restrict which files are reconciled."""
+        archive = EmailArchive(temp_dir, {})
+        _make_email(archive, temp_dir, 1)
+
+        _reconcile_label_sidecars(archive, pattern="nonexistent/*")
+
+        assert "No emails to reconcile." in capsys.readouterr().out
+
+    def test_debug_reports_each_backfill(self, temp_dir, capsys):
+        """Debug mode should name each file it backfills."""
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+        with sqlite3.connect(archive.db.db_path) as conn:
+            filename = conn.execute("SELECT filename FROM emails WHERE email_id = ?", (eid,)).fetchone()[0]
+
+        _reconcile_label_sidecars(archive, debug=True)
+
+        assert f"Backfilled sidecar for {filename}" in capsys.readouterr().out
+
+    def test_debug_reports_each_reconcile(self, temp_dir, capsys):
+        """Debug mode should show the DB -> sidecar transition."""
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid, email_date, filename = conn.execute(
+                "SELECT rowid, email_date, filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                (rowid, "FROM_DB", email_date),
+            )
+        sidecar.write_labels(temp_dir / filename, ["FROM_SIDECAR"])
+
+        _reconcile_label_sidecars(archive, debug=True)
+
+        out = capsys.readouterr().out
+        assert "FROM_DB" in out
+        assert "FROM_SIDECAR" in out
 
 
 class TestRebuildCancel:
