@@ -126,3 +126,81 @@ class TestDatabaseIntegrity:
         with sqlite3.connect(archive.db.db_path) as conn:
             count = conn.execute("SELECT COUNT(*) FROM emails_fts").fetchone()[0]
         assert count == 1
+
+
+class TestGmailArchiveIndexEmail:
+    """Tests for the deprecated GmailArchive.index_email compatibility shim."""
+
+    EML = b"From: a@example.com\r\nSubject: Indexed subject\r\nDate: Mon, 1 Jan 2024 10:00:00 +0000\r\n\r\nbody\r\n"
+
+    def _archive_with_email(self, temp_dir):
+        from ownmail.database import ArchiveDatabase
+
+        archive = GmailArchive(temp_dir)
+        filepath = temp_dir / "mail.eml"
+        filepath.write_bytes(self.EML)
+        email_id = ArchiveDatabase.make_email_id("", "msg1")
+        # email_date must be set: search filters out undated rows by default.
+        archive.db.mark_downloaded(email_id, "msg1", "mail.eml", email_date="2024-01-01T10:00:00+00:00")
+        return archive, email_id, filepath
+
+    def _hashes(self, archive, email_id):
+        import sqlite3
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            return conn.execute(
+                "SELECT content_hash, indexed_hash FROM emails WHERE email_id = ?", (email_id,)
+            ).fetchone()
+
+    def test_indexes_and_updates_hashes(self, temp_dir):
+        """Indexing should populate FTS and record the content hash."""
+        import hashlib
+
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+
+        assert archive.index_email(email_id, filepath) is True
+
+        expected = hashlib.sha256(self.EML).hexdigest()
+        assert self._hashes(archive, email_id) == (expected, expected)
+        assert archive.db.search("Indexed") != []
+
+    def test_update_hash_false_leaves_hashes_alone(self, temp_dir):
+        """With update_hash off, the stored hashes should not change."""
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+
+        assert archive.index_email(email_id, filepath, update_hash=False) is True
+
+        assert self._hashes(archive, email_id) == (None, None)
+
+    def test_uses_batch_connection_when_present(self, temp_dir):
+        """A batch connection should be reused rather than opening a new one."""
+        import sqlite3
+
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+        conn = sqlite3.connect(archive.db.db_path)
+        archive._batch_conn = conn
+        try:
+            assert archive.index_email(email_id, filepath) is True
+            conn.commit()
+        finally:
+            conn.close()
+            archive._batch_conn = None
+
+        assert self._hashes(archive, email_id)[0] is not None
+
+    def test_debug_prints_timing_breakdown(self, temp_dir, capsys):
+        """Debug mode should print the per-stage timing line."""
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+
+        archive.index_email(email_id, filepath, debug=True)
+
+        out = capsys.readouterr().out
+        assert "DEBUG: read=" in out
+        assert "TOTAL=" in out
+
+    def test_missing_file_reports_error(self, temp_dir, capsys):
+        """A missing file should be reported and return False."""
+        archive = GmailArchive(temp_dir)
+
+        assert archive.index_email("id1", temp_dir / "gone.eml") is False
+        assert "Error indexing" in capsys.readouterr().out

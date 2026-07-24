@@ -789,3 +789,60 @@ class TestDateToUtcIso:
         from ownmail.query import _date_to_utc_iso
 
         assert _date_to_utc_iso("not-a-date", ZoneInfo("UTC")) == "not-a-date"
+
+
+class TestTokenizerStructure:
+    """Tests for parentheses, OR handling and validation."""
+
+    def test_parentheses_become_tokens(self):
+        """Parentheses should be emitted as grouping tokens."""
+        tokens, error = _tokenize("(a OR b)")
+        assert error is None
+        assert tokens[0] == Token(TokenType.LPAREN, "(")
+        assert tokens[-1] == Token(TokenType.RPAREN, ")")
+
+    def test_or_is_case_insensitive(self):
+        """'or' in any case should be the OR operator."""
+        for word in ("OR", "or", "Or"):
+            tokens, error = _tokenize(f"a {word} b")
+            assert error is None, word
+            assert tokens[1].type == TokenType.OR, word
+
+    def test_leading_or_is_rejected(self):
+        """A query starting with OR is malformed."""
+        assert _validate_tokens([Token(TokenType.OR, "OR")]) == "Search cannot start with OR"
+
+    def test_empty_token_list_is_valid(self):
+        """No tokens is not an error."""
+        assert _validate_tokens([]) is None
+
+    def test_quoted_phrase_with_parens_inside(self):
+        """Parentheses inside a quoted phrase should stay part of the phrase."""
+        tokens, error = _tokenize('"a (b) c"')
+        assert error is None
+        assert tokens == [Token(TokenType.PHRASE, "a (b) c")]
+
+    def test_word_stops_at_paren(self):
+        """A word abutting a paren should be split from it."""
+        tokens, error = _tokenize("invoice)")
+        assert error is None
+        assert tokens[0] == Token(TokenType.WORD, "invoice")
+        assert tokens[1] == Token(TokenType.RPAREN, ")")
+
+    def test_whitespace_only_query(self):
+        """A blank query should produce no tokens."""
+        tokens, error = _tokenize("   ")
+        assert error is None
+        assert tokens == []
+
+    def test_long_unclosed_negated_quote_is_truncated(self):
+        """A long unclosed negated phrase should be elided in the error."""
+        _, error = _tokenize('-"' + "x" * 60)
+        assert error is not None
+        assert "..." in error
+
+    def test_long_unclosed_filter_quote_is_truncated(self):
+        """A long unclosed quoted filter value should be elided."""
+        _, error = _tokenize('label:"' + "x" * 60)
+        assert error is not None
+        assert "..." in error
