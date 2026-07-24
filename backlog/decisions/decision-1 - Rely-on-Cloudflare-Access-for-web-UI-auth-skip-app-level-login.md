@@ -41,4 +41,3 @@ own login, session, and logout at the edge instead of hand-rolling it in Flask.
 - If a real pain point with Cloudflare Access shows up later (e.g. needing per-route
   policies, or dropping Cloudflare entirely), revisit — but don't re-litigate absent a
   concrete driver, same bar applied to TASK-1's other no-gos.
-

@@ -34,6 +34,7 @@ dependencies = [
     "lxml>=5.0.0",
     "ruamel.yaml>=0.18.0",
     "flask>=2.0.0",
+    "markupsafe>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +44,8 @@ dev = [
     "ruff>=0.1.0",
     "build>=1.0.0",
     "twine>=4.0.0",
+    "pre-commit>=3.5.0",
+    "deptry>=0.23.0",
 ]
 
 [project.scripts]
@@ -104,6 +107,15 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["ownmail"]
+
+# Dependency checks
+[tool.deptry]
+# Dev tooling is invoked as commands, never imported, so deptry can't see it
+# used. Listing it here keeps DEP002 (unused dependency) meaningful.
+known_first_party = ["ownmail"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["pytest", "pytest-cov", "ruff", "build", "twine", "pre-commit", "deptry"]
 
 # Coverage configuration
 [tool.coverage.run]

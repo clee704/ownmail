@@ -76,4 +76,3 @@ Implementation constraints:
 notmuch is a subprocess/CLI or FFI dependency, not in-process like
 SQLite FTS5. Benchmark query latency (especially search-as-you-type)
 before committing to it — see task for search backend evaluation.
-

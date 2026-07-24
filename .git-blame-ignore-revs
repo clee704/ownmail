@@ -1,0 +1,9 @@
+# Revisions to skip in `git blame` — pure formatting, no behavior change.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub honours this file automatically.
+
+# chore: format codebase with ruff format (TASK-2.6)
+736e1338aaa0916bb70fe099b23f369457b5f5f8

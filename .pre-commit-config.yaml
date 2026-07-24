@@ -1,0 +1,51 @@
+# Run on every commit:  pre-commit install
+# Run against the repo:  pre-commit run -a
+#
+# These are the same checks CI runs (.github/workflows/ci.yml) — a clean
+# `pre-commit run -a` locally means CI should be green.
+
+default_install_hook_types: [pre-commit]
+
+# .eml test fixtures are byte-exact inputs — several deliberately carry broken
+# encodings, truncated bodies, or missing trailing newlines. Never rewrite them.
+exclude: ^tests/fixtures/
+
+repos:
+  # File hygiene — the rules CONTRIBUTING.md documents but nothing enforced.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+
+  # Lint + format.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # Unused / undeclared / transitive dependencies.
+  - repo: https://github.com/fpgmaas/deptry
+    rev: 0.25.1
+    hooks:
+      - id: deptry
+
+  # Tests + coverage gate. Local hook because it needs ownmail and its
+  # dependencies importable — pass_filenames since pytest takes no file args.
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (with coverage gate)
+        entry: pytest --cov=ownmail -q
+        language: system
+        types: [python]
+        pass_filenames: false

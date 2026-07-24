@@ -22,6 +22,9 @@ source venv/bin/activate
 
 # Install in development mode
 pip install -e ".[dev]"
+
+# Install the git hooks (runs lint, format, deptry, and tests on commit)
+pre-commit install
 ```
 
 ## Running Locally
@@ -68,20 +71,45 @@ When adding new code, write tests to maintain or improve coverage. The build wil
 
 ## Before Committing
 
-**Always run tests and lint before committing:**
+If you ran `pre-commit install`, the checks below run automatically on every
+commit. To run them all by hand — against the whole repo, not just staged
+files:
 
 ```bash
-# Run lint check
-ruff check .
-
-# Run tests with coverage
-pytest --cov=ownmail
-
-# Or both together
-ruff check . && pytest
+pre-commit run -a
 ```
 
-Fix any lint errors before committing. Most can be auto-fixed with `ruff check . --fix`.
+That runs file hygiene (trailing whitespace, final newline, LF endings), `ruff
+check --fix`, `ruff format`, `deptry` (unused/undeclared dependencies), and
+`pytest` with the coverage gate. It's the same set CI runs, so a clean
+`pre-commit run -a` should mean a green build.
+
+The individual pieces, if you'd rather run them directly:
+
+```bash
+ruff check .          # Lint
+ruff format .         # Format
+pytest --cov=ownmail  # Tests + coverage gate
+```
+
+Most lint errors can be auto-fixed with `ruff check . --fix`.
+
+> `.eml` files under `tests/fixtures/` are excluded from the formatting hooks —
+> they're byte-exact test inputs, several deliberately malformed or truncated.
+> Don't "fix" them.
+
+## Continuous Integration
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to
+`master` and every PR:
+
+- **lint** — `ruff check`, `ruff format --check`, `deptry` (once, on 3.12)
+- **test** — the full suite with coverage across Python 3.10, 3.11, and 3.12,
+  with Node.js available so the HTML-sanitizer integration tests actually run
+  instead of skipping
+
+The matrix mirrors the versions in `pyproject.toml`'s classifiers. If you change
+the supported Python range, update both.
 
 ## Branches
 
