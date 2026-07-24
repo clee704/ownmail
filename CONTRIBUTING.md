@@ -71,18 +71,23 @@ When adding new code, write tests to maintain or improve coverage. The build wil
 
 ## Before Committing
 
-If you ran `pre-commit install`, the checks below run automatically on every
-commit. To run them all by hand — against the whole repo, not just staged
-files:
+`pre-commit install` wires up two stages, split by how long they take:
+
+| Stage | Checks | Cost |
+|---|---|---|
+| **on commit** | File hygiene (trailing whitespace, final newline, LF endings), `ruff check --fix`, `ruff format`, `deptry` | ~0.5s |
+| **on push** | The above, plus `pytest` with the coverage gate | ~11s |
+
+Tests run at push rather than at commit deliberately: it's once per push no
+matter how many commits it carries, and a push is the point where anything
+actually becomes visible to anyone else. Committing stays cheap enough to do
+constantly.
+
+To run the full set by hand, against the whole repo:
 
 ```bash
-pre-commit run -a
+pre-commit run -a --hook-stage pre-push
 ```
-
-That runs file hygiene (trailing whitespace, final newline, LF endings), `ruff
-check --fix`, `ruff format`, `deptry` (unused/undeclared dependencies), and
-`pytest` with the coverage gate. It's the same set CI runs, so a clean
-`pre-commit run -a` should mean a green build.
 
 The individual pieces, if you'd rather run them directly:
 
@@ -93,6 +98,10 @@ pytest --cov=ownmail  # Tests + coverage gate
 ```
 
 Most lint errors can be auto-fixed with `ruff check . --fix`.
+
+**A clean local run does not guarantee a green build.** ownmail supports Python
+3.10–3.12 and you are probably developing on something newer, so CI is testing
+versions you aren't. Local hooks are a fast filter; CI is the gate.
 
 > `.eml` files under `tests/fixtures/` are excluded from the formatting hooks —
 > they're byte-exact test inputs, several deliberately malformed or truncated.
@@ -111,6 +120,29 @@ Most lint errors can be auto-fixed with `ruff check . --fix`.
 The matrix mirrors the versions in `pyproject.toml`'s classifiers. If you change
 the supported Python range, update both.
 
+## How changes land
+
+Which path applies depends on whether you have write access — the two aren't
+alternatives you choose between.
+
+**Outside contributors** — fork the repo, branch, and open a PR. CI must pass
+before it's merged. See [Pull Requests](#pull-requests) below.
+
+**Maintainers** — commit to `master` directly. This is a small project with one
+maintainer; routing every change through a PR you review and merge yourself
+adds a CI wait without adding a reviewer.
+
+Use a PR anyway when the change is one of these:
+
+- Database schema or migrations — anything touching an existing user's `ownmail.db`
+- Credential/keychain handling, or the Gmail OAuth flow
+- Anything that deletes or moves archived `.eml` files
+- Adding a runtime dependency, or changing the supported Python range
+
+That's the same list AGENTS.md flags as STOP-and-ask, for the same reason:
+these are the changes that are expensive or impossible to walk back, so they're
+worth a green matrix and a deliberate second look before they land.
+
 ## Branches
 
 Branch off `master`, one branch per change:
@@ -128,8 +160,6 @@ fix/fts5-orphan-rows
 docs/agents-md
 refactor/extract-email-parser
 ```
-
-Don't work directly on `master`.
 
 ## Commit Messages
 
@@ -198,13 +228,17 @@ generated from the commit headers. One noisy or mistyped PR title puts a wrong
 entry in the changelog permanently, and a PR that mixes concerns can't be
 described by a single type at all.
 
+The same "one self-contained change per commit" rule applies to commits pushed
+straight to `master` — there's just no PR title to get right, since the commit
+header *is* the header.
+
 ### Checklist
 
 1. Branch off `master` following the naming convention above
 2. Make your changes
 3. Update documentation if needed
 4. Add tests for new functionality
-5. `ruff check . && pytest` passes
+5. `pre-commit run -a --hook-stage pre-push` passes
 6. Open the PR with a Conventional Commits title and a description of *why*
 
 ## Database Migrations

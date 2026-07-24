@@ -63,9 +63,18 @@ each step.
 - **Finish the whole task.** If part of it turns out to be blocked, do
   everything else and state plainly what you left undone and why.
 
+### Where to commit
+
+You are working as the maintainer, so
+[CONTRIBUTING.md § How changes land](CONTRIBUTING.md#how-changes-land) applies:
+commit to `master` directly, except for the change types listed there — which
+are the same ones on the STOP list below. For those, branch and open a PR
+rather than pushing to `master`, and let CI and a human weigh in before it
+lands.
+
 ### Staging
 
-Commit format, branch naming, and PR policy are in
+Commit format and branch naming are in
 [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages). Two things specific to
 agents:
 
@@ -165,8 +174,12 @@ Stop and ask before doing any of these — don't decide unilaterally:
 Working on the *tests* for these areas is fine. It's changing the behavior that
 needs sign-off.
 
+Once signed off, these also go through a PR rather than straight to `master`
+— see [Where to commit](#where-to-commit).
+
 ## Before you finish a turn
 
-- `ruff check .` and `pytest` both pass. (Or `pre-commit run -a`.)
+- `pre-commit run -a --hook-stage pre-push` passes. (That's ruff, deptry, and
+  the full suite with the coverage gate — the same set CI runs.)
 - The backlog task reflects reality — status, ACs, notes.
 - The working tree is clean.
