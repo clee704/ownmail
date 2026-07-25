@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ownmail import __version__
+from ownmail import __version__, roles
 from ownmail.archive import EmailArchive
 from ownmail.config import (
     get_archive_root,
@@ -16,6 +16,7 @@ from ownmail.config import (
 )
 from ownmail.keychain import KeychainStorage
 from ownmail.providers.gmail import GmailProvider
+from ownmail.providers.imap import discover_role_folders
 
 # Default locations
 SCRIPT_DIR = Path(__file__).parent.absolute()
@@ -144,6 +145,27 @@ def _update_or_create_config(
         print(f"\n✓ Created {new_path}")
 
 
+def _exclude_folders_snippet(excluded_folders: list[str]) -> str:
+    """Render the commented-out exclude_folders block for a new source.
+
+    Trash and spam are excluded by role without any config, so this is
+    documentation rather than configuration: it shows the names this
+    particular server uses, and uncommenting it takes over from the role
+    matching entirely.
+    """
+    if not excluded_folders:
+        return ""
+
+    lines = [
+        "    # Skipped by default because they are this server's trash/spam",
+        "    # folders. Uncomment to take over the list yourself — doing so",
+        "    # replaces the automatic detection rather than adding to it.",
+        "    # exclude_folders:",
+    ]
+    lines += [f"    #   - {name}" for name in excluded_folders]
+    return "\n".join(lines) + "\n"
+
+
 def _setup_imap(
     keychain: KeychainStorage,
     config: dict,
@@ -198,9 +220,13 @@ def _setup_imap(
     print("\nTesting connection...", end="", flush=True)
     import imaplib
 
+    excluded_folders = []
     try:
         conn = imaplib.IMAP4_SSL(host, 993)
         conn.login(account_email, password)
+        # Ask the server which folders it considers trash/spam while we're
+        # connected — the SPECIAL-USE flags aren't available any other time.
+        excluded_folders = discover_role_folders(conn, roles.DEFAULT_EXCLUDE_ROLES)
         conn.logout()
         print(" ✓ Connected successfully!")
     except imaplib.IMAP4.error as e:
@@ -235,7 +261,7 @@ def _setup_imap(
     account: {account_email}
     auth:
       secret_ref: keychain:imap-password/{account_email}
-"""
+{_exclude_folders_snippet(excluded_folders)}"""
 
     _update_or_create_config(config, config_path, source_name, source_snippet)
 

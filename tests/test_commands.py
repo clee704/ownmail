@@ -446,6 +446,88 @@ class TestCmdVerifyDatabase:
         assert "missing" in captured.out.lower() or "hash" in captured.out.lower()
 
 
+class TestVerifySystemLabels:
+    """Verify reports emails archived out of a trash/spam folder.
+
+    These predate role-based exclusion — a server whose trash wasn't named
+    '[Gmail]/Trash' used to sync straight into the archive.
+    """
+
+    def _archive_with_labels(self, temp_dir, labels, account="user@company.com", trashed=False):
+        archive = EmailArchive(temp_dir, {})
+        archive.db.mark_downloaded(_eid("m1", account), "m1", "2024/01/m1.eml", account=account)
+        archive.db.index_email(
+            _eid("m1", account),
+            subject="Hello",
+            sender="a@b.com",
+            recipients="",
+            date_str="",
+            body="",
+            attachments="",
+            labels=",".join(labels),
+        )
+        if trashed:
+            with sqlite3.connect(archive.db.db_path) as conn:
+                conn.execute("UPDATE emails SET trashed_at = datetime('now')")
+        return archive
+
+    def test_reports_trash_label(self, temp_dir, capsys):
+        archive = self._archive_with_labels(temp_dir, ["Deleted Items"])
+        cmd_verify(archive)
+        out = capsys.readouterr().out
+        assert "1 emails carry a trash/spam label" in out
+        assert "Deleted Items (user@company.com): 1" in out
+
+    def test_reports_spam_label(self, temp_dir, capsys):
+        archive = self._archive_with_labels(temp_dir, ["Junk"])
+        cmd_verify(archive)
+        assert "carry a trash/spam label" in capsys.readouterr().out
+
+    def test_ignores_ordinary_labels(self, temp_dir, capsys):
+        archive = self._archive_with_labels(temp_dir, ["Receipts", "INBOX"])
+        cmd_verify(archive)
+        assert "No emails labelled trash/spam" in capsys.readouterr().out
+
+    def test_ignores_locally_trashed_emails(self, temp_dir, capsys):
+        """Already in ownmail's own trash — nothing left to report."""
+        archive = self._archive_with_labels(temp_dir, ["Deleted Items"], trashed=True)
+        cmd_verify(archive)
+        assert "No emails labelled trash/spam" in capsys.readouterr().out
+
+    def test_suggests_a_search_without_changing_anything(self, temp_dir, capsys):
+        archive = self._archive_with_labels(temp_dir, ["Deleted Items"])
+        cmd_verify(archive)
+        out = capsys.readouterr().out
+        assert 'ownmail search "label:Deleted Items"' in out
+
+        labels = archive.db.get_labels_for_email(_eid("m1", "user@company.com"))
+        assert labels == ["Deleted Items"]
+
+    def test_fix_does_not_touch_them(self, temp_dir, capsys):
+        """Report only — --fix must leave these emails alone."""
+        archive = self._archive_with_labels(temp_dir, ["Deleted Items"])
+        cmd_verify(archive, fix=True)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            trashed = conn.execute("SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL").fetchone()[0]
+        assert trashed == 0
+
+    def test_groups_by_label_and_account(self, temp_dir, capsys):
+        archive = EmailArchive(temp_dir, {})
+        for i, (account, label) in enumerate([("a@x.com", "Trash"), ("a@x.com", "Trash"), ("b@y.com", "Junk")]):
+            eid = _eid(f"m{i}", account)
+            archive.db.mark_downloaded(eid, f"m{i}", f"2024/01/m{i}.eml", account=account)
+            archive.db.index_email(
+                eid, subject="s", sender="a@b.com", recipients="", date_str="", body="", attachments="", labels=label
+            )
+
+        cmd_verify(archive)
+        out = capsys.readouterr().out
+        assert "3 emails carry a trash/spam label" in out
+        assert "Trash (a@x.com): 2" in out
+        assert "Junk (b@y.com): 1" in out
+
+
 class TestCmdVerifyEdgeCases:
     """Additional tests for verify command."""
 

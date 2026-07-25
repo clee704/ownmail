@@ -185,10 +185,18 @@ sources:
   #   account: you@company.com
   #   auth:
   #     secret_ref: keychain:imap-password/you@company.com
-  #   exclude_folders:
-  #     - Trash
-  #     - Spam
+  #   exclude_folders:          # optional — see below
+  #     - Newsletters
 ```
+
+Trash and spam are skipped automatically. ownmail asks the server which
+folders those are (IMAP SPECIAL-USE), so it works whether yours are called
+`Trash`, `Deleted Items`, `INBOX.Trash` or something in your own language.
+
+Setting `exclude_folders` **replaces** that rather than adding to it — the
+list becomes the whole exclusion, and trash is only skipped if you name it.
+That's deliberate: it's how you opt into archiving your trash, so mail
+deleted on a phone still reaches the archive.
 
 ## Search
 

@@ -63,8 +63,8 @@ class TestImapProviderInit:
         assert provider._exclude_folders == ["Trash", "Spam", "Drafts"]
 
     def test_init_default_exclude_folders(self):
-        """Test default exclude folders."""
-        from ownmail.providers.imap import DEFAULT_EXCLUDE_FOLDERS, ImapProvider
+        """No literal exclude list by default — exclusion happens by role."""
+        from ownmail.providers.imap import ImapProvider
 
         mock_keychain = MagicMock()
         provider = ImapProvider(
@@ -72,7 +72,7 @@ class TestImapProviderInit:
             keychain=mock_keychain,
         )
 
-        assert provider._exclude_folders == DEFAULT_EXCLUDE_FOLDERS
+        assert provider._exclude_folders == []
 
 
 class TestImapProviderAuthentication:
@@ -220,6 +220,157 @@ class TestImapProviderFolders:
         assert "INBOX" in folders
         assert "[Gmail]/Trash" not in folders
         assert "[Gmail]/Spam" not in folders
+
+
+class TestImapRoleExclusion:
+    """Trash and spam are skipped whatever the server calls them.
+
+    The bug this replaced: exclusion matched the literal names
+    '[Gmail]/Trash' and '[Gmail]/Spam', so every other server archived its
+    deleted mail as normal mail.
+    """
+
+    def _make_provider(self, exclude_folders=None):
+        from ownmail.providers.imap import ImapProvider
+
+        provider = ImapProvider(
+            account="alice@company.com",
+            keychain=MagicMock(),
+            host="imap.company.com",
+            exclude_folders=exclude_folders,
+        )
+        provider._conn = MagicMock()
+        return provider
+
+    def _listing(self, provider, lines):
+        provider._conn.list.return_value = ("OK", lines)
+        return provider._list_folders()
+
+    def test_special_use_trash_excluded_under_any_name(self):
+        provider = self._make_provider()
+        folders = self._listing(
+            provider,
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren \\Trash) "/" "Prullenbak"',
+                b'(\\HasNoChildren \\Junk) "/" "Ongewenst"',
+            ],
+        )
+        assert folders == ["INBOX"]
+
+    @pytest.mark.parametrize(
+        "folder",
+        [
+            b'(\\HasNoChildren) "/" "Trash"',
+            b'(\\HasNoChildren) "/" "Deleted Items"',
+            b'(\\HasNoChildren) "." "INBOX.Trash"',
+        ],
+    )
+    def test_named_trash_excluded_without_special_use(self, folder):
+        """Servers that don't advertise SPECIAL-USE fall back to names."""
+        provider = self._make_provider()
+        assert self._listing(provider, [b'(\\HasNoChildren) "/" "INBOX"', folder]) == ["INBOX"]
+
+    def test_ordinary_folders_kept(self):
+        provider = self._make_provider()
+        folders = self._listing(
+            provider,
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Receipts"',
+                b'(\\HasNoChildren \\Sent) "/" "Sent"',
+            ],
+        )
+        assert folders == ["INBOX", "Receipts", "Sent"]
+
+    def test_explicit_list_replaces_role_defaults(self):
+        """Setting exclude_folders takes over — trash syncs unless named.
+
+        This is what lets a source deliberately archive its trash to catch
+        mail deleted on a phone before ownmail's next run.
+        """
+        provider = self._make_provider(exclude_folders=["Receipts"])
+        folders = self._listing(
+            provider,
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Receipts"',
+                b'(\\HasNoChildren \\Trash) "/" "Trash"',
+            ],
+        )
+        assert folders == ["INBOX", "Trash"]
+
+    def test_empty_list_falls_back_to_role_defaults(self):
+        provider = self._make_provider(exclude_folders=[])
+        folders = self._listing(
+            provider,
+            [b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren \\Trash) "/" "Trash"'],
+        )
+        assert folders == ["INBOX"]
+
+    def test_roles_recorded_for_kept_folders(self):
+        provider = self._make_provider()
+        self._listing(
+            provider,
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren \\Sent) "/" "Verzonden"',
+                b'(\\HasNoChildren) "/" "Receipts"',
+            ],
+        )
+        assert provider._folder_roles == {"INBOX": "inbox", "Verzonden": "sent"}
+
+
+class TestParseListResponse:
+    def test_skips_non_bytes_entries(self):
+        """imaplib mixes continuation tuples into the response list."""
+        from ownmail.providers.imap import parse_list_response
+
+        parsed = parse_list_response([b'(\\HasNoChildren) "/" "INBOX"', (b"x", b"y"), None])
+        assert parsed == [("INBOX", "\\HasNoChildren", "/")]
+
+    def test_skips_unparseable_lines(self):
+        """Includes NIL-delimiter listings — see TASK-16."""
+        from ownmail.providers.imap import parse_list_response
+
+        assert parse_list_response([b'(\\HasNoChildren) NIL "INBOX"']) == []
+
+
+class TestDiscoverRoleFolders:
+    """Setup's live lookup of a server's real trash/spam folder names."""
+
+    def test_returns_matching_folders(self):
+        from ownmail import roles
+        from ownmail.providers.imap import discover_role_folders
+
+        conn = MagicMock()
+        conn.list.return_value = (
+            "OK",
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren \\Trash) "/" "Papierkorb"',
+                b'(\\HasNoChildren) "/" "Junk"',
+            ],
+        )
+
+        assert discover_role_folders(conn, roles.DEFAULT_EXCLUDE_ROLES) == ["Papierkorb", "Junk"]
+
+    def test_bad_status_returns_empty(self):
+        from ownmail import roles
+        from ownmail.providers.imap import discover_role_folders
+
+        conn = MagicMock()
+        conn.list.return_value = ("NO", [])
+        assert discover_role_folders(conn, roles.DEFAULT_EXCLUDE_ROLES) == []
+
+    def test_failure_is_swallowed(self):
+        """Informational only — it must never fail a working setup."""
+        from ownmail import roles
+        from ownmail.providers.imap import discover_role_folders
+
+        conn = MagicMock()
+        conn.list.side_effect = OSError("connection reset")
+        assert discover_role_folders(conn, roles.DEFAULT_EXCLUDE_ROLES) == []
 
 
 class TestImapProviderUIDs:
@@ -735,17 +886,27 @@ class TestImapScanGmail:
     def test_get_all_mail_folder_found(self):
         provider = self._make_provider()
         folders = ["INBOX", "[Gmail]/All Mail", "[Gmail]/Sent Mail"]
+        provider._folder_roles = {"[Gmail]/All Mail": "all", "[Gmail]/Sent Mail": "sent"}
         assert provider._get_all_mail_folder(folders) == "[Gmail]/All Mail"
 
     def test_get_all_mail_folder_not_found(self):
         provider = self._make_provider()
         folders = ["INBOX", "Sent"]
+        provider._folder_roles = {"INBOX": "inbox", "Sent": "sent"}
         assert provider._get_all_mail_folder(folders) is None
 
-    def test_get_all_mail_folder_localized(self):
+    def test_get_all_mail_folder_any_locale(self):
+        """\\All identifies All Mail in locales no name list could enumerate."""
         provider = self._make_provider()
-        folders = ["INBOX", "[Gmail]/Tous les messages"]
-        assert provider._get_all_mail_folder(folders) == "[Gmail]/Tous les messages"
+        provider._conn.list.return_value = (
+            "OK",
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren \\All) "/" "[Gmail]/\xec\xa0\x84\xec\x9a\xb0\xed\x8e\xb8\xec\xa7\x80"',
+            ],
+        )
+        folders = provider._list_folders()
+        assert provider._get_all_mail_folder(folders) == "[Gmail]/전우편지"
 
     def test_scan_gmail_returns_all_mail_uids(self, capsys):
         provider = self._make_provider()

@@ -362,6 +362,54 @@ class TestCmdSetup:
         captured = capsys.readouterr()
         assert "Setup complete" in captured.out
         mock_keychain.save_imap_password.assert_called_once()
+
+    def test_setup_imap_records_server_trash_folders(self, temp_dir, capsys, monkeypatch):
+        """Setup writes the server's own trash/spam names, commented out."""
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        inputs = iter(["user@company.com", "imap.company.com", "my_source", ""])
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        with patch("getpass.getpass", return_value="pw"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
+                mock_conn = MagicMock()
+                mock_conn.list.return_value = (
+                    "OK",
+                    [
+                        b'(\\HasNoChildren) "/" "INBOX"',
+                        b'(\\HasNoChildren \\Trash) "/" "Papierkorb"',
+                        b'(\\HasNoChildren \\Junk) "/" "Unerw\xc3\xbcnscht"',
+                    ],
+                )
+                mock_imap.return_value = mock_conn
+                cmd_setup(MagicMock(), {}, None, method="imap")
+
+        written = (temp_dir / "config.yaml").read_text()
+        assert "#   - Papierkorb" in written
+        assert "#   - Unerwünscht" in written
+        # Commented out: role detection stays in charge unless the user opts in
+        assert "\n    exclude_folders:" not in written
+
+    def test_setup_imap_omits_block_when_nothing_found(self, temp_dir, capsys, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from ownmail.cli import cmd_setup
+
+        inputs = iter(["user@company.com", "imap.company.com", "my_source", ""])
+        monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+        monkeypatch.chdir(temp_dir)
+
+        with patch("getpass.getpass", return_value="pw"):
+            with patch("imaplib.IMAP4_SSL") as mock_imap:
+                mock_conn = MagicMock()
+                mock_conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"'])
+                mock_imap.return_value = mock_conn
+                cmd_setup(MagicMock(), {}, None, method="imap")
+
+        assert "exclude_folders" not in (temp_dir / "config.yaml").read_text()
         # Verify config file was created
         assert (temp_dir / "config.yaml").exists()
 

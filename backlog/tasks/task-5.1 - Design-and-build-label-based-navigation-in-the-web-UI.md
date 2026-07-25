@@ -4,7 +4,7 @@ title: Design and build label-based navigation in the web UI
 status: To Do
 assignee: []
 created_date: '2026-07-24 04:54'
-updated_date: '2026-07-24 05:10'
+updated_date: '2026-07-25 05:24'
 labels: []
 milestone: m-3
 dependencies: []
@@ -23,4 +23,5 @@ Replace the hardcoded 'All Mail'/'Trash'-only sidebar with real label browsing: 
 <!-- AC:BEGIN -->
 - [ ] #1 Sidebar shows real labels with per-label email counts, not just All Mail/Trash
 - [ ] #2 Clicking a label filters the email list consistently with the existing label: search syntax
+- [ ] #3 System labels display under one canonical name per role (roles.role_for_label, doc-7) regardless of which provider they came from, without losing the raw provider label for search
 <!-- AC:END -->

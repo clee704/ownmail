@@ -12,6 +12,7 @@ import json
 import re
 import time
 
+from ownmail import roles
 from ownmail.providers.base import EmailProvider
 
 # Default IMAP settings
@@ -23,8 +24,66 @@ FOLDER_BATCH_DELAY = 0.1  # Seconds between folder scans
 # Gmail-specific IMAP settings
 GMAIL_IMAP_HOST = "imap.gmail.com"
 
-# Folders to exclude by default (can be overridden in config)
-DEFAULT_EXCLUDE_FOLDERS = ["[Gmail]/Trash", "[Gmail]/Spam"]
+
+def parse_list_response(folder_data) -> list[tuple[str, str, str]]:
+    """Parse an IMAP LIST response into (name, flags, delimiter) tuples.
+
+    Non-selectable folders (e.g. the "[Gmail]" parent) are dropped — nothing
+    can be fetched from them.
+
+    Args:
+        folder_data: Raw response lines from IMAP4.list()
+
+    Returns:
+        List of (folder_name, flags, delimiter)
+    """
+    folders = []
+    for item in folder_data:
+        if not isinstance(item, bytes):
+            continue
+        # Folder list response: (\\Flags) "delimiter" "folder_name"
+        match = re.match(rb'\((?P<flags>.*?)\) "(?P<delim>.*?)" (?P<name>.*)', item)
+        if not match:
+            continue
+        flags = match.group("flags").decode()
+        if "\\Noselect" in flags:
+            continue
+        folders.append(
+            (
+                match.group("name").decode().strip('"'),
+                flags,
+                match.group("delim").decode(),
+            )
+        )
+    return folders
+
+
+def discover_role_folders(conn, wanted: frozenset[str]) -> list[str]:
+    """List folder names on a live connection whose role is in ``wanted``.
+
+    Used by setup to show a user the real names their server uses for the
+    roles ownmail excludes by default. Best effort — this is informational,
+    so a server that answers LIST oddly returns nothing rather than failing
+    the setup that credentials just succeeded at.
+
+    Args:
+        conn: Authenticated imaplib connection
+        wanted: Roles to look for
+
+    Returns:
+        Matching folder names, in the order the server listed them
+    """
+    try:
+        status, folder_data = conn.list()
+        if status != "OK":
+            return []
+        return [
+            name
+            for name, flags, delimiter in parse_list_response(folder_data)
+            if roles.role_for_imap_folder(name, flags, delimiter) in wanted
+        ]
+    except Exception:
+        return []
 
 
 class ImapProvider(EmailProvider):
@@ -54,16 +113,19 @@ class ImapProvider(EmailProvider):
             keychain: KeychainStorage instance
             host: IMAP server hostname
             port: IMAP server port (default: 993 for SSL)
-            exclude_folders: Folders to skip during sync
+            exclude_folders: Literal folder names to skip during sync. When
+                left unset, folders are skipped by role instead, so trash and
+                spam are excluded whatever the server calls them.
             source_name: Source name from config
         """
         self._account = account
         self._keychain = keychain
         self._host = host
         self._port = port
-        self._exclude_folders = exclude_folders or DEFAULT_EXCLUDE_FOLDERS
+        self._exclude_folders = exclude_folders or []
         self._source_name = source_name
         self._conn: imaplib.IMAP4_SSL | None = None
+        self._folder_roles: dict[str, str] = {}
 
     @property
     def name(self) -> str:
@@ -103,7 +165,11 @@ class ImapProvider(EmailProvider):
             raise RuntimeError(f"IMAP connection failed: {e}") from e
 
     def _list_folders(self) -> list[str]:
-        """List all IMAP folders, excluding configured ones.
+        """List all IMAP folders, excluding trash/spam or the configured ones.
+
+        Also records each folder's canonical role in ``_folder_roles``, which
+        is where the SPECIAL-USE flags from the LIST response are captured —
+        they're only available here.
 
         Returns:
             List of folder names (decoded)
@@ -113,28 +179,31 @@ class ImapProvider(EmailProvider):
             raise RuntimeError("Failed to list IMAP folders")
 
         folders = []
-        for item in folder_data:
-            if isinstance(item, bytes):
-                # Parse folder list response: (\\Flags) "delimiter" "folder_name"
-                match = re.match(
-                    rb'\((?P<flags>.*?)\) "(?P<delim>.*?)" (?P<name>.*)',
-                    item,
-                )
-                if match:
-                    flags = match.group("flags").decode()
-                    folder_name = match.group("name").decode().strip('"')
+        self._folder_roles = {}
+        for folder_name, flags, delimiter in parse_list_response(folder_data):
+            role = roles.role_for_imap_folder(folder_name, flags, delimiter)
+            if role:
+                self._folder_roles[folder_name] = role
 
-                    # Skip non-selectable folders (e.g., "[Gmail]" parent)
-                    if "\\Noselect" in flags:
-                        continue
+            if self._is_excluded(folder_name, role):
+                continue
 
-                    # Skip excluded folders
-                    if folder_name in self._exclude_folders:
-                        continue
-
-                    folders.append(folder_name)
+            folders.append(folder_name)
 
         return folders
+
+    def _is_excluded(self, folder_name: str, role: str | None) -> bool:
+        """Whether a folder should be skipped during sync.
+
+        An explicit ``exclude_folders`` list replaces the role-based default
+        wholesale, so a source can opt into syncing its trash by listing
+        something else. Unset — the case for every config that never set the
+        option — excludes by role, which is what makes exclusion work on
+        servers that don't spell their folders the Gmail way.
+        """
+        if self._exclude_folders:
+            return folder_name in self._exclude_folders
+        return role in roles.DEFAULT_EXCLUDE_ROLES
 
     def _get_folder_uids(self, folder: str) -> list[int]:
         """Get all UIDs in a folder.
@@ -209,14 +278,13 @@ class ImapProvider(EmailProvider):
         return self._host == GMAIL_IMAP_HOST
 
     def _get_all_mail_folder(self, folders: list[str]) -> str | None:
-        """Find the [Gmail]/All Mail folder if it exists."""
+        """Find the All Mail folder if it exists.
+
+        Matched by SPECIAL-USE role rather than name, so it works in every
+        Gmail locale rather than the handful that were hardcoded here.
+        """
         for f in folders:
-            if f in (
-                "[Gmail]/All Mail",
-                "[Gmail]/Tous les messages",
-                "[Gmail]/Alle Nachrichten",
-                "[Gmail]/Toda la correspondencia",
-            ):
+            if self._folder_roles.get(f) == roles.ALL:
                 return f
         return None
 

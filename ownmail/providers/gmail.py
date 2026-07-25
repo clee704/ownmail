@@ -10,6 +10,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from ownmail import roles
 from ownmail.providers.base import EmailProvider
 
 # Gmail API scopes - readonly access
@@ -220,8 +221,8 @@ class GmailProvider(EmailProvider):
                     for history in response["history"]:
                         if "messagesAdded" in history:
                             for msg in history["messagesAdded"]:
-                                labels = msg["message"].get("labelIds", [])
-                                if "TRASH" in labels or "SPAM" in labels:
+                                label_ids = msg["message"].get("labelIds", [])
+                                if self._is_excluded(label_ids):
                                     continue
                                 new_ids.append(msg["message"]["id"])
 
@@ -233,6 +234,15 @@ class GmailProvider(EmailProvider):
             raise
 
         return new_ids
+
+    @staticmethod
+    def _is_excluded(label_ids: list[str]) -> bool:
+        """Whether a message is in a role excluded from download.
+
+        Mirrors the ``-in:trash -in:spam`` query used for full syncs; the
+        History API returns trashed messages, so they're filtered here.
+        """
+        return any(roles.role_for_gmail_label(lid) in roles.DEFAULT_EXCLUDE_ROLES for lid in label_ids)
 
     def download_message(self, msg_id: str) -> tuple[bytes, list[str]]:
         """Download a message from Gmail.

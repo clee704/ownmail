@@ -32,6 +32,33 @@ sources:
   #     secret_ref: keychain:oauth-token/you@company.com
   #   include_labels: true
 
+  # IMAP source (any server: Gmail, Fastmail, mailbox.org, self-hosted)
+  # - name: work_imap
+  #   type: imap
+  #   host: imap.company.com                 # required for IMAP
+  #   account: you@company.com
+  #   auth:
+  #     secret_ref: keychain:imap-password/you@company.com
+  #
+  #   # Folders to skip during sync.
+  #   #
+  #   # Leave this out and ownmail skips trash and spam automatically,
+  #   # identifying them by what the server says they are (IMAP SPECIAL-USE)
+  #   # rather than by name — so it works whether your server calls them
+  #   # 'Trash', 'Deleted Items', 'INBOX.Trash' or a localized name.
+  #   #
+  #   # Setting it REPLACES that automatic detection rather than adding to
+  #   # it: the list below is then the whole exclusion, and trash/spam are
+  #   # only skipped if you name them. Set it when you want to skip
+  #   # something else, or when you deliberately want your trash archived
+  #   # (to capture mail deleted on a phone before ownmail next syncs).
+  #   #
+  #   # An empty list is not a way to disable exclusion — it falls back to
+  #   # the automatic behavior. Names must match the server exactly.
+  #   exclude_folders:
+  #     - Newsletters
+  #     - '[Gmail]/Important'
+
 # ─── Web Interface ────────────────────────────────────────────
 
 web:

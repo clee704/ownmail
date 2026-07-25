@@ -16,7 +16,7 @@ from datetime import timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
-from ownmail import sidecar
+from ownmail import roles, sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
@@ -697,6 +697,43 @@ def _verify_single_file(args: tuple) -> tuple:
         return ("corrupted", filename)
 
 
+def _find_trash_labelled(db_path: Path) -> list[tuple[str, str, int]]:
+    """Find archived emails carrying a label that means trash or spam.
+
+    These are emails downloaded before ownmail could recognize the source
+    folder as trash/spam — a server naming its trash anything other than
+    '[Gmail]/Trash' used to sync straight into the archive.
+
+    Resolution is by name only: the SPECIAL-USE flags that identified the
+    folder at sync time aren't kept in the archive. That makes this a report
+    and not a fix — a user label genuinely named 'Archive' or 'Junk' looks
+    identical here.
+
+    Emails already in ownmail's local trash are skipped; they've been dealt
+    with.
+
+    Returns:
+        List of (label, account, count), largest first
+    """
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT el.label, e.account, COUNT(*)
+            FROM email_labels el
+            JOIN emails e ON e.rowid = el.email_rowid
+            WHERE e.trashed_at IS NULL
+            GROUP BY el.label, e.account
+            """
+        ).fetchall()
+
+    hits = [
+        (label, account or "(unknown)", count)
+        for label, account, count in rows
+        if roles.role_for_label(label) in (roles.TRASH, roles.SPAM)
+    ]
+    return sorted(hits, key=lambda row: row[2], reverse=True)
+
+
 def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) -> None:
     """Verify archive integrity: files, hashes, and database health.
 
@@ -705,6 +742,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
     - Moved/renamed files (missing + orphaned with matching hash)
     - Orphaned files (on disk but not indexed)
     - Database health (missing metadata, FTS sync, stale hashes)
+    - System labels (emails wrongly archived from a trash/spam folder)
 
     With --fix:
     - Updates DB paths for moved/renamed files
@@ -978,6 +1016,24 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
         else:
             print("  ✓ No duplicate emails")
 
+    # ── Phase 3: System labels ───────────────────────────────────────────
+
+    print("\n3. Checking system labels...\n")
+
+    polluted = _find_trash_labelled(db_path)
+    polluted_total = sum(count for _, _, count in polluted)
+
+    if polluted:
+        issues_found += 1
+        print(f"  ✗ {polluted_total} emails carry a trash/spam label")
+        for label, account, count in polluted:
+            print(f"      {label} ({account}): {count}")
+        print("\n    Archived before ownmail could tell the folder was trash/spam.")
+        print("    Nothing is changed automatically — the match is by folder name,")
+        print("    so check them before deleting anything.")
+    else:
+        print("  ✓ No emails labelled trash/spam")
+
     # ── Summary ──────────────────────────────────────────────────────────
 
     total_time = time.time() - total_start
@@ -1006,6 +1062,10 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                     suggestions.append("  • Delete corrupted files, then 'ownmail backup' to re-download")
                 if dup_count > 0:
                     suggestions.append("  • 'ownmail verify --fix' to remove duplicate emails")
+                if polluted:
+                    suggestions.append(
+                        f'  • Review trash/spam-labelled emails: ownmail search "label:{polluted[0][0]}"'
+                    )
                 for s in suggestions:
                     print(s)
         else:
@@ -1023,6 +1083,8 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 suggestions.append("  • 'ownmail rebuild' to populate metadata / update stale index")
             if dup_count > 0:
                 suggestions.append("  • 'ownmail verify --fix' to remove duplicate emails")
+            if polluted:
+                suggestions.append(f'  • Review trash/spam-labelled emails: ownmail search "label:{polluted[0][0]}"')
             if suggestions:
                 print("\n  To fix:")
                 for s in suggestions:
