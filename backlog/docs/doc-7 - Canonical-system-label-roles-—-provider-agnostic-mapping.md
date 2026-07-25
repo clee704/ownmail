@@ -34,8 +34,14 @@ Each has a consumer today. `all` replaces the hardcoded All Mail name
 list; `archive` falls out of the same SPECIAL-USE enumeration for free.
 Deliberately **not** included: `flagged`, `important`, `starred`,
 `unread`. RFC 6154 defines `\Flagged` and Gmail advertises `\Important`,
-but nothing consumes them yet — TASK-5.3 (read/unread) can add what it
-needs.
+but nothing consumes them yet.
+
+`unread` stays out permanently: TASK-5.3 resolved read/unread by *not*
+archiving it, since nothing refreshes a captured value and it therefore
+only decays. That task added `EPHEMERAL_LABELS` to this module — a
+separate, smaller idea than a role, for provider labels that record
+client state rather than archive content. TASK-19 decides whether
+`STARRED`, `IMPORTANT` and `CATEGORY_*` belong there too.
 
 Roles are **derived on demand**, never stored. `roles.py` is a pure
 function over provider state; the sidecar format is unchanged
