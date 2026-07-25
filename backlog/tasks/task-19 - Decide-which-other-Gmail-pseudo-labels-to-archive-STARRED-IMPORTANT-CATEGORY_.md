@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-25 06:20'
-updated_date: '2026-07-25 06:50'
+updated_date: '2026-07-25 06:57'
 labels: []
 dependencies: []
 priority: medium
@@ -88,3 +88,12 @@ Adjacent, out of scope, worth filing if pursued: \Answered has no Gmail API coun
 - [ ] #7 No other IMAP message flag is captured, per the doc-7 four-question test
 - [ ] #8 exclude_labels accepts arbitrary label strings, not a closed set of known platform labels
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-25 06:57
+---
+See doc-8 (Archival semantics) for the principle this knob serves: ownmail freezes metadata at capture and does not chase server-side changes. exclude_labels is how a user declares which of their labels are transient workflow state that should therefore not be frozen at all.
+---
+<!-- COMMENTS:END -->

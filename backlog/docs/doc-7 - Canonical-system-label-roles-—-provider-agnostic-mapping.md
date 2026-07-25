@@ -45,6 +45,9 @@ client state rather than archive content. TASK-19 decides whether
 
 ## IMAP message flags: ignore all but one
 
+The general rule these verdicts follow — metadata is frozen at capture,
+eligibility is re-evaluated until capture — is in doc-8.
+
 RFC 3501 defines six message flags. ownmail archives none of them today,
 and should keep it that way except for `\Flagged`. A flag earns capture
 only by surviving all four:

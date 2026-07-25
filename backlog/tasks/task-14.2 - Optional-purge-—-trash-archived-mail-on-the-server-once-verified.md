@@ -4,7 +4,7 @@ title: Optional purge — trash archived mail on the server once verified
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-07-25 06:46'
+updated_date: '2026-07-25 06:57'
 labels: []
 milestone: m-5
 dependencies:
@@ -38,5 +38,10 @@ Neither matches Gmail's model, where trashing gives a ~30-day retention window a
 - Move to the trash folder (role-resolved, doc-7) then \Deleted — closest analogue to Gmail, and the server's own retention policy applies.
 
 Bears on the STOP status: this task deletes user email, and the failure mode of the middle option is unrecoverable. Surfaced while auditing IMAP flags for TASK-19; see doc-7 'IMAP message flags' for why nothing should *read* \Deleted.
+---
+
+created: 2026-07-25 06:57
+---
+doc-8 (Archival semantics) records why purge puts a deadline on capture decisions: once the server copy is trashed, nothing can re-derive metadata that was never captured. Bears on the \Flagged decision in TASK-19 and on this task's delete-semantics question above.
 ---
 <!-- COMMENTS:END -->

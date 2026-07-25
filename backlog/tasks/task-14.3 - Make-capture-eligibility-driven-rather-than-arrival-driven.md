@@ -4,6 +4,7 @@ title: Make capture eligibility-driven rather than arrival-driven
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:53'
+updated_date: '2026-07-25 06:57'
 labels: []
 milestone: m-5
 dependencies:
@@ -43,3 +44,14 @@ Also in scope, because they are the same class of problem (hole numbers refer to
 
 Depends on TASK-17: the history watermark race makes incremental sync lossy, and this task makes incremental sync the only capture path. Fixing the race first keeps the two failure modes separable.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-25 06:57
+---
+Governing principle now recorded in doc-8 (Archival semantics): metadata is frozen once a message is captured, eligibility is re-evaluated until it is. This task is the second half of that rule.
+
+doc-8 also adds an argument for this task independent of purge: capture timing sets label fidelity. Arrival-driven capture snapshots a message before its owner has filed it, so the archive keeps INBOX plus a CATEGORY_* and none of the user's own organizing. Moving capture to eligibility means capture-at-filing, which is what makes the capture-once policy defensible rather than merely cheap.
+---
+<!-- COMMENTS:END -->
