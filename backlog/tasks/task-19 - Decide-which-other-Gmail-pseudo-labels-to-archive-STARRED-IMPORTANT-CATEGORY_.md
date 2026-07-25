@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-25 06:20'
-updated_date: '2026-07-25 06:38'
+updated_date: '2026-07-25 06:50'
 labels: []
 dependencies: []
 priority: medium
@@ -28,6 +28,26 @@ Does a stored value become **false**, or merely **unwanted**?
 - CHAT — closer to a message type than a label.
 
 Everything in the second tier is captured and then filtered.
+
+## Not just platform labels — any label its owner knows is transient
+
+The knob's real scope is wider than IMPORTANT and CATEGORY_*. A user-created
+label used as workflow state — `Waiting`, `To Read`, `Action Required` — decays
+exactly the way UNREAD did, and for the same reason: it describes now, and an
+archive records then.
+
+Neither archival philosophy rescues it. Snapshot semantics (what ownmail does
+today) freeze a workflow state that has since moved on. Mirror semantics track
+it correctly and then the label hits zero, leaving no evidence it ever existed.
+There is no representation that survives, so ownmail cannot fix this
+mechanically — only its owner knows which of their labels are classification and
+which are a to-do list.
+
+exclude_labels is that declaration, and it is why the option should take
+arbitrary strings rather than a closed set of known platform labels. It also
+retires the open question of whether STARRED means durable curation or a
+transient to-do marker: users who star transiently list STARRED, and the project
+needs no ruling on what starring means.
 
 ## Design: filter the index, not the archive
 
@@ -66,4 +86,5 @@ Adjacent, out of scope, worth filing if pursued: \Answered has no Gmail API coun
 - [ ] #5 UNREAD stays dropped at capture via roles.EPHEMERAL_LABELS and is not reachable through exclude_labels
 - [ ] #6 STARRED is handled as a canonical `flagged` role resolving from Gmail STARRED, the RFC 6154 \Flagged mailbox attribute, and the RFC 3501 \Flagged message flag
 - [ ] #7 No other IMAP message flag is captured, per the doc-7 four-question test
+- [ ] #8 exclude_labels accepts arbitrary label strings, not a closed set of known platform labels
 <!-- AC:END -->
