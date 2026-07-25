@@ -4,7 +4,7 @@ title: Optional purge + configurable download filter
 status: To Do
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-07-24 23:01'
+updated_date: '2026-07-25 05:39'
 labels: []
 milestone: m-5
 dependencies:
@@ -67,7 +67,11 @@ STOP ITEM: deletes user email and changes OAuth scopes. Needs explicit human sig
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Filter resolution must be semantic, not name-based.** Provider system folders/labels differ in more than spelling: IMAP INBOX is a folder (one location per message) while Gmail INBOX is a label (carried alongside others, with the message living in All Mail either way); IMAP names are case-insensitive per RFC 3501; Gmail-over-IMAP puts the same message in INBOX and [Gmail]/All Mail at once (imap.py:236 downloads from All Mail as sole source for exactly this reason); and folder names are localized — imap.py:211-219 hardcodes four language variants of All Mail and misses many others.
+**Split 2026-07-25 into TASK-14.1 (download filter) and TASK-14.2 (purge).** TASK-14 remains the parent holding the design; doc-6 is still the reference for both.
 
-So the filter must resolve a per-message *role* (JMAP's model; what IMAP SPECIAL-USE advertises as \\Trash, \\Junk, \\Drafts) per provider, not match folder-name strings. This is why the TASK-5.2 dependency is a correctness precondition rather than presentation polish — see doc-6.
+Reason for the split: the two knobs have completely different risk profiles, and bundling them meant the safe half inherited the dangerous half's gate. Knob 2 (download filter) deletes nothing and touches no OAuth scope, so it is not a STOP item and can land on master normally. Knob 1 (purge) keeps the full STOP weight — human sign-off plus PR.
+
+This matters in practice: the user's working model needs `inbox` excluded from download *now*, for a reason independent of purge (inbox = untriaged, so archiving it forces the delete decision twice). Blocking that behind a purge sign-off was accidental coupling.
+
+Discovered while re-reading this task against that model — recorded in full on TASK-14.1: **the existing incremental sync cannot express "filtered out earlier, eligible now."** Gmail API requests only `historyTypes=["messageAdded"]`, and Gmail-over-IMAP watermarks max UID in All Mail where archiving doesn't change the UID — so on both Gmail paths a message skipped for being in the inbox and later archived is never revisited. Plain IMAP is unaffected because a folder move allocates a new UID above the destination's watermark. Must be solved before the filter is trustworthy.
 <!-- SECTION:NOTES:END -->
