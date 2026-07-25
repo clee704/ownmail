@@ -1000,6 +1000,24 @@ class TestGmailLabels(_GmailFixture):
 
             assert list_call.call_count == 1
 
+    def test_unread_is_dropped(self):
+        """Read/unread is client state, not archive content - it must not be stored."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
+                "labels": [{"id": "UNREAD", "name": "UNREAD"}, {"id": "Label_1", "name": "Work"}]
+            }
+
+            assert provider._resolve_label_names(["INBOX", "UNREAD", "Label_1"]) == ["INBOX", "Work"]
+
+    def test_unread_only_leaves_no_labels(self):
+        """A message whose sole label is UNREAD should archive with none."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            service.users.return_value.labels.return_value.list.return_value.execute.return_value = {"labels": []}
+
+            assert provider._resolve_label_names(["UNREAD"]) == []
+
     def test_get_labels_for_message(self):
         """A message's label IDs should be resolved to names."""
         with patch("ownmail.providers.gmail.build") as mock_build:

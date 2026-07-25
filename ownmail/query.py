@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum, auto
 
+from ownmail import roles
+
 
 class TokenType(Enum):
     """Types of tokens in search queries."""
@@ -495,6 +497,13 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                     fts_parts.append(f"subject:{escaped}")
 
             elif field == "label":
+                # Read/unread was archived as a Gmail label until it was dropped
+                # for being stale by construction. Say so, rather than returning
+                # an empty result that reads like a broken archive.
+                if value in roles.EPHEMERAL_LABELS:
+                    return ParsedQuery(
+                        error=f"ownmail does not archive read/unread state, so 'label:{value}' is not searchable"
+                    )
                 # Label filter - use normalized email_labels table for fast indexed lookup
                 if negated:
                     where_clauses.append("__NOT_LABEL__")

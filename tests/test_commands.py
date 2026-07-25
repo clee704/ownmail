@@ -1802,6 +1802,80 @@ class TestReconcileLabelSidecars:
         captured = capsys.readouterr()
         assert "Unchanged: 1" in captured.out
 
+    def test_purges_unread_from_existing_sidecar(self, temp_dir, capsys):
+        """Gmail archives synced before read/unread was dropped get cleaned up."""
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid, email_date, filename = conn.execute(
+                "SELECT rowid, email_date, filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+            for label in ("INBOX", "UNREAD"):
+                conn.execute(
+                    "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                    (rowid, label, email_date),
+                )
+
+        sidecar.write_labels(temp_dir / filename, ["INBOX", "UNREAD"])
+
+        _reconcile_label_sidecars(archive)
+
+        assert sidecar.read_labels(temp_dir / filename) == ["INBOX"]
+        with sqlite3.connect(archive.db.db_path) as conn:
+            labels = [
+                row[0]
+                for row in conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,)).fetchall()
+            ]
+        assert labels == ["INBOX"]
+        assert "Purged (ephemeral labels dropped): 1" in capsys.readouterr().out
+
+    def test_purge_keeps_differently_cased_folder(self, temp_dir, capsys):
+        """An IMAP folder named 'Unread' is real archive content, not client state."""
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid, email_date, filename = conn.execute(
+                "SELECT rowid, email_date, filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                (rowid, "Unread", email_date),
+            )
+
+        sidecar.write_labels(temp_dir / filename, ["Unread"])
+
+        _reconcile_label_sidecars(archive)
+
+        assert sidecar.read_labels(temp_dir / filename) == ["Unread"]
+        assert "Purged (ephemeral labels dropped): 0" in capsys.readouterr().out
+
+    def test_backfill_drops_unread_from_db(self, temp_dir, capsys):
+        """A sidecar written from stale DB labels must not resurrect UNREAD."""
+        archive = EmailArchive(temp_dir, {})
+        eid = _make_email(archive, temp_dir, 1)
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid, email_date, filename = conn.execute(
+                "SELECT rowid, email_date, filename FROM emails WHERE email_id = ?", (eid,)
+            ).fetchone()
+            for label in ("INBOX", "UNREAD"):
+                conn.execute(
+                    "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                    (rowid, label, email_date),
+                )
+
+        _reconcile_label_sidecars(archive)
+
+        assert sidecar.read_labels(temp_dir / filename) == ["INBOX"]
+        with sqlite3.connect(archive.db.db_path) as conn:
+            labels = [
+                row[0]
+                for row in conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,)).fetchall()
+            ]
+        assert labels == ["INBOX"]
+
     def test_wired_via_rebuild_only_sidecars(self, temp_dir, capsys):
         """cmd_rebuild(only='sidecars') dispatches to the sidecar reconciler."""
         archive = EmailArchive(temp_dir, {})

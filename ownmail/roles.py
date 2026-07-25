@@ -27,6 +27,20 @@ ROLES = frozenset({INBOX, SENT, DRAFTS, TRASH, SPAM, ARCHIVE, ALL})
 # Roles excluded from download unless the source overrides exclude_folders.
 DEFAULT_EXCLUDE_ROLES = frozenset({TRASH, SPAM})
 
+# Gmail label IDs for mail-client state ownmail deliberately does not archive.
+#
+# Read/unread is a property of a mailbox session, not of the message. Sync
+# never re-fetches a message it already has, so a captured value is frozen at
+# download time and only decays: mail is picked up around arrival, when it is
+# usually unread, and nothing later corrects it. Standard IMAP puts the same
+# fact in the \Seen flag, which ownmail does not read either — dropping it on
+# the Gmail side is what makes the two providers agree.
+#
+# Matched exactly, never case-folded: these are Gmail system label IDs, which
+# are always upper-case and cannot collide with a user label. A differently
+# cased IMAP folder (`Unread`) is a real folder and is kept.
+EPHEMERAL_LABELS = frozenset({"UNREAD"})
+
 # RFC 6154 SPECIAL-USE attributes, as they appear in an IMAP LIST response.
 # The authoritative signal when the server advertises it.
 _SPECIAL_USE = {

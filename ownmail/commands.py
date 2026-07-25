@@ -418,6 +418,9 @@ def _reconcile_label_sidecars(
     - If no sidecar exists yet (e.g. an archive downloaded before sidecars
       existed), one is created from the email's current DB labels
       (one-time migration/backfill).
+    - Labels recording ephemeral client state (``UNREAD``, left by Gmail
+      syncs from before ownmail stopped capturing read/unread) are dropped
+      from both, so old archives converge on what a fresh sync produces.
 
     This makes the DB a fully rebuildable cache of the sidecar files: if
     the DB were lost, `rebuild --only sidecars` on a fresh DB (after a
@@ -450,6 +453,7 @@ def _reconcile_label_sidecars(
 
     backfilled = 0
     reconciled = 0
+    purged = 0
     unchanged = 0
     missing_files = 0
     start_time = time.time()
@@ -470,14 +474,28 @@ def _reconcile_label_sidecars(
             ]
 
             sidecar_labels = sidecar.read_labels(filepath)
+            changed = False
 
             if sidecar_labels is None:
                 # No sidecar yet - back-fill it from current DB state.
-                sidecar.write_labels(filepath, db_labels)
+                sidecar_labels = [lbl for lbl in db_labels if lbl not in roles.EPHEMERAL_LABELS]
+                sidecar.write_labels(filepath, sidecar_labels)
                 backfilled += 1
+                changed = True
                 if debug:
-                    print(f"\n  Backfilled sidecar for {filename}: {db_labels}")
-            elif sorted(sidecar_labels) != sorted(db_labels):
+                    print(f"\n  Backfilled sidecar for {filename}: {sidecar_labels}")
+            else:
+                kept = [lbl for lbl in sidecar_labels if lbl not in roles.EPHEMERAL_LABELS]
+                if kept != sidecar_labels:
+                    # Read/unread is no longer archived - drop it from the sidecar.
+                    sidecar.write_labels(filepath, kept)
+                    if debug:
+                        print(f"\n  Purged ephemeral labels from {filename}: {sidecar_labels} -> {kept}")
+                    sidecar_labels = kept
+                    purged += 1
+                    changed = True
+
+            if sorted(sidecar_labels) != sorted(db_labels):
                 # Sidecar wins - rewrite the DB to match it.
                 conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
                 for label in sidecar_labels:
@@ -486,9 +504,11 @@ def _reconcile_label_sidecars(
                         (rowid, label, email_date),
                     )
                 reconciled += 1
+                changed = True
                 if debug:
                     print(f"\n  Reconciled {filename}: DB {db_labels} -> sidecar {sidecar_labels}")
-            else:
+
+            if not changed:
                 unchanged += 1
 
             if i % 200 == 0:
@@ -506,6 +526,7 @@ def _reconcile_label_sidecars(
     print("\n" + "-" * 50)
     print("Reconcile Complete!")
     print(f"  Backfilled (new sidecar written): {backfilled}")
+    print(f"  Purged (ephemeral labels dropped): {purged}")
     print(f"  Reconciled (DB updated from sidecar): {reconciled}")
     print(f"  Unchanged: {unchanged}")
     if missing_files:

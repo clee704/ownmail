@@ -368,6 +368,26 @@ class TestParseQuery:
         assert "__LABEL__" in result.where_clauses
         assert "inbox" in result.params  # Preserved as-is for case-insensitive SQL match
 
+    def test_unread_label_is_rejected(self):
+        """Read/unread is not archived, so say so instead of matching nothing."""
+        result = parse_query("label:UNREAD")
+        assert result.error is not None
+        assert "read/unread" in result.error
+        assert result.where_clauses == []
+
+    def test_negated_unread_label_is_rejected(self):
+        """-label:UNREAD is built on the same false premise."""
+        result = parse_query("-label:UNREAD")
+        assert result.error is not None
+        assert "read/unread" in result.error
+
+    def test_differently_cased_unread_is_a_real_folder(self):
+        """An IMAP folder named 'Unread' is archive content and stays searchable."""
+        result = parse_query("label:Unread")
+        assert result.error is None
+        assert "__LABEL__" in result.where_clauses
+        assert "Unread" in result.params
+
     def test_before_filter(self):
         """Test before: filter becomes SQL WHERE."""
         result = parse_query("before:2024-06-01")
