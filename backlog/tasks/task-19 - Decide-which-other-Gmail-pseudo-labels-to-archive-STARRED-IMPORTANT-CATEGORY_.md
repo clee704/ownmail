@@ -48,7 +48,13 @@ Consequence for _reconcile_label_sidecars: 'DB matches sidecar' becomes 'DB matc
 
 ## Open question this does NOT resolve
 
-STARRED is a deliberate user act and the strongest candidate for archiving, but ownmail never reads IMAP's \Flagged. Keeping STARRED reintroduces exactly the Gmail/IMAP asymmetry TASK-5.3 closed for UNREAD. Config does not fix it. Decide separately: capture \Flagged too, or accept the gap knowingly and document it.
+STARRED is a deliberate user act and the strongest candidate for archiving. It is also not an asymmetry of concept, only of spelling: Gmail's STARRED label and RFC 3501's \Flagged are the same stored bit, and Gmail's own IMAP interface maps one to the other. Starring in the web UI sets \Flagged over IMAP.
+
+That makes it a roles.py problem, not a new-capability problem — the same shape as TRASH vs [Gmail]/Trash that doc-7 already solved. A canonical `flagged` role resolving from both the Gmail STARRED label and the IMAP \Flagged flag would close it, and doc-7 explicitly parked `flagged` as 'nothing consumes it yet'. This task is that consumer.
+
+Still a real decision, because ownmail does not read IMAP FLAGS at all today. Capturing \Flagged means adding FLAGS to the FETCH in imap.py — which must keep readonly=True / BODY.PEEK, since fetching RFC822 on a writable mailbox sets \Seen as a side effect and would silently mark the user's mailbox read.
+
+Adjacent, out of scope, worth filing if pursued: \Answered has no Gmail API counterpart at all (Gmail infers reply state from threads). It stays true forever, so it passes the false-vs-unwanted test, but capturing it creates the mirror-image asymmetry where IMAP archives carry it and Gmail archives cannot.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -58,5 +64,5 @@ STARRED is a deliberate user act and the strongest candidate for archiving, but 
 - [ ] #3 rebuild --only sidecars re-applies the current exclude_labels in both directions - removing a label from the config restores it to the index without a server round-trip
 - [ ] #4 _reconcile_label_sidecars compares DB against filter(sidecar), not raw sidecar equality
 - [ ] #5 UNREAD stays dropped at capture via roles.EPHEMERAL_LABELS and is not reachable through exclude_labels
-- [ ] #6 STARRED vs IMAP \Flagged asymmetry is decided and recorded, not left implicit
+- [ ] #6 STARRED is handled as a canonical `flagged` role resolving from both Gmail STARRED and IMAP \Flagged, or the decision not to is recorded
 <!-- AC:END -->

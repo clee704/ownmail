@@ -642,7 +642,10 @@ class ImapProvider(EmailProvider):
         folder, uid_str = msg_id.rsplit(":", 1)
         uid = int(uid_str)
 
-        # Select the folder
+        # readonly=True is load-bearing, not a hint: RFC 3501 says fetching
+        # RFC822 sets \Seen as a side effect, so a writable SELECT here would
+        # mark the user's entire mailbox read while archiving it. Keep this
+        # read-only, or switch the fetch to BODY.PEEK[].
         status, _ = self._conn.select(f'"{folder}"', readonly=True)
         if status != "OK":
             raise RuntimeError(f"Cannot select folder: {folder}")
@@ -689,7 +692,9 @@ class ImapProvider(EmailProvider):
             folder_groups.setdefault(folder, []).append((msg_id, uid))
 
         for folder, items in folder_groups.items():
-            # Select folder once for all messages in it
+            # Select folder once for all messages in it. readonly=True also
+            # keeps the RFC822 fetch below from setting \Seen — see
+            # download_message.
             status, _ = self._conn.select(f'"{folder}"', readonly=True)
             if status != "OK":
                 for msg_id, _ in items:
