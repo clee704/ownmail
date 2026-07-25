@@ -4,7 +4,7 @@ title: Optional purge + configurable download filter
 status: To Do
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-07-25 05:39'
+updated_date: '2026-07-25 05:54'
 labels: []
 milestone: m-5
 dependencies:
@@ -67,11 +67,25 @@ STOP ITEM: deletes user email and changes OAuth scopes. Needs explicit human sig
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Split 2026-07-25 into TASK-14.1 (download filter) and TASK-14.2 (purge).** TASK-14 remains the parent holding the design; doc-6 is still the reference for both.
+**Split 2026-07-25 into four tasks.** TASK-14 remains the parent holding the design; doc-6 is still the reference.
 
-Reason for the split: the two knobs have completely different risk profiles, and bundling them meant the safe half inherited the dangerous half's gate. Knob 2 (download filter) deletes nothing and touches no OAuth scope, so it is not a STOP item and can land on master normally. Knob 1 (purge) keeps the full STOP weight — human sign-off plus PR.
+Sequence within milestone m-5:
 
-This matters in practice: the user's working model needs `inbox` excluded from download *now*, for a reason independent of purge (inbox = untriaged, so archiving it forces the delete decision twice). Blocking that behind a purge sign-off was accidental coupling.
+| Ordinal | Task | STOP? |
+|---|---|---|
+| 1 | TASK-17 — Gmail history watermark race (standalone data-loss bug) | no |
+| 2 | TASK-18 — includeSpamTrash unreachable (standalone, blocks the filter) | no |
+| 3 | TASK-14.3 — make capture eligibility-driven | no |
+| 4 | TASK-14.1 — the download filter config surface | no |
+| 5 | TASK-14.2 — purge | **yes** |
 
-Discovered while re-reading this task against that model — recorded in full on TASK-14.1: **the existing incremental sync cannot express "filtered out earlier, eligible now."** Gmail API requests only `historyTypes=["messageAdded"]`, and Gmail-over-IMAP watermarks max UID in All Mail where archiving doesn't change the UID — so on both Gmail paths a message skipped for being in the inbox and later archived is never revisited. Plain IMAP is unaffected because a folder move allocates a new UID above the destination's watermark. Must be solved before the filter is trustworthy.
+Two reasons for the shape.
+
+**Risk separation.** The original TASK-14 bundled both knobs, so the safe half inherited the dangerous half's gate. Only purge deletes user email and widens the OAuth scope; everything above it lands on master normally. This mattered in practice — the user's working model needs `inbox` excluded from download now, for a reason independent of purge (inbox = untriaged, so archiving it forces the delete decision twice), and blocking that behind a purge sign-off was accidental coupling.
+
+**The audit changed the size of the work.** doc-6 describes knob 2 as "not new machinery — unify three existing filter sites and expose them in config". That is true of the config surface and false of everything beneath it. A filter is a statement about a message's *current* server state, while watermarks, `messageAdded` and folder-membership snapshots are all statements about *arrival*. Making capture eligibility-driven (TASK-14.3) is the real work; the config surface (TASK-14.1) is the small half that was mistaken for the whole.
+
+TASK-17 and TASK-18 were pulled out as standalone because they are defects in today's code rather than new capability, and they are independently verifiable. TASK-17 loses mail right now; TASK-18 makes one of the filter's intended values unreachable. Both sit directly under the filter, so fixing them first keeps failure modes separable.
+
+Full hole audit — eight findings with file:line — is in TASK-14.1's Implementation Notes.
 <!-- SECTION:NOTES:END -->

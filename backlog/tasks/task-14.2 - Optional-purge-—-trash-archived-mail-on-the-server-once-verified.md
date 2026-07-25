@@ -4,13 +4,14 @@ title: Optional purge — trash archived mail on the server once verified
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:39'
+updated_date: '2026-07-25 05:53'
 labels: []
 milestone: m-5
 dependencies:
   - TASK-14.1
 parent_task_id: TASK-14
 priority: high
-ordinal: 2
+ordinal: 5
 ---
 
 ## Description
