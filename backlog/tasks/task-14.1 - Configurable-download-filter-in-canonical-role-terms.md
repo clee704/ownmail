@@ -4,6 +4,7 @@ title: Configurable download filter in canonical role terms
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:38'
+updated_date: '2026-07-25 05:44'
 labels: []
 milestone: m-5
 dependencies: []
@@ -30,3 +31,25 @@ Candidate fixes: add labelAdded/labelRemoved to historyTypes for Gmail; or recor
 
 Note this is exactly doc-6's 'filter is evaluated live against server state' requirement, which was written for purge-time sweep. It applies to download too, and the current incremental machinery cannot express it.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**2026-07-25 — the gap is broader than the inbox rule, and today's design is only accidentally safe.**
+
+User's scenario: trash a message in the mail client, ownmail runs (trash excluded, not downloaded), then move it out of Trash into Archive because it turned out to be worth keeping. Is it captured?
+
+- **Gmail API: no, missed.** Trashing is `labelAdded TRASH`, restoring is `labelRemoved TRASH`. Neither is `messageAdded`, which is the only history type requested (gmail.py:214). The message is never revisited.
+- **Plain IMAP (mailbox.org): yes, captured.** The Trash→Archive move allocates a new UID in Archive above that folder's watermark. No duplicate results either — archive.py:373 content-hash checks before writing.
+- **Gmail-over-IMAP: captured**, unlike the inbox case. Gmail's IMAP mapping makes All Mail and Trash mutually exclusive, so restoring re-appends to All Mail with a fresh UID above the watermark.
+
+**Why this generalizes.** This is not a second bug next to the inbox one, it is the same root cause with a wider blast radius. Any download filter turns capture into a question of detecting *transitions into eligibility*, and the current incremental machinery only detects *arrival*. On the Gmail API path every transition is invisible: inbox→archive, trash→archive, spam→inbox→archive.
+
+**Why it doesn't bite today.** Trash has always been excluded, so this hole nominally exists now. It is harmless only because inbox *is* downloaded — every message is captured eagerly on arrival, before it can ever reach trash. Excluding inbox removes that safety net and promotes transition-detection from a corner case to the primary capture path. So the inbox filter cannot ship before this is solved.
+
+**Preferred fix (decide before building).** Reject the "record filtered-but-seen IDs as deferred" option as the primary mechanism: it grows without bound, since every trashed message would be re-checked forever. Instead:
+
+- Gmail API: request `labelAdded`/`labelRemoved` alongside `messageAdded`, and treat any history event as producing a *candidate* ID rather than a download.
+- Then re-evaluate each candidate's **current** state against the filter, rather than replaying the event sequence. A message trashed and restored between two runs yields two events but one correct answer. This is doc-6's "filter is evaluated live against server state", which was written for purge-time sweep and turns out to be equally required at download time.
+- Both IMAP paths already satisfy this via UID reallocation and need no change.
+<!-- SECTION:NOTES:END -->
