@@ -43,6 +43,57 @@ separate, smaller idea than a role, for provider labels that record
 client state rather than archive content. TASK-19 decides whether
 `STARRED`, `IMPORTANT` and `CATEGORY_*` belong there too.
 
+## IMAP message flags: ignore all but one
+
+RFC 3501 defines six message flags. ownmail archives none of them today,
+and should keep it that way except for `\Flagged`. A flag earns capture
+only by surviving all four:
+
+| Flag | Stays true? | Derivable? | Consumer? | Verdict |
+|------|-------------|------------|-----------|---------|
+| `\Seen` | no | — | — | ignore (TASK-5.3) |
+| `\Recent` | no | — | — | ignore |
+| `\Answered` | yes | yes | no | ignore |
+| `\Draft` | yes | yes | no | ignore |
+| `\Deleted` | no | — | no | ignore |
+| keywords | yes | partly | no | ignore |
+| `\Flagged` | yes | **no** | yes | **capture** |
+
+- **Stays true** — `\Seen` decays (nothing re-fetches a downloaded
+  message). `\Recent` is session-scoped: it says who connected first, not
+  anything about the message, and IMAP4rev2 (RFC 9051) removed it.
+- **Derivable** — `\Answered` is recoverable from the archive itself: the
+  reply sits in Sent with `In-Reply-To` pointing at the original. `\Draft`
+  the message flag is redundant with the `drafts` role, which resolves at
+  folder level. Same derive-don't-store rule as the roles above.
+- **Consumer** — registry keywords (`$Forwarded`, `$MDNSent`, `$Junk`) are
+  server-dependent and sparsely set, and `$Junk` duplicates the `spam`
+  role.
+- `\Deleted` is listed for completeness. Nothing should *read* it, but
+  whether purge *writes* it — and whether it follows with EXPUNGE — is a
+  live question for TASK-14.2, and a different one.
+
+### Why `\Flagged` is the exception
+
+It is the only flag that is user-curated, leaves no trace anywhere else in
+the message, and is destroyed by purge if not captured. It is also already
+half-implemented: Gmail's `STARRED` label flows through
+`_resolve_label_names` into sidecars today, so "ignore all flags" would
+mean deleting working data rather than declining to add any. Level up
+(read `\Flagged` for IMAP) rather than down.
+
+Note the name collides across two RFCs, at two different levels:
+
+- **RFC 3501** `\Flagged` — a *message* flag. The per-message bit.
+- **RFC 6154** `\Flagged` — a *mailbox* SPECIAL-USE attribute, for a folder
+  presenting all such messages. Gmail's `[Gmail]/Starred` advertises it.
+
+The mailbox attribute is the cheaper path where it exists: the folder scan
+already enumerates SPECIAL-USE, so Gmail-over-IMAP yields star-ness with no
+`FETCH FLAGS` at all. Generic servers with no such folder need the message
+flag. `_SPECIAL_USE` in `roles.py` deliberately omits `\flagged` until
+TASK-19 adds the consumer.
+
 Roles are **derived on demand**, never stored. `roles.py` is a pure
 function over provider state; the sidecar format is unchanged
 (`SIDECAR_VERSION` stays 1) and no DB column is added.

@@ -64,5 +64,6 @@ Adjacent, out of scope, worth filing if pursued: \Answered has no Gmail API coun
 - [ ] #3 rebuild --only sidecars re-applies the current exclude_labels in both directions - removing a label from the config restores it to the index without a server round-trip
 - [ ] #4 _reconcile_label_sidecars compares DB against filter(sidecar), not raw sidecar equality
 - [ ] #5 UNREAD stays dropped at capture via roles.EPHEMERAL_LABELS and is not reachable through exclude_labels
-- [ ] #6 STARRED is handled as a canonical `flagged` role resolving from both Gmail STARRED and IMAP \Flagged, or the decision not to is recorded
+- [ ] #6 STARRED is handled as a canonical `flagged` role resolving from Gmail STARRED, the RFC 6154 \Flagged mailbox attribute, and the RFC 3501 \Flagged message flag
+- [ ] #7 No other IMAP message flag is captured, per the doc-7 four-question test
 <!-- AC:END -->
