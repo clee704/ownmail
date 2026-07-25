@@ -7,15 +7,60 @@ created_date: '2026-07-25 06:57'
 
 ## The rule
 
-> **Once a message is captured, its metadata is frozen. Until it is captured,
-> its eligibility is re-evaluated every run.**
+> **Capture is a transfer of ownership.** Until a message is captured, the
+> server is authoritative and the message's eligibility is re-evaluated every
+> run. After capture, ownmail is authoritative — its labels are the real ones,
+> and it never reads label state from the server again.
 
-ownmail is an archive, not a mirror. It records what the server said when it
-looked, and does not chase changes afterwards.
+ownmail is an archive and a manager, not a mirror. It records what the server
+said at the moment it took ownership, and everything after that is ownmail's.
 
-This has been derived independently three times now — for read/unread
-(TASK-5.3), for IMAP flags (doc-7), and for the download filter (TASK-14.3) —
-so it is written here once, as the thing those all follow from.
+This has been derived independently three times — for read/unread (TASK-5.3),
+for IMAP flags (doc-7), and for the download filter (TASK-14.3) — so it is
+written here once, as the thing those all follow from.
+
+## Ownership transfer
+
+Local label editing is a headline feature, not an afterthought: the "manage"
+half of the product. That is what makes the handoff real rather than a
+bookkeeping convention.
+
+- **Before capture** — the server owns the message. ownmail observes it and
+  re-checks its eligibility on every run.
+- **At capture** — ownership moves. Whatever labels the message carries at that
+  instant are what the archive inherits.
+- **After capture** — ownmail owns it. Labels are edited locally, sidecars are
+  the durable store, and the server's copy of that metadata is no longer
+  consulted.
+
+Purge (TASK-14.2) completes the handoff: the server copy is trashed and reaped
+under the provider's own retention policy, so no second authority survives.
+
+**But purge is optional**, so the enforceable invariant is the narrower one:
+*ownmail never reads label state from the server after capture.* It is not that
+the server copy must not be modified — ownmail cannot enforce that, and a user
+running without purge will reasonably keep using their provider's client. The
+point is that such changes become irrelevant rather than forbidden. With purge
+on, the question disappears entirely.
+
+### Consequences
+
+- **Following server changes post-capture would be a bug, not a feature.** It
+  would let a non-authoritative source overwrite the authoritative one. This is
+  why capture-once is a correctness requirement and not merely cheap.
+- **`update-labels` is at odds with the model.** Re-snapshotting from the server
+  overwrites ownmail's own labels. Its defensible scope is a one-time backfill
+  for archives captured before local editing existed. See TASK-20, which also
+  documents that it currently destroys data.
+- **Capture timing must match the handoff.** Ownership may only transfer at a
+  point where the user is done with the message in their mail client. Eager
+  inbox capture — what ownmail does today — hands over mail the user is still
+  actively working in, which is wrong under this model. TASK-14.3 is therefore
+  a precondition for the manage story, not only for purge safety.
+- **`exclude_labels` is an inheritance rule, not censorship.** It says what
+  ownmail adopts at the handoff. With local editing available, a user could
+  instead delete an unwanted label by hand; the knob earns its keep for
+  recurring platform labels across thousands of messages, not for one-offs.
 
 ## Why the two halves are not in conflict
 
@@ -102,9 +147,27 @@ Stated plainly so they are not rediscovered as bugs:
 
 ## What this does not mean
 
-- Not an argument against `update-labels`. Re-snapshotting on demand is fine;
-  what is rejected is sync silently chasing server state.
-- Not a claim that the archive is immutable. Users may edit labels locally —
-  sidecars are the source of truth and are meant to be writable.
-- Not applicable to the `.eml` files. Message content never changes; only
-  metadata about it does.
+- **Not a claim that the archive is immutable.** The opposite: after capture the
+  archive is the *only* thing that should change. Sidecars are the source of
+  truth and are meant to be written to.
+- **Not applicable to the `.eml` files.** Message content never changes; only
+  metadata about it does. Local editing covers labels, not messages.
+- **Not a restriction on the user's provider account.** They may keep labelling
+  in Gmail. ownmail simply stops looking.
+
+## Status
+
+The ownership model is not fully realised yet. What exists and what does not:
+
+- **Exists** — local trash / restore / delete-forever (`web.py:1912-1958`,
+  backed by the archive's own trash dir). ownmail already owns *deletion* of
+  archived mail.
+- **Missing** — local label editing. There is no route, no helper, no UI.
+  TASK-5.4.
+- **Missing** — capture at the handoff point rather than at arrival. TASK-14.3.
+- **Missing** — purge, which completes the transfer. TASK-14.2.
+
+Until TASK-14.3 lands, the corollary users would otherwise be given — organise
+before archiving, because the labels a message carries when it leaves the inbox
+are the ones it keeps — is not yet true, and should not be documented as if it
+were.

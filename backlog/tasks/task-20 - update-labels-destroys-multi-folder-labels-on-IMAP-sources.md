@@ -4,7 +4,7 @@ title: update-labels destroys multi-folder labels on IMAP sources
 status: To Do
 assignee: []
 created_date: '2026-07-25 06:49'
-updated_date: '2026-07-25 06:50'
+updated_date: '2026-07-25 07:04'
 labels: []
 dependencies: []
 priority: high
@@ -53,3 +53,14 @@ For IMAP, either connect and re-scan folder membership properly, or delete the o
 - [ ] #3 A message whose labels were all removed on the server has them cleared locally rather than kept stale
 - [ ] #4 Regression test covers a message in two IMAP folders surviving update-labels intact
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-25 07:04
+---
+doc-8's ownership-transfer model raises the stakes here. Once local label editing lands (TASK-5.4), ownmail's labels are authoritative after capture — so update-labels re-snapshotting from the server does not merely lose multi-folder membership, it overwrites the user's own edits with a view ownmail no longer defers to.
+
+That changes the fix direction. The question is not only 'make update-labels correct' but 'what is this command still for'. Defensible remaining scope: a one-time backfill for archives captured before sidecars/local editing existed. Ongoing re-snapshotting is at odds with the model.
+---
+<!-- COMMENTS:END -->
