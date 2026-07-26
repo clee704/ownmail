@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from ownmail import roles
 from ownmail.query import parse_query
 
 
@@ -506,6 +507,59 @@ class ArchiveDatabase:
             ).fetchall()
             return [row[0] for row in rows]
 
+    def get_label_counts(self) -> dict[str, int]:
+        """Count searchable emails per label, for the sidebar.
+
+        A count promises exactly one thing: how many results clicking that
+        label produces. So it applies the same implicit filters search() does
+        — no trashed emails, no emails without a parsed date.
+
+        Done in two statements rather than the obvious join, because this runs
+        on every page render. The first is a covering-index scan (email_date is
+        denormalized into email_labels, so no table access at all); the second
+        corrects for local trash, driven by the small set of trashed rowids
+        probing the email_labels primary key. Same answer, ~14x faster on a
+        100k-email archive — see doc-9 for the measurements.
+
+        Returns:
+            Mapping of label to count, excluding labels with no searchable email
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            counts = dict(
+                conn.execute(
+                    """SELECT label, COUNT(*) FROM email_labels
+                       WHERE email_date IS NOT NULL
+                       GROUP BY label"""
+                ).fetchall()
+            )
+            trashed = conn.execute(
+                """SELECT label, COUNT(*) FROM email_labels
+                   WHERE email_date IS NOT NULL
+                     AND email_rowid IN (SELECT rowid FROM emails WHERE trashed_at IS NOT NULL)
+                   GROUP BY label"""
+            ).fetchall()
+
+        for label, count in trashed:
+            counts[label] -= count
+        return {label: count for label, count in counts.items() if count > 0}
+
+    def get_labels_for_role(self, role: str) -> list[str]:
+        """Every label in this archive that resolves to a canonical role.
+
+        Roles are derived, not stored (doc-7), so the archive's distinct
+        labels are run through the name table on demand. Returns the raw
+        strings, which is what email_labels holds.
+
+        Args:
+            role: Canonical role slug, e.g. 'sent'
+
+        Returns:
+            Matching raw label strings, in no particular order
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute("SELECT DISTINCT label FROM email_labels").fetchall()
+        return [label for (label,) in rows if roles.role_for_label(label) == role]
+
     # -------------------------------------------------------------------------
     # Trash operations
     # -------------------------------------------------------------------------
@@ -856,6 +910,10 @@ class ArchiveDatabase:
             not_recipient_email_filter = None
             label_filter = None
             not_label_filter = None
+            # Lists, not single values: two role terms in one query mean "carries
+            # both", and a single variable would silently drop all but the last.
+            role_filters = []
+            not_role_filters = []
             param_idx = 0
 
             for clause in parsed.where_clauses:
@@ -874,6 +932,12 @@ class ArchiveDatabase:
                 elif clause == "__NOT_LABEL__":
                     # This is a negated label filter - needs NOT EXISTS
                     not_label_filter = parsed.params[param_idx]
+                    param_idx += 1
+                elif clause == "__ROLE__":
+                    role_filters.append(parsed.params[param_idx])
+                    param_idx += 1
+                elif clause == "__NOT_ROLE__":
+                    not_role_filters.append(parsed.params[param_idx])
                     param_idx += 1
                 else:
                     where_clauses.append(clause)
@@ -903,6 +967,41 @@ class ArchiveDatabase:
                     )
                 """)
                 params.append(not_label_filter)
+
+            # Role filters match a set of labels (every provider spelling of the
+            # role), so they use EXISTS rather than a JOIN: an email carrying
+            # both 'SENT' and '[Gmail]/Sent Mail' would join twice and appear
+            # twice. Matching is exact, not NOCASE — the labels came straight
+            # out of email_labels.
+            for role in role_filters:
+                role_labels = self.get_labels_for_role(role)
+                if not role_labels:
+                    # No label in this archive resolves to the role, so nothing
+                    # can match. Skip the query rather than build an empty IN.
+                    return []
+                placeholders = ",".join("?" for _ in role_labels)
+                where_clauses.append(f"""
+                    EXISTS (
+                        SELECT 1 FROM email_labels el_role
+                        WHERE el_role.email_rowid = e.rowid
+                          AND el_role.label IN ({placeholders})
+                    )
+                """)
+                params.extend(role_labels)
+
+            for role in not_role_filters:
+                role_labels = self.get_labels_for_role(role)
+                if not role_labels:
+                    continue  # Nothing to exclude when the role resolves to nothing
+                placeholders = ",".join("?" for _ in role_labels)
+                where_clauses.append(f"""
+                    NOT EXISTS (
+                        SELECT 1 FROM email_labels el_not_role
+                        WHERE el_not_role.email_rowid = e.rowid
+                          AND el_not_role.label IN ({placeholders})
+                    )
+                """)
+                params.extend(role_labels)
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 

@@ -944,6 +944,155 @@ class TestSearchLabelSorting:
         assert page2[0][2] == "Older invoice"
 
 
+class TestRoleFilter:
+    """Tests for the role: filter, which unions every spelling of a role."""
+
+    DATE = "2024-03-01T10:00:00+00:00"
+
+    def _db(self, temp_dir, rows):
+        """Build a database from (provider_id, subject, labels) rows."""
+        db = ArchiveDatabase(temp_dir)
+        for provider_id, subject, labels in rows:
+            email_id = _eid(provider_id)
+            db.mark_downloaded(email_id, provider_id, f"{provider_id}.eml", email_date=self.DATE)
+            db.index_email(
+                email_id=email_id,
+                subject=subject,
+                sender="alice@example.com",
+                recipients="user@example.com",
+                date_str=self.DATE,
+                body="message body",
+                attachments="",
+                labels=labels,
+            )
+        return db
+
+    # Two providers spelling 'sent' differently, and one message carrying both.
+    ROWS = [
+        ("m1", "From the API", "SENT"),
+        ("m2", "From IMAP", "[Gmail]/Sent Mail"),
+        ("m3", "Both spellings", "SENT,[Gmail]/Sent Mail"),
+        ("m4", "Inbox only", "INBOX"),
+        ("m5", "Dovecot trash", "INBOX.Trash"),
+        ("m6", "User label", "Receipts"),
+    ]
+
+    def _subjects(self, db, query, **kwargs):
+        return sorted(row[2] for row in db.search(query, **kwargs))
+
+    def test_role_unions_provider_spellings(self, temp_dir):
+        """role:sent finds mail from both providers; label: only finds one spelling."""
+        db = self._db(temp_dir, self.ROWS)
+        assert self._subjects(db, "role:sent") == ["Both spellings", "From IMAP", "From the API"]
+        assert self._subjects(db, "label:SENT") == ["Both spellings", "From the API"]
+
+    def test_message_with_two_matching_labels_appears_once(self, temp_dir):
+        """EXISTS, not a JOIN — otherwise m3 would come back twice."""
+        db = self._db(temp_dir, self.ROWS)
+        assert [row[2] for row in db.search("role:sent")].count("Both spellings") == 1
+
+    def test_role_resolves_names_no_provider_shares(self, temp_dir):
+        """A Dovecot-style INBOX.Trash resolves through the leaf-name table."""
+        db = self._db(temp_dir, self.ROWS)
+        assert self._subjects(db, "role:trash") == ["Dovecot trash"]
+
+    def test_role_with_no_labels_in_archive_matches_nothing(self, temp_dir):
+        """Nothing resolves to drafts here, so the result is empty, not everything."""
+        db = self._db(temp_dir, self.ROWS)
+        assert db.search("role:drafts") == []
+
+    def test_role_combines_with_fts_terms(self, temp_dir):
+        """The role clause has to survive the FTS code path too."""
+        db = self._db(temp_dir, self.ROWS)
+        assert self._subjects(db, "body role:sent") == ["Both spellings", "From IMAP", "From the API"]
+        assert db.search("body role:drafts") == []
+
+    def test_negated_role_excludes_every_spelling(self, temp_dir):
+        """-role:sent must drop the IMAP spelling as well as the API one."""
+        db = self._db(temp_dir, self.ROWS)
+        assert self._subjects(db, "-role:sent") == ["Dovecot trash", "Inbox only", "User label"]
+
+    def test_negated_role_with_no_labels_excludes_nothing(self, temp_dir):
+        """Excluding a role the archive doesn't have must not filter everything out."""
+        db = self._db(temp_dir, self.ROWS)
+        assert len(db.search("-role:drafts")) == len(self.ROWS)
+
+    def test_two_roles_mean_carries_both(self, temp_dir):
+        """Neither term may be dropped: nothing here is both sent and inbox."""
+        db = self._db(temp_dir, self.ROWS)
+        assert db.search("role:sent role:inbox") == []
+        db2 = self._db(temp_dir / "two", [("m7", "Sent and inboxed", "SENT,INBOX")])
+        assert self._subjects(db2, "role:sent role:inbox") == ["Sent and inboxed"]
+
+    def test_unknown_role_matches_nothing(self, temp_dir):
+        """The parser rejects it; search must not fall through to matching all."""
+        db = self._db(temp_dir, self.ROWS)
+        assert db.search("role:starred") == []
+
+    def test_get_labels_for_role(self, temp_dir):
+        """Raw strings come back, since that's what email_labels holds."""
+        db = self._db(temp_dir, self.ROWS)
+        assert sorted(db.get_labels_for_role("sent")) == ["SENT", "[Gmail]/Sent Mail"]
+        assert db.get_labels_for_role("drafts") == []
+
+
+class TestLabelCounts:
+    """Tests for get_label_counts, which must agree with what search returns."""
+
+    def _db(self, temp_dir):
+        db = ArchiveDatabase(temp_dir)
+        rows = [
+            ("m1", "Kept", "2024-03-01T10:00:00+00:00", "Work,INBOX"),
+            ("m2", "Also kept", "2024-04-01T10:00:00+00:00", "Work"),
+            ("m3", "Trashed later", "2024-05-01T10:00:00+00:00", "Work,Receipts"),
+            ("m4", "No parsed date", None, "Work,Undated"),
+        ]
+        for provider_id, subject, date, labels in rows:
+            email_id = _eid(provider_id)
+            db.mark_downloaded(email_id, provider_id, f"{provider_id}.eml", email_date=date)
+            db.index_email(
+                email_id=email_id,
+                subject=subject,
+                sender="alice@example.com",
+                recipients="user@example.com",
+                date_str=date or "",
+                body="body",
+                attachments="",
+                labels=labels,
+            )
+        db.trash_email(_eid("m3"), "trash/m3.eml")
+        return db
+
+    def test_counts_match_what_clicking_the_label_returns(self, temp_dir):
+        """The count is a promise about result rows, so both exclusions apply."""
+        db = self._db(temp_dir)
+        counts = db.get_label_counts()
+        assert counts["Work"] == 2  # m1 and m2; m3 is trashed, m4 has no date
+        assert len(db.search("label:Work")) == counts["Work"]
+
+    def test_label_only_on_trashed_mail_disappears(self, temp_dir):
+        """Receipts is m3's alone, and m3 is in the trash."""
+        db = self._db(temp_dir)
+        assert "Receipts" not in db.get_label_counts()
+
+    def test_label_only_on_undated_mail_disappears(self, temp_dir):
+        """search() hides emails without a parsed date, so the sidebar must too."""
+        db = self._db(temp_dir)
+        assert "Undated" not in db.get_label_counts()
+
+    def test_restoring_from_trash_restores_the_count(self, temp_dir):
+        """Counts are derived, not cached, so a restore is visible immediately."""
+        db = self._db(temp_dir)
+        db.restore_email(_eid("m3"))
+        counts = db.get_label_counts()
+        assert counts["Work"] == 3
+        assert counts["Receipts"] == 1
+
+    def test_empty_archive_has_no_labels(self, temp_dir):
+        """No labels, no sidebar section — and no crash on the subtraction."""
+        assert ArchiveDatabase(temp_dir).get_label_counts() == {}
+
+
 class TestSeparateDbDir:
     """Tests for keeping the database outside the archive directory."""
 

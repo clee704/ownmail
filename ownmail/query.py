@@ -14,6 +14,7 @@ Supported syntax:
     subject:meeting             Subject field search (FTS)
     label:inbox                 Label/folder filter
     label:"[Gmail]/All Mail"    Label with spaces/special chars
+    role:sent                   Canonical system-label role, any provider spelling
     has:attachment              Emails with attachments
     before:2024-06-01           Date filter
     after:2024-01-01            Date filter
@@ -80,6 +81,27 @@ class ParsedQuery:
 
 # FTS5 special characters that need quoting
 FTS5_SPECIAL_CHARS = set('.@-+*"():^')
+
+# Recognized field:value prefixes. A segment with any other prefix is treated
+# as a plain word, so this set is what makes `role:sent` a filter rather than
+# an FTS term.
+KNOWN_FILTERS = frozenset(
+    {
+        "from",
+        "sender",
+        "to",
+        "recipients",
+        "subject",
+        "label",
+        "tag",
+        "role",
+        "before",
+        "after",
+        "has",
+        "attachment",
+        "attachments",
+    }
+)
 
 # Date pattern: YYYY-MM-DD or YYYYMMDD
 DATE_PATTERN = re.compile(r"^(\d{4})-?(\d{2})-?(\d{2})$")
@@ -158,23 +180,7 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                     field_name = word[:colon_pos].lower()
                     field_value = word[colon_pos + 1 :]
 
-                    # Check if it's a known filter field
-                    known_filters = {
-                        "from",
-                        "sender",
-                        "to",
-                        "recipients",
-                        "subject",
-                        "label",
-                        "tag",
-                        "before",
-                        "after",
-                        "has",
-                        "attachment",
-                        "attachments",
-                    }
-
-                    if field_name in known_filters:
+                    if field_name in KNOWN_FILTERS:
                         # Support quoted filter values: -label:"[Gmail]/All Mail"
                         if not field_value and j < len(query) and query[j] == '"':
                             end = query.find('"', j + 1)
@@ -237,23 +243,7 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
             field_name = segment[:colon_pos].lower()
             field_value = segment[colon_pos + 1 :]
 
-            # Validate known filter fields
-            known_filters = {
-                "from",
-                "sender",
-                "to",
-                "recipients",
-                "subject",
-                "label",
-                "tag",
-                "before",
-                "after",
-                "has",
-                "attachment",
-                "attachments",
-            }
-
-            if field_name in known_filters:
+            if field_name in KNOWN_FILTERS:
                 # Support quoted filter values: label:"[Gmail]/All Mail"
                 if not field_value and j < len(query) and query[j] == '"':
                     end = query.find('"', j + 1)
@@ -510,6 +500,21 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                 else:
                     where_clauses.append("__LABEL__")
                 params.append(value)  # Preserve original case for labels like Imported/user@example.com
+
+            elif field == "role":
+                # A role covers every provider spelling of one concept, so it
+                # resolves to a *set* of labels. Which labels depends on what
+                # this archive holds, so database.search does the resolving —
+                # see doc-9. Slugs are lower-case by definition in roles.py.
+                slug = value.lower()
+                if slug not in roles.ROLES:
+                    valid = ", ".join(sorted(roles.ROLES))
+                    return ParsedQuery(error=f"Unknown role '{value}'. Valid roles: {valid}")
+                if negated:
+                    where_clauses.append("__NOT_ROLE__")
+                else:
+                    where_clauses.append("__ROLE__")
+                params.append(slug)
 
             elif field == "before":
                 normalized = _normalize_date(value)

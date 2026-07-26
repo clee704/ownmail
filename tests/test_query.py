@@ -388,6 +388,41 @@ class TestParseQuery:
         assert "__LABEL__" in result.where_clauses
         assert "Unread" in result.params
 
+    def test_role_filter(self):
+        """role: defers resolution to the DB, which knows this archive's labels."""
+        result = parse_query("role:sent")
+        assert result.error is None
+        assert "__ROLE__" in result.where_clauses
+        assert result.params == ["sent"]
+
+    def test_role_slug_is_case_insensitive(self):
+        """Role slugs are a closed lower-case set, so casing is the user's business."""
+        result = parse_query("role:SENT")
+        assert result.error is None
+        assert result.params == ["sent"]
+
+    def test_negated_role_filter(self):
+        """-role:spam has to be handled, not silently ignored."""
+        result = parse_query("-role:spam")
+        assert result.error is None
+        assert "__NOT_ROLE__" in result.where_clauses
+        assert result.params == ["spam"]
+
+    def test_unknown_role_is_an_error_listing_the_valid_ones(self):
+        """An empty result set would read as 'archive has no sent mail'."""
+        result = parse_query("role:starred")
+        assert result.error is not None
+        assert "starred" in result.error
+        assert "sent" in result.error  # lists the valid slugs
+        assert result.where_clauses == []
+
+    def test_two_roles_both_survive(self):
+        """Each role term must produce its own marker, not overwrite the last."""
+        result = parse_query("role:inbox role:sent")
+        assert result.error is None
+        assert result.where_clauses == ["__ROLE__", "__ROLE__"]
+        assert result.params == ["inbox", "sent"]
+
     def test_before_filter(self):
         """Test before: filter becomes SQL WHERE."""
         result = parse_query("before:2024-06-01")
