@@ -44,6 +44,16 @@ Related but distinct from TASK-5.2, which covers canonical naming/display of pro
 <!-- SECTION:NOTES:BEGIN -->
 Dissolved into TASK-14 rather than implemented separately.
 
+## Answer changed, 2026-07-26
+
+doc-6 closed this by making it a config choice: trash in the download filter meant deletions were captured, out meant they were not. That is no longer the resolution. TASK-14.1 now fixes trash as permanently excluded, so this task's question gets a direct answer rather than a knob:
+
+**Client-side deletions do not reach the archive.** 'Delete' means 'I do not want this', which was this task's first option all along.
+
+The deciding argument is structural rather than philosophical: purge moves a message to server Trash, so a download filter that admits trash never lets a purged message leave the purge sweep set, and the sweep cannot converge. Full reasoning in TASK-14.1 under WHY TRASH IS FIXED RATHER THAN CONFIGURABLE.
+
+This routes to AC #3, not AC #2: the permanent-loss window must be documented so it is a known choice. Anyone whose 'delete' means 'file it away' has a capture gap, and config.example.yaml has to say so. Both ACs stay unticked — TASK-14.1 owns the work.
+
 The question 'should client-side deletions reach the archive?' was filed as a code decision. Under TASK-14's two-knob design (optional purge + configurable download filter) it stops being one: it is simply whether 'trash' appears in the configured download filter. Excluded (the default) means deletions stay deleted and never enter the archive; removed from the filter means Trash is downloaded and deletions are captured within the provider's retention window.
 
 No behaviour was decided away - the choice is now a documented config knob rather than a hardcoded query string, which is what the original task was asking for. TASK-14 AC #8 covers the default value and AC #12 covers documenting it.

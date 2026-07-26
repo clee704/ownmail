@@ -111,6 +111,16 @@ either the user opted into downloading it (doc-7's `exclude_folders`
 override) or the archive predates role-based exclusion and `verify`
 reports it as pollution.
 
+> **Corrected 2026-07-26.** The first of those two cases no longer exists.
+> TASK-14.1 fixes trash and spam as permanently excluded — not
+> configurable — after finding that a download filter admitting trash
+> stops purge's sweep from ever converging, since purge's own action is to
+> move a message *to* trash. So only the pollution case remains, which
+> makes "Trash (server)" a **transitional** entry rather than a permanent
+> one: it means TASK-25 reconcile has not been run against this archive,
+> and it disappears for good once it has. The entry and its name stand as
+> specified; what changes is that a healthy archive never shows it.
+
 **Empty roles don't render at all.** A healthy archive excludes trash and
 spam at sync time, so those entries are normally absent.
 

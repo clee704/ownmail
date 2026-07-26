@@ -20,7 +20,9 @@ A standing capability, not a migration. Two consumers, both concrete:
 
 1. **The historical exclusion bug.** Before role-based exclusion (doc-7), folders were excluded by literal name against a Gmail-only list (DEFAULT_EXCLUDE_FOLDERS = ['[Gmail]/Trash', '[Gmail]/Spam']). On a server naming its trash anything else, that folder was both a download source and a label source, so mail deleted in a client got archived as normal mail, carrying a trash-role label and — where that folder was its only source — nothing else. Fixed for future syncs; still on disk for archives synced before the fix.
 
-2. **Any narrowing filter edit, forever after.** TASK-14.1 makes the filter user-editable, so this recurs by design. Someone who downloaded trash to catch client-side deletions and later stops wanting it is in exactly the state above, with no bug involved.
+2. **Any narrowing filter edit, forever after.** TASK-14.1 makes part of the filter user-editable, so this recurs by design. Someone who ran with inbox in the download set — wanting an eager mirror — and later switches to capture-at-filing is in exactly the state above, with no bug involved. Same for a named folder or label they stop wanting.
+
+Note the configurable part is inbox, drafts and named folders/labels only. TASK-14.1 fixes trash and spam as permanently excluded, so consumer 2 never involves them.
 
 ## Shape
 
