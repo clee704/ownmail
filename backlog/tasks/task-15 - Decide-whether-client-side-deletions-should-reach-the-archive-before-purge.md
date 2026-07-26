@@ -52,7 +52,9 @@ doc-6 closed this by making it a config choice: trash in the download filter mea
 
 The deciding argument is structural rather than philosophical: purge moves a message to server Trash, so a download filter that admits trash never lets a purged message leave the purge sweep set, and the sweep cannot converge. Full reasoning in TASK-14.1 under WHY TRASH IS FIXED RATHER THAN CONFIGURABLE.
 
-This routes to AC #3, not AC #2: the permanent-loss window must be documented so it is a known choice. Anyone whose 'delete' means 'file it away' has a capture gap, and config.example.yaml has to say so. Both ACs stay unticked — TASK-14.1 owns the work.
+This routes to AC #3, not AC #2: the loss window must be documented so it is a known choice. Both ACs stay unticked — TASK-14.1 owns the work.
+
+Scope of that gap, corrected same day: it is narrower than 'anyone whose delete means file-it-away'. If a client's delete moves mail to an ORDINARY folder, ownmail downloads it by default like any other folder, and excluding it is a normal named exclusion — the general mechanism already covers that workflow. The gap applies only to the provider's designated discard location, which is the one place where 'I put it here' means 'destroy this'. So what config.example.yaml has to say is specific: mail you delete into Trash is never archived, and if you want it kept, delete it into a folder instead.
 
 The question 'should client-side deletions reach the archive?' was filed as a code decision. Under TASK-14's two-knob design (optional purge + configurable download filter) it stops being one: it is simply whether 'trash' appears in the configured download filter. Excluded (the default) means deletions stay deleted and never enter the archive; removed from the filter means Trash is downloaded and deletions are captured within the provider's retention window.
 
