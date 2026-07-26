@@ -17,7 +17,7 @@ ordinal: 7
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-ownmail documents 'run ruff check && pytest' in CONTRIBUTING.md but has no automated enforcement (no .pre-commit-config.yaml, no .github/workflows/ci.yml) — meeple wires the equivalent checks into pre-commit + CI so agents can't forget to run them. Add a .pre-commit-config.yaml (ruff check, ruff format --check, pytest + coverage gate; consider deptry for unused deps) and a GitHub Actions workflow running the same checks on push/PR. Skip vulture/import-linter — those answer meeple's plugin/seam architecture, which ownmail doesn't have.
+ownmail documents 'run ruff check && pytest' in CONTRIBUTING.md but has no automated enforcement (no .pre-commit-config.yaml, no .github/workflows/ci.yml) — wiring the equivalent checks into pre-commit + CI is what stops agents forgetting to run them. Add a .pre-commit-config.yaml (ruff check, ruff format --check, pytest + coverage gate; consider deptry for unused deps) and a GitHub Actions workflow running the same checks on push/PR. Skip vulture/import-linter — those answer a plugin/seam architecture ownmail doesn't have.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

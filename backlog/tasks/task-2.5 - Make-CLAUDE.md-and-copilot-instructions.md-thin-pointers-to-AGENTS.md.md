@@ -17,7 +17,7 @@ ordinal: 8
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Once AGENTS.md exists (TASK-2.1), add a CLAUDE.md at repo root that imports it (meeple's pattern: a CLAUDE.md containing just '@AGENTS.md' plus a one-line note on why), and rewrite .github/copilot-instructions.md to point at AGENTS.md instead of duplicating its content, so every AI tool (Claude Code, Copilot, Codex, etc.) reads the same operating contract from one source.
+Once AGENTS.md exists (TASK-2.1), add a CLAUDE.md at repo root that imports it (a CLAUDE.md containing just '@AGENTS.md' plus a one-line note on why), and rewrite .github/copilot-instructions.md to point at AGENTS.md instead of duplicating its content, so every AI tool (Claude Code, Copilot, Codex, etc.) reads the same operating contract from one source.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
