@@ -38,9 +38,44 @@ ACTIVE FETCH MUST NOT BE CAPTURE. If 'download it to show it' is implemented as 
 - **Active messages are never purged.** They are not captured, and purge acts only on captured mail.
 - **The active-to-archived transition IS capture**, with labels freezing at that instant. No new concept needed.
 
+## Settled 2026-07-26: opt-in, per source
+
+Default OFF. This changes what ownmail downloads, costs bandwidth and local storage, and doc-6's model does not assume it. Per-source, consistent with exclude_folders and with TASK-14.1's filter.
+
+Opting in transfers the cadence obligation to the operator: if you want a live view you keep ownmail running often enough that it is one. That is a fair trade and it removes staleness as a blocker.
+
+**But opt-in does not remove staleness as a REQUIREMENT.** Choosing the feature is not the same as knowing it is currently working. A dead cron, a sleeping laptop or a dropped network all produce a stale view that still looks authoritative, and the user has no way to tell. So the freshness signal is not optional polish — it is what makes opt-in a fair deal rather than a trap. Show the age of the active view wherever active messages appear.
+
+## Cadence, and what it actually costs
+
+Per-minute is plausible but the constraint is not where it first appears. ownmail is a CLI with no daemon, so every run pays process startup, connection and auth.
+
+- Gmail API: history.list since the watermark is one cheap call, usually empty. Per-minute is not a quota concern.
+- IMAP: per-minute means ~1440 logins/day per source. Some providers throttle frequent connections. 3-5 minutes is the safer default to document.
+
+TWO CADENCES ARE PROBABLY THE ANSWER, and it falls out of the two purposes being different sizes:
+
+- Refreshing the ACTIVE VIEW needs current membership of the excluded-role folders — effectively SELECT INBOX plus SEARCH. Bounded by inbox size, so it is cheap enough to run every minute.
+- CAPTURE eligibility needs TASK-14.3's candidate set, (All Mail) minus (already archived), which enumerates All Mail. On a large mailbox that is tens of thousands of UIDs per run and is not something to do every minute.
+
+So a frequent cheap active refresh plus a normal-frequency capture pass, rather than one loop doing both. Recorded as the likely shape, not a requirement — if the full pass turns out cheap enough at the target cadence, one loop is simpler and wins.
+
+## Surfacing it in the UI
+
+Active messages appear in normal search results by DEFAULT. Keeping them in a separate view would recreate the two-places problem this task exists to remove. They just need to be distinguishable.
+
+Four touch points, following patterns the UI already has:
+
+1. **A search term.** doc-9 established that every sidebar entry is a link to a search, so an Active entry requires one. KNOWN_FILTERS (query.py:88) has no `is` today, so this adds one: `is:active` / `is:archived`. Same shape as `role:` — parser stays pure and emits a marker, database.search resolves it. Unknown values are a parse error listing the valid ones, per TASK-23 and doc-9.
+2. **A sidebar entry**, pointing at `is:active`, with a count. Only rendered when the feature is on.
+3. **A subtle per-row treatment** in the list — muted text or a left border, NOT a chip. doc-9 kept chips out of the list view on purpose because they crowd a scan-and-pick surface, and that reasoning holds here.
+4. **A detail-view banner**, which is where the read-only rule needs explaining, because the detail view is where a user would try to act on the message. This is also the natural place for the freshness line.
+
+OPEN: whether existing counts absorb active messages or split. 'All Mail — 32k' silently changing meaning when the feature is switched on is a small surprise worth deciding deliberately.
+
 ## Open questions, in the order they matter
 
-1. **Freshness, and the trap.** The value proposition requires the active view to be current. A stale one is WORSE than none: today a user knows ownmail is archive-only, but a six-hour-old inbox looks authoritative and is not. ownmail has no scheduler (doc-6 rejected the daemon), so this needs an answer — frequent cron, prominent sync age, or refusing to render active data past some staleness. Decide before building, not after.
+1. ~~Freshness~~ — settled above: opt-in per source, operator owns cadence, freshness signal mandatory. Still open within it: whether ownmail should refuse to render active data past some staleness threshold, or only ever show the age and let the user judge. Prefer showing the age; a hard cutoff invents a policy the operator did not ask for.
 2. **Bodies or headers?** Index-only (headers plus snippet) avoids downloading and then deleting mail the user discards, and is the cheap first cut. Full bodies give offline reading of active mail, at the cost of churn on a busy inbox. Recommend index-only first.
 3. **Read-only means triage still happens in the client**, so the goal is 'one place to READ and SEARCH', not 'one place to work'. Acting on active mail from ownmail would need write scopes and would make ownmail a mail client — out of scope, and a STOP item.
 4. **Schema.** A message class is new state. STOP item; needs sign-off before implementation.
@@ -60,4 +95,7 @@ DEPENDS ON TASK-14.3, which produces the candidate set this renders. Building it
 - [ ] #4 Active messages cannot be label-edited in ownmail
 - [ ] #5 Active data lives outside the archive directory and its removal never touches archive content
 - [ ] #6 The age of the active view is visible wherever active messages are shown
+- [ ] #7 The feature is off by default and enabled per source
+- [ ] #8 is:active / is:archived parse, with an unknown value producing a parse error rather than an empty result
+- [ ] #9 Active messages appear in ordinary search results, visually distinguishable without a chip in the list view
 <!-- AC:END -->
