@@ -543,12 +543,26 @@ class ArchiveDatabase:
             counts[label] -= count
         return {label: count for label, count in counts.items() if count > 0}
 
+    @staticmethod
+    def _label_role_map(conn: sqlite3.Connection) -> dict[str, str]:
+        """Map this archive's labels to canonical roles, dropping the roleless.
+
+        Roles are derived, not stored (doc-7), so the distinct labels get run
+        through the name table on demand. Which means improving that table
+        retroactively fixes every archive with no re-sync.
+        """
+        rows = conn.execute("SELECT DISTINCT label FROM email_labels").fetchall()
+        resolved = {}
+        for (label,) in rows:
+            role = roles.role_for_label(label)
+            if role:
+                resolved[label] = role
+        return resolved
+
     def get_labels_for_role(self, role: str) -> list[str]:
         """Every label in this archive that resolves to a canonical role.
 
-        Roles are derived, not stored (doc-7), so the archive's distinct
-        labels are run through the name table on demand. Returns the raw
-        strings, which is what email_labels holds.
+        Returns the raw strings, which is what email_labels holds.
 
         Args:
             role: Canonical role slug, e.g. 'sent'
@@ -557,8 +571,41 @@ class ArchiveDatabase:
             Matching raw label strings, in no particular order
         """
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute("SELECT DISTINCT label FROM email_labels").fetchall()
-        return [label for (label,) in rows if roles.role_for_label(label) == role]
+            return [label for label, r in self._label_role_map(conn).items() if r == role]
+
+    def get_role_counts(self) -> dict[str, int]:
+        """Count searchable emails per canonical role, for the sidebar.
+
+        Not derivable from get_label_counts by summing: an email carrying both
+        'SENT' and '[Gmail]/Sent Mail' is one sent email, not two. Hence
+        COUNT(DISTINCT email_rowid) over the labels that share a role.
+
+        The label-to-role map can't be computed in SQL, so it is resolved in
+        Python and joined back in as an inline VALUES table. That keeps it to
+        one query — about 10ms on a 100k-email archive.
+
+        Returns:
+            Mapping of role slug to count, omitting roles with no searchable email
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            role_map = self._label_role_map(conn)
+            if not role_map:
+                return {}
+            values = ",".join("(?,?)" for _ in role_map)
+            pairs = [value for item in role_map.items() for value in item]
+            rows = conn.execute(
+                f"""
+                WITH role_map(label, role) AS (VALUES {values})
+                SELECT rm.role, COUNT(DISTINCT el.email_rowid)
+                FROM email_labels el
+                JOIN role_map rm ON rm.label = el.label
+                WHERE el.email_date IS NOT NULL
+                  AND el.email_rowid NOT IN (SELECT rowid FROM emails WHERE trashed_at IS NOT NULL)
+                GROUP BY rm.role
+                """,
+                pairs,
+            ).fetchall()
+        return {role: count for role, count in rows if count > 0}
 
     # -------------------------------------------------------------------------
     # Trash operations

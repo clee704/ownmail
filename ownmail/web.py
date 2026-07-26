@@ -6,16 +6,19 @@ import email.header
 import html
 import os
 import re
+import sqlite3
 import threading
 import time
 import webbrowser
 from datetime import datetime
 from email.policy import default as email_policy
 from email.utils import parsedate_to_datetime
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, g, redirect, render_template, request, send_file
 
+from ownmail import roles
 from ownmail.archive import EmailArchive
 from ownmail.parser import EmailParser
 from ownmail.query import parse_query
@@ -1075,6 +1078,123 @@ def parse_recipients(recipients_str: str) -> list:
     return result
 
 
+# One display name per canonical role, so a system label reads the same
+# wherever it came from. TRASH says "(server)" because ownmail already has a
+# Trash — the local bin at /trash, where web-UI deletions go. The two are
+# unrelated. See doc-9.
+_ROLE_NAMES = {
+    roles.INBOX: "Inbox",
+    roles.SENT: "Sent",
+    roles.DRAFTS: "Drafts",
+    roles.ARCHIVE: "Archive",
+    roles.ALL: "All Mail",
+    roles.SPAM: "Spam",
+    roles.TRASH: "Trash (server)",
+}
+
+# Roles the sidebar offers, in reading order, with their icons.
+#
+# roles.ALL is deliberately absent. '[Gmail]/All Mail' sits on nearly every
+# message of a Gmail-over-IMAP archive, so the entry would duplicate the
+# "All Mail" nav item above it with a near-identical count. The raw label stays
+# searchable, and a message that carries it still says so in the detail view.
+_ROLE_NAV = (
+    (roles.INBOX, "📥"),
+    (roles.SENT, "📤"),
+    (roles.DRAFTS, "📝"),
+    (roles.ARCHIVE, "🗄️"),
+    (roles.SPAM, "⚠️"),
+    (roles.TRASH, "🗑️"),
+)
+
+
+def _label_search_url(query: str) -> str:
+    """The search a label or role entry points at."""
+    return "/search?" + urlencode({"q": query, "sort": "date_desc"})
+
+
+def _compact_count(count: int) -> str:
+    """Shorten a count to fit the sidebar badge: 43127 -> '43.1k'."""
+    if count < 1000:
+        return str(count)
+    return f"{count / 1000:.1f}".removesuffix(".0") + "k"
+
+
+def _label_nav_entry(name: str, icon: str, query: str, count: int, active_query: str) -> dict:
+    """One sidebar row, with the search that produces it."""
+    return {
+        "name": name,
+        "icon": icon,
+        "count": count,
+        "count_label": _compact_count(count),
+        "url": _label_search_url(query),
+        "active": query == active_query,
+    }
+
+
+def _label_chips(labels: list) -> list:
+    """An email's labels, named canonically, for the detail view.
+
+    A system label shows its role name and links to role:, so clicking a chip
+    and clicking the sidebar entry of the same name land in the same place. The
+    raw provider strings stay in the tooltip — they're what the archive holds,
+    and what label: searches.
+
+    Two labels that share a role collapse into one chip, since they say the
+    same thing about the message.
+    """
+    chips = {}
+    for label in labels:
+        # Client state ownmail doesn't archive, and a deliberate parse error to
+        # search for. Only present in archives synced before TASK-5.3.
+        if label in roles.EPHEMERAL_LABELS:
+            continue
+        role = roles.role_for_label(label)
+        name, query = (_ROLE_NAMES[role], f"role:{role}") if role else (label, f'label:"{label}"')
+        chip = chips.setdefault(name, {"name": name, "url": _label_search_url(query), "raw": []})
+        chip["raw"].append(label)
+    return list(chips.values())
+
+
+def _build_label_nav(label_counts: dict, role_counts: dict, active_query: str = "") -> dict:
+    """Group the archive's labels into sidebar sections.
+
+    System labels collapse into one entry per canonical role, so an archive
+    holding both 'SENT' and '[Gmail]/Sent Mail' shows a single "Sent" that
+    finds both — which is what role: exists for. Everything else is a user
+    label, searched by its raw name.
+
+    Roles with no searchable email are omitted rather than shown as zero: a
+    healthy archive excludes trash and spam at sync time, so those entries
+    normally shouldn't appear at all.
+
+    Args:
+        label_counts: Per-raw-label counts from get_label_counts()
+        role_counts: Per-role counts from get_role_counts()
+        active_query: The current search, for highlighting the matching row
+
+    Returns:
+        Dict with 'system' and 'user' entry lists
+    """
+    system = [
+        _label_nav_entry(_ROLE_NAMES[role], icon, f"role:{role}", role_counts[role], active_query)
+        for role, icon in _ROLE_NAV
+        if role_counts.get(role)
+    ]
+
+    user = []
+    for label, count in label_counts.items():
+        # Ephemeral labels are client state ownmail doesn't archive, and
+        # searching one is a deliberate parse error — don't offer it as a
+        # destination. Labels with a role are already covered above.
+        if label in roles.EPHEMERAL_LABELS or roles.role_for_label(label):
+            continue
+        user.append(_label_nav_entry(label, "🏷️", f'label:"{label}"', count, active_query))
+    user.sort(key=lambda entry: entry["name"].lower())
+
+    return {"system": system, "user": user}
+
+
 class _PassthroughSanitizer:
     """No-op sanitizer that returns HTML unchanged. Used in tests."""
 
@@ -1152,6 +1272,7 @@ def create_app(
         return {
             "brand_name": app.config["brand_name"],
             "stats": get_stats(),
+            "label_nav": get_label_nav(),
         }
 
     # CSRF protection: validate Origin/Referer on POST requests
@@ -1177,6 +1298,25 @@ def create_app(
             "total_emails": archive.db.get_email_count(),
             "trash_count": archive.db.get_trash_count(),
         }
+
+    def get_label_nav():
+        """Build the sidebar's label sections for the current request.
+
+        Derived per render rather than cached, so a sync or a trash action is
+        visible immediately. A locked or unreadable database degrades to an
+        empty sidebar — the labels are navigation, and losing them shouldn't
+        take the page down with them.
+        """
+        try:
+            return _build_label_nav(
+                archive.db.get_label_counts(),
+                archive.db.get_role_counts(),
+                request.args.get("q", "").strip(),
+            )
+        except sqlite3.Error as e:
+            if verbose:
+                print(f"[verbose] Label sidebar unavailable: {e}", flush=True)
+            return {"system": [], "user": []}
 
     if verbose:
 
@@ -1386,8 +1526,8 @@ def create_app(
         if not filepath.exists():
             abort(404)
 
-        # Get labels from email_labels table
-        labels = archive.db.get_labels_for_email(email_id)
+        # Get labels from email_labels table, named canonically for display
+        labels = _label_chips(archive.db.get_labels_for_email(email_id))
 
         # Parse email using EmailParser for proper Korean charset handling
         if verbose:

@@ -1,6 +1,7 @@
 """Tests for web interface."""
 
 import email
+import sqlite3
 from unittest.mock import MagicMock
 
 import pytest
@@ -20,6 +21,7 @@ from ownmail.web import (
     parse_email_address,
     parse_recipients,
 )
+from tests.conftest import mock_archive_db
 
 
 class TestDecodeHeader:
@@ -205,7 +207,7 @@ class TestCreateApp:
         """Create a mock archive for testing."""
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_stats.return_value = {
             "total_emails": 100,
             "indexed_emails": 100,
@@ -523,7 +525,7 @@ class TestRawEmailRoute:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -541,7 +543,7 @@ class TestRawEmailRoute:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = None
         mock_archive.db.get_email_count.return_value = 100
 
@@ -562,7 +564,7 @@ class TestAttachmentRoute:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = None
         mock_archive.db.get_email_count.return_value = 100
 
@@ -579,7 +581,7 @@ class TestAttachmentRoute:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "missing.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -649,7 +651,7 @@ This is the email body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -679,7 +681,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg2", "emails/html.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -717,7 +719,7 @@ PDF content here
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg3", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -735,7 +737,7 @@ PDF content here
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/missing.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -772,7 +774,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg4", "emails/multipart.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -813,7 +815,7 @@ PDF CONTENT HERE
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -851,7 +853,7 @@ PDF CONTENT
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -878,7 +880,7 @@ class TestTrustSenderWithConfig:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive, config_path=str(config_path))
@@ -907,7 +909,7 @@ class TestTrustSenderWithConfig:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive, config_path=str(config_path))
@@ -932,7 +934,7 @@ class TestTrustSenderWithConfig:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive, config_path=str(config_path), trusted_senders=["remove@example.com"])
@@ -969,7 +971,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/img.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -998,7 +1000,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/trusted.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -1027,7 +1029,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/rt.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
@@ -1052,7 +1054,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -1259,7 +1261,7 @@ class TestTimezoneSettings:
         """Settings page shows timezone field with server default."""
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 0
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -1271,7 +1273,7 @@ class TestTimezoneSettings:
         """Search results use configured timezone for date display."""
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # UTC midnight → Tokyo is +9 hours → still Jan 2
         mock_archive.search.return_value = [
@@ -1290,7 +1292,7 @@ class TestTimezoneSettings:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
         app = create_app(mock_archive, display_timezone="Asia/Tokyo")
@@ -1353,7 +1355,7 @@ class TestTrashRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.db.get_trashed_emails.return_value = []
@@ -1373,7 +1375,7 @@ class TestTrashRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 1
         mock_archive.db.get_trashed_emails.return_value = [
@@ -1404,7 +1406,7 @@ class TestTrashRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.trash_email.return_value = True
@@ -1424,7 +1426,7 @@ class TestTrashRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.restore_email.return_value = True
@@ -1444,7 +1446,7 @@ class TestTrashRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.auto_expire_trash.return_value = 0
@@ -1463,7 +1465,7 @@ class TestTrashRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.empty_trash.return_value = 5
@@ -1483,7 +1485,7 @@ class TestTrashRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.auto_expire_trash.return_value = 0
@@ -1660,7 +1662,7 @@ class TestCsrfCheck:
     def app(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.auto_expire_trash.return_value = 0
@@ -1705,7 +1707,7 @@ class TestSettingsRoutes:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 42
         archive.db.get_trash_count.return_value = 3
         archive.auto_expire_trash.return_value = 0
@@ -1863,7 +1865,7 @@ class TestTrustedSenderPersistence:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.auto_expire_trash.return_value = 0
@@ -1966,7 +1968,7 @@ class TestViewTrash:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 5
         archive.db.get_trash_count.return_value = 2
         archive.auto_expire_trash.return_value = 0
@@ -2021,7 +2023,7 @@ class TestRunServer:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.auto_expire_trash.return_value = 0
@@ -2169,7 +2171,7 @@ class TestViewEmailRendering:
         """A mock archive backed by a real directory of .eml files."""
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.db.get_labels_for_email.return_value = []
@@ -2283,6 +2285,38 @@ class TestViewEmailRendering:
         assert b"Work" in response.data
         assert b"Important" in response.data
 
+    def test_system_label_chip_uses_its_canonical_name(self, archive):
+        """A localized folder name should read as the role it means."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.get_labels_for_email.return_value = ["Entwürfe"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"Drafts" in response.data
+        assert b"role%3Adrafts" in response.data
+        # The raw string is what the archive holds, so it stays visible.
+        assert "Entwürfe".encode() in response.data
+
+    def test_chips_collapse_labels_that_share_a_role(self, archive):
+        """Two spellings of 'sent' say one thing about the message."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.get_labels_for_email.return_value = ["SENT", "[Gmail]/Sent Mail"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert response.data.count(b'class="ownmail-label ownmail-clickable-label"') == 1
+        assert b"SENT, [Gmail]/Sent Mail" in response.data
+
+    def test_ephemeral_label_is_not_offered_as_a_chip(self, archive):
+        """UNREAD only exists in old archives, and searching it is an error."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.get_labels_for_email.return_value = ["UNREAD", "Work"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"UNREAD" not in response.data
+        assert b"Work" in response.data
+
     def test_trashed_email_renders(self, archive):
         """A trashed email should still be viewable."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n", trashed_at="2024-02-01")
@@ -2308,7 +2342,7 @@ class TestRawAndDownloadRoutes:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.auto_expire_trash.return_value = 0
@@ -2522,7 +2556,7 @@ class TestSearchRoute:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 100
         archive.db.get_trash_count.return_value = 0
         archive.auto_expire_trash.return_value = 0
@@ -2681,7 +2715,7 @@ class TestTrashMutationRoutes:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.auto_expire_trash.return_value = 0
@@ -2765,7 +2799,7 @@ class TestInlineImagesAndSanitizer:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.db.get_labels_for_email.return_value = []
@@ -2971,7 +3005,7 @@ class TestCreateAppStartup:
     def _archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         return archive
@@ -3141,7 +3175,7 @@ class TestViewEmailMultipartVariants:
     def archive(self, tmp_path):
         archive = MagicMock()
         archive.archive_dir = tmp_path
-        archive.db = MagicMock()
+        archive.db = mock_archive_db()
         archive.db.get_email_count.return_value = 1
         archive.db.get_trash_count.return_value = 0
         archive.db.get_labels_for_email.return_value = []
@@ -3230,3 +3264,125 @@ class TestViewEmailMultipartVariants:
         response = self._get(archive, raw)
         assert response.status_code == 200
         assert b"Empty" in response.data
+
+
+class TestLabelSidebar:
+    """Tests for the label navigation in the sidebar."""
+
+    @pytest.fixture
+    def archive(self, tmp_path):
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = mock_archive_db(
+            get_email_count=9,
+            get_label_counts={"Work": 4, "receipts": 2, "INBOX": 5, "[Gmail]/Sent Mail": 3},
+            get_role_counts={"inbox": 5, "sent": 3},
+        )
+        archive.auto_expire_trash.return_value = 0
+        archive.search.return_value = []
+        return archive
+
+    def _nav(self, archive, path="/search"):
+        app = create_app(archive)
+        with app.test_client() as client:
+            return client.get(path).data.decode()
+
+    def test_system_roles_replace_the_hardcoded_entries(self, archive):
+        """The sidebar used to offer All Mail and Trash and nothing else."""
+        html = self._nav(archive)
+        assert ">Inbox<" in html
+        assert ">Sent<" in html
+        assert "q=role%3Ainbox" in html
+
+    def test_counts_are_shown_per_entry(self, archive):
+        """AC #1: per-label counts, not just names."""
+        html = self._nav(archive)
+        assert '<span class="ownmail-sidebar-badge">5</span>' in html  # role:inbox
+        assert '<span class="ownmail-sidebar-badge">4</span>' in html  # label Work
+
+    def test_clicking_a_user_label_searches_its_raw_name(self, archive):
+        """AC #2: the link is the label: syntax a user could have typed."""
+        html = self._nav(archive)
+        assert "q=label%3A%22Work%22" in html
+
+    def test_labels_that_have_a_role_are_not_listed_twice(self, archive):
+        """INBOX is covered by the Inbox role entry, so it isn't a user label."""
+        html = self._nav(archive)
+        assert "q=label%3A%22INBOX%22" not in html
+        assert "q=label%3A%22%5BGmail%5D%2FSent+Mail%22" not in html
+
+    def test_user_labels_are_sorted_case_insensitively(self, archive):
+        """Frequency order would reshuffle the sidebar on every sync."""
+        archive.db.get_label_counts.return_value = {"zebra": 1, "Apple": 1, "banana": 1}
+        archive.db.get_role_counts.return_value = {}
+        html = self._nav(archive)
+        assert [m for m in ("Apple", "banana", "zebra") if m in html] == ["Apple", "banana", "zebra"]
+        assert html.index("Apple") < html.index("banana") < html.index("zebra")
+
+    def test_roles_with_no_mail_are_omitted(self, archive):
+        """A healthy archive has no server trash, so no entry for it."""
+        html = self._nav(archive)
+        assert "q=role%3Atrash" not in html
+        assert "Trash (server)" not in html
+
+    def test_server_trash_is_named_apart_from_the_local_bin(self, archive):
+        """Both are called Trash otherwise, and they are unrelated."""
+        archive.db.get_role_counts.return_value = {"trash": 7}
+        html = self._nav(archive)
+        assert "Trash (server)" in html
+        assert 'href="/trash"' in html
+
+    def test_all_mail_role_is_not_offered(self, archive):
+        """It would duplicate the All Mail nav entry above it."""
+        archive.db.get_role_counts.return_value = {"all": 900}
+        html = self._nav(archive)
+        assert "q=role%3Aall" not in html
+
+    def test_ephemeral_label_is_not_offered(self, archive):
+        """Searching label:UNREAD is a deliberate error, so don't link to it."""
+        archive.db.get_label_counts.return_value = {"UNREAD": 12, "Work": 1}
+        html = self._nav(archive)
+        assert "UNREAD" not in html
+
+    def test_labels_section_is_hidden_when_there_are_none(self, archive):
+        """No heading over an empty list."""
+        archive.db.get_label_counts.return_value = {}
+        archive.db.get_role_counts.return_value = {}
+        html = self._nav(archive)
+        assert "ownmail-sidebar-heading" not in html
+
+    def test_active_entry_is_highlighted(self, archive):
+        """The row matching the current search should read as selected."""
+        html = self._nav(archive, "/search?q=role%3Asent&sort=date_desc")
+        active = [line for line in html.splitlines() if "active" in line]
+        assert any("q=role%3Asent" in line for line in active)
+        assert not any("q=role%3Ainbox" in line for line in active)
+
+    def test_all_mail_is_active_only_without_a_query(self, archive):
+        """An unfiltered search is All Mail; a filtered one isn't."""
+        unfiltered = self._nav(archive, "/search")
+        filtered = self._nav(archive, "/search?q=role%3Asent")
+        assert '<a href="/" class="active"' in unfiltered
+        assert '<a href="/" class="active"' not in filtered
+
+    def test_large_counts_are_abbreviated(self, archive):
+        """A 43,127-email inbox has to fit a 140px column."""
+        archive.db.get_role_counts.return_value = {"inbox": 43127}
+        archive.db.get_label_counts.return_value = {"Work": 1000}
+        html = self._nav(archive)
+        assert "43.1k" in html
+        assert ">1k<" in html
+
+    def test_unreadable_database_degrades_to_no_labels(self, archive, capsys):
+        """Losing the sidebar must not take the page down with it."""
+        archive.db.get_label_counts.side_effect = sqlite3.OperationalError("database is locked")
+        app = create_app(archive, verbose=True)
+        with app.test_client() as client:
+            response = client.get("/search")
+        assert response.status_code == 200
+        assert "Label sidebar unavailable" in capsys.readouterr().out
+
+    def test_sidebar_renders_on_every_page(self, archive):
+        """It lives in base.html, so help and settings get it too."""
+        for path in ("/help", "/settings", "/trash"):
+            assert ">Inbox<" in self._nav(archive, path)

@@ -14,7 +14,23 @@
             <tr><td><code>subject:meeting</code></td><td>Emails with "meeting" in subject</td></tr>
             <tr><td><code>attachment:pdf</code></td><td>Emails with PDF attachments</td></tr>
             <tr><td><code>has:attachment</code></td><td>Emails with any attachments</td></tr>
-            <tr><td><code>label:INBOX</code></td><td>Emails with specific Gmail label</td></tr>
+            <tr><td><code>label:INBOX</code></td><td>Emails with this exact label or folder name</td></tr>
+            <tr><td><code>role:sent</code></td><td>Emails in this system folder, whatever the provider calls it</td></tr>
+        </table>
+
+        <h3>System folder roles</h3>
+        <p class="ownmail-help-note">Providers spell the same folder differently &mdash; <code>SENT</code>,
+        <code>[Gmail]/Sent Mail</code>, <code>Gesendet</code>. A role matches every spelling at once,
+        so <code>role:sent</code> finds sent mail across all your accounts. Use <code>label:</code>
+        when you want one exact name.</p>
+        <table class="ownmail-help-table">
+            <tr><td><code>role:inbox</code></td><td>Inbox</td></tr>
+            <tr><td><code>role:sent</code></td><td>Sent mail</td></tr>
+            <tr><td><code>role:drafts</code></td><td>Drafts</td></tr>
+            <tr><td><code>role:archive</code></td><td>Archive</td></tr>
+            <tr><td><code>role:all</code></td><td>All Mail (Gmail's catch-all folder)</td></tr>
+            <tr><td><code>role:spam</code></td><td>Spam / junk</td></tr>
+            <tr><td><code>role:trash</code></td><td>Trash on the mail server &mdash; not ownmail's own trash</td></tr>
         </table>
 
         <h3>Date filters</h3>
@@ -36,6 +52,7 @@
         <table class="ownmail-help-table">
             <tr><td><code>-from:user@example.com</code></td><td>Exclude emails from this sender</td></tr>
             <tr><td><code>-label:promotions</code></td><td>Exclude emails with this label</td></tr>
+            <tr><td><code>-role:spam</code></td><td>Exclude everything in a spam folder</td></tr>
             <tr><td><code>-attachment:exe</code></td><td>Exclude emails with .exe attachments</td></tr>
             <tr><td><code>-has:attachment</code></td><td>Emails without attachments</td></tr>
         </table>

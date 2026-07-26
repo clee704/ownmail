@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,6 +12,26 @@ def temp_dir():
     """Create a temporary directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
+
+def mock_archive_db(**overrides):
+    """A stand-in ArchiveDatabase for tests that only exercise the web layer.
+
+    web.py's context processor asks for the stats and the label sidebar on every
+    template render, and those need real ints and dicts — a bare MagicMock
+    returns mocks that blow up on comparison and iteration. Pass keyword
+    overrides for whatever a given test actually cares about:
+
+        db = mock_archive_db(get_email_count=100)
+    """
+    db = MagicMock()
+    db.get_email_count.return_value = 0
+    db.get_trash_count.return_value = 0
+    db.get_label_counts.return_value = {}
+    db.get_role_counts.return_value = {}
+    for name, value in overrides.items():
+        getattr(db, name).return_value = value
+    return db
 
 
 @pytest.fixture

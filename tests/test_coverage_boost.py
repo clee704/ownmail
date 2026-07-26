@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock
 
 from ownmail.database import ArchiveDatabase
+from tests.conftest import mock_archive_db
 
 
 def _eid(provider_id, account=""):
@@ -18,7 +19,7 @@ class TestWebSearchSortingV3:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = []
 
@@ -37,7 +38,7 @@ class TestWebCleanSnippet:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = [
             {
@@ -67,7 +68,7 @@ class TestWebHelpPageV3:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -255,7 +256,7 @@ class TestWebEmptySearch:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = []
 
@@ -303,7 +304,7 @@ class TestWebSearchPaginationV3:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = []
 
@@ -322,7 +323,7 @@ class TestWebEmailView:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = None
 
@@ -556,7 +557,7 @@ class TestWebStatic:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -1097,7 +1098,7 @@ class TestWebIndexPageWithQuery:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = []
 
@@ -1203,7 +1204,7 @@ class TestWebMoreRoutes:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = []
 
@@ -1493,7 +1494,7 @@ class TestWebSortOptions:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = []
 
@@ -1508,7 +1509,7 @@ class TestWebSortOptions:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = []
 
@@ -1591,7 +1592,7 @@ class TestWebTrustSenderV3:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -1623,7 +1624,7 @@ This is the plain text body of the email.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("test123", "test.eml", None, None, None, None)
 
@@ -1651,7 +1652,7 @@ Content-Type: text/html; charset=utf-8
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("html123", "html.eml", None, None, None, None)
 
@@ -1687,7 +1688,7 @@ Content-Type: text/html; charset=utf-8
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("multi123", "multi.eml", None, None, None, None)
 
@@ -1725,7 +1726,7 @@ JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PgplbmRv
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("attach123", "attach.eml", None, None, None, None)
 
@@ -1751,7 +1752,7 @@ Email body with labels.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("label123", "label.eml", None, None, None, None)
         mock_archive.db.get_labels_for_email.return_value = ["INBOX", "IMPORTANT", "STARRED"]
@@ -1793,7 +1794,7 @@ Hello from attachment!
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("dl123", "dl.eml", None, None, None, None)
 
@@ -1813,7 +1814,7 @@ class TestWebSearchResultsMocked:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.search.return_value = [
             {
@@ -1839,7 +1840,7 @@ class TestWebSearchResultsMocked:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 50
         mock_archive.db.search.return_value = [
             {
@@ -1865,7 +1866,7 @@ class TestWebSearchResultsMocked:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1000
         mock_archive.db.search.return_value = []
 
@@ -1899,7 +1900,7 @@ Content-Type: text/html; charset=utf-8
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("img123", "img.eml", None, None, None, None)
 
@@ -1955,7 +1956,7 @@ Content-ID: <image001>
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("cid123", "cid.eml", None, None, None, None)
 
@@ -1987,7 +1988,7 @@ Content-Type: text/plain; charset=utf-8
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("kr123", "korean.eml", None, None, None, None)
 
@@ -2006,7 +2007,7 @@ class TestWebErrorHandling:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("missing123", "nonexistent.eml", None, None, None, None)
 
@@ -2032,7 +2033,7 @@ No attachments here.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("noattach", "noattach.eml", None, None, None, None)
 
@@ -2079,7 +2080,7 @@ Raw email body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("raw123", "raw.eml", None, None, None, None)
 
@@ -2331,7 +2332,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("rfc2231", "rfc2231.eml", None, None, None, None)
 
@@ -2401,7 +2402,7 @@ Inner body content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("digest", "digest.eml", None, None, None, None)
 
@@ -2484,7 +2485,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("mimefilename", "mimefilename.eml", None, None, None, None)
 
@@ -2521,7 +2522,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("qpfilename", "qpfilename.eml", None, None, None, None)
 
@@ -2563,7 +2564,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("cjkfilename", "cjkfilename.eml", None, None, None, None)
 
@@ -2607,7 +2608,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("rfc2231multi", "rfc2231multi.eml", None, None, None, None)
 
@@ -2738,7 +2739,7 @@ Content-Type: text/html; charset=utf-8
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("iframe", "iframe.eml", None, None, None, None)
 
@@ -2770,7 +2771,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Return tuple with prev/next IDs
         mock_archive.db.get_email_by_id.return_value = (
@@ -2837,7 +2838,7 @@ class TestWebHelpPageRenders:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -2857,7 +2858,7 @@ class TestWebIndexPage:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -2946,7 +2947,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("download", "download.eml", None, None, None, None)
 
@@ -3041,7 +3042,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("multilabel", "multilabel.eml", None, None, None, None)
         mock_archive.db.get_labels.return_value = ["INBOX", "IMPORTANT", "CATEGORY_PERSONAL"]
@@ -3114,7 +3115,7 @@ class TestWebSearchWithFiltersV3:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -3129,7 +3130,7 @@ class TestWebSearchWithFiltersV3:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -3227,7 +3228,7 @@ iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAA
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("cidref", "cidref.eml", None, None, None, None)
 
@@ -3308,7 +3309,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("cctest", "cctest.eml", None, None, None, None)
 
@@ -3387,7 +3388,7 @@ class TestWebStaticFilesV3:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -3452,7 +3453,7 @@ Content-Type: multipart/mixed; boundary="----=_Part_0"
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("manyattach", "manyattach.eml", None, None, None, None)
 
@@ -3492,7 +3493,7 @@ class TestWebRecentEmails:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_recent_emails.return_value = []
 
@@ -3530,7 +3531,7 @@ My response here.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("quoted", "quoted.eml", None, None, None, None)
 
@@ -3562,7 +3563,7 @@ Also visit http://test.org/page?id=123
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("links", "links.eml", None, None, None, None)
 
@@ -3657,7 +3658,7 @@ class TestWebHelpPageContent:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -3719,7 +3720,7 @@ JVBERi0xLjQKJcOkw7zDtsOfCjIgMCBvYmoKPDwvTGVuZ3RoIDMgMCBSL0ZpbHRlci9GbGF0ZURl
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("binattach", "binattach.eml", None, None, None, None)
 
@@ -3806,7 +3807,7 @@ class TestWebSearchPaginationV2:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -3821,7 +3822,7 @@ class TestWebSearchPaginationV2:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -3917,7 +3918,7 @@ class TestWebSearchSortOptions:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -3932,7 +3933,7 @@ class TestWebSearchSortOptions:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -4028,7 +4029,7 @@ john@example.com
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("signature", "signature.eml", None, None, None, None)
 
@@ -4118,7 +4119,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("clickable", "clickable.eml", None, None, None, None)
 
@@ -4180,7 +4181,7 @@ Body text.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("rawview", "rawview.eml", None, None, None, None)
 
@@ -4253,7 +4254,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("mimeqp", "mimeqp.eml", None, None, None, None)
 
@@ -4293,7 +4294,7 @@ content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("continuation", "continuation.eml", None, None, None, None)
 
@@ -4331,7 +4332,7 @@ class TestWebTrustSenderFlow:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -4403,7 +4404,7 @@ class TestWebFilteredSearch:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -4477,7 +4478,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("bcc", "bcc.eml", None, None, None, None)
 
@@ -4504,7 +4505,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("replyto", "replyto.eml", None, None, None, None)
 
@@ -4523,7 +4524,7 @@ class TestWebBackToSearchUrl:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -4537,7 +4538,7 @@ class TestWebBackToSearchUrl:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -4551,7 +4552,7 @@ class TestWebBackToSearchUrl:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -4565,7 +4566,7 @@ class TestWebBackToSearchUrl:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -4583,7 +4584,7 @@ class TestWebSearchWithMimeHeaders:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Return result with MIME-encoded subject
         mock_archive.search.return_value = [
@@ -4608,7 +4609,7 @@ class TestWebSearchWithMimeHeaders:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Return result with MIME-encoded sender
         mock_archive.search.return_value = [
@@ -4633,7 +4634,7 @@ class TestWebSearchWithMimeHeaders:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Return result with empty subject
         mock_archive.search.return_value = [
@@ -4657,7 +4658,7 @@ class TestWebSearchDateFormatting:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Return result with date from current year
         now = datetime.now()
@@ -4675,7 +4676,7 @@ class TestWebSearchDateFormatting:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Return result with date from previous year
         mock_archive.search.return_value = [
@@ -4693,7 +4694,7 @@ class TestWebSearchDateFormatting:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Return result with invalid date string
         mock_archive.search.return_value = [
@@ -4711,7 +4712,7 @@ class TestWebSearchDateFormatting:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
             ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
@@ -4756,7 +4757,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("mimebase64", "mimebase64.eml", None, None, None, None)
 
@@ -4794,7 +4795,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("mimeqp", "mimeqp.eml", None, None, None, None)
 
@@ -4832,7 +4833,7 @@ file content
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("rawkorean", "rawkorean.eml", None, None, None, None)
 
@@ -4883,7 +4884,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("labelstest", "labelstest.eml", None, None, None, None)
         mock_archive.db.get_labels.return_value = ["INBOX", "IMPORTANT"]
@@ -4903,7 +4904,7 @@ class TestWebSearchSenderParsing:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
             ("msg1", "test.eml", "Subject", "John Doe <john@test.com>", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
@@ -4920,7 +4921,7 @@ class TestWebSearchSenderParsing:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
             ("msg1", "test.eml", "Subject", "john@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
@@ -4937,7 +4938,7 @@ class TestWebSearchSenderParsing:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
             ("msg1", "test.eml", "Subject", None, "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
@@ -4958,7 +4959,7 @@ class TestWebEmptyResults:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -4989,7 +4990,7 @@ Body only.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.db.get_email_by_id.return_value = ("noattach", "noattach.eml", None, None, None, None)
 
@@ -5008,7 +5009,7 @@ class TestWebSearchSnippetCleaning:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
             (
@@ -5263,7 +5264,7 @@ Content-Transfer-Encoding: base64
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "multi",
@@ -5291,7 +5292,7 @@ class TestWebSearchPaginationV4:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         # Return 50 results
@@ -5326,7 +5327,7 @@ Test body content.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_email_by_id.return_value = (
             "nav",
@@ -5353,7 +5354,7 @@ class TestWebHelpPageV4:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -5371,7 +5372,7 @@ class TestWebStaticFilesV4:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -5414,7 +5415,7 @@ Content-Transfer-Encoding: base64
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "inline",
@@ -5440,7 +5441,7 @@ class TestWebSearchOperators:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
             ("msg1", "test.eml", "Subject", "alice@test.com", "Mon, 01 Jan 2024", "snippet")
@@ -5457,7 +5458,7 @@ class TestWebSearchOperators:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -5487,7 +5488,7 @@ Test body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "raw",
@@ -5625,7 +5626,7 @@ class TestWebFormSubmissions:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -5645,7 +5646,7 @@ class TestWebIndexRoute:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
         app = create_app(mock_archive)
@@ -5701,7 +5702,7 @@ JVBERi0xLjQKMSAwIG9iago=
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "hybrid",
@@ -5747,7 +5748,7 @@ JVBERi0xLjQK
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "qph",
@@ -5803,7 +5804,7 @@ dGVzdCBjb250ZW50
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "raw",
@@ -5853,7 +5854,7 @@ dGVzdCBjb250ZW50
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "rawcn",
@@ -5903,7 +5904,7 @@ dGVzdCBjb250ZW50
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "rawjp",
@@ -5954,7 +5955,7 @@ JVBERi0xLjQK
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "rfc",
@@ -5983,7 +5984,7 @@ class TestWebSearchResultFormatting:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Date from 2020
         mock_archive.search.return_value = [
@@ -6003,7 +6004,7 @@ class TestWebSearchResultFormatting:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Malformed date
         mock_archive.search.return_value = [
@@ -6035,7 +6036,7 @@ Test body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 10
         mock_archive.db.get_email_by_id.return_value = (
             "back",
@@ -6125,7 +6126,7 @@ class TestWebComplexMimeDecoding:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Split MIME encoded subject
         mock_archive.search.return_value = [
@@ -6167,7 +6168,7 @@ Content-Type: text/plain; charset="euc-kr"
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "charset",
@@ -6205,7 +6206,7 @@ Test body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "multi",
@@ -6242,7 +6243,7 @@ Test body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = ("labeled", "labeled.eml", None, None, None, None)
         mock_archive.db.get_labels_for_email.return_value = ["INBOX", "IMPORTANT", "STARRED"]
@@ -6272,7 +6273,7 @@ Test body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "trust",
@@ -6311,7 +6312,7 @@ This is a reply.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "reply",
@@ -6337,7 +6338,7 @@ class TestWebSearchWithFiltersV4:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -6352,7 +6353,7 @@ class TestWebSearchWithFiltersV4:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -6400,7 +6401,7 @@ JVBERi0xLjQK
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "nested",
@@ -6648,7 +6649,7 @@ Content-Transfer-Encoding: base64
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "dl",
@@ -6675,7 +6676,7 @@ class TestWebSearchResultDisplay:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # HTML in snippet should be escaped
         mock_archive.search.return_value = [
@@ -6693,7 +6694,7 @@ class TestWebSearchResultDisplay:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 500
         # Return many results
         results = [
@@ -6765,7 +6766,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "html",
@@ -6797,7 +6798,7 @@ Content-Type: text/plain
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "empty",
@@ -6847,7 +6848,7 @@ class TestWebRouteErrorCases:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 0
         mock_archive.db.get_email_by_id.return_value = None
 
@@ -6862,7 +6863,7 @@ class TestWebRouteErrorCases:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -6911,7 +6912,7 @@ class TestWebPaginationControl:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 200
         mock_archive.search.return_value = []
 
@@ -6927,7 +6928,7 @@ class TestWebPaginationControl:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 200
         mock_archive.search.return_value = []
 
@@ -7008,7 +7009,7 @@ Body.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "long",
@@ -7051,7 +7052,7 @@ My response.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "quoted",
@@ -7089,7 +7090,7 @@ And this one: http://test.com
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "links",
@@ -7152,7 +7153,7 @@ Also & and "quotes" are here.
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "special",
@@ -7208,7 +7209,7 @@ class TestWebSearchFieldFilters:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -7223,7 +7224,7 @@ class TestWebSearchFieldFilters:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
 
@@ -7288,7 +7289,7 @@ Content-Transfer-Encoding: base64
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "pdf",
@@ -7334,7 +7335,7 @@ Content-Transfer-Encoding: base64
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "zip",
@@ -7403,7 +7404,7 @@ class TestWebRawEmailRoute:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 0
         mock_archive.db.get_email_by_id.return_value = None
 
@@ -7487,7 +7488,7 @@ Content-Type: text/html
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "script",
@@ -7527,7 +7528,7 @@ class TestWebSearchSortingV4:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Multiple results with different dates
         mock_archive.search.return_value = [
@@ -7614,7 +7615,7 @@ Content-Transfer-Encoding: base64
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
             "inline_img",
@@ -7654,7 +7655,7 @@ class TestWebLabelsInSearchResults:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        mock_archive.db = MagicMock()
+        mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         # Result with labels in tuple
         mock_archive.search.return_value = [

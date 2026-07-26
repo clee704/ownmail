@@ -40,7 +40,20 @@
         <nav class="ownmail-sidebar" id="ownmail-sidebar">
             <button class="ownmail-sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">◀</button>
             <ul class="ownmail-sidebar-nav">
-                <li><a href="/" class="{% if request.path == '/' or request.path.startswith('/search') %}active{% endif %}">📬 <span class="ownmail-sidebar-label">All Mail</span></a></li>
+                <li><a href="/" class="{% if request.path.startswith('/search') and not request.args.get('q') %}active{% elif request.path == '/' %}active{% endif %}">📬 <span class="ownmail-sidebar-label">All Mail</span></a></li>
+                {% for entry in label_nav.system %}
+                <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}" onclick="showLoading(event)">{{ entry.icon }} <span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
+                {% endfor %}
+            </ul>
+            {% if label_nav.user %}
+            <div class="ownmail-sidebar-heading">Labels</div>
+            <ul class="ownmail-sidebar-nav ownmail-sidebar-labels">
+                {% for entry in label_nav.user %}
+                <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}" title="{{ entry.name }} — {{ entry.count }}" onclick="showLoading(event)">{{ entry.icon }} <span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            <ul class="ownmail-sidebar-nav">
                 <li><a href="/trash" class="{% if request.path == '/trash' %}active{% endif %}">🗑️ <span class="ownmail-sidebar-label">Trash</span>{% if stats.trash_count %}<span class="ownmail-sidebar-badge">{{ stats.trash_count }}</span>{% endif %}</a></li>
             </ul>
         </nav>

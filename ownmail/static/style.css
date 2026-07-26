@@ -27,9 +27,10 @@ a:hover { text-decoration: underline; }
     margin-bottom: 10px;
 }
 
-/* Sidebar */
+/* Sidebar — 180px so provider labels stay distinguishable. At 140px
+   CATEGORY_PROMOTIONS and CATEGORY_UPDATES both truncated to "CATEGORY...". */
 .ownmail-sidebar {
-    width: 140px;
+    width: 180px;
     flex-shrink: 0;
     padding-top: 2px;
     transition: width 0.15s ease;
@@ -94,6 +95,30 @@ a:hover { text-decoration: underline; }
     border-radius: 8px;
     margin-left: auto;
     line-height: 16px;
+}
+.ownmail-sidebar-heading {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #aaa;
+    padding: 10px 8px 3px 8px;
+    white-space: nowrap;
+}
+.ownmail-sidebar.collapsed .ownmail-sidebar-heading {
+    visibility: hidden;
+}
+/* A Gmail archive with 200 labels scrolls here rather than growing the page. */
+.ownmail-sidebar-labels {
+    max-height: 40vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+/* The label name is the part that gives, not the count. min-width:0 is what
+   lets a flex item shrink below its content width so the ellipsis appears. */
+.ownmail-sidebar-labels .ownmail-sidebar-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .ownmail-header {
@@ -559,6 +584,7 @@ a:hover { text-decoration: underline; }
 .ownmail-attachment-item a:hover { text-decoration: underline; }
 .ownmail-help-page h2 { margin-top: 0; }
 .ownmail-help-page h3 { margin-top: 15px; margin-bottom: 10px; font-size: 1.1em; color: #333; }
+.ownmail-help-note { font-size: 0.9em; color: #666; margin: 0 0 10px 0; }
 .ownmail-help-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
 .ownmail-help-table td { padding: 8px; border-bottom: 1px solid #eee; }
 .ownmail-help-table td:first-child { width: 40%; font-family: monospace; background: #f8f8f8; }
@@ -833,6 +859,7 @@ html.ownmail-dark {
     .ownmail-sidebar-nav li a.active { background: #333; color: #e0e0e0; }
     .ownmail-sidebar-toggle { color: #555; }
     .ownmail-sidebar-toggle:hover { color: #aaa; }
+    .ownmail-sidebar-heading { color: #666; }
     .ownmail-hamburger-dropdown {
         background: #2d2d2d;
         border-color: #444;
@@ -918,6 +945,7 @@ html.ownmail-dark {
     .ownmail-help code { background: #2d2d2d; }
     .ownmail-help a { color: #6cb6ff; }
     .ownmail-help-page h3 { color: #e0e0e0; }
+    .ownmail-help-note { color: #999; }
     .ownmail-help-table td { border-bottom-color: #333; }
     .ownmail-help-table td:first-child { background: #2d2d2d; }
     .ownmail-settings-page { color: #e0e0e0; }
