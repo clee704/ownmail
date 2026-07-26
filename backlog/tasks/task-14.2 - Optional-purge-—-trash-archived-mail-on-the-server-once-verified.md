@@ -21,21 +21,23 @@ Knob 1 of doc-6, split out of TASK-14. Keeps ALL of TASK-14's STOP-item weight: 
 
 Depends on TASK-14.1 because purge requires download: anything the filter excludes is automatically never purged, and that coupling is what keeps the inbox safe without a dedicated inbox rule.
 
-SENT MAIL MUST BE EXEMPT FROM PURGE (user, 2026-07-26). The one place the capture model does not carry over to purge, found by asking what the model says about outgoing mail.
+PURGE HAS NO EXEMPTIONS, INCLUDING SENT (settled 2026-07-26, after proposing a sent exemption and rejecting it).
 
-The model is: capture a message once its owner is done with it. For incoming mail the inbox exclusion supplies that — a message sits on the server through its whole active period and only becomes eligible once triaged, so by the time purge can touch it the exchange is usually over. OUTGOING MAIL HAS NO TRIAGE STEP. Nobody files their Sent folder. A sent message is eligible the instant it exists, so capture happens within one sync and purge follows immediately after.
+THE PROPOSAL was: purge never touches role sent, because outgoing mail has no triage step. Received mail is protected by the inbox exclusion — it sits on the server through its whole active period and only becomes eligible once triaged, so purge arrives after the exchange is over. Sent mail is eligible the instant it exists, so purge trashes a reply while the conversation is live and the user's own half of the thread vanishes from clients rendering it.
 
-The failure that produces: purge trashes the server copy of a reply while the conversation is still live, and the user's own half of the thread disappears from every mail client rendering it. Sending is the START of an exchange, not the end of one. This is the exact harm the inbox exclusion exists to prevent, arriving through the door the inbox exclusion does not cover.
+WHY THAT IS WRONG, three reasons, any one sufficient:
 
-Note doc-6's grace-period reasoning does not save this. 'Servers own the grace period' via Gmail's 30-day Trash retention buys RECOVERABILITY, not usability — a trashed message is still gone from the thread view. The two are different properties and doc-6 only argued the first.
+1. IT SOLVES A GENERAL PROBLEM WITH A SPECIFIC RULE. A purged message disappears from client thread views. That is true of every purged message, not just sent ones — archive a received message while its thread is still active and the same gap appears. Sent merely hits it more often, because it has no triage delay. Carving out sent treats a symptom and leaves the general case untouched.
 
-RESOLUTION: purge never touches messages with role sent. Capture is unaffected — sent mail is still downloaded immediately, which is correct, since sending is final and there is no later action to wait for.
+2. IT LEAVES A SECOND AUTHORITY IN PLACE PERMANENTLY. doc-8: purge "completes the handoff: the server copy is trashed and reaped under the provider's own retention policy, so no second authority survives". Exempt sent and its server copy lives forever, so a user who later trashes or re-labels a sent message diverges from the archive with nothing to reconcile it — doc-8's accepted staleness cost, normally bounded by purge, made permanent for one category.
 
-Cost, and why it is acceptable: sent mail stays on the provider, so 'no mail left on third-party servers' becomes 'no RECEIVED mail left'. Sent is a small fraction of a typical mailbox, so the goal is substantially met. Weigh that against replies vanishing mid-conversation.
+3. IT CONTRADICTS THE REASON THE TOOL EXISTS. doc-6's driving requirement is no mail left on third-party servers, and privacy is the motive. Sent mail is what the user wrote; it is not the category to leave behind. An exemption that grows without bound on the provider inverts the priority the product is built on.
 
-Note this is an exemption of the kind doc-6 explicitly rejected as speculative (it declined to exempt \Flagged, and declined a 'keep' hold label). Those had no demonstrated failure mode. This one does, and it is not rare — it fires on the next reply after purge is enabled. Recording the distinction so the rejection is not cited against it.
+RESOLUTION: purge treats sent like everything else. The thread gap is real, and it is recorded once as a general property of purge rather than worked around per-role.
 
-Open, for whoever implements: whether an exemption is enough or sent should eventually purge once its thread is resolved. That needs threading (TASK-6.1) and is not worth blocking on — the exemption is correct on its own and can be narrowed later.
+MITIGATION IS OWNMAIL'S OWN THREAD VIEW (TASK-6), not server retention. Once purge is on, the provider is not where threads are read — ownmail is. That is the consistent answer and it needs no special case. Worth noting as a soft sequencing preference: enabling purge before TASK-6 exists means no good thread view anywhere.
+
+LEFT OPEN, if the annoyance turns out to be real in practice: defer purge for any message whose thread still has a message in the inbox. Note this is general, not sent-specific, which is what makes it the right shape. It needs threading (TASK-6.1), so it is not a blocker — and it should only be built on evidence, not on the anticipation recorded above.
 
 Scope, ACs and hazards are otherwise unchanged from TASK-14 - see that task and doc-6. In particular: purge means move to provider Trash (never hard delete), confirmation is a per-message content-hash re-check at purge time, sweep semantics rather than download-time-only, dry-run by default, and the hazard that narrowing the filter makes the next purge run delete more.
 <!-- SECTION:DESCRIPTION:END -->
