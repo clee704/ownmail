@@ -7,10 +7,6 @@ created_date: '2026-07-26 05:30'
 updated_date: '2026-07-26 05:32'
 labels: []
 dependencies: []
-documentation:
-  - >-
-    backlog/docs/doc-10 -
-    Roles-are-a-pre-capture-vocabulary-—-what-the-archive-inherits-at-the-handoff.md
 priority: high
 ordinal: 30000
 ---
@@ -32,7 +28,13 @@ Design points to settle:
 - Scope the match. Only messages whose ONLY labels resolve to trash/spam are unambiguous pollution. A message carrying user labels alongside a trash label was captured from elsewhere and later re-snapshotted, or the label is a false positive — those need review, not bulk action, so report them separately rather than sweeping them in.
 - Distinguish this from purge (TASK-14.2). Purge acts on the SERVER copy of mail ownmail holds; this acts on the LOCAL copy of mail ownmail should never have taken. Same direction, opposite side.
 
-ORDERING CONSTRAINT with TASK-24 (eligibility roles): the report reads STORED labels, so its read-time hiding must not blind it. Whichever lands first, the other must not regress it.
+ALSO IN SCOPE — stale labels on messages that legitimately stay. Distinct from the messages above, and much smaller. Arrival-driven capture (the state TASK-14.3 fixes) downloaded mail while it was still in the inbox, so those messages carry an INBOX label that ownmail never refreshes. Real mail, correctly archived; only the label is stale. Once TASK-14.3 lands no new ones appear, but the existing ones keep a phantom Inbox entry in the sidebar with a count that means 'was in the inbox when downloaded', not 'is in the inbox'.
+
+Handle it the way TASK-5.3 handled UNREAD: hide at read, rewrite nothing. Same for a stored DRAFT label.
+
+Keep that hiding NARROW — exact-match Gmail system label IDs (INBOX, DRAFT), never case-folded name matching. roles.role_for_label is heuristic on a stored string, and a name-based rule would hide a user label legitimately called 'Archive' or 'Trash'. See TASK-26, which is that failure already happening in the sidebar.
+
+Do not extend the hiding to trash/spam labels: verify's report reads exactly those stored labels, so hiding them would blind the report this task is built on.
 
 Generalizes beyond the historical bug: the same reconciliation answers 'my download filter changed and the archive holds messages it would now reject'. Worth building it in those terms rather than as a one-off migration, since TASK-14.1 makes the filter user-editable.
 <!-- SECTION:DESCRIPTION:END -->
@@ -43,5 +45,6 @@ Generalizes beyond the historical bug: the same reconciliation answers 'my downl
 - [ ] #2 An explicit, opt-in action moves those messages to ownmail's local bin rather than deleting them, and they are restorable
 - [ ] #3 Nothing moves as a side effect of a plain verify run
 - [ ] #4 Messages carrying non-role labels alongside a trash/spam label are reported separately and not swept in
-- [ ] #5 verify's existing report still works after TASK-24's read-time hiding lands
+- [ ] #5 A stale INBOX or DRAFT label no longer produces a sidebar entry, with nothing rewritten on disk
+- [ ] #6 A user label named 'Archive' or 'Trash' is not hidden by that rule
 <!-- AC:END -->

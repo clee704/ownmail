@@ -28,7 +28,7 @@ WHY THIS IS NOT JUST doc-7'S ACCEPTED COST: doc-7 accepted that a folder identif
 
 Approach to weigh: at capture the provider signal is unambiguous (exact Gmail label IDs; SPECIAL-USE flags plus the reported delimiter), and only the post-capture read paths are guessing. Options include restricting role_for_label's name-table branch to labels that came from a folder-shaped source, recording the resolved role at capture (doc-7 notes a sync_state cache needs no schema change), or narrowing the read paths to exact Gmail system label IDs the way EPHEMERAL_LABELS already does.
 
-Blocks nothing, but TASK-24 must not build its read-time hiding on the unrestricted heuristic — hiding a user label named 'Trash' would make real archive content invisible.
+Blocks nothing, but TASK-25 must not build its stale-label hiding on the unrestricted heuristic — hiding a user label named 'Trash' would make real archive content invisible.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
