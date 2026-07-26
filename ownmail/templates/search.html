@@ -69,7 +69,8 @@
     {% if search_error %}
         <div class="ownmail-search-error">
             <strong>Search error:</strong> {{ search_error }}
-            <p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>
+            {% if show_fts_hint %}<p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>{% endif %}
+            <p><a href="/help">Search syntax</a></p>
         </div>
     {% elif results %}
             {% include '_email_list.html' %}

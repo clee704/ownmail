@@ -18,6 +18,7 @@ from flask import Flask, abort, g, redirect, render_template, request, send_file
 
 from ownmail.archive import EmailArchive
 from ownmail.parser import EmailParser
+from ownmail.query import parse_query
 
 # Regex to find external images in HTML
 EXTERNAL_IMAGE_RE = re.compile(
@@ -1266,17 +1267,26 @@ def create_app(
             print(f"[verbose] Searching for: {query} (page {page}, offset {offset}, sort {sort})", flush=True)
             start = time.time()
 
+        # database.search reports a parse error by returning no rows, which here
+        # is indistinguishable from an empty archive. Parse again to get the
+        # message — it's a tokenizer over one short string, so it costs nothing.
+        parse_error = parse_query(query, tz=app.config.get("timezone")).error
+
         # Fetch per_page + 1 to know if there are more results
-        try:
-            raw_results = archive.search(
-                query, limit=per_page + 1, offset=offset, sort=sort, tz=app.config.get("timezone")
-            )
-            search_error = None
-        except Exception as e:
+        if parse_error:
             raw_results = []
-            search_error = str(e)
-            if verbose:
-                print(f"[verbose] Search error: {e}", flush=True)
+            search_error = parse_error
+        else:
+            try:
+                raw_results = archive.search(
+                    query, limit=per_page + 1, offset=offset, sort=sort, tz=app.config.get("timezone")
+                )
+                search_error = None
+            except Exception as e:
+                raw_results = []
+                search_error = str(e)
+                if verbose:
+                    print(f"[verbose] Search error: {e}", flush=True)
 
         if verbose and not search_error:
             print(f"[verbose] Search took {time.time() - start:.2f}s, {len(raw_results)} results", flush=True)
@@ -1348,6 +1358,10 @@ def create_app(
             has_prev=page > 1,
             search_time=search_time,
             search_error=search_error,
+            # The quoting hint only helps with cryptic FTS5 errors. Parse errors
+            # already say what's wrong, and the hint reads as a non-sequitur next
+            # to one.
+            show_fts_hint=search_error is not None and parse_error is None,
             hide_relevance=not has_fts_terms,
         )
 

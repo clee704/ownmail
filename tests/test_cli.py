@@ -52,6 +52,16 @@ class TestCmdSearch:
         assert "Found" in captured.out
         assert "invoice" in captured.out.lower()
 
+    def test_search_reports_a_malformed_query(self, temp_dir, capsys):
+        """A parse error came back as zero rows, printed as 'No results found'."""
+        from ownmail.archive import EmailArchive
+
+        archive = EmailArchive(temp_dir, {})
+        cmd_search(archive, 'subject:"unclosed')
+        captured = capsys.readouterr()
+        assert "Invalid search: Unclosed quote" in captured.out
+        assert "No results found" not in captured.out
+
 
 class TestCmdStats:
     """Tests for stats command."""

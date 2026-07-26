@@ -17,6 +17,7 @@ from ownmail.config import (
 from ownmail.keychain import KeychainStorage
 from ownmail.providers.gmail import GmailProvider
 from ownmail.providers.imap import discover_role_folders
+from ownmail.query import parse_query
 
 # Default locations
 SCRIPT_DIR = Path(__file__).parent.absolute()
@@ -570,6 +571,13 @@ def cmd_download(
 def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
     """Search archived emails."""
     print(f"\nSearching for: {query}\n")
+
+    # A parse error comes back from search() as zero rows, which looks like
+    # "nothing matched" rather than "that query is malformed".
+    parsed = parse_query(query)
+    if parsed.has_error():
+        print(f"Invalid search: {parsed.error}")
+        return
 
     results = archive.search(query, limit=limit)
 

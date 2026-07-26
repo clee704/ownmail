@@ -2635,13 +2635,43 @@ class TestSearchRoute:
 
     def test_verbose_logs_search_error(self, archive, capsys):
         """A search failure should be logged and rendered as an error."""
+        # Query has to parse cleanly to reach search() at all — an unbalanced
+        # paren is now rejected before that, and is covered separately below.
         archive.search.side_effect = RuntimeError("fts5 syntax error")
         app = create_app(archive, verbose=True)
         with app.test_client() as client:
-            response = client.get("/search?q=bad(")
+            response = client.get("/search?q=bad")
         assert response.status_code == 200
         assert b"fts5 syntax error" in response.data
         assert "Search error: fts5 syntax error" in capsys.readouterr().out
+
+    def test_parse_error_is_shown_instead_of_no_results(self, archive):
+        """A malformed query used to render as an empty archive."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/search?q=bad(")
+        assert response.status_code == 200
+        assert b"Unclosed parenthesis" in response.data
+        assert b"No results found" not in response.data
+        archive.search.assert_not_called()
+
+    def test_unknown_role_error_reaches_the_page(self, archive):
+        """The role: message names the valid slugs, which is only useful if seen."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/search?q=role:starred")
+        assert b"Unknown role" in response.data
+        assert b"inbox" in response.data
+
+    def test_parse_error_skips_the_fts_quoting_hint(self, archive):
+        """The quoting hint is for cryptic FTS5 errors, not for a clear message."""
+        app = create_app(archive)
+        with app.test_client() as client:
+            parse = client.get("/search?q=role:starred")
+            archive.search.side_effect = RuntimeError("fts5 syntax error")
+            fts = client.get("/search?q=bad")
+        assert b"Try quoting phrases" not in parse.data
+        assert b"Try quoting phrases" in fts.data
 
 
 class TestTrashMutationRoutes:
