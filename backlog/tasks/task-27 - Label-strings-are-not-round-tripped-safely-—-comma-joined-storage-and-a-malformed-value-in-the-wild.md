@@ -26,7 +26,7 @@ Two related findings about how label strings survive the trip into the archive.
 
 That is a role token followed by what is unmistakably a References or In-Reply-To header value. It contains no comma, so the split above passed it through intact as a single label. It renders in the sidebar as a user label, because neither the Gmail ID map nor the leaf-name table matches the whole string.
 
-Something concatenated a label with header content. Worth tracing before deciding the fix — candidates include a folded or multi-line IMAP FETCH response parsed as one line, a literal-length miscount, or the import path (TASK-7). Do not guess: the affected messages are reproducible input, so identify the actual producer first.
+Something concatenated a label with header content. Worth tracing before deciding the fix — candidates include a folded or multi-line IMAP FETCH response parsed as one line, a literal-length miscount, or the import path (TASK-7). Do not guess. An archive holding the malformed label also holds the messages that produced it, so identify the actual producer from those before changing anything.
 
 The two findings share a shape — nothing validates a label string between the provider and the index. Sanity bounds worth considering once the producer is known: reject or flag a label containing '<' and '@' together, or one implausibly long.
 

@@ -109,6 +109,15 @@ Rules:
   work" is not verified.
 - **A task is `Done` only when every AC is met**, tests pass, and the work is
   committed.
+- **The ledger is public. Keep one person's data out of it.** `backlog/` ships
+  in the repo, and so do commit messages — both are permanent once pushed.
+  Evidence from a real archive is welcome and makes a bug credible: "confirmed
+  against a real archive", a label name, a reproduction. What never goes in is
+  anything tied to one install — filesystem paths, account names or addresses,
+  message counts, folder trees. Write the finding, not the fingerprint.
+- **A task is product work.** Running a one-off operation on your own archive
+  isn't a task, even when a task made it possible. File the capability; the
+  operator runs it.
 
 ## Code hygiene
 
