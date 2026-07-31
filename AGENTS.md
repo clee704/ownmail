@@ -34,9 +34,13 @@ Selection order:
    pulling new work. Check the working tree too — an uncommitted diff is
    in-progress work whether or not a task says so.
 2. **Otherwise take the next `To Do` task**: lowest `ordinal` within the
-   earliest open milestone. `backlog task list --plain` and `backlog board`
-   show this directly. Sequencing rationale lives in
-   `backlog/docs/doc-4 - Execution order`.
+   earliest open milestone. **Read the order from
+   `backlog/docs/doc-4 - Execution order`**, which holds both the sequence and
+   the rationale — its Phase 5 table is the current authority. Do *not* try to
+   recover the order from the CLI: `backlog task list --plain` sorts by
+   priority and `backlog board` by neither, so neither shows `ordinal`
+   sequence. Use `backlog task <id> --plain` to read a task once doc-4 has told
+   you which one.
 3. **Respect `dependencies:`.** A task whose dependencies aren't `Done` is not
    eligible — skip to the next one.
 4. **If several tasks tie**, or the ledger contradicts itself (two tasks
