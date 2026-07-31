@@ -14,7 +14,7 @@ import webbrowser
 from datetime import datetime
 from email.policy import default as email_policy
 from email.utils import parsedate_to_datetime
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, g, redirect, render_template, request, send_file
@@ -1668,8 +1668,12 @@ def create_app(
         download_name = filepath.name
         return send_file(filepath, as_attachment=True, download_name=download_name)
 
+    # The trailing name is decorative — the index picks the part. It is there
+    # because a previewing browser titles the tab, and defaults "save as", from
+    # the last path segment, which was otherwise the bare index.
     @app.route("/attachment/<email_id>/<int:index>")
-    def download_attachment(email_id: str, index: int):
+    @app.route("/attachment/<email_id>/<int:index>/<path:name>")
+    def download_attachment(email_id: str, index: int, name: str = None):
         # Get email file path
         email_info = archive.db.get_email_by_id(email_id)
         if not email_info:
@@ -2096,6 +2100,9 @@ def _attachment_entry(part) -> dict:
 
     return {
         "filename": filename,
+        # Percent-encoded for the tail of the attachment URL, so a preview tab
+        # is titled with the name rather than the part's index.
+        "url_name": quote(filename, safe=""),
         "size": _format_size(len(payload) if payload else 0),
         "icon": _attachment_icon(content_type),
         "kind": kind,

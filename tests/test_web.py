@@ -677,6 +677,28 @@ class TestAttachmentDisposition:
         r = client.get("/attachment/msg1/0")
         assert r.headers["Content-Type"] == "text/plain; charset=utf-8"
 
+    def test_named_url_serves_the_attachment(self, tmp_path):
+        """The name may trail the URL so a preview tab is titled with it."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: image/png\r\nContent-Disposition: attachment; filename="a.png"',
+        )
+        r = client.get("/attachment/msg1/0/a.png")
+        assert r.status_code == 200
+        assert r.headers["Content-Type"] == "image/png"
+
+    def test_trailing_name_is_decorative(self, tmp_path):
+        """The index selects the part; a wrong trailing name changes nothing."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: image/png\r\nContent-Disposition: attachment; filename="a.png"',
+        )
+        named = client.get("/attachment/msg1/0/not-the-real-name.zip")
+        bare = client.get("/attachment/msg1/0")
+        assert named.status_code == 200
+        assert named.headers["Content-Type"] == "image/png"
+        assert named.data == bare.data
+
     def test_charset_cannot_inject_a_header(self, tmp_path):
         """A charset carrying its own parameters is rejected outright."""
         client = self._client(

@@ -227,13 +227,13 @@
                     <span class="ownmail-attachment-icon" aria-hidden="true">{{ att.icon }}</span>
                     <span class="ownmail-attachment-text">
                         <a class="ownmail-attachment-name"
-                           href="/attachment/{{ email_id }}/{{ loop.index0 }}"
+                           href="/attachment/{{ email_id }}/{{ loop.index0 }}/{{ att.url_name }}"
                            {% if att.previewable %}target="_blank" rel="noopener noreferrer"{% endif %}
                            >{{ att.filename }}</a>
                         <span class="ownmail-attachment-meta">{{ att.kind }} · {{ att.size }}</span>
                     </span>
                     <a class="ownmail-attachment-download"
-                       href="/attachment/{{ email_id }}/{{ loop.index0 }}?download"
+                       href="/attachment/{{ email_id }}/{{ loop.index0 }}/{{ att.url_name }}?download"
                        title="Download {{ att.filename }}"
                        aria-label="Download {{ att.filename }}">⬇</a>
                 </li>
