@@ -578,10 +578,22 @@ a:hover { text-decoration: underline; }
 .ownmail-attachments { margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee; }
 .ownmail-attachments h4 { margin: 0 0 10px 0; font-size: 0.95em; }
 .ownmail-attachment-list { list-style: none; padding: 0; margin: 0; }
-.ownmail-attachment-item { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.ownmail-attachment-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
 .ownmail-attachment-item:last-child { border-bottom: none; }
 .ownmail-attachment-item a { color: #0066cc; text-decoration: none; }
 .ownmail-attachment-item a:hover { text-decoration: underline; }
+.ownmail-attachment-icon { flex: none; font-size: 1.2em; line-height: 1; }
+.ownmail-attachment-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ownmail-attachment-name { overflow-wrap: anywhere; }
+.ownmail-attachment-meta { font-size: 0.8em; color: #777; }
+.ownmail-attachment-download {
+    flex: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #555 !important;
+    text-decoration: none;
+}
+.ownmail-attachment-download:hover { background: #f0f0f0; text-decoration: none !important; }
 .ownmail-help-page h2 { margin-top: 0; }
 .ownmail-help-page h3 { margin-top: 15px; margin-bottom: 10px; font-size: 1.1em; color: #333; }
 .ownmail-help-note { font-size: 0.9em; color: #666; margin: 0 0 10px 0; }
@@ -941,6 +953,9 @@ html.ownmail-dark {
     .ownmail-attachments { border-top-color: #333; }
     .ownmail-attachment-item { border-bottom-color: #333; }
     .ownmail-attachment-item a { color: #6cb6ff; }
+    .ownmail-attachment-meta { color: #999; }
+    .ownmail-attachment-download { color: #aaa !important; }
+    .ownmail-attachment-download:hover { background: #2d2d2d; }
     .ownmail-help { color: #999; }
     .ownmail-help code { background: #2d2d2d; }
     .ownmail-help a { color: #6cb6ff; }

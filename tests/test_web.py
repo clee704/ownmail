@@ -591,6 +591,102 @@ class TestAttachmentRoute:
             assert response.status_code == 404
 
 
+class TestAttachmentDisposition:
+    """Tests for inline preview vs download on the attachment route."""
+
+    def _client(self, tmp_path, part_headers: bytes, payload: bytes = b"data"):
+        from unittest.mock import MagicMock
+
+        from ownmail.web import create_app
+
+        raw = (
+            b"From: a@b.com\r\nSubject: t\r\n"
+            b'Content-Type: multipart/mixed; boundary="b1"\r\n\r\n--b1\r\n'
+            + part_headers
+            + b"\r\n\r\n"
+            + payload
+            + b"\r\n--b1--\r\n"
+        )
+        (tmp_path / "m.eml").write_bytes(raw)
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.db = mock_archive_db(get_email_by_id=("msg1", "m.eml", None, None, None, None))
+        return create_app(archive).test_client()
+
+    def test_pdf_is_served_inline_and_sandboxed(self, tmp_path):
+        """A safelisted type renders in the browser, boxed in by headers."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"',
+        )
+        r = client.get("/attachment/msg1/0")
+        assert r.status_code == 200
+        assert r.headers["Content-Type"] == "application/pdf"
+        assert r.headers["Content-Disposition"].startswith("inline")
+        assert r.headers["Content-Security-Policy"] == "default-src 'none'; sandbox"
+        assert r.headers["X-Content-Type-Options"] == "nosniff"
+
+    def test_svg_is_never_inline(self, tmp_path):
+        """SVG can carry script, so it downloads however it is labelled."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: image/svg+xml\r\nContent-Disposition: attachment; filename="a.svg"',
+        )
+        r = client.get("/attachment/msg1/0")
+        assert r.headers["Content-Disposition"].startswith("attachment")
+        assert r.headers["Content-Type"] == "application/octet-stream"
+        assert "Content-Security-Policy" not in r.headers
+
+    def test_html_attachment_is_never_inline(self, tmp_path):
+        """An HTML attachment must not render on the archive's origin."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: text/html\r\nContent-Disposition: attachment; filename="a.html"',
+            payload=b"<script>alert(1)</script>",
+        )
+        r = client.get("/attachment/msg1/0")
+        assert r.headers["Content-Disposition"].startswith("attachment")
+        assert r.headers["Content-Type"] == "application/octet-stream"
+
+    def test_download_query_forces_attachment(self, tmp_path):
+        """?download saves a previewable type instead of rendering it."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"',
+        )
+        r = client.get("/attachment/msg1/0?download")
+        assert r.headers["Content-Disposition"].startswith("attachment")
+        assert r.headers["Content-Type"] == "application/octet-stream"
+        assert "Content-Security-Policy" not in r.headers
+
+    def test_text_keeps_a_declared_charset(self, tmp_path):
+        """A charset codecs recognizes is passed through, exactly once."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: text/plain; charset="euc-kr"\r\nContent-Disposition: attachment; filename="a.txt"',
+        )
+        r = client.get("/attachment/msg1/0")
+        assert r.headers["Content-Type"] == "text/plain; charset=euc-kr"
+
+    def test_text_falls_back_on_a_bogus_charset(self, tmp_path):
+        """An unusable charset must not reach the header."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: text/plain; charset="nonsuch-9000"\r\nContent-Disposition: attachment; filename="a.txt"',
+        )
+        r = client.get("/attachment/msg1/0")
+        assert r.headers["Content-Type"] == "text/plain; charset=utf-8"
+
+    def test_charset_cannot_inject_a_header(self, tmp_path):
+        """A charset carrying its own parameters is rejected outright."""
+        client = self._client(
+            tmp_path,
+            b'Content-Type: text/plain; charset="utf-8; x=y"\r\nContent-Disposition: attachment; filename="a.txt"',
+        )
+        r = client.get("/attachment/msg1/0")
+        assert r.headers["Content-Type"] == "text/plain; charset=utf-8"
+
+
 class TestExtractSnippetMultipart:
     """Tests for _extract_snippet with multipart emails."""
 

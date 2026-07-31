@@ -1,6 +1,7 @@
 """Web interface for browsing and searching the email archive."""
 
 import base64
+import codecs
 import email
 import email.header
 import html
@@ -33,6 +34,54 @@ EXTERNAL_IMAGE_RE = re.compile(
 CSS_EXTERNAL_URL_RE = re.compile(
     r'url\(\s*["\']?(https?://[^"\')\s]+)["\']?\s*\)',
     re.IGNORECASE,
+)
+
+# Content types served inline, so the browser renders them instead of saving
+# them. Everything absent from this set is downloaded.
+#
+# An inline response shares the archive's origin, and the type it claims comes
+# from the email, which anyone who can send mail controls. So this lists only
+# formats the browser renders without scripting, and the response is sent with
+# the type named here rather than the one the message declared. image/svg+xml
+# is left out on purpose: SVG can carry <script>.
+INLINE_SAFE_TYPES = frozenset(
+    {
+        "application/pdf",
+        "image/avif",
+        "image/bmp",
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "text/plain",
+        "audio/mpeg",
+        "audio/mp4",
+        "audio/ogg",
+        "audio/wav",
+        "audio/webm",
+        "video/mp4",
+        "video/ogg",
+        "video/webm",
+    }
+)
+
+# A charset name may only look like this before it goes in a response header
+CHARSET_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
+
+# Denies everything and drops the response into an opaque origin, so an inline
+# attachment cannot reach the archive around it.
+ATTACHMENT_CSP = "default-src 'none'; sandbox"
+
+# Recognized only to pick the box glyph in the attachment list
+ARCHIVE_TYPES = frozenset(
+    {
+        "application/gzip",
+        "application/x-7z-compressed",
+        "application/x-bzip2",
+        "application/x-rar-compressed",
+        "application/x-tar",
+        "application/zip",
+    }
 )
 
 # Regex to extract charset from HTML meta tag
@@ -1374,15 +1423,7 @@ def create_app(
 
                                 # Check for attachments inside embedded message
                                 if "attachment" in sub_disp or sub.get_filename():
-                                    att_filename = extract_attachment_filename(sub)
-                                    payload = sub.get_payload(decode=True)
-                                    size = len(payload) if payload else 0
-                                    attachments.append(
-                                        {
-                                            "filename": att_filename,
-                                            "size": _format_size(size),
-                                        }
-                                    )
+                                    attachments.append(_attachment_entry(sub))
                                 elif sub_ct == "text/plain" and not emb_body:
                                     payload = sub.get_payload(decode=True)
                                     if payload:
@@ -1417,15 +1458,7 @@ def create_app(
                     continue
 
                 if "attachment" in content_disposition:
-                    # Extract filename with proper charset handling
-                    att_filename = extract_attachment_filename(part)
-                    size = len(part.get_payload(decode=True) or b"")
-                    attachments.append(
-                        {
-                            "filename": att_filename,
-                            "size": _format_size(size),
-                        }
-                    )
+                    attachments.append(_attachment_entry(part))
                 elif content_type == "text/plain":
                     payload = part.get_payload(decode=True)
                     if payload:
@@ -1662,17 +1695,30 @@ def create_app(
                     # Extract filename with proper charset handling
                     att_filename = extract_attachment_filename(part)
                     att_data = part.get_payload(decode=True)
-                    content_type = part.get_content_type()
+
+                    # ?download is the explicit save action; otherwise render
+                    # in the browser when the format is one we serve inline.
+                    inline_type = None if "download" in request.args else _inline_content_type(part)
 
                     # Send directly from memory
                     import io
 
-                    return send_file(
-                        io.BytesIO(att_data),
-                        mimetype=content_type,
-                        as_attachment=True,
+                    response = send_file(
+                        io.BytesIO(att_data or b""),
+                        # Downloads deliberately go out as octet-stream: the
+                        # type the message claims is not worth trusting, and
+                        # the filename already carries the extension.
+                        mimetype=inline_type or "application/octet-stream",
+                        as_attachment=inline_type is None,
                         download_name=att_filename,
                     )
+                    response.headers["X-Content-Type-Options"] = "nosniff"
+                    if inline_type:
+                        # Set explicitly: werkzeug appends a charset of its own
+                        # to any text/* mimetype, which would leave two.
+                        response.headers["Content-Type"] = inline_type
+                        response.headers["Content-Security-Policy"] = ATTACHMENT_CSP
+                    return response
                 attachment_idx += 1
 
         abort(404)
@@ -1987,6 +2033,74 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / 1024:.1f} KB"
     else:
         return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def _inline_content_type(part) -> str | None:
+    """Return the type to serve this part inline as, or None to download it.
+
+    The returned type always comes from INLINE_SAFE_TYPES rather than from the
+    message, so a mislabelled part cannot talk the browser into rendering
+    something else.
+    """
+    content_type = (part.get_content_type() or "").lower()
+    if content_type not in INLINE_SAFE_TYPES:
+        return None
+
+    if content_type == "text/plain":
+        # Keep the declared charset so CJK text reads correctly. It has to look
+        # like a charset name before it can go in a header, and codecs has to
+        # recognize it; anything else is served as UTF-8. Note the declared
+        # spelling is what ships — codecs' canonical name uses underscores
+        # ("euc_kr"), which is not a charset any browser knows.
+        charset = part.get_content_charset() or ""
+        if CHARSET_NAME_RE.fullmatch(charset):
+            try:
+                codecs.lookup(charset)
+            except LookupError:
+                charset = ""
+        else:
+            charset = ""
+        return f"text/plain; charset={charset or 'utf-8'}"
+
+    return content_type
+
+
+def _attachment_icon(content_type: str) -> str:
+    """Pick a glyph for an attachment from its content type."""
+    if content_type == "application/pdf":
+        return "📄"
+    family = content_type.split("/", 1)[0]
+    if family == "image":
+        return "🖼"
+    if family == "audio":
+        return "🎵"
+    if family == "video":
+        return "🎬"
+    if family == "text":
+        return "📝"
+    if content_type in ARCHIVE_TYPES:
+        return "📦"
+    return "📎"
+
+
+def _attachment_entry(part) -> dict:
+    """Describe one attachment part for the detail template."""
+    filename = extract_attachment_filename(part)
+    content_type = (part.get_content_type() or "").lower()
+    payload = part.get_payload(decode=True)
+
+    # The extension is what people recognize; fall back to the MIME subtype
+    # for the attachments that arrive without one.
+    _, _, extension = filename.rpartition(".")
+    kind = extension.upper() if extension and len(extension) <= 5 else content_type.rpartition("/")[2].upper()
+
+    return {
+        "filename": filename,
+        "size": _format_size(len(payload) if payload else 0),
+        "icon": _attachment_icon(content_type),
+        "kind": kind,
+        "previewable": _inline_content_type(part) is not None,
+    }
 
 
 def run_server(
