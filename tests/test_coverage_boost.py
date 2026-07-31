@@ -925,31 +925,6 @@ Body text.
         assert result is not None
 
 
-class TestWebFixMojibake:
-    """Tests for web _fix_mojibake_filename."""
-
-    def test_fix_mojibake_ascii(self):
-        """Test ASCII filename passes through."""
-        from ownmail.web import _fix_mojibake_filename
-
-        result = _fix_mojibake_filename("document.pdf")
-        assert result == "document.pdf"
-
-    def test_fix_mojibake_empty(self):
-        """Test empty filename."""
-        from ownmail.web import _fix_mojibake_filename
-
-        result = _fix_mojibake_filename("")
-        assert result == ""
-
-    def test_fix_mojibake_unicode(self):
-        """Test unicode filename passes through."""
-        from ownmail.web import _fix_mojibake_filename
-
-        result = _fix_mojibake_filename("한글파일.txt")
-        assert result == "한글파일.txt"
-
-
 class TestWebTryDecode:
     """Tests for web _try_decode."""
 
@@ -2041,23 +2016,6 @@ No attachments here.
         with app.test_client() as client:
             response = client.get("/email/noattach/attachment/99")
             assert response.status_code == 404
-
-
-class TestWebMojibakeFilename:
-    """Tests for mojibake filename handling."""
-
-    def test_fix_mojibake_with_euc_kr(self):
-        """Test fixing EUC-KR mojibake filename."""
-        from ownmail.web import _fix_mojibake_filename
-
-        # Simulated mojibake: EUC-KR bytes interpreted as latin-1
-        korean_text = "테스트"
-        euc_kr_bytes = korean_text.encode("euc-kr")
-        mojibake = euc_kr_bytes.decode("latin-1")
-
-        result = _fix_mojibake_filename(mojibake)
-        # Should detect and fix the mojibake
-        assert result is not None
 
 
 class TestWebRawEmail:

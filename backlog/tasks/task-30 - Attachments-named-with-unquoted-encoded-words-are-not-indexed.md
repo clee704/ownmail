@@ -1,9 +1,10 @@
 ---
 id: TASK-30
 title: Attachments named with unquoted encoded-words are not indexed
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-31 18:59'
+updated_date: '2026-07-31 19:13'
 labels:
   - bug
 dependencies: []
@@ -22,8 +23,24 @@ Note the quoted form `filename="=?UTF-8?B?...?="` already works — the default 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 parser.py records attachment names for unquoted encoded-word filename parameters
-- [ ] #2 has_attachments is set for such messages, so has:attachment finds them
-- [ ] #3 Filename extraction lives in one place rather than being duplicated across web.py and parser.py
-- [ ] #4 Regression test covering the unquoted encoded-word case through parse_file
+- [x] #1 parser.py records attachment names for unquoted encoded-word filename parameters
+- [x] #2 has_attachments is set for such messages, so has:attachment finds them
+- [x] #3 Filename extraction lives in one place rather than being duplicated across web.py and parser.py
+- [x] #4 Regression test covering the unquoted encoded-word case through parse_file
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Moved `extract_attachment_filename` and `_fix_mojibake_filename` (plus the four header regexes) from web.py into parser.py, which is the lower module — web.py already imports it, so the dependency runs the right way and there is one implementation rather than two. web.py imports the name and its three call sites are unchanged otherwise.
+
+The move dropped web.py's `decode_header` from the picture: the two calls inside now use parser.py's existing `EmailParser._decode_header_value`, which decodes RFC 2047 the same way and additionally groups adjacent same-charset encoded-words. All the pre-existing extraction tests pass against it unchanged, so web.py's `decode_header` stayed where it is for header use.
+
+parse_file now calls `extract_attachment_filename(part)` instead of `part.get_filename()`.
+
+Verified end to end on a temporary archive: an unquoted encoded-word attachment indexes as 'Holiday Calendar 2026.pdf', has_attachments is stored as 1, and `has:attachment`, `attachment:Holiday` and `attachment:Calendar` each return the message while `attachment:Nonexistent` returns none.
+
+Tests moved with the code: `TestExtractAttachmentFilenameEncodings` went from test_web.py to test_parser.py. Three duplicate `_fix_mojibake_filename` tests in test_coverage_boost.py were deleted rather than retargeted — test_fixtures.py already covers the same cases, with a stronger assertion in the Korean one.
+
+Existing archives need `ownmail rebuild` before search reflects this.
+<!-- SECTION:NOTES:END -->

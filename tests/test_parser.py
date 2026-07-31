@@ -1,5 +1,6 @@
 """Tests for EmailParser class."""
 
+import email
 import sys
 from pathlib import Path
 
@@ -1124,6 +1125,21 @@ class TestParseFileBodyExtraction:
         )
         assert "report.pdf" in EmailParser.parse_file(content=raw)["attachments"]
 
+    def test_unquoted_encoded_word_filename_is_indexed(self):
+        """An unquoted encoded-word name must still reach the index.
+
+        get_filename() returns None for it, which left the message with no
+        attachments recorded and has_attachments stored as 0.
+        """
+        raw = (
+            b'Content-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nbody\r\n"
+            b"--b1\r\nContent-Type: application/pdf\r\n"
+            b"Content-Disposition: attachment;\r\n filename==?UTF-8?B?7YWM7Iqk7Yq4LnBkZg==?=\r\n\r\n"
+            b"DATA\r\n--b1--\r\n"
+        )
+        assert EmailParser.parse_file(content=raw)["attachments"] == "테스트.pdf"
+
     def test_malformed_message_returns_empty_fields(self):
         """Garbage input should produce a result dict, not an exception."""
         result = EmailParser.parse_file(content=b"\xff\xfe not an email at all")
@@ -1348,3 +1364,159 @@ class TestNormalizeDateCleanedFallback:
         """A value nothing can parse should come back unchanged."""
         original = "화, still not a date"
         assert EmailParser._normalize_date(original) == original
+
+
+class TestExtractAttachmentFilenameEncodings:
+    """Tests for extract_attachment_filename CJK decoding paths."""
+
+    def _part(self, raw_header: bytes):
+        """Build a message part the way view_email does (policy=default)."""
+        from email.policy import default as email_policy
+
+        raw = b"Content-Type: application/octet-stream\r\n" + raw_header + b"\r\n\r\npayload\r\n"
+        return email.message_from_bytes(raw, policy=email_policy)
+
+    def test_raw_euc_kr_filename_is_decoded(self):
+        """A raw EUC-KR filename= value should decode to Hangul."""
+        from ownmail.parser import extract_attachment_filename
+
+        name = "한글.txt".encode("euc-kr")
+        part = self._part(b'Content-Disposition: attachment; filename="' + name + b'"')
+        assert extract_attachment_filename(part) == "한글.txt"
+
+    def test_ascii_filename_passes_through(self):
+        """A plain ASCII filename should be returned unchanged."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b'Content-Disposition: attachment; filename="report.pdf"')
+        assert extract_attachment_filename(part) == "report.pdf"
+
+    def test_mime_encoded_filename_is_decoded(self):
+        """A MIME encoded-word filename should be decoded."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b'Content-Disposition: attachment; filename="=?UTF-8?B?7YWM7Iqk7Yq4LnR4dA==?="')
+        assert extract_attachment_filename(part) == "테스트.txt"
+
+    def test_no_filename_returns_default(self):
+        """A part with no filename should fall back to 'attachment'."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment")
+        assert extract_attachment_filename(part) == "attachment"
+
+    def test_rfc2231_encoded_filename(self):
+        """An RFC 2231 filename*=charset''value should be decoded."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*=UTF-8''%ED%85%8C%EC%8A%A4%ED%8A%B8.txt")
+        assert extract_attachment_filename(part) == "테스트.txt"
+
+    def test_rfc2231_unknown_8bit_treated_as_euc_kr(self):
+        """charset unknown-8bit should be decoded as EUC-KR."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*=unknown-8bit''%C7%D1%B1%DB.txt")
+        assert extract_attachment_filename(part) == "한글.txt"
+
+    def test_rfc2231_mime_hybrid_quoted_printable(self):
+        """A Q-encoded hybrid continuation should decode."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(
+            b'Content-Disposition: attachment; filename*0="=?UTF-8?Q?caf=C3=A9?="; filename*1="=?UTF-8?Q?.txt?="'
+        )
+        assert extract_attachment_filename(part) == "café.txt"
+
+    def test_rfc2231_mime_hybrid_unknown_charset(self):
+        """A hybrid encoded-word declaring 'unknown' should be read as UTF-8."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b'Content-Disposition: attachment; filename*0="=?unknown?B?7YWM7Iqk7Yq4?="')
+        assert extract_attachment_filename(part) == "테스트"
+
+    def test_rfc2231_empty_charset_treated_as_euc_kr(self):
+        """An RFC 2231 value with no charset should be read as EUC-KR."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*=''%C7%D1%B1%DB.txt")
+        assert extract_attachment_filename(part) == "한글.txt"
+
+    def test_rfc2231_continuation_without_charset_prefix(self):
+        """Continuation segments carry no charset and inherit the first one."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*0*=euc-kr''%C7%D1; filename*1*=%B1%DB.txt")
+        assert extract_attachment_filename(part) == "한글.txt"
+
+    def test_rfc2231_ascii_value_is_percent_decoded(self):
+        """A non-CJK RFC 2231 value should still be percent-decoded."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment; filename*=UTF-8''report%20final.pdf")
+        assert extract_attachment_filename(part) == "report final.pdf"
+
+    def test_rfc2231_mime_hybrid_continuation(self):
+        """RFC 2231 continuations holding MIME encoded-words should be joined."""
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(
+            b'Content-Disposition: attachment; filename*0="=?UTF-8?B?7YWM7Iqk?="; filename*1="=?UTF-8?B?7Yq4?="'
+        )
+        assert extract_attachment_filename(part) == "테스트"
+
+    def test_unquoted_encoded_word_filename(self):
+        """An unquoted encoded-word parameter should decode.
+
+        The strict policy rejects the whole parameter as invalid, so
+        get_filename() gives back None and the raw header is the only source.
+        """
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment;\r\n filename==?UTF-8?B?7YWM7Iqk7Yq4LnR4dA==?=")
+        assert part.get_filename() is None
+        assert extract_attachment_filename(part) == "테스트.txt"
+
+    def test_folded_unquoted_encoded_word_filename(self):
+        """An unquoted encoded-word split across a fold should be rejoined.
+
+        Without unfolding, the bare-token match stops at the line break and
+        only the first half of the name survives.
+        """
+        from ownmail.parser import extract_attachment_filename
+
+        part = self._part(
+            b"Content-Disposition: attachment;\r\n filename==?UTF-8?B?7YWM7Iqk?=\r\n =?UTF-8?B?7Yq4LnR4dA==?="
+        )
+        assert extract_attachment_filename(part) == "테스트.txt"
+
+    def test_payload_filename_is_not_used(self):
+        """filename= text in the payload must not be mistaken for the header."""
+        from email.policy import default as email_policy
+
+        from ownmail.parser import extract_attachment_filename
+
+        raw = (
+            b"Content-Type: text/plain\r\n"
+            b"Content-Disposition: attachment\r\n"
+            b"\r\n"
+            b'Content-Disposition: attachment; filename="=?UTF-8?B?7YWM7Iqk?="\r\n'
+        )
+        part = email.message_from_bytes(raw, policy=email_policy)
+        assert extract_attachment_filename(part) == "attachment"
+
+    def test_fixture_encoded_word_filenames(self):
+        """The real-world fixture's attachment names should both decode."""
+        from email.policy import default as email_policy
+        from pathlib import Path
+
+        from ownmail.parser import extract_attachment_filename
+
+        raw = (Path(__file__).parent / "fixtures" / "rfc2047_filename_param.eml").read_bytes()
+        msg = email.message_from_bytes(raw, policy=email_policy)
+        names = [
+            extract_attachment_filename(part)
+            for part in msg.walk()
+            if "attachment" in str(part.get("Content-Disposition", ""))
+        ]
+        assert names == ["Holiday Calendar 2026.pdf", "한글 이미지.jpg"]

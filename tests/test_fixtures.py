@@ -613,20 +613,20 @@ class TestWebUtilityFunctions:
 
     def test_fix_mojibake_empty(self):
         """Test _fix_mojibake_filename with empty."""
-        from ownmail.web import _fix_mojibake_filename
+        from ownmail.parser import _fix_mojibake_filename
 
         assert _fix_mojibake_filename("") == ""
         assert _fix_mojibake_filename(None) is None
 
     def test_fix_mojibake_ascii(self):
         """Test _fix_mojibake_filename with ASCII."""
-        from ownmail.web import _fix_mojibake_filename
+        from ownmail.parser import _fix_mojibake_filename
 
         assert _fix_mojibake_filename("file.txt") == "file.txt"
 
     def test_fix_mojibake_korean(self):
         """Test _fix_mojibake_filename with Korean mojibake."""
-        from ownmail.web import _fix_mojibake_filename
+        from ownmail.parser import _fix_mojibake_filename
 
         # Simulate mojibake: Korean encoded as EUC-KR, decoded as latin-1
         korean = "테스트.txt"
@@ -638,7 +638,7 @@ class TestWebUtilityFunctions:
 
     def test_fix_mojibake_unicode_error(self):
         """Test _fix_mojibake_filename skips non-latin1 chars."""
-        from ownmail.web import _fix_mojibake_filename
+        from ownmail.parser import _fix_mojibake_filename
 
         # Already has proper Unicode chars - can't encode to latin-1
         result = _fix_mojibake_filename("한글파일.txt")

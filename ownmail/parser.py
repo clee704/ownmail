@@ -1,5 +1,6 @@
 """Email parser for extracting searchable content from .eml files."""
 
+import base64
 import email
 import email.utils
 import html
@@ -706,7 +707,9 @@ class EmailParser:
                         # Get attachment filenames
                         if "attachment" in content_disposition:
                             try:
-                                filename = part.get_filename()
+                                # Not get_filename(): it returns None for the
+                                # malformed parameters this recovers by hand
+                                filename = extract_attachment_filename(part)
                                 if filename:
                                     attachments.append(EmailParser._sanitize_header(filename))
                             except Exception:
@@ -743,3 +746,244 @@ class EmailParser:
             "body": "\n".join(body_parts),
             "attachments": ", ".join(attachments),
         }
+
+
+# Splits a raw MIME part into its header block and its payload
+HEADER_BODY_SPLIT_RE = re.compile(rb"\r?\n\r?\n")
+
+# Joins a folded header back onto one line, per RFC 5322 unfolding
+HEADER_UNFOLD_RE = re.compile(rb"\r?\n[ \t]+")
+
+# Extracts RFC 2231 encoded filename parts
+# Handles both: filename*=charset''value and filename*0*=charset''value
+RFC2231_FILENAME_RE = re.compile(rb"filename\*(\d*)\*?=([^;\r\n]+)", re.IGNORECASE)
+
+# Matches a plain filename= parameter, quoted or bare
+SIMPLE_FILENAME_RE = re.compile(rb'filename=[ \t]*(?:"([^"]*)"|([^;\r\n]+))', re.IGNORECASE)
+
+
+def _fix_mojibake_filename(filename: str) -> str:
+    """Fix mojibake in attachment filenames.
+
+    Some old emails have raw non-ASCII bytes in filenames without proper
+    MIME encoding. Python's email library decodes them as latin-1/ASCII,
+    producing mojibake. This function detects and fixes such cases.
+
+    Args:
+        filename: Potentially mojibake filename
+
+    Returns:
+        Properly decoded filename
+    """
+    if not filename:
+        return filename
+
+    # Check if the filename looks like mojibake (high latin-1 chars that
+    # could be EUC-KR/CP949 bytes interpreted as latin-1)
+    try:
+        # Try to encode as latin-1 to get raw bytes
+        raw_bytes = filename.encode("latin-1")
+    except UnicodeEncodeError:
+        # Contains chars outside latin-1, not simple mojibake
+        return filename
+
+    # Check if it has high bytes (potential CJK encoding)
+    if not any(b >= 0x80 for b in raw_bytes):
+        return filename  # All ASCII, no mojibake
+
+    # Try to decode as various CJK encodings
+    for encoding in ["euc-kr", "cp949", "utf-8", "gb2312", "gbk", "shift_jis"]:
+        try:
+            decoded = raw_bytes.decode(encoding)
+            # Validate that result looks like readable text
+            # (contains Hangul, CJK, or mostly printable ASCII)
+            hangul_cjk = sum(
+                1
+                for c in decoded
+                if "\uac00" <= c <= "\ud7af"  # Hangul
+                or "\u4e00" <= c <= "\u9fff"  # CJK
+                or "\u3040" <= c <= "\u30ff"
+            )  # Japanese
+            if hangul_cjk > 0:
+                return decoded
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    return filename  # Return original if nothing worked
+
+
+def extract_attachment_filename(part) -> str:
+    """Extract attachment filename with proper charset handling.
+
+    Python's email library can corrupt non-ASCII filenames that aren't
+    properly MIME-encoded. This function extracts the raw bytes from
+    the part and decodes them properly, handling RFC 2231 encoding.
+
+    Args:
+        part: Email MIME part
+
+    Returns:
+        Properly decoded filename, or "attachment" if none found
+    """
+    from urllib.parse import unquote_to_bytes
+
+    # Scan the part's raw header block, unfolded. The parsed view drops
+    # parameters the policy considers malformed, and the payload underneath
+    # can contain anything that looks like a filename= parameter.
+    try:
+        raw_part = HEADER_UNFOLD_RE.sub(b" ", HEADER_BODY_SPLIT_RE.split(part.as_bytes(), 1)[0])
+
+        # FIRST: Check for RFC2231 + MIME hybrid encoding (filename*N="=?UTF-8?B?...?=")
+        # Some email clients incorrectly combine RFC2231 continuation with MIME encoded-words
+        # This must be checked first because the quoted values break standard RFC2231 parsing
+        rfc2231_mime_re = re.compile(rb'filename\*\d+="([^"]+)"', re.IGNORECASE)
+        mime_matches = rfc2231_mime_re.findall(raw_part)
+        if mime_matches:
+            # Join all parts and clean up
+            combined_value = b"".join(mime_matches).replace(b"\r\n ", b" ").replace(b"\r\n", b"").replace(b"\n ", b" ")
+            combined_str = combined_value.decode("ascii", errors="ignore")
+
+            # Check if it contains MIME encoded-words
+            if "=?" in combined_str and "?=" in combined_str:
+                # Extract MIME encoded-words
+                mime_word_re = re.compile(r"=\?([^?]+)\?([BbQq])\?([^?]+)\?=")
+                mime_parts = mime_word_re.findall(combined_str)
+                if mime_parts:
+                    decoded_parts = []
+                    for charset_name, encoding, encoded_text in mime_parts:
+                        try:
+                            if encoding.upper() == "B":
+                                # Base64 - fix padding
+                                padding = 4 - (len(encoded_text) % 4) if len(encoded_text) % 4 else 0
+                                encoded_text += "=" * padding
+                                decoded_bytes = base64.b64decode(encoded_text)
+                            else:
+                                # Quoted-printable
+                                import quopri
+
+                                decoded_bytes = quopri.decodestring(encoded_text.encode("ascii"))
+
+                            # Decode with charset
+                            cs = charset_name.lower()
+                            if cs == "unknown":
+                                cs = "utf-8"
+                            decoded_parts.append(decoded_bytes.decode(cs, errors="replace"))
+                        except Exception:
+                            continue
+
+                    if decoded_parts:
+                        result = "".join(decoded_parts)
+                        if "\ufffd" not in result:
+                            return result
+
+        # SECOND: Look for standard RFC 2231 encoded filename
+        # Handles both: filename*=charset''value and filename*0*=charset''value
+        filename_parts = []
+
+        for match in RFC2231_FILENAME_RE.finditer(raw_part):
+            # Part number may be empty (single part) or a number (multi-part)
+            part_num_bytes = match.group(1)
+            part_num = int(part_num_bytes) if part_num_bytes else 0
+            value = match.group(2).strip()
+
+            # Skip if value starts with quote (handled above as hybrid)
+            if value.startswith(b'"'):
+                continue
+
+            # First part has charset''value format
+            if b"''" in value:
+                charset_bytes, encoded_value = value.split(b"''", 1)
+                charset = charset_bytes.decode("ascii", errors="ignore").lower()
+                # unknown-8bit is often EUC-KR for Korean emails
+                if charset in ("unknown-8bit", ""):
+                    charset = "euc-kr"
+            else:
+                # Continuation parts don't have charset prefix
+                encoded_value = value
+                charset = "euc-kr"
+
+            # URL-decode the value
+            try:
+                decoded_bytes = unquote_to_bytes(encoded_value.decode("ascii"))
+                filename_parts.append((part_num, decoded_bytes, charset))
+            except Exception:
+                continue
+
+        if filename_parts:
+            # Sort by part number and combine
+            filename_parts.sort(key=lambda x: x[0])
+            combined = b"".join(p[1] for p in filename_parts)
+            charset = filename_parts[0][2]  # Use charset from first part
+
+            # Try the specified charset first, then fallbacks
+            for enc in [charset, "euc-kr", "cp949", "utf-8", "gb2312", "shift_jis"]:
+                try:
+                    decoded = combined.decode(enc)
+                    # Validate it has readable CJK content
+                    if any(
+                        "\uac00" <= c <= "\ud7af"  # Hangul
+                        or "\u4e00" <= c <= "\u9fff"  # CJK
+                        or "\u3040" <= c <= "\u30ff"  # Japanese
+                        for c in decoded
+                    ):
+                        return decoded
+                    # If no CJK but decoded without errors, use it
+                    if enc in ["utf-8", charset]:
+                        return decoded
+                except (UnicodeDecodeError, LookupError):
+                    continue
+
+        # THIRD: Read the plain filename= parameter out of the raw header.
+        # Two things land here: raw non-ASCII bytes with no encoding declared
+        # at all, and RFC 2047 encoded-words used as the parameter value. The
+        # latter is illegal but common in the wild, and an unquoted one is
+        # rejected wholesale by the strict policy — get_filename() returns
+        # None for it, so this is the only place it can be recovered.
+        simple_match = SIMPLE_FILENAME_RE.search(raw_part)
+        if simple_match:
+            raw_filename = (simple_match.group(1) or simple_match.group(2)).strip()
+
+            if b"=?" in raw_filename and b"?=" in raw_filename:
+                decoded = EmailParser._decode_header_value(raw_filename.decode("ascii", errors="replace"))
+                if decoded and "\ufffd" not in decoded:
+                    return decoded
+
+            # Check if it has high bytes (non-ASCII)
+            if any(b >= 0x80 for b in raw_filename):
+                # Try various CJK encodings
+                for enc in ["euc-kr", "cp949", "utf-8", "gb2312", "gbk", "shift_jis", "cp1251", "koi8-r"]:
+                    try:
+                        decoded = raw_filename.decode(enc)
+                        # Validate - should have CJK/Cyrillic chars
+                        if any(
+                            "\uac00" <= c <= "\ud7af"  # Hangul
+                            or "\u4e00" <= c <= "\u9fff"  # CJK
+                            or "\u0400" <= c <= "\u04ff"  # Cyrillic
+                            or "\u3040" <= c <= "\u30ff"  # Japanese
+                            for c in decoded
+                        ):
+                            return decoded
+                    except (UnicodeDecodeError, LookupError):
+                        continue
+
+    except Exception:
+        pass
+
+    # Fall back to standard get_filename() with mojibake fix
+    filename = part.get_filename()
+    if filename:
+        # MIME-encoded filenames first: Python doesn't decode RFC 2047
+        # encoded-words in parameter values, and an encoded-word says what its
+        # charset is — the mojibake fix below only guesses.
+        if "=?" in filename:
+            decoded = EmailParser._decode_header_value(filename)
+            if decoded and "\ufffd" not in decoded:
+                return decoded
+        # Check for replacement characters (corruption)
+        if "\ufffd" not in filename:
+            fixed = _fix_mojibake_filename(filename)
+            if fixed:
+                return fixed
+        return filename
+
+    return "attachment"
