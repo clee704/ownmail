@@ -95,7 +95,7 @@ disappears. Anything a future session needs to know goes in a task or a doc.
 backlog task list --plain               # what's open
 backlog task <id> --plain               # read one task
 backlog task edit <id> -s "In Progress" # update status
-backlog task edit <id> --ac 1           # tick acceptance criterion 1
+backlog task edit <id> --check-ac 1     # tick acceptance criterion 1 (--ac ADDS one)
 backlog task create "Title" -d "..."    # file new work
 backlog doc create "Title"              # record a decision or design
 ```

@@ -1,10 +1,10 @@
 ---
 id: TASK-29
 title: Attachment filenames show as raw MIME encoded-words
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-31 18:48'
-updated_date: '2026-07-31 18:59'
+updated_date: '2026-07-31 19:01'
 labels:
   - bug
 dependencies: []
