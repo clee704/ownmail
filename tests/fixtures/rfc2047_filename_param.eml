@@ -1,0 +1,31 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Attachments named with encoded-words
+Date: Tue, 22 Jul 2026 00:35:09 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="----------EncodedWordBoundary"
+
+------------EncodedWordBoundary
+Content-Type: text/plain; charset=UTF-8
+
+See attached.
+
+------------EncodedWordBoundary
+Content-Type: application/pdf;
+ name==?UTF-8?B?SG9saWRheSBDYWxlbmRhciAyMDI2LnBkZg==?=
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename==?UTF-8?B?SG9saWRheSBDYWxlbmRhciAyMDI2LnBkZg==?=
+
+cGRmLWJ5dGVz
+
+------------EncodedWordBoundary
+Content-Type: image/jpeg;
+ name==?UTF-8?B?7ZWc6riAIOydtOuvuOyngC5qcGc=?=
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename==?UTF-8?B?7ZWc6riAIOydtOuvuOyngC5qcGc=?=
+
+anBnLWJ5dGVz
+
+------------EncodedWordBoundary--

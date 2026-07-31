@@ -1634,6 +1634,62 @@ class TestExtractAttachmentFilenameEncodings:
         )
         assert _extract_attachment_filename(part) == "테스트"
 
+    def test_unquoted_encoded_word_filename(self):
+        """An unquoted encoded-word parameter should decode.
+
+        The strict policy rejects the whole parameter as invalid, so
+        get_filename() gives back None and the raw header is the only source.
+        """
+        from ownmail.web import _extract_attachment_filename
+
+        part = self._part(b"Content-Disposition: attachment;\r\n filename==?UTF-8?B?7YWM7Iqk7Yq4LnR4dA==?=")
+        assert part.get_filename() is None
+        assert _extract_attachment_filename(part) == "테스트.txt"
+
+    def test_folded_unquoted_encoded_word_filename(self):
+        """An unquoted encoded-word split across a fold should be rejoined.
+
+        Without unfolding, the bare-token match stops at the line break and
+        only the first half of the name survives.
+        """
+        from ownmail.web import _extract_attachment_filename
+
+        part = self._part(
+            b"Content-Disposition: attachment;\r\n filename==?UTF-8?B?7YWM7Iqk?=\r\n =?UTF-8?B?7Yq4LnR4dA==?="
+        )
+        assert _extract_attachment_filename(part) == "테스트.txt"
+
+    def test_payload_filename_is_not_used(self):
+        """filename= text in the payload must not be mistaken for the header."""
+        from email.policy import default as email_policy
+
+        from ownmail.web import _extract_attachment_filename
+
+        raw = (
+            b"Content-Type: text/plain\r\n"
+            b"Content-Disposition: attachment\r\n"
+            b"\r\n"
+            b'Content-Disposition: attachment; filename="=?UTF-8?B?7YWM7Iqk?="\r\n'
+        )
+        part = email.message_from_bytes(raw, policy=email_policy)
+        assert _extract_attachment_filename(part) == "attachment"
+
+    def test_fixture_encoded_word_filenames(self):
+        """The real-world fixture's attachment names should both decode."""
+        from email.policy import default as email_policy
+        from pathlib import Path
+
+        from ownmail.web import _extract_attachment_filename
+
+        raw = (Path(__file__).parent / "fixtures" / "rfc2047_filename_param.eml").read_bytes()
+        msg = email.message_from_bytes(raw, policy=email_policy)
+        names = [
+            _extract_attachment_filename(part)
+            for part in msg.walk()
+            if "attachment" in str(part.get("Content-Disposition", ""))
+        ]
+        assert names == ["Holiday Calendar 2026.pdf", "한글 이미지.jpg"]
+
 
 class TestBlockExternalImagesCss:
     """Tests for CSS url() blocking in block_external_images."""

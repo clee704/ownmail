@@ -53,6 +53,15 @@ CHARSET_ALIASES = {
 # Handles both: filename*=charset''value and filename*0*=charset''value
 RFC2231_FILENAME_RE = re.compile(rb"filename\*(\d*)\*?=([^;\r\n]+)", re.IGNORECASE)
 
+# Splits a raw MIME part into its header block and its payload
+HEADER_BODY_SPLIT_RE = re.compile(rb"\r?\n\r?\n")
+
+# Joins a folded header back onto one line, per RFC 5322 unfolding
+HEADER_UNFOLD_RE = re.compile(rb"\r?\n[ \t]+")
+
+# Regex for a plain filename= parameter, quoted or bare
+SIMPLE_FILENAME_RE = re.compile(rb'filename=[ \t]*(?:"([^"]*)"|([^;\r\n]+))', re.IGNORECASE)
+
 
 def _get_server_timezone_name() -> str:
     """Return the server's local timezone name (e.g. 'Asia/Seoul')."""
@@ -259,9 +268,11 @@ def _extract_attachment_filename(part) -> str:
     """
     from urllib.parse import unquote_to_bytes
 
-    # Try to get raw bytes from the part
+    # Scan the part's raw header block, unfolded. The parsed view drops
+    # parameters the policy considers malformed, and the payload underneath
+    # can contain anything that looks like a filename= parameter.
     try:
-        raw_part = part.as_bytes()
+        raw_part = HEADER_UNFOLD_RE.sub(b" ", HEADER_BODY_SPLIT_RE.split(part.as_bytes(), 1)[0])
 
         # FIRST: Check for RFC2231 + MIME hybrid encoding (filename*N="=?UTF-8?B?...?=")
         # Some email clients incorrectly combine RFC2231 continuation with MIME encoded-words
@@ -363,12 +374,21 @@ def _extract_attachment_filename(part) -> str:
                 except (UnicodeDecodeError, LookupError):
                     continue
 
-        # THIRD: Try to extract raw filename from simple filename="..." header
-        # Some old emails have raw non-ASCII bytes without any encoding
-        simple_fn_re = re.compile(rb'filename="([^"]+)"', re.IGNORECASE)
-        simple_match = simple_fn_re.search(raw_part)
+        # THIRD: Read the plain filename= parameter out of the raw header.
+        # Two things land here: raw non-ASCII bytes with no encoding declared
+        # at all, and RFC 2047 encoded-words used as the parameter value. The
+        # latter is illegal but common in the wild, and an unquoted one is
+        # rejected wholesale by the strict policy — get_filename() returns
+        # None for it, so this is the only place it can be recovered.
+        simple_match = SIMPLE_FILENAME_RE.search(raw_part)
         if simple_match:
-            raw_filename = simple_match.group(1)
+            raw_filename = (simple_match.group(1) or simple_match.group(2)).strip()
+
+            if b"=?" in raw_filename and b"?=" in raw_filename:
+                decoded = decode_header(raw_filename.decode("ascii", errors="replace"))
+                if decoded and "\ufffd" not in decoded:
+                    return decoded
+
             # Check if it has high bytes (non-ASCII)
             if any(b >= 0x80 for b in raw_filename):
                 # Try various CJK encodings
@@ -393,16 +413,18 @@ def _extract_attachment_filename(part) -> str:
     # Fall back to standard get_filename() with mojibake fix
     filename = part.get_filename()
     if filename:
+        # MIME-encoded filenames first: Python doesn't decode RFC 2047
+        # encoded-words in parameter values, and an encoded-word says what its
+        # charset is — the mojibake fix below only guesses.
+        if "=?" in filename:
+            decoded = decode_header(filename)
+            if decoded and "\ufffd" not in decoded:
+                return decoded
         # Check for replacement characters (corruption)
         if "\ufffd" not in filename:
             fixed = _fix_mojibake_filename(filename)
             if fixed:
                 return fixed
-        # Try decode_header for MIME-encoded filenames
-        if "=?" in filename:
-            decoded = decode_header(filename)
-            if decoded and "\ufffd" not in decoded:
-                return decoded
         return filename
 
     return "attachment"
