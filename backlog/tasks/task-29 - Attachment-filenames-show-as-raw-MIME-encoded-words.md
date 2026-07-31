@@ -4,7 +4,7 @@ title: Attachment filenames show as raw MIME encoded-words
 status: Done
 assignee: []
 created_date: '2026-07-31 18:48'
-updated_date: '2026-07-31 19:01'
+updated_date: '2026-07-31 19:33'
 labels:
   - bug
 dependencies: []
@@ -38,4 +38,8 @@ Fix is in `_extract_attachment_filename` in web.py, which already reads the raw 
 Verified against a real archive: attachment names that rendered as 'attachment' now show their real names, Latin and Hangul both.
 
 Not covered here — filed as TASK-30: the indexing side. parser.py also calls `get_filename()`, so for this encoding it records no attachments at all and `has_attachments` is stored as 0, leaving the message invisible to `has:attachment` and `attachment:` search. The quoted encoded-word form already works there — the default policy decodes it — so only the unquoted form is affected.
+
+Follow-up correction: the first cut read the header out of `part.as_bytes()`, which is not a dependable copy of what arrived. When a header line runs past the policy's line limit the generator refolds it, and refolding re-renders it from the parsed value — which no longer holds the parameter the policy rejected. The name was recovered or lost depending on how long it was and whether the sender had already folded the header, so the real message worked while a longer name in the same shape would not have.
+
+Now sourced from `Message.raw_items()`, which returns the unparsed header value in every case. It also never touches the payload, so the earlier concern about a filename= turning up inside a base64 blob is gone by construction, and it no longer re-serializes multi-megabyte parts just to read a header.
 <!-- SECTION:NOTES:END -->

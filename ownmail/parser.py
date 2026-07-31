@@ -748,9 +748,6 @@ class EmailParser:
         }
 
 
-# Splits a raw MIME part into its header block and its payload
-HEADER_BODY_SPLIT_RE = re.compile(rb"\r?\n\r?\n")
-
 # Joins a folded header back onto one line, per RFC 5322 unfolding
 HEADER_UNFOLD_RE = re.compile(rb"\r?\n[ \t]+")
 
@@ -812,6 +809,22 @@ def _fix_mojibake_filename(filename: str) -> str:
     return filename  # Return original if nothing worked
 
 
+def _raw_content_disposition(part) -> bytes:
+    """Return the part's Content-Disposition exactly as it arrived.
+
+    Not as_bytes(): when a parameter is malformed enough that the policy
+    rejects it, the generator rebuilds the header from the parsed value and
+    the original text is gone — and whether it does that turns on incidental
+    details like whether the header was folded. raw_items() hands back the
+    unparsed value every time, and never walks the payload.
+    """
+    values = [str(value) for name, value in part.raw_items() if name.lower() == "content-disposition"]
+    # Header values arrive as str with any non-ASCII bytes carried in
+    # surrogates; surrogateescape puts the original bytes back.
+    raw = "\n".join(values).encode("utf-8", "surrogateescape")
+    return HEADER_UNFOLD_RE.sub(b" ", raw)
+
+
 def extract_attachment_filename(part) -> str:
     """Extract attachment filename with proper charset handling.
 
@@ -827,11 +840,8 @@ def extract_attachment_filename(part) -> str:
     """
     from urllib.parse import unquote_to_bytes
 
-    # Scan the part's raw header block, unfolded. The parsed view drops
-    # parameters the policy considers malformed, and the payload underneath
-    # can contain anything that looks like a filename= parameter.
     try:
-        raw_part = HEADER_UNFOLD_RE.sub(b" ", HEADER_BODY_SPLIT_RE.split(part.as_bytes(), 1)[0])
+        raw_part = _raw_content_disposition(part)
 
         # FIRST: Check for RFC2231 + MIME hybrid encoding (filename*N="=?UTF-8?B?...?=")
         # Some email clients incorrectly combine RFC2231 continuation with MIME encoded-words

@@ -1490,6 +1490,30 @@ class TestExtractAttachmentFilenameEncodings:
         )
         assert extract_attachment_filename(part) == "테스트.txt"
 
+    def test_long_unfolded_encoded_word_survives_refolding(self):
+        """A name too long for one line must still be recovered.
+
+        Over the policy's line limit the generator refolds the header, and
+        refolding re-renders it from the parsed value — which no longer holds
+        the rejected parameter. Reading the header as it arrived avoids that;
+        anything sourced from as_bytes() loses the name here.
+        """
+        from email.policy import default as email_policy
+
+        from ownmail.parser import extract_attachment_filename
+
+        raw = (
+            b'Content-Type: multipart/mixed; boundary="b1"\n\n--b1\n'
+            b"Content-Type: application/pdf\n"
+            b"Content-Transfer-Encoding: base64\n"
+            b"Content-Disposition: attachment;"
+            b" filename==?UTF-8?B?7YWM7Iqk7Yq4IOusuOyEnCAyMDI2IOy1nOyiheuzuC5wZGY=?=\n"
+            b"MIME-Version: 1.0\n\nJVBERi0=\n--b1--\n"
+        )
+        msg = email.message_from_bytes(raw, policy=email_policy)
+        part = next(p for p in msg.walk() if p.get_content_type() == "application/pdf")
+        assert extract_attachment_filename(part) == "테스트 문서 2026 최종본.pdf"
+
     def test_payload_filename_is_not_used(self):
         """filename= text in the payload must not be mistaken for the header."""
         from email.policy import default as email_policy
