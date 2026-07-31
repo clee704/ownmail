@@ -820,13 +820,14 @@ class TestGmailMessageIds(_GmailFixture):
 
             provider.get_all_message_ids(since="2024-01-15", until="2024-02-20")
 
-            query = list_call.call_args.kwargs["q"]
-            assert "after:2024/01/15" in query
-            assert "before:2024/02/20" in query
-            assert "-in:trash -in:spam" in query
+            assert list_call.call_args.kwargs["q"] == "after:2024/01/15 before:2024/02/20"
 
-    def test_trash_and_spam_always_excluded(self):
-        """The base query should always exclude trash and spam."""
+    def test_trash_and_spam_excluded_by_request_parameter(self):
+        """Exclusion rides on includeSpamTrash, and nowhere else.
+
+        A ``-in:trash -in:spam`` in the query would only restate the
+        parameter's default, while looking like the thing that controls it.
+        """
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
             list_call = service.users.return_value.messages.return_value.list
@@ -834,7 +835,8 @@ class TestGmailMessageIds(_GmailFixture):
 
             provider.get_all_message_ids()
 
-            assert list_call.call_args.kwargs["q"] == "-in:trash -in:spam"
+            assert list_call.call_args.kwargs["includeSpamTrash"] is False
+            assert list_call.call_args.kwargs["q"] == ""
 
     def test_interrupt_during_listing_propagates(self, capsys):
         """Ctrl-C during listing should be reported and re-raised."""

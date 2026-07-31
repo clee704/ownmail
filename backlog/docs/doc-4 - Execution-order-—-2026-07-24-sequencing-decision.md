@@ -77,7 +77,7 @@ rather than trying to recover it from the CLI.
 | # | Task | STOP? | Why here |
 |---|------|-------|----------|
 | 1 | TASK-17 | no | Gmail history watermark race. Loses mail today, and 14.3 makes incremental sync the *only* capture path — fix it while the two failure modes are still separable |
-| 2 | TASK-18 | no | `includeSpamTrash` + the drafts exclusion mechanism. Cheap, same file, done first so the filter is built over one exclusion mechanism |
+| 2 | TASK-18 | no | `includeSpamTrash`. Cheap, same file, done first so the filter is built over one exclusion mechanism. The drafts mechanism it was also carrying went back to TASK-14.1 — see below |
 | 3 | TASK-14.3 | no | Eligibility-driven capture. The large half, and the precondition for any filter — without it a filter turns a working archive into one with silent holes |
 | 4 | TASK-14.1 | no | The download filter config surface. The small half that was originally mistaken for the whole |
 | 5 | TASK-25 | no | Reconcile: sweep the *existing* archive against the filter |
@@ -109,6 +109,15 @@ bins, but pointlessly so.
   permanently excluded on 2026-07-26 — nothing will ever need
   `includeSpamTrash=True`. It stays at position 2 as tidy-up, not as a gate;
   if it slips behind TASK-14.1, nothing breaks. See its Implementation Notes.
+
+**Scope moved on 2026-07-31, when TASK-18 landed.** The drafts exclusion
+mechanism went with it, back to TASK-14.1. `includeSpamTrash` is all-or-nothing
+over trash and spam and reaches no other role, so drafts need a mechanism of
+their own — but building one in TASK-18 would have meant either adding DRAFTS
+to the excluded role set, which is shared with `imap.py` and so is the
+default-behaviour change doc-6 attributes to TASK-14, or shipping a role
+nothing selects. TASK-18 stayed what its row says: one visible mechanism per
+path, nothing decorative on top. Phase 5's order is unaffected.
 
 ### Not in this phase
 

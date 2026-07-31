@@ -127,8 +127,9 @@ class GmailProvider(EmailProvider):
         all_ids = []
         page_token = None
 
-        # Build query for date filtering (always exclude trash/spam)
-        query_parts = ["-in:trash -in:spam"]
+        # Date filtering only. Trash and spam exclusion is the request
+        # parameter below, not a query term.
+        query_parts = []
         if since:
             query_parts.append(f"after:{since.replace('-', '/')}")
         if until:
@@ -144,6 +145,15 @@ class GmailProvider(EmailProvider):
                     "pageToken": page_token,
                     "maxResults": 500,
                     "q": query,
+                    # This, not the query, is what excludes trash and spam,
+                    # and it is stated rather than defaulted so that is
+                    # visible: a matching ``-in:trash -in:spam`` in ``q`` used
+                    # to sit here restating it, so editing the exclusion there
+                    # did nothing. Covers exactly the two roles in
+                    # ``roles.DEFAULT_EXCLUDE_ROLES``, all-or-nothing, and
+                    # reaches no other — a third exclusion needs a query term
+                    # or a labelIds check of its own.
+                    "includeSpamTrash": False,
                 }
 
                 response = self._service.users().messages().list(**request_args).execute()
@@ -246,8 +256,9 @@ class GmailProvider(EmailProvider):
     def _is_excluded(label_ids: list[str]) -> bool:
         """Whether a message is in a role excluded from download.
 
-        Mirrors the ``-in:trash -in:spam`` query used for full syncs; the
-        History API returns trashed messages, so they're filtered here.
+        Full syncs get this from ``includeSpamTrash``. ``history.list`` has no
+        such parameter and reports trashed messages, so the same exclusion is
+        applied here against the label IDs it carries.
         """
         return any(roles.role_for_gmail_label(lid) in roles.DEFAULT_EXCLUDE_ROLES for lid in label_ids)
 

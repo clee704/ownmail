@@ -4,7 +4,7 @@ title: Configurable download filter in canonical role terms
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:38'
-updated_date: '2026-07-25 05:53'
+updated_date: '2026-07-31 23:30'
 labels: []
 milestone: m-5
 dependencies:
@@ -86,3 +86,12 @@ doc-6 already named the right principle for purge ("the filter is evaluated live
 
 **This makes 14.1 materially bigger than "expose a config option" as doc-6 implies.** Re-estimate before starting, and consider whether the eligibility-driven capture rework wants to be its own task with the config surface layered on top.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-07-31 23:30
+---
+From TASK-18 (done 2026-07-31): the drafts exclusion mechanism is yours, not built there. gmail.py now excludes trash and spam solely via `includeSpamTrash=False` on `messages.list`, and that parameter is all-or-nothing over those two roles — it cannot express drafts, inbox, sent or a named label. Every further exclusion this filter grows needs a query term (full-sync path) *and* a labelIds check (history path); `_is_excluded` is the second one and already reads the role set. TASK-18 stopped short of adding DRAFTS to the excluded set because that set is shared with imap.py, making it the default-behaviour change doc-6 attributes to TASK-14. Also unsettled: whether the Gmail search operator is `is:draft` or `in:draft`. A wrong guess fails silently — Gmail reads an unknown term as a user label name and filters nothing — so confirm against a real account rather than a mock.
+---
+<!-- COMMENTS:END -->

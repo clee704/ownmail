@@ -1,10 +1,10 @@
 ---
 id: TASK-18
 title: Gmail trash/spam exclusion is unreachable — includeSpamTrash is never set
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-25 05:53'
-updated_date: '2026-07-31 22:54'
+updated_date: '2026-07-31 23:30'
 labels: []
 milestone: m-5
 dependencies: []
@@ -33,6 +33,14 @@ Blocks TASK-14.1: the filter cannot be honestly described as configurable while 
 Related, found while checking: DRAFT-labelled messages ARE downloaded today (confirmed against a real archive), consistent with doc-6 noting that excluding drafts is the only default behaviour change TASK-14 introduces. includeSpamTrash does not affect drafts; excluding them needs a query term or a labelIds check.
 <!-- SECTION:DESCRIPTION:END -->
 
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 Trash/spam exclusion on the full-sync path is expressed once, at the mechanism that performs it — the redundant '-in:trash -in:spam' query terms are gone
+- [x] #2 messages.list sets includeSpamTrash explicitly rather than relying on an invisible API default
+- [x] #3 Effective behaviour is unchanged: full syncs still exclude trash and spam, and the history path still filters them by labelIds
+- [x] #4 A test fails if the redundant query terms return, and a second fails if the parameter is dropped — both confirmed against deliberately broken code
+<!-- AC:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -44,4 +52,16 @@ What survives:
 - The DRAFTS half is now the load-bearing part. includeSpamTrash does not affect drafts, and drafts are a configurable exclusion under TASK-14.1, so excluding them needs a real mechanism — a query term or a labelIds check. That is genuine filter work, not cleanup.
 
 CONSEQUENCE FOR SEQUENCING: this no longer blocks TASK-14.1 on correctness grounds. It is kept ahead of it in the m-5 order as cheap tidy-up in the same file, done first so the filter is built over one exclusion mechanism rather than layered on top of a misleading one. If it slips behind TASK-14.1, nothing breaks. See doc-4 Phase 5.
+
+## Done 2026-07-31
+
+`get_all_message_ids` no longer seeds its query with `-in:trash -in:spam`; the query now carries date terms only, and can be empty. `messages.list` passes `includeSpamTrash=False` explicitly, with the comment sitting on the parameter rather than anywhere else — that is the whole mechanism for this path, and the comment says so, says the parameter is all-or-nothing over exactly the two roles in `DEFAULT_EXCLUDE_ROLES`, and says a third exclusion will need a query term or labelIds check of its own. `_is_excluded`'s docstring no longer claims to mirror a query that no longer exists; it now names the real asymmetry — `history.list` has no such parameter, so it filters client-side on labelIds.
+
+No behaviour change, by design: parameter False plus no query terms returns the same set as parameter False plus redundant query terms.
+
+DRAFTS WAS NOT BUILT HERE, deliberately. Turning drafts into an exclusion means putting DRAFTS in the excluded role set, and that set is shared with imap.py — it is a default-behaviour change, and doc-6 calls excluding drafts the only one TASK-14 introduces. TASK-14.1 owns the decision (its description already reserves it) and now owns the mechanism too. Building the query term here would have left a role nothing selects: dead code by AGENTS.md, and unverifiable besides, since no test can exercise an exclusion the role set never asks for. What this task leaves 14.1 is the honest surface it needed — one visible mechanism per path, no decoy.
+
+VERIFIED BY BREAKING THE CODE, both directions: dropping `includeSpamTrash` fails `test_trash_and_spam_excluded_by_request_parameter`; putting `-in:trash -in:spam` back fails that test and `test_date_filters_become_query_terms`. The old `test_trash_and_spam_always_excluded` was rewritten rather than duplicated — it asserted the redundant query string, so it was pinning the misleading structure in place.
+
+STILL UNVERIFIED AGAINST THE LIVE API, and worth flagging for 14.1: the Gmail search operator for drafts was not settled here. `is:draft` and `in:draft` are both plausible and a wrong guess fails silently — Gmail would read the term as a user label name and filter nothing. Confirm it against a real account before relying on it.
 <!-- SECTION:NOTES:END -->
