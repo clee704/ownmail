@@ -224,7 +224,6 @@
             <ul class="ownmail-attachment-list">
             {% for att in attachments %}
                 <li class="ownmail-attachment-item">
-                    <span class="ownmail-attachment-icon" aria-hidden="true">{{ att.icon }}</span>
                     <span class="ownmail-attachment-text">
                         <a class="ownmail-attachment-name"
                            href="/attachment/{{ email_id }}/{{ loop.index0 }}/{{ att.url_name }}"
@@ -235,7 +234,13 @@
                     <a class="ownmail-attachment-download"
                        href="/attachment/{{ email_id }}/{{ loop.index0 }}/{{ att.url_name }}?download"
                        title="Download {{ att.filename }}"
-                       aria-label="Download {{ att.filename }}">⬇</a>
+                       aria-label="Download {{ att.filename }}">
+                        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor"
+                             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M8 2.5v7m0 0 2.75-2.75M8 9.5 5.25 6.75"/>
+                            <path d="M2.75 11.25v1a1.5 1.5 0 0 0 1.5 1.5h7.5a1.5 1.5 0 0 0 1.5-1.5v-1"/>
+                        </svg>
+                    </a>
                 </li>
             {% endfor %}
             </ul>

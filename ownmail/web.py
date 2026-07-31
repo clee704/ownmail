@@ -72,18 +72,6 @@ CHARSET_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
 # attachment cannot reach the archive around it.
 ATTACHMENT_CSP = "default-src 'none'; sandbox"
 
-# Recognized only to pick the box glyph in the attachment list
-ARCHIVE_TYPES = frozenset(
-    {
-        "application/gzip",
-        "application/x-7z-compressed",
-        "application/x-bzip2",
-        "application/x-rar-compressed",
-        "application/x-tar",
-        "application/zip",
-    }
-)
-
 # Regex to extract charset from HTML meta tag
 # Matches: <meta charset="euc-kr"> or <meta http-equiv="Content-Type" content="text/html; charset=euc-kr">
 HTML_CHARSET_RE = re.compile(
@@ -2069,24 +2057,6 @@ def _inline_content_type(part) -> str | None:
     return content_type
 
 
-def _attachment_icon(content_type: str) -> str:
-    """Pick a glyph for an attachment from its content type."""
-    if content_type == "application/pdf":
-        return "📄"
-    family = content_type.split("/", 1)[0]
-    if family == "image":
-        return "🖼"
-    if family == "audio":
-        return "🎵"
-    if family == "video":
-        return "🎬"
-    if family == "text":
-        return "📝"
-    if content_type in ARCHIVE_TYPES:
-        return "📦"
-    return "📎"
-
-
 def _attachment_entry(part) -> dict:
     """Describe one attachment part for the detail template."""
     filename = extract_attachment_filename(part)
@@ -2104,7 +2074,6 @@ def _attachment_entry(part) -> dict:
         # is titled with the name rather than the part's index.
         "url_name": quote(filename, safe=""),
         "size": _format_size(len(payload) if payload else 0),
-        "icon": _attachment_icon(content_type),
         "kind": kind,
         "previewable": _inline_content_type(part) is not None,
     }
