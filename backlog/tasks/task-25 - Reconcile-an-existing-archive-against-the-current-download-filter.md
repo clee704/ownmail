@@ -4,11 +4,13 @@ title: Reconcile an existing archive against the current download filter
 status: To Do
 assignee: []
 created_date: '2026-07-26 05:30'
-updated_date: '2026-07-26 06:12'
+updated_date: '2026-07-31 22:55'
 labels: []
-dependencies: []
+milestone: m-5
+dependencies:
+  - TASK-14.1
 priority: high
-ordinal: 30000
+ordinal: 5
 ---
 
 ## Description

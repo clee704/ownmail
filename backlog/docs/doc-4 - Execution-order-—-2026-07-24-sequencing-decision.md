@@ -61,8 +61,60 @@ behind the order, tracked mechanically via each task's `milestone` and
 
   TASK-14 is a STOP item on two counts — it deletes user email and changes
   OAuth scopes — so it needs sign-off and lands via PR.
+
+  **TASK-14 was split into three subtasks on 2026-07-25**, and the phase grew
+  four neighbours. The full order is below.
 - **Ongoing — no fixed slot** (TASK-3): coverage push, independent of the
   phases, no urgency.
+
+## Phase 5 order (settled 2026-07-31)
+
+Work these one at a time, in this order. **This table is the authority.**
+Each task's `ordinal` matches it, but neither `backlog task list --plain`
+(sorts by priority) nor `backlog board` renders that order, so read it here
+rather than trying to recover it from the CLI.
+
+| # | Task | STOP? | Why here |
+|---|------|-------|----------|
+| 1 | TASK-17 | no | Gmail history watermark race. Loses mail today, and 14.3 makes incremental sync the *only* capture path — fix it while the two failure modes are still separable |
+| 2 | TASK-18 | no | `includeSpamTrash` + the drafts exclusion mechanism. Cheap, same file, done first so the filter is built over one exclusion mechanism |
+| 3 | TASK-14.3 | no | Eligibility-driven capture. The large half, and the precondition for any filter — without it a filter turns a working archive into one with silent holes |
+| 4 | TASK-14.1 | no | The download filter config surface. The small half that was originally mistaken for the whole |
+| 5 | TASK-25 | no | Reconcile: sweep the *existing* archive against the filter |
+| 6 | TASK-14.2 | **yes** | Purge. Deletes user email, widens the OAuth scope — sign-off, then PR |
+| 7 | TASK-33 | no | Whether purge defers for threads still live in the inbox. Evidence-gated: decide after purge has actually run |
+
+### Why this order
+
+**Steps 1–5 are the minimum set to get an existing archive into good shape.**
+That was the driving question on 2026-07-31: an archive holding server-side
+inbox and trash mail. Steps 1–4 stop it getting worse; step 5 cleans up what
+is already on disk. Purge is not part of that — it serves the separate goal
+of leaving no mail on third-party servers.
+
+**Reconcile before purge (5 before 6), and this matters.** TASK-25 depends
+only on TASK-14.1, so it *can* run before purge, and it *should*: reconcile
+moves wrongly-archived mail to ownmail's bin, which un-verifies its local
+copy, which takes it out of purge's sweep set. Run purge first and it trashes
+the server copies of mail reconcile is about to bin — recoverable from both
+bins, but pointlessly so.
+
+**Two sequencing claims were corrected on 2026-07-31:**
+
+- TASK-25 declared no dependencies while its AC #2 requires reading the
+  exclusion set from config, which does not exist until TASK-14.1. It could
+  not have run first. Dependency added.
+- TASK-18 claimed to block TASK-14.1 because one of the filter's values was
+  unreachable. That reason died when TASK-14.1 fixed trash and spam as
+  permanently excluded on 2026-07-26 — nothing will ever need
+  `includeSpamTrash=True`. It stays at position 2 as tidy-up, not as a gate;
+  if it slips behind TASK-14.1, nothing breaks. See its Implementation Notes.
+
+### Not in this phase
+
+TASK-28 (active messages) depends on TASK-14.3 but is a pure addition — a
+read-only window onto the pre-capture set. It is not required for the archive
+to be correct, and it is deliberately left unscheduled.
 
 ## Keeping this current
 

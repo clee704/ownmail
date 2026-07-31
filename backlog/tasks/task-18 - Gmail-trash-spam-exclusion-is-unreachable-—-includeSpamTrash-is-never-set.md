@@ -4,6 +4,7 @@ title: Gmail trash/spam exclusion is unreachable — includeSpamTrash is never s
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:53'
+updated_date: '2026-07-31 22:54'
 labels: []
 milestone: m-5
 dependencies: []
@@ -31,3 +32,16 @@ Blocks TASK-14.1: the filter cannot be honestly described as configurable while 
 
 Related, found while checking: DRAFT-labelled messages ARE downloaded today (confirmed against a real archive), consistent with doc-6 noting that excluding drafts is the only default behaviour change TASK-14 introduces. includeSpamTrash does not affect drafts; excluding them needs a query term or a labelIds check.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+RESCOPED 2026-07-31. Argument 2 above ("THE INCLUSION PATH DOES NOT EXIST") is dead. It rested on doc-6's resolution of TASK-15, where removing "trash" from the download filter was a supported configuration. TASK-14.1 reversed that on 2026-07-26: trash and spam are permanently excluded, with no way to opt in. Nothing will ever need includeSpamTrash=True, so there is no unreachable config value to make reachable.
+
+What survives:
+
+- Argument 1 (MISLEADING) stands unchanged. The `-in:trash -in:spam` in `q` looks like the mechanism and is not. Under TASK-14.1 the filter becomes the single place trash/spam exclusion is expressed, so a redundant query term restating an API default in a second place is exactly the kind of duplication that task exists to remove.
+- The DRAFTS half is now the load-bearing part. includeSpamTrash does not affect drafts, and drafts are a configurable exclusion under TASK-14.1, so excluding them needs a real mechanism — a query term or a labelIds check. That is genuine filter work, not cleanup.
+
+CONSEQUENCE FOR SEQUENCING: this no longer blocks TASK-14.1 on correctness grounds. It is kept ahead of it in the m-5 order as cheap tidy-up in the same file, done first so the filter is built over one exclusion mechanism rather than layered on top of a misleading one. If it slips behind TASK-14.1, nothing breaks. See doc-4 Phase 5.
+<!-- SECTION:NOTES:END -->

@@ -4,14 +4,14 @@ title: Optional purge — trash archived mail on the server once verified
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-07-25 06:57'
+updated_date: '2026-07-31 22:55'
 labels: []
 milestone: m-5
 dependencies:
   - TASK-14.1
 parent_task_id: TASK-14
 priority: high
-ordinal: 5
+ordinal: 6
 ---
 
 ## Description
@@ -61,5 +61,10 @@ Bears on the STOP status: this task deletes user email, and the failure mode of 
 created: 2026-07-25 06:57
 ---
 doc-8 (Archival semantics) records why purge puts a deadline on capture decisions: once the server copy is trashed, nothing can re-derive metadata that was never captured. Bears on the \Flagged decision in TASK-19 and on this task's delete-semantics question above.
+---
+
+created: 2026-07-31 22:55
+---
+The LEFT OPEN paragraph above ("defer purge for any message whose thread still has a message in the inbox") is now TASK-33, filed 2026-07-31 so the decision is visible in the ledger instead of buried here. TASK-33 records both candidate answers, why the deferral belongs on purge rather than on download, and that it stays evidence-gated. Nothing about this task changes — purge still has no exemptions, and TASK-33 is sequenced after it.
 ---
 <!-- COMMENTS:END -->
