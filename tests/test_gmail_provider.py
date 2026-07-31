@@ -866,14 +866,47 @@ class TestGmailMessageIds(_GmailFixture):
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
             service.users.return_value.history.return_value.list.return_value.execute.return_value = {
-                "history": [{"messagesAdded": [{"message": {"id": "new1", "labelIds": ["INBOX"]}}]}]
+                "history": [{"messagesAdded": [{"message": {"id": "new1", "labelIds": ["INBOX"]}}]}],
+                "historyId": "400",
             }
-            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "500"}
 
             ids, state = provider.get_new_message_ids("100")
 
             assert ids == ["new1"]
-            assert state == "500"
+            assert state == "400"
+
+    def test_watermark_comes_from_history_not_profile(self):
+        """The watermark must be the history response's, not a later getProfile.
+
+        A message arriving between the two calls has a historyId below the
+        profile's but was never listed, so taking the profile's value loses it
+        permanently.
+        """
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+                "history": [{"messagesAdded": [{"message": {"id": "new1", "labelIds": ["INBOX"]}}]}],
+                "historyId": "400",
+            }
+            # Mail landed after the listing: the profile is already ahead.
+            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "500"}
+            service.users.return_value.getProfile.reset_mock()  # authenticate's connectivity check
+
+            _, state = provider.get_new_message_ids("100")
+
+            assert state == "400"
+            service.users.return_value.getProfile.assert_not_called()
+
+    def test_watermark_holds_when_history_response_omits_it(self):
+        """Without a historyId to advance to, keep the old one and re-list."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            service.users.return_value.history.return_value.list.return_value.execute.return_value = {}
+
+            ids, state = provider.get_new_message_ids("100")
+
+            assert ids == []
+            assert state == "100"
 
     def test_history_skips_trash_and_spam(self):
         """Messages added straight to trash or spam should be skipped."""
@@ -890,28 +923,31 @@ class TestGmailMessageIds(_GmailFixture):
                     }
                 ]
             }
-            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "500"}
 
             ids, _ = provider.get_new_message_ids("100")
 
             assert ids == ["keep"]
 
     def test_history_paginates(self):
-        """History pages should be followed to the end."""
+        """History pages should be followed to the end, and the last one sets the watermark."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
             service.users.return_value.history.return_value.list.return_value.execute.side_effect = [
                 {
                     "history": [{"messagesAdded": [{"message": {"id": "a", "labelIds": []}}]}],
+                    "historyId": "300",
                     "nextPageToken": "p2",
                 },
-                {"history": [{"messagesAdded": [{"message": {"id": "b", "labelIds": []}}]}]},
+                {
+                    "history": [{"messagesAdded": [{"message": {"id": "b", "labelIds": []}}]}],
+                    "historyId": "400",
+                },
             ]
-            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "500"}
 
-            ids, _ = provider.get_new_message_ids("100")
+            ids, state = provider.get_new_message_ids("100")
 
             assert ids == ["a", "b"]
+            assert state == "400"
 
     def test_expired_history_falls_back_to_full_sync(self, capsys):
         """A 404 from the History API should trigger a full sync."""

@@ -1,9 +1,10 @@
 ---
 id: TASK-17
 title: Gmail incremental sync loses messages that arrive mid-run
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-25 05:52'
+updated_date: '2026-07-31 23:19'
 labels: []
 milestone: m-5
 dependencies: []
@@ -29,3 +30,23 @@ WHY NOW: independently a real data-loss bug, but it also becomes load-bearing un
 
 Verify with a test that fakes a history response whose historyId differs from getProfile's, and asserts the stored state comes from the history response.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 The incremental-sync watermark is taken from the users.history.list response's historyId, never from a follow-up getProfile
+- [x] #2 Under pagination, the watermark comes from the last history page
+- [x] #3 A history response carrying no historyId leaves the watermark unchanged, so the window is re-listed rather than skipped
+- [x] #4 A test fakes a history response whose historyId differs from getProfile's and asserts the returned state comes from the history response
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Fixed in `providers/gmail.py`: `_get_messages_since_history` now returns `(new_ids, watermark)` and `get_new_message_ids` passes that tuple straight through. The `get_current_sync_state()` call between the listing and the store is gone — that gap was the race.
+
+Watermark rule: take `historyId` from each history.list response as it arrives, so the last page wins. When a response omits it, the incoming watermark is kept. That re-lists the same window next run (duplicates, deduped downstream) instead of skipping past it — the safe direction to fail, since the whole bug was a watermark advancing past unlisted mail.
+
+`get_current_sync_state()` stays: `archive.py` still calls it on the after-a-full-sync path, where there is no history response to read.
+
+Test change worth flagging: `test_history_sync_returns_new_state` asserted `state == "500"`, the getProfile value — it was pinning the bug in place, so its expectation was wrong and was rewritten. `test_history_paginates` was extended to assert the last page's watermark rather than adding a near-duplicate. Two new cases cover the divergence (history says 400, profile says 500 → 400 wins, getProfile not called) and the missing-historyId fallback. All four were confirmed to fail against a deliberately reintroduced getProfile watermark.
+<!-- SECTION:NOTES:END -->

@@ -189,18 +189,23 @@ class GmailProvider(EmailProvider):
             return self.get_all_message_ids(), None
 
         try:
-            new_ids = self._get_messages_since_history(since_state)
-            new_state = self.get_current_sync_state()
-            return new_ids, new_state
+            return self._get_messages_since_history(since_state)
         except HttpError as e:
             if e.resp.status == 404:
                 print("History expired, performing full sync...")
                 return self.get_all_message_ids(), None
             raise
 
-    def _get_messages_since_history(self, history_id: str) -> list[str]:
-        """Get new messages since the given history ID."""
+    def _get_messages_since_history(self, history_id: str) -> tuple[list[str], str]:
+        """Get new messages since the given history ID, and the next watermark.
+
+        The watermark comes from the history response itself rather than a
+        follow-up ``getProfile``. A message arriving between the two calls
+        would sit below the profile's historyId without ever having been
+        listed, and the next run would start past it — silent, permanent loss.
+        """
         new_ids = []
+        new_history_id = history_id
         page_token = None
 
         try:
@@ -226,6 +231,8 @@ class GmailProvider(EmailProvider):
                                     continue
                                 new_ids.append(msg["message"]["id"])
 
+                new_history_id = response.get("historyId", new_history_id)
+
                 page_token = response.get("nextPageToken")
                 if not page_token:
                     break
@@ -233,7 +240,7 @@ class GmailProvider(EmailProvider):
             print("\n\n⏸ Interrupted during Gmail query.")
             raise
 
-        return new_ids
+        return new_ids, new_history_id
 
     @staticmethod
     def _is_excluded(label_ids: list[str]) -> bool:
