@@ -58,6 +58,15 @@ on, the question disappears entirely.
   inbox capture — what ownmail does today — hands over mail the user is still
   actively working in, which is wrong under this model. TASK-14.3 is therefore
   a precondition for the manage story, not only for purge safety.
+
+  **The message is not the whole unit** (2026-08-06). Read strictly, "done with
+  the message" is done with the *exchange*, and a reply sent into a live thread
+  is the counterexample: it is eligible the instant it exists, while its
+  conversation is still open in the inbox. So capture also defers while any
+  member of a candidate's thread sits in a transient excluded role — TASK-33
+  for the reasoning, TASK-38 for the build. This is a strengthening of the rule
+  above rather than an exception to it, and it takes no notice of the `sent`
+  role: a filed message whose thread gets a new inbox reply defers identically.
 - **`exclude_labels` is an inheritance rule, not censorship.** It says what
   ownmail adopts at the handoff. With local editing available, a user could
   instead delete an unwanted label by hand; the knob earns its keep for
@@ -139,14 +148,30 @@ invisible — a transient state would otherwise cause permanent data loss.
 TASK-14.3 owns the mechanism: sync signals produce *candidates*, and each
 candidate's current state is re-checked against the filter.
 
-Per provider:
+**How the candidate set is built** (settled 2026-08-06; this replaces the
+three per-provider prescriptions that stood here, which were a different
+mechanism each). Enumerate what is *excluded* and diff it across runs:
 
-- **Plain IMAP** — correct already. A folder move allocates a new UID above the
+    candidates = new arrivals ∪ (last run's excluded set − this run's)
+
+Departure becomes a set difference, which is the one transition a watermark
+cannot express. The cost is bounded by the size of the excluded set rather
+than the archive — which is why only the *transient* roles are diffed, since
+they are the self-bounding ones. The obvious alternative, enumerating the
+*eligible* set and subtracting what is archived, was rejected on cost: the
+eligible set is essentially the whole archive, so it is O(mailbox) per run
+and grows forever. TASK-14.3 has the measurements.
+
+Per provider, what that costs:
+
+- **Plain IMAP** — nothing new. A folder move allocates a new UID above the
   destination's watermark, so every transition is detected for free.
-- **Gmail API** — needs `labelAdded`/`labelRemoved` alongside `messageAdded`
-  (`gmail.py:214`). Without them, untrashing produces no event ownmail sees.
-- **Gmail-over-IMAP** — departure from a folder leaves no trace, so folders the
-  filter depends on must be rescanned in full each run.
+- **Gmail API** — a handful of `messages.list` calls per run, flat in mailbox
+  size. Replaces the `labelAdded`/`labelRemoved` subscription this document
+  used to require.
+- **Gmail-over-IMAP** — one `SEARCH` of each transient-excluded folder. This is
+  what fixes that path's blindness to departures; the full rescan previously
+  prescribed here is not needed.
 
 **Transient state is the user's to declare.** A label used as workflow state —
 `Waiting`, `To Read`, or a star used as a to-do marker — has no correct archival

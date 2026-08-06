@@ -76,13 +76,14 @@ rather than trying to recover it from the CLI.
 
 | # | Task | STOP? | Why here |
 |---|------|-------|----------|
-| 1 | TASK-17 | no | Gmail history watermark race. Loses mail today, and 14.3 makes incremental sync the *only* capture path — fix it while the two failure modes are still separable |
-| 2 | TASK-18 | no | `includeSpamTrash`. Cheap, same file, done first so the filter is built over one exclusion mechanism. The drafts mechanism it was also carrying went back to TASK-14.1 — see below |
+| 1 | ~~TASK-17~~ | no | **Done.** Gmail history watermark race. Loses mail today, and 14.3 makes incremental sync the *only* capture path — fix it while the two failure modes are still separable |
+| 2 | ~~TASK-18~~ | no | **Done.** `includeSpamTrash`. Cheap, same file, done first so the filter is built over one exclusion mechanism. The drafts mechanism it was also carrying went back to TASK-14.1 — see below |
 | 3 | TASK-14.3 | no | Eligibility-driven capture. The large half, and the precondition for any filter — without it a filter turns a working archive into one with silent holes |
 | 4 | TASK-14.1 | no | The download filter config surface. The small half that was originally mistaken for the whole |
 | 5 | TASK-25 | no | Reconcile: sweep the *existing* archive against the filter |
-| 6 | TASK-14.2 | **yes** | Purge. Deletes user email, widens the OAuth scope — sign-off, then PR |
-| 7 | TASK-33 | no | Whether purge defers for threads still live in the inbox. Evidence-gated: decide after purge has actually run |
+| 6 | TASK-38 | no | Thread-level capture deferral. Shape settled in TASK-33; build gated on the gap being observed, which capture-without-purge already produces |
+| 7 | TASK-14.2 | **yes** | Purge. Deletes user email, widens the OAuth scope — sign-off, then PR |
+| 8 | ~~TASK-33~~ | no | **Done as a decision record**, 2026-08-06. Superseded its own evidence gate — see below |
 
 ### Why this order
 
@@ -92,7 +93,7 @@ inbox and trash mail. Steps 1–4 stop it getting worse; step 5 cleans up what
 is already on disk. Purge is not part of that — it serves the separate goal
 of leaving no mail on third-party servers.
 
-**Reconcile before purge (5 before 6), and this matters.** TASK-25 depends
+**Reconcile before purge (5 before 7), and this matters.** TASK-25 depends
 only on TASK-14.1, so it *can* run before purge, and it *should*: reconcile
 moves wrongly-archived mail to ownmail's bin, which un-verifies its local
 copy, which takes it out of purge's sweep set. Run purge first and it trashes
@@ -118,6 +119,23 @@ to the excluded role set, which is shared with `imap.py` and so is the
 default-behaviour change doc-6 attributes to TASK-14, or shipping a role
 nothing selects. TASK-18 stayed what its row says: one visible mechanism per
 path, nothing decorative on top. Phase 5's order is unaffected.
+
+**Two rows changed on 2026-08-06**, after the user's question about what the
+clean split actually needs:
+
+- **TASK-33 closed as a decision record**, and TASK-38 was filed to carry the
+  build. Its AC required deciding *after* purge had run; the shape was settled
+  ahead of that instead, deliberately. What the evidence gate was protecting
+  against — committing to a mechanism nobody needs — survives on TASK-38,
+  which is still gated on the gap being observed. What changed is that the
+  observation no longer has to wait for purge: capture-without-purge already
+  produces incomplete threads inside ownmail, which is enough to judge by.
+  The decision also **reversed TASK-33's own placement** of the rule, moving
+  it from purge to capture. See that task for why.
+- **TASK-38 sits at 6, before purge**, because thread deferral changes what
+  gets captured, and purge only ever acts on captured mail. Building it after
+  purge would mean purging server copies of exactly the mid-conversation mail
+  the rule exists to hold back.
 
 ### Not in this phase
 

@@ -4,7 +4,7 @@ title: Make capture eligibility-driven rather than arrival-driven
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:53'
-updated_date: '2026-07-25 06:57'
+updated_date: '2026-08-06 19:50'
 labels: []
 milestone: m-5
 dependencies:
@@ -69,6 +69,39 @@ Also in scope, because they are the same class of problem (hole numbers refer to
 
 Depends on TASK-17: the history watermark race makes incremental sync lossy, and this task makes incremental sync the only capture path. Fixing the race first keeps the two failure modes separable.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Candidate set: settled 2026-08-06 (user). Amends the SHAPE OF THE FIX above.
+
+The description prescribes `candidates = (All Mail) − (already archived)` for the Gmail-over-IMAP path, and rejects 'per-folder rescans plus remembered membership'. That call was made without costing the enumeration. **It is wrong, and the reason generalises to every provider.**
+
+WHY THE ELIGIBLE SET IS THE EXPENSIVE ONE TO ENUMERATE. The eligible set is, by construction, essentially the whole archive — everything the filter admits, captured or not. So enumerating it is O(mailbox) *per run, forever*, and it grows monotonically as the archive does. Measured shapes: Gmail API pages `messages.list` at 500, so ~60 round trips at 30k messages (~15-30s) and ~400 at 200k (~2-3 min), against ~0.3s for today's `history.list`. The subtraction converges; the enumeration underneath it never does.
+
+THE INVERSION. Enumerate the EXCLUDED set instead and diff it across runs:
+
+    arrivals   = history.list / UID watermark        (existing mechanism)
+    excluded   = live enumeration of inbox, drafts, trash, spam
+    departed   = last_excluded − excluded
+    candidates = arrivals ∪ departed
+    for each candidate: re-check current state, download if eligible
+    persist(excluded)
+
+Departure detection becomes a set difference, which is exactly the transition a watermark cannot see. Costs, flat in mailbox size on all three paths:
+
+- **Gmail API** — ~5 `messages.list` calls per run (inbox, drafts, trash+spam), 1-2s, and it does not grow.
+- **Gmail-over-IMAP** — one `SEARCH` of the inbox folder. This fixes that path's blindness without touching All Mail at all, which is the whole reason the rejected option existed.
+- **Plain IMAP** — unchanged. A folder move allocates a new UID above the destination watermark, already detected.
+
+WHY REMEMBERED MEMBERSHIP IS SAFE HERE, HAVING BEEN REJECTED ABOVE. The rejection of the 'deferred id list' stands: that list ACCUMULATED, so every message ever trashed would be re-checked forever. This set does not accumulate — it is REPLACED each run, and it holds exactly the transient roles, which this task already argues are self-bounding (an inbox is small by nature; trash and spam are capped by provider retention). The bound is the same one the transient/standing split rests on, used one layer down.
+
+STANDING EXCLUSIONS ARE NOT DIFFED, deliberately. A named 50k label is a durable statement, so moving mail out of one is not detected and needs a resync — which hole 1 already requires and config.example.yaml already has to document. This is the one regression against the enumeration approach, and it is the cost the transient/standing split was written to accept.
+
+STORAGE. `sync_state` (database.py:337) is a free-form key-value table, so this is a new key rather than a schema change. Not a STOP item.
+
+FULL ENUMERATION SURVIVES AS A FALLBACK ONLY — history expiry (gmail.py:204), UIDVALIDITY change, and hole 1's filter-widening resync. Re-adding `history.list`-style fast paths on top is available later if a run's wall clock ever bites; not built on spec.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

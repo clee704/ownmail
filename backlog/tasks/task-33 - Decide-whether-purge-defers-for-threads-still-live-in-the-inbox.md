@@ -1,16 +1,17 @@
 ---
 id: TASK-33
 title: Decide whether purge defers for threads still live in the inbox
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-31 22:54'
+updated_date: '2026-08-06 19:52'
 labels: []
 milestone: m-5
 dependencies:
   - TASK-14.2
   - TASK-6.1
 priority: medium
-ordinal: 7
+ordinal: 8
 ---
 
 ## Description
@@ -49,8 +50,37 @@ TASK-14.2 is explicit that the annoyance must be observed before it is engineere
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The choice between Answer A (accept the gap) and Answer B (defer purge for live threads) is recorded with reasoning, in TASK-14.2 or its own doc
-- [ ] #2 The decision is made against observed behaviour after purge has run, not in anticipation of it
-- [ ] #3 If B is adopted: the deferral acts on purge and not on download, and config.example.yaml documents that a thread parked in the inbox blocks its whole thread from draining
-- [ ] #4 If A is adopted: the permanent degradation of provider-side thread views is documented as a known cost of enabling purge
+- [x] #1 The choice between accepting the thread gap and deferring for live threads is recorded with reasoning
+- [x] #2 The decision states which side of capture/purge the deferral acts on, and why
+- [x] #3 The predicate is defined against transient excluded roles only, so a trashed or spammed thread member cannot stall a thread forever
+- [x] #4 Whether a bounded escape hatch exists is decided explicitly, and the accepted cost of the answer is written down
+- [x] #5 Implementation is carried by a separate task, so this one closes as a decision record
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Settled 2026-08-06 (user): Answer B, in its general form, on capture — with no escape hatch.
+
+Arrived at from the sent-mail side: the proposal was 'do not download sent messages at all until every message in the thread is downloadable'. Three corrections to that framing, then the decision.
+
+**1. Not sent-specific.** The unit is the thread, and 'defer while any thread member is still live' subsumes sent with no carve-out. The case a sent-only rule misses is a FILED message whose thread gets a new inbox reply — same defect, no sent involved. This is the same generality argument that killed the sent purge exemption on 2026-07-26.
+
+**2. 'All members downloadable' is the wrong predicate.** TASK-14.1 fixes trash and spam as permanently excluded, so a thread with one spammed or deleted member would never become fully downloadable and would stall forever. The predicate is **no member in a TRANSIENT excluded role** — inbox, drafts — ignoring trash and spam members entirely.
+
+**3. Deferral is not loss, which is what defeats this doc's own objection.** The argument above for deferring PURGE rather than DOWNLOAD rests on 'deferring download leaves the ARCHIVE incomplete'. Under the ownership model that overstates it: purge requires download, so a deferred message keeps its server copy until the thread clears. Nothing is at risk; the archive is late, not holed. Set against that, capture-side deferral is the more faithful reading of doc-8 (ownership transfers when the user is done with the message), and it removes the half-a-conversation asymmetry that is currently one of TASK-28's motivations.
+
+**So: defer CAPTURE, not purge.** This reverses the 'if B is chosen: where the rule goes' section above, and on that section's own reasoning — the practical asymmetry it invoked does not survive the observation that a deferred message is still safely on the server.
+
+### No escape hatch (user)
+
+A thread that never clears defers indefinitely. No max age, no override flag. Rationale: a live thread means the exchange is not over, which is the whole premise; a time cap would invent a policy ownmail otherwise refuses to hold (doc-6: 'servers own the grace period', ownmail implements no time logic). Accepted cost, to be documented rather than discovered: one never-triaged list thread pins its own half of the conversation on the server for as long as it stays live. The lever the user already has is triage — clear the inbox message and the thread drains.
+
+### Cheaper than this doc assumed
+
+The 'needs thread membership over UN-CAPTURED server messages' cost was priced against full thread grouping (TASK-6.1). The deferral direction does not need it: the question is only 'does this candidate's thread intersect the live set', and the live set is the inbox, which TASK-14.3 now enumerates every run anyway. Gmail gives it free (threadId / X-GM-THRID); plain IMAP needs a Message-ID/References header fetch over the inbox only, not a thread walk.
+
+### Not built here
+
+Filed as its own task, after TASK-14.1. Run the plain filter first — this doc's evidence gate ('do not build this on anticipation') still applies to whether the gap bites, even though the SHAPE is now settled.
+<!-- SECTION:NOTES:END -->

@@ -4,7 +4,7 @@ title: Configurable download filter in canonical role terms
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:38'
-updated_date: '2026-07-31 23:30'
+updated_date: '2026-08-06 19:51'
 labels: []
 milestone: m-5
 dependencies:
@@ -85,6 +85,24 @@ Holes 1, 2, 3, 5 and both user-found ones are one shape: **the filter is a state
 doc-6 already named the right principle for purge ("the filter is evaluated live against server state at purge time"). The finding is that this is not a purge property; it is what a filter *is*. Applying it at download time is the actual work.
 
 **This makes 14.1 materially bigger than "expose a config option" as doc-6 implies.** Re-estimate before starting, and consider whether the eligibility-driven capture rework wants to be its own task with the config surface layered on top.
+
+## Amended 2026-08-06 (user): two settled points.
+
+### Sent is still admitted, but no longer unconditionally
+
+The description says SENT IS DELIBERATELY ADMITTED and 'must not be fixed into the default exclusions later'. That stands as written — sent never becomes a ROLE EXCLUSION, and the reasoning (outgoing mail has no triage step, so a rule demanding an action before capture would mean never archiving your own mail) is untouched.
+
+What changes is that a second, orthogonal condition is coming: thread-level deferral, settled in TASK-33 on 2026-08-06. Capture defers while any member of the message's thread is still in a transient excluded role (inbox or drafts). Sent gets no special handling under it — the rule is general, which is precisely why it is allowed to exist where a sent carve-out was rejected. The effect on sent is nonetheless the visible one, because sent mail is what most often becomes eligible mid-conversation.
+
+Note this does NOT reintroduce 'sending is not the settling action'. Sending is still settling; the thread is simply the unit that settles.
+
+### Drafts: excluded (user, 2026-08-06)
+
+The description left this open — doc-6 had drafts in the default, the user's 2026-07-26 list did not. Decided: **drafts are excluded by default**, restoring doc-6's position.
+
+Same rationale as inbox, one step stronger. A draft is live working state and its CONTENT is not final, so capturing one freezes a half-written message into the archive permanently — and under TASK-14.2 it would be yanked out from under a mail client mid-compose. Inbox means no decision has been made about a finished message; drafts means the message itself is not finished.
+
+Consequence: drafts joins inbox in the TRANSIENT half of TASK-14.3's transient/standing split, so its membership is enumerated live each run and departures from it are detected. Bounded like the others — a drafts folder is small by nature. A draft that gets sent leaves the role and becomes eligible as sent mail, which is the correct and only transition that matters.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
