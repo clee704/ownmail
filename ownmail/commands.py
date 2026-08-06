@@ -5,6 +5,7 @@ This module contains commands for archive maintenance:
 - verify: Verify archive integrity (files, hashes, database)
 - sync_check: Compare local archive with server
 - update_labels: Update labels from server or derive from IMAP folders
+- relabel: Re-derive IMAP folder membership for already-archived messages
 """
 
 import hashlib
@@ -1473,6 +1474,190 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> N
     print(f"  Skipped (not in index): {skip_count}")
     if error_count > 0:
         print(f"  Errors: {error_count}")
+    print("-" * 50 + "\n")
+
+
+def _current_labels(conn, rowid: int, filepath: Path) -> list[str]:
+    """An email's labels as they stand, sidecar first.
+
+    Files are the source of truth (invariant #1), so the sidecar wins wherever
+    it exists and the DB is only consulted for emails archived before sidecars.
+    """
+    labels = sidecar.read_labels(filepath)
+    if labels is None:
+        labels = [row[0] for row in conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,))]
+    return list(dict.fromkeys(labels))
+
+
+def cmd_relabel(
+    archive: EmailArchive,
+    source_name: str,
+    strategy: str = "union",
+    apply: bool = False,
+) -> None:
+    """Re-derive IMAP folder membership for messages already in the archive.
+
+    A message living in several folders should carry all of them as labels, and
+    for archives captured before TASK-34 it does not — the scan flattened
+    membership to the one folder the message was downloaded from. Nothing else
+    repairs that: ``update-labels`` visits only emails with no labels at all,
+    and ``download`` short-circuits on content hash before ever reconsidering
+    them. The information is still on the server, and only until purge.
+
+    This re-reads label state from the server after capture, which doc-8
+    otherwise forbids. It is admissible because of *how* it writes, not because
+    the archive is any less authoritative:
+
+    - ``union`` (the default) only ever adds. It cannot overwrite what the
+      archive holds, so the invariant that matters — server state never
+      replaces local state — is intact. The cost is that a folder the user
+      moved the message into *after* capture is indistinguishable from one the
+      buggy scan missed, and gets adopted as an extra label.
+    - ``server`` is a true re-snapshot and will drop labels the server no
+      longer reports. That follows post-capture changes, which doc-8 calls a
+      bug — it is offered because it is the only way to correct a wrong label
+      rather than merely a missing one, and the operator is the one who knows
+      whether they have reorganised since capture.
+
+    Nothing is written without ``apply``; the default run reports the diff.
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Relabel")
+    print("=" * 50 + "\n")
+
+    from ownmail.config import get_source_by_name
+
+    source = get_source_by_name(archive.config, source_name)
+    if not source:
+        print(f"❌ Source '{source_name}' not found")
+        return
+
+    if source.get("type") != "imap":
+        print(f"relabel is not supported for source type '{source.get('type')}' — IMAP folders only")
+        return
+
+    account = source["account"]
+    print(f"Source: {source['name']} ({account})")
+    print(f"Strategy: {strategy}" + ("" if apply else "   (dry run — pass --apply to write)"))
+    print()
+
+    from ownmail.providers.imap import ImapProvider
+
+    provider = ImapProvider(
+        account=account,
+        keychain=archive.keychain,
+        host=source.get("host", "imap.gmail.com"),
+        port=source.get("port", 993),
+        exclude_folders=source.get("exclude_folders"),
+        source_name=source["name"],
+    )
+    provider.authenticate()
+
+    try:
+        membership = provider.scan_folder_membership()
+    finally:
+        provider.close()
+
+    if membership is None:
+        print(
+            "\nThis source scans through Gmail's All Mail folder, which keys "
+            "membership by Message-ID rather than by the folder:uid archived "
+            "rows carry. relabel supports standard IMAP sources only."
+        )
+        return
+
+    with sqlite3.connect(archive.db.db_path) as conn:
+        emails = conn.execute(
+            "SELECT rowid, provider_id, filename, email_date FROM emails WHERE account = ?",
+            (account,),
+        ).fetchall()
+
+        if not emails:
+            print("No archived emails for this source.")
+            return
+
+        print(f"\nComparing {len(emails)} archived emails against {len(membership)} scanned messages...")
+
+        changed: list[tuple[str, list[str], list[str]]] = []
+        matched = 0
+        unmatched = 0
+        interrupted = False
+
+        def signal_handler(signum, frame):
+            nonlocal interrupted
+            if interrupted:
+                print("\n\nForce quit.")
+                sys.exit(1)
+            interrupted = True
+            print("\n\n⏸ Stopping after current email... (Ctrl-C again to force quit)")
+
+        original_handler = signal.signal(signal.SIGINT, signal_handler)
+        try:
+            for rowid, provider_id, filename, email_date in emails:
+                if interrupted:
+                    break
+
+                folders = membership.get(provider_id)
+                if folders is None:
+                    # Not on the server any more, or its UIDs were reissued.
+                    unmatched += 1
+                    continue
+
+                matched += 1
+                folders = list(dict.fromkeys(folders))
+                filepath = archive.archive_dir / filename
+                current = _current_labels(conn, rowid, filepath)
+
+                if strategy == "server":
+                    new_labels = folders
+                else:
+                    new_labels = current + [f for f in folders if f not in current]
+
+                if set(new_labels) == set(current):
+                    continue
+
+                changed.append((filename, current, new_labels))
+
+                if apply:
+                    # Sidecar first — it is the source of truth, so an
+                    # interrupt between the two writes leaves the repair on
+                    # disk and only the rebuildable index behind.
+                    sidecar.write_labels(filepath, new_labels)
+                    _set_db_labels(conn, rowid, new_labels, email_date)
+                    if len(changed) % 500 == 0:
+                        conn.commit()
+                        print(f"  Rewritten {len(changed)}...\033[K", end="\r", flush=True)
+        finally:
+            signal.signal(signal.SIGINT, original_handler)
+
+    added = sum(len(set(new) - set(old)) for _f, old, new in changed)
+    removed = sum(len(set(old) - set(new)) for _f, old, new in changed)
+
+    print("\n" + "-" * 50)
+    if interrupted:
+        print("Relabel Paused!")
+    elif apply:
+        print("Relabel Complete!")
+    else:
+        print("Relabel (dry run) — nothing written")
+    print(f"  Matched on the server: {matched}")
+    print(f"  {'Changed' if apply else 'Would change'}: {len(changed)} emails")
+    if added:
+        print(f"    Labels added: {added}")
+    if removed:
+        print(f"    Labels removed: {removed}")
+    if unmatched:
+        print(f"  Not found on the server: {unmatched} (left untouched)")
+
+    for filename, old, new in changed[:10]:
+        print(f"\n    {filename}")
+        print(f"      before: {', '.join(old) or '(none)'}")
+        print(f"      after:  {', '.join(new)}")
+    if len(changed) > 10:
+        print(f"\n    ... and {len(changed) - 10} more")
+
+    if changed and not apply:
+        print("\n  Re-run with --apply to write these changes.")
     print("-" * 50 + "\n")
 
 

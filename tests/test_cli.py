@@ -900,6 +900,34 @@ class TestMainEdgeCases:
         # Should fail gracefully without sources
         assert "No sources" in captured.out or "Update Labels" in captured.out
 
+    def test_main_relabel_command(self, temp_dir, capsys, monkeypatch):
+        """relabel reaches the command with its strategy and dry-run default."""
+        from ownmail.cli import main
+
+        (temp_dir / "config.yaml").write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.commands.cmd_relabel") as mock_relabel:
+            with patch.object(sys, "argv", ["ownmail", "relabel", "--source", "fastmail"]):
+                main()
+            assert mock_relabel.call_args[0][1:] == ("fastmail", "union", False)
+
+            with patch.object(
+                sys, "argv", ["ownmail", "relabel", "--source", "fastmail", "--strategy", "server", "--apply"]
+            ):
+                main()
+            assert mock_relabel.call_args[0][1:] == ("fastmail", "server", True)
+
+    def test_main_relabel_requires_a_source(self, temp_dir, monkeypatch):
+        """relabel is source-scoped — it must never run across every source."""
+        from ownmail.cli import main
+
+        (temp_dir / "config.yaml").write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, "argv", ["ownmail", "relabel"]), pytest.raises(SystemExit):
+            main()
+
     def test_main_verify_command_2(self, temp_dir, capsys, monkeypatch):
         """Test verify command via main."""
         from ownmail.cli import main

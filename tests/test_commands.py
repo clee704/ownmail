@@ -2673,3 +2673,176 @@ class TestUpdateLabelsGmailEdgeCases:
             cmd_update_labels(archive)
 
         assert "Updated: 55 emails" in capsys.readouterr().out
+
+
+class TestCmdRelabel:
+    """Tests for the relabel command."""
+
+    ACCOUNT = "alice@example.com"
+
+    def _archive(self, temp_dir, source_type="imap"):
+        config = {
+            "sources": [
+                {
+                    "name": "fastmail",
+                    "type": source_type,
+                    "account": self.ACCOUNT,
+                    "host": "imap.fastmail.com",
+                }
+            ]
+        }
+        return EmailArchive(temp_dir, config)
+
+    def _add_email(self, archive, provider_id, labels, filename="emails/2024/01/m.eml"):
+        """Archive one message with `labels` in both the DB and its sidecar."""
+        path = archive.archive_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"From: a@b.c\r\nSubject: hi\r\n\r\nbody\r\n")
+
+        email_id = _eid(provider_id, self.ACCOUNT)
+        archive.db.mark_downloaded(email_id, provider_id, filename, content_hash="h", account=self.ACCOUNT)
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (email_id,)).fetchone()[0]
+            for label in labels:
+                conn.execute(
+                    "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                    (rowid, label, None),
+                )
+        if labels:
+            sidecar.write_labels(path, labels)
+        return path
+
+    def _run(self, archive, membership, **kwargs):
+        provider = MagicMock()
+        provider.scan_folder_membership.return_value = membership
+        with patch("ownmail.providers.imap.ImapProvider", return_value=provider):
+            commands.cmd_relabel(archive, "fastmail", **kwargs)
+        return provider
+
+    def _labels(self, archive, path):
+        with sqlite3.connect(archive.db.db_path) as conn:
+            db = sorted(
+                row[0]
+                for row in conn.execute("SELECT label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid")
+            )
+        return sorted(sidecar.read_labels(path)), db
+
+    def test_unknown_source(self, temp_dir, capsys):
+        commands.cmd_relabel(self._archive(temp_dir), "nope")
+        assert "not found" in capsys.readouterr().out
+
+    def test_rejects_non_imap_source(self, temp_dir, capsys):
+        commands.cmd_relabel(self._archive(temp_dir, source_type="gmail_api"), "fastmail")
+        assert "not supported for source type 'gmail_api'" in capsys.readouterr().out
+
+    def test_gmail_all_mail_path_is_refused(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "INBOX:1", ["INBOX"])
+        self._run(archive, None)
+
+        assert "standard IMAP sources only" in capsys.readouterr().out
+        assert self._labels(archive, path) == (["INBOX"], ["INBOX"])
+
+    def test_dry_run_reports_but_writes_nothing(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "INBOX:1", ["INBOX"])
+
+        self._run(archive, {"INBOX:1": ["INBOX", "Receipts"]})
+
+        out = capsys.readouterr().out
+        assert "Would change: 1" in out
+        assert "--apply" in out
+        assert self._labels(archive, path) == (["INBOX"], ["INBOX"])
+
+    def test_union_adds_missing_folders(self, temp_dir, capsys):
+        """The flattening repair: one archived folder, three on the server."""
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "INBOX:1", ["INBOX"])
+        before = path.read_bytes()
+
+        provider = self._run(archive, {"INBOX:1": ["INBOX", "Receipts", "Travel"]}, apply=True)
+
+        assert self._labels(archive, path) == (
+            ["INBOX", "Receipts", "Travel"],
+            ["INBOX", "Receipts", "Travel"],
+        )
+        assert "Labels added: 2" in capsys.readouterr().out
+        # Repair only — no message body is fetched and no .eml is rewritten.
+        provider.download_message.assert_not_called()
+        provider.download_messages_batch.assert_not_called()
+        assert path.read_bytes() == before
+
+    def test_union_never_removes(self, temp_dir):
+        """A label the server no longer reports survives a union run."""
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "INBOX:1", ["INBOX", "Gone", "Handmade"])
+
+        self._run(archive, {"INBOX:1": ["INBOX", "Receipts"]}, apply=True)
+
+        assert self._labels(archive, path)[0] == ["Gone", "Handmade", "INBOX", "Receipts"]
+
+    def test_server_strategy_replaces(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "INBOX:1", ["INBOX", "Gone"])
+
+        self._run(archive, {"INBOX:1": ["INBOX", "Receipts"]}, strategy="server", apply=True)
+
+        assert self._labels(archive, path) == (["INBOX", "Receipts"], ["INBOX", "Receipts"])
+        assert "Labels removed: 1" in capsys.readouterr().out
+
+    def test_matches_rows_captured_under_a_different_folder(self, temp_dir):
+        """The archived provider_id need not be the folder the rescan elects."""
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "Receipts:7", ["Receipts"])
+
+        self._run(archive, {"INBOX:1": ["INBOX", "Receipts"], "Receipts:7": ["INBOX", "Receipts"]}, apply=True)
+
+        assert self._labels(archive, path)[0] == ["INBOX", "Receipts"]
+
+    def test_message_absent_from_the_server_is_untouched(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "INBOX:99", ["INBOX"])
+
+        self._run(archive, {"INBOX:1": ["INBOX", "Receipts"]}, apply=True)
+
+        out = capsys.readouterr().out
+        assert "Not found on the server: 1" in out
+        assert self._labels(archive, path) == (["INBOX"], ["INBOX"])
+
+    def test_no_change_when_labels_already_correct(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        self._add_email(archive, "INBOX:1", ["INBOX", "Receipts"])
+
+        self._run(archive, {"INBOX:1": ["Receipts", "INBOX"]}, apply=True)
+
+        assert "Changed: 0" in capsys.readouterr().out
+
+    def test_falls_back_to_db_labels_without_a_sidecar(self, temp_dir):
+        """Archives predating sidecars still have their DB labels respected."""
+        archive = self._archive(temp_dir)
+        path = self._add_email(archive, "INBOX:1", ["Handmade"])
+        sidecar.sidecar_path(path).unlink()
+
+        self._run(archive, {"INBOX:1": ["INBOX"]}, apply=True)
+
+        assert self._labels(archive, path)[0] == ["Handmade", "INBOX"]
+
+    def test_no_archived_emails(self, temp_dir, capsys):
+        self._run(self._archive(temp_dir), {"INBOX:1": ["INBOX"]})
+        assert "No archived emails" in capsys.readouterr().out
+
+    def test_other_accounts_are_not_touched(self, temp_dir):
+        """A composite id can collide across sources; account scopes the match."""
+        archive = self._archive(temp_dir)
+        other = "emails/2024/01/other.eml"
+        path = archive.archive_dir / other
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"From: x@y.z\r\n\r\nbody\r\n")
+        archive.db.mark_downloaded(
+            _eid("INBOX:1", "bob@example.com"), "INBOX:1", other, content_hash="h2", account="bob@example.com"
+        )
+        sidecar.write_labels(path, ["INBOX"])
+
+        self._run(archive, {"INBOX:1": ["INBOX", "Receipts"]}, apply=True)
+
+        assert sidecar.read_labels(path) == ["INBOX"]

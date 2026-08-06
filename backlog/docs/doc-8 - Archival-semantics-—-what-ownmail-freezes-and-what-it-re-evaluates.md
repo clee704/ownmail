@@ -63,6 +63,43 @@ on, the question disappears entirely.
   instead delete an unwanted label by hand; the knob earns its keep for
   recurring platform labels across thousands of messages, not for one-offs.
 
+## Repair, and why it is not mirroring
+
+`relabel` (TASK-35) rescans an IMAP source's folders and rewrites the labels on
+messages already captured. Read literally that is the thing this document
+forbids, so it needs an argument — and the argument is narrower than "repair is
+a special case".
+
+The rule's purpose is that a non-authoritative source must never *overwrite* the
+authoritative one. `relabel --strategy union`, the default, only ever adds: no
+label the archive holds is removed, so nothing of ownmail's can be lost. The
+enforceable invariant is therefore the one this document should have stated all
+along — **ownmail never lets server state replace local label state** — and an
+additive repair leaves it intact.
+
+What union does not preserve is the weaker claim that ownmail stops *looking*.
+It looks. The cost is that a folder the user moved a message into after capture
+is indistinguishable from one a buggy scan missed, and is adopted as a label.
+That is drift in the commentary rather than in the files, which is the trade
+this document already makes everywhere else.
+
+`--strategy server` is the true re-snapshot and does break the rule: it drops
+labels the server no longer reports, which is following post-capture change. It
+exists because union can only fix a label that is *missing*, never one that is
+*wrong*, and the operator is the only party who knows whether their archive has
+been reorganised since capture. It is opt-in, prints its diff first, and writes
+nothing without `--apply`.
+
+Both are explicitly invoked and scoped to a single source, and neither runs as
+part of `download`. That containment is what keeps this a repair tool rather
+than a mirroring mode.
+
+Label provenance (TASK-36) would settle half of this permanently: with
+server-provided and locally-added labels held apart, a re-scan replaces the
+server partition and cannot reach the local one, so `--strategy` collapses to a
+single behaviour. The removal question survives it — replacing the server
+partition still follows post-capture removals — and stays as stated here.
+
 ## Why the two halves are not in conflict
 
 They look opposed: don't follow changes for labels, do follow changes for
@@ -81,9 +118,11 @@ commentary — never the reverse.
 ## What follows
 
 **Labels are a snapshot.** Whatever the provider reported at capture is what
-the archive keeps. Later additions and removals are not tracked, and there is
-no command that re-reads them: `update-labels` fills in emails that have no
-labels at all and leaves every other message untouched (TASK-20).
+the archive keeps. Later additions and removals are not tracked, and no routine
+operation re-reads them: `update-labels` fills in emails that have no labels at
+all and leaves every other message untouched (TASK-20). The one command that
+does re-read is `relabel`, which is a hand-run repair rather than part of sync
+— see *Repair, and why it is not mirroring* above.
 
 **Read/unread is not captured at all.** It is the degenerate case: a value that
 is not merely stale after capture but actively false, because sync picks mail up
@@ -137,8 +176,10 @@ labels a message carries when it leaves the inbox are the ones it keeps.
 
 Stated plainly so they are not rediscovered as bugs:
 
-- Labels applied after capture never reach the archive at all. `update-labels`
-  does not bring them in — it only fills gaps where there are no labels.
+- Labels applied after capture never reach the archive on their own.
+  `update-labels` does not bring them in — it only fills gaps where there are no
+  labels. `relabel` will, for IMAP folder membership, but only when run by hand
+  and only for the source named.
 - A message untrashed during a window when ownmail happens to run gets archived,
   even if the user re-trashes it immediately. Eligibility is evaluated at fetch
   time; there is no notion of "they didn't really mean it."

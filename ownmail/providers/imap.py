@@ -126,6 +126,7 @@ class ImapProvider(EmailProvider):
         self._source_name = source_name
         self._conn: imaplib.IMAP4_SSL | None = None
         self._folder_roles: dict[str, str] = {}
+        self._scan_used_all_mail = False
 
     @property
     def name(self) -> str:
@@ -302,10 +303,29 @@ class ImapProvider(EmailProvider):
         print(f"  Found {len(folders)} folders to scan", flush=True)
 
         all_mail = self._get_all_mail_folder(folders) if self._is_gmail() else None
+        self._scan_used_all_mail = bool(all_mail)
         if all_mail:
             return self._scan_gmail(folders, all_mail, since, until)
         else:
             return self._scan_standard(folders, since, until)
+
+    def scan_folder_membership(self) -> dict[str, list[str]] | None:
+        """Full scan returning composite_id -> every folder holding that message.
+
+        This is the map the dedup scan already builds to label messages as they
+        download, and which is otherwise discarded once the run ends. ``relabel``
+        uses it to repair the labels on messages already in the archive, so no
+        bodies are fetched.
+
+        Returns:
+            "folder:uid" -> every folder name holding that message. None for
+            the Gmail All-Mail path, which keys membership by Message-ID rather
+            than by the composite id archived rows carry.
+        """
+        self.get_all_message_ids()
+        if self._scan_used_all_mail:
+            return None
+        return self._folder_lookup
 
     def _scan_gmail(
         self,
@@ -395,12 +415,14 @@ class ImapProvider(EmailProvider):
                 if msg_id and msg_id in seen:
                     # Duplicate — just add this folder as an additional label
                     seen[msg_id]["folders"].append(folder)
+                    seen[msg_id]["ids"].append(composite_id)
                 else:
                     # New message
                     if msg_id:
                         seen[msg_id] = {
                             "primary": composite_id,
                             "folders": [folder],
+                            "ids": [composite_id],
                         }
                     all_ids.append(composite_id)
 
@@ -408,9 +430,15 @@ class ImapProvider(EmailProvider):
 
         # Store the dedup map for download_message to use
         self._seen_map = seen
-        self._folder_lookup = {}  # composite_id -> all folders
-        for _msg_id_val, info in seen.items():
-            self._folder_lookup[info["primary"]] = info["folders"]
+        self._message_id_to_folders = {}
+        # Every composite id gets an entry, not just the elected primary. Only
+        # primaries are ever downloaded, so the rest are inert here — but
+        # `relabel` matches archived rows by the provider_id they were captured
+        # under, which is whichever folder won the election on that earlier run.
+        self._folder_lookup = {}  # composite_id -> all folders holding it
+        for info in seen.values():
+            for composite_id in info["ids"]:
+                self._folder_lookup[composite_id] = info["folders"]
 
         total_dupes = sum(len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1)
         print(f"  Found {len(all_ids)} unique messages ({total_dupes} duplicates across folders)")

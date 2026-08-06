@@ -84,6 +84,7 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | `sync-check` | Compare local archive with server to find missing emails |
 | `trash` | View and manage trashed emails |
 | `update-labels` | Update labels on existing emails |
+| `relabel` | Repair IMAP folder labels on archived mail by rescanning the server |
 | `rebuild` | Rebuild search index and populate metadata |
 | `reset-sync` | Reset sync state to force full re-download |
 | `list-unknown` | List emails with unparseable dates |

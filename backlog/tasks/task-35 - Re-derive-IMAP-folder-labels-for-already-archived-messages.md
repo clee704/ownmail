@@ -1,9 +1,10 @@
 ---
 id: TASK-35
 title: Re-derive IMAP folder labels for already-archived messages
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-06 04:08'
+updated_date: '2026-08-06 18:44'
 labels: []
 dependencies:
   - TASK-34
@@ -37,8 +38,75 @@ Consequences worth weighing: it should probably be explicitly invoked and scoped
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A message archived from one IMAP folder but present in several gets all of them, in the DB and the sidecar
-- [ ] #2 Only messages already in the archive are touched — no re-download
-- [ ] #3 Explicitly invoked and source-scoped; never runs as part of download
-- [ ] #4 doc-8 records the decision on why post-capture re-reading is admissible here, or the task is closed unbuilt
+- [x] #1 A message archived from one IMAP folder but present in several gets all of them, in the DB and the sidecar
+- [x] #2 Only messages already in the archive are touched — no re-download
+- [x] #3 Explicitly invoked and source-scoped; never runs as part of download
+- [x] #4 doc-8 records the decision on why post-capture re-reading is admissible here, or the task is closed unbuilt
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built as `ownmail relabel --source <name> [--strategy union|server] [--apply]`.
+
+## The doc-8 decision
+
+Resolved in favour of building it, with the argument recorded in doc-8 under
+*Repair, and why it is not mirroring*. The short version: the rule's purpose is
+that a non-authoritative source must never *overwrite* the authoritative one,
+which is a statement about overwriting. `union` — the default — only ever adds,
+so nothing the archive holds can be lost and the invariant that matters is
+intact. The enforceable rule is restated as *ownmail never lets server state
+replace local label state*.
+
+The strategy is a per-run flag rather than a baked-in choice, because the doc-8
+anxiety is about whose authority wins and only the operator knows whether they
+have reorganised since capture:
+
+- `union` (default) adds folders the archive is missing, never removes. Cannot
+  repair a label that is *wrong*, only one that is *missing*. Adopts
+  post-capture moves into a folder as extra labels — the accepted cost.
+- `server` is a true re-snapshot and does drop labels the server no longer
+  reports. This genuinely departs from doc-8 and is opt-in for that reason.
+
+`--strategy` becomes unnecessary for the local-edit half once label provenance
+lands — filed as TASK-36, targeted at TASK-5.4 where local labels first exist.
+The removal question survives provenance and stays doc-8's.
+
+## Implementation
+
+`_scan_standard` already built composite_id -> folders and threw it away for
+messages already downloaded. Two changes made it usable:
+
+- The map now covers *every* composite id a message was seen under, not just
+  the elected primary. Only primaries are downloaded, so the extra entries are
+  inert during a normal run — but an archived row carries whichever folder won
+  the election on the earlier run, which need not be this run's primary.
+- `_scan_standard` now clears `_message_id_to_folders`, so a standard scan
+  cannot fall through to a stale Gmail-path lookup.
+
+`scan_folder_membership()` exposes the map and returns None for the Gmail
+All-Mail path, which keys membership by Message-ID rather than by the
+composite id archived rows carry; `relabel` refuses that source with a
+message rather than silently matching nothing.
+
+Rows are matched on `account` + `provider_id`. Account scoping is not
+cosmetic: `INBOX:1` collides trivially across sources. Legacy NULL-account rows
+are deliberately excluded — they come from `import`/`scan`, so their
+provider_id is not `folder:uid` anyway.
+
+Labels are read sidecar-first (invariant #1), falling back to the DB only for
+emails predating sidecars. Writes go sidecar first, then DB, so an interrupt
+between the two leaves the repair on disk and only the rebuildable index
+behind.
+
+## Caveats
+
+- A message whose folder's UIDVALIDITY has rolled will not match and is
+  counted as "not found on the server", left untouched. Same for anything
+  deleted from the server since capture.
+- Nothing is written without `--apply`; the default run prints the per-message
+  diff. This is opposite to `import`/`scan`, whose flag is `--dry-run` — the
+  asymmetry is deliberate, since `--strategy server` can remove labels.
+- Not supported for Gmail-over-IMAP or the Gmail API source type.
+<!-- SECTION:NOTES:END -->

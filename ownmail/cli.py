@@ -880,6 +880,32 @@ Examples:
     update_labels_parser.add_argument("--source", type=str, help="Source name to update (default: all sources)")
     _add_global_opts(update_labels_parser)
 
+    # relabel command
+    relabel_parser = subparsers.add_parser(
+        "relabel",
+        help="Re-derive IMAP folder labels for messages already archived",
+        description=(
+            "Rescan an IMAP source's folders and repair the labels on messages already "
+            "in the archive, without re-downloading anything. Fixes archives whose "
+            "cross-folder membership was flattened to a single folder at capture. "
+            "Reports what it would change; writes nothing without --apply."
+        ),
+    )
+    relabel_parser.add_argument("--source", type=str, required=True, help="Source name to relabel")
+    relabel_parser.add_argument(
+        "--strategy",
+        choices=["union", "server"],
+        default="union",
+        help=(
+            "union (default): add folders the archive is missing, never remove — "
+            "cannot overwrite the archive's own labels. "
+            "server: make labels exactly what the server reports now, dropping any it "
+            "no longer has, including ones added locally."
+        ),
+    )
+    relabel_parser.add_argument("--apply", action="store_true", help="Write the changes (default: report only)")
+    _add_global_opts(relabel_parser)
+
     # list-unknown command
     unknown_parser = subparsers.add_parser(
         "list-unknown",
@@ -1024,6 +1050,10 @@ Examples:
                 from ownmail.commands import cmd_update_labels
 
                 cmd_update_labels(archive, args.source)
+            elif args.command == "relabel":
+                from ownmail.commands import cmd_relabel
+
+                cmd_relabel(archive, args.source, args.strategy, args.apply)
             elif args.command == "list-unknown":
                 from ownmail.commands import cmd_list_unknown
 

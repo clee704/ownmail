@@ -1836,3 +1836,93 @@ class TestImapProviderProperties:
         """Gmail's IMAP host should be recognised, others not."""
         assert _imap_provider(MagicMock(), host="imap.gmail.com")._is_gmail() is True
         assert _imap_provider(MagicMock(), host="imap.example.com")._is_gmail() is False
+
+
+def _wire_folders(conn, folder_msgs):
+    """Make a mock connection serve {folder: {uid: message_id}} to a scan."""
+    selected = {"folder": None}
+
+    def mock_select(folder, readonly=True):
+        selected["folder"] = folder.strip('"')
+        return ("OK", [b"1"])
+
+    def mock_uid(cmd, *args):
+        msgs = folder_msgs.get(selected["folder"], {})
+        if cmd == "search":
+            if not msgs:
+                return ("OK", [b""])
+            return ("OK", [" ".join(str(u) for u in msgs).encode()])
+        if cmd == "fetch":
+            data = []
+            for uid, msg_id in msgs.items():
+                data.append(
+                    (
+                        f"1 (UID {uid} BODY[HEADER.FIELDS (MESSAGE-ID)] {{30}}".encode(),
+                        f"Message-ID: {msg_id}\r\n\r\n".encode(),
+                    )
+                )
+                data.append(b")")
+            return ("OK", data)
+        return ("OK", [b""])
+
+    conn.select.side_effect = mock_select
+    conn.uid.side_effect = mock_uid
+
+
+class TestImapFolderMembership:
+    """Tests for the composite-id -> folders map `relabel` runs on."""
+
+    def test_every_composite_id_maps_to_all_folders(self):
+        """A duplicate's own folder:uid resolves to the full folder set.
+
+        Only the elected primary is ever downloaded, so the scan used to
+        record only that one. `relabel` has to match rows captured on an
+        earlier run, where a different folder may have won the election.
+        """
+        conn = MagicMock()
+        conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren) "/" "Receipts"'])
+        _wire_folders(conn, {"INBOX": {1: "<m1@test>"}, "Receipts": {7: "<m1@test>"}})
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+
+        with patch("time.sleep"):
+            membership = provider.scan_folder_membership()
+
+        assert membership["INBOX:1"] == ["INBOX", "Receipts"]
+        assert membership["Receipts:7"] == ["INBOX", "Receipts"]
+
+    def test_single_folder_message_maps_to_itself(self):
+        conn = MagicMock()
+        conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"'])
+        _wire_folders(conn, {"INBOX": {4: "<solo@test>"}})
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+
+        with patch("time.sleep"):
+            membership = provider.scan_folder_membership()
+
+        assert membership == {"INBOX:4": ["INBOX"]}
+
+    def test_gmail_all_mail_path_has_no_membership(self):
+        """All Mail keys membership by Message-ID, which relabel can't join on."""
+        conn = MagicMock()
+        conn.list.return_value = (
+            "OK",
+            [b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"'],
+        )
+        _wire_folders(conn, {"INBOX": {1: "<m1@test>"}, "[Gmail]/All Mail": {9: "<m1@test>"}})
+        provider = _imap_provider(conn, host="imap.gmail.com")
+
+        with patch("time.sleep"):
+            assert provider.scan_folder_membership() is None
+
+    def test_standard_scan_clears_stale_gmail_map(self):
+        """A standard scan must not leave a Message-ID map for label lookup."""
+        conn = MagicMock()
+        conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"'])
+        _wire_folders(conn, {"INBOX": {1: "<m1@test>"}})
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+        provider._message_id_to_folders = {"<m1@test>": ["Stale"]}
+
+        with patch("time.sleep"):
+            provider.scan_folder_membership()
+
+        assert provider._message_id_to_folders == {}
