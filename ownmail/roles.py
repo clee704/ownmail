@@ -27,6 +27,21 @@ ROLES = frozenset({INBOX, SENT, DRAFTS, TRASH, SPAM, ARCHIVE, ALL})
 # Roles excluded from download unless the source overrides exclude_folders.
 DEFAULT_EXCLUDE_ROLES = frozenset({TRASH, SPAM})
 
+# Excluded roles whose membership is re-read every run, so that a message
+# leaving one becomes a download candidate.
+#
+# The split is between excluding a STATE and excluding a CONTAINER. A role is
+# something a message passes through — mail leaves trash, leaves the inbox —
+# so membership has to be read live or the departure is never seen. A named
+# folder is a durable statement ("I never want this"), and nothing about a
+# message sitting in one is going to change the answer.
+#
+# What makes the live read affordable is that these populations are
+# self-bounding: an inbox is small by nature, and trash and spam are capped by
+# the provider's own retention. A named label has no such bound and can only
+# grow, which is why it is never diffed. See TASK-14.3.
+TRANSIENT_EXCLUDE_ROLES = frozenset({INBOX, DRAFTS, TRASH, SPAM})
+
 # Gmail label IDs for mail-client state ownmail deliberately does not archive.
 #
 # Read/unread is a property of a mailbox session, not of the message. Sync
