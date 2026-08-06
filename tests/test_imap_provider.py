@@ -492,7 +492,7 @@ class TestImapProviderDedup:
                 return (
                     "OK",
                     [
-                        (b"1 (BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <same@example.com>\r\n\r\n"),
+                        (b"1 (UID 1 BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <same@example.com>\r\n\r\n"),
                         b")",
                     ],
                 )
@@ -534,7 +534,10 @@ class TestImapProviderDedup:
                     return (
                         "OK",
                         [
-                            (b"1 (BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <first@example.com>\r\n\r\n"),
+                            (
+                                b"1 (UID 1 BODY[HEADER.FIELDS (MESSAGE-ID)] {35}",
+                                b"Message-ID: <first@example.com>\r\n\r\n",
+                            ),
                             b")",
                         ],
                     )
@@ -542,7 +545,10 @@ class TestImapProviderDedup:
                     return (
                         "OK",
                         [
-                            (b"1 (BODY[HEADER.FIELDS (MESSAGE-ID)] {36}", b"Message-ID: <second@example.com>\r\n\r\n"),
+                            (
+                                b"1 (UID 1 BODY[HEADER.FIELDS (MESSAGE-ID)] {36}",
+                                b"Message-ID: <second@example.com>\r\n\r\n",
+                            ),
                             b")",
                         ],
                     )
@@ -577,7 +583,7 @@ class TestImapProviderDedup:
                 return (
                     "OK",
                     [
-                        (b"1 (BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <same@example.com>\r\n\r\n"),
+                        (b"1 (UID 1 BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <same@example.com>\r\n\r\n"),
                         b")",
                     ],
                 )
@@ -617,7 +623,7 @@ class TestImapProviderDownload:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b"1 (RFC822 {42}", raw_email),
+                (b"1 (BODY[] {42}", raw_email),
                 b")",
             ],
         )
@@ -638,7 +644,7 @@ class TestImapProviderDownload:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b"1 (RFC822 {42}", raw_email),
+                (b"1 (BODY[] {42}", raw_email),
                 b")",
             ],
         )
@@ -753,11 +759,20 @@ class TestImapProviderIncrementalSync:
                 return (
                     "OK",
                     [
-                        (b"101 (BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <msg101@test.com>\r\n\r\n"),
+                        (
+                            b"101 (UID 101 BODY[HEADER.FIELDS (MESSAGE-ID)] {35}",
+                            b"Message-ID: <msg101@test.com>\r\n\r\n",
+                        ),
                         b")",
-                        (b"102 (BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <msg102@test.com>\r\n\r\n"),
+                        (
+                            b"102 (UID 102 BODY[HEADER.FIELDS (MESSAGE-ID)] {35}",
+                            b"Message-ID: <msg102@test.com>\r\n\r\n",
+                        ),
                         b")",
-                        (b"103 (BODY[HEADER.FIELDS (MESSAGE-ID)] {35}", b"Message-ID: <msg103@test.com>\r\n\r\n"),
+                        (
+                            b"103 (UID 103 BODY[HEADER.FIELDS (MESSAGE-ID)] {35}",
+                            b"Message-ID: <msg103@test.com>\r\n\r\n",
+                        ),
                         b")",
                     ],
                 )
@@ -934,9 +949,9 @@ class TestImapScanGmail:
                 return (
                     "OK",
                     [
-                        (b"10 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg1@test.com>\r\n\r\n"),
+                        (b"10 (UID 10 BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg1@test.com>\r\n\r\n"),
                         b")",
-                        (b"20 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg2@test.com>\r\n\r\n"),
+                        (b"20 (UID 20 BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg2@test.com>\r\n\r\n"),
                         b")",
                     ],
                 )
@@ -987,9 +1002,9 @@ class TestImapScanGmail:
                 return (
                     "OK",
                     [
-                        (b"1 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg1@test.com>\r\n\r\n"),
+                        (b"1 (UID 1 BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg1@test.com>\r\n\r\n"),
                         b")",
-                        (b"2 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg2@test.com>\r\n\r\n"),
+                        (b"2 (UID 2 BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <msg2@test.com>\r\n\r\n"),
                         b")",
                     ],
                 )
@@ -1036,12 +1051,14 @@ class TestImapDownloadMessage:
         provider._conn.select.return_value = ("OK", [b"100"])
         provider._conn.uid.return_value = (
             "OK",
-            [(b"1 (RFC822 {100}", b"From: test@example.com\r\nSubject: Hello\r\n\r\nBody"), b")"],
+            [(b"1 (BODY[] {100}", b"From: test@example.com\r\nSubject: Hello\r\n\r\nBody"), b")"],
         )
 
         raw_data, labels = provider.download_message("INBOX:1")
         assert b"From: test@example.com" in raw_data
         assert "INBOX" in labels
+        # BODY.PEEK[], not RFC822 — see test_fetches_with_body_peek
+        provider._conn.uid.assert_called_once_with("fetch", "1", "(BODY.PEEK[])")
 
     def test_download_message_select_fails(self):
         provider = self._make_provider()
@@ -1073,9 +1090,9 @@ class TestImapDownloadMessage:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b"1 (UID 1 RFC822 {10}", b"From: a@b.com\r\n\r\nBody1"),
+                (b"1 (UID 1 BODY[] {10}", b"From: a@b.com\r\n\r\nBody1"),
                 b")",
-                (b"2 (UID 2 RFC822 {10}", b"From: c@d.com\r\n\r\nBody2"),
+                (b"2 (UID 2 BODY[] {10}", b"From: c@d.com\r\n\r\nBody2"),
                 b")",
             ],
         )
@@ -1120,7 +1137,7 @@ class TestImapDownloadMessage:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b"1 (UID 1 RFC822 {10}", b"From: a@b.com\r\n\r\nBody"),
+                (b"1 (UID 1 BODY[] {10}", b"From: a@b.com\r\n\r\nBody"),
                 b")",
             ],
         )
@@ -1137,7 +1154,7 @@ class TestImapDownloadMessage:
         provider._conn.uid.return_value = (
             "OK",
             [
-                (b"1 (UID 10 RFC822 {10}", b"From: a@b.com\r\n\r\nBody"),
+                (b"1 (UID 10 BODY[] {10}", b"From: a@b.com\r\n\r\nBody"),
                 b")",
             ],
         )
@@ -1339,7 +1356,7 @@ class TestImapGetNewMessageIds:
                 return (
                     "OK",
                     [
-                        (b"11 (BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <new@test.com>\r\n\r\n"),
+                        (b"11 (UID 11 BODY[HEADER.FIELDS (MESSAGE-ID)] {30}", b"Message-ID: <new@test.com>\r\n\r\n"),
                         b")",
                     ],
                 )
@@ -1431,7 +1448,7 @@ class TestImapBatchDownload:
         conn.select.return_value = ("OK", [b"2"])
         conn.uid.return_value = (
             "OK",
-            [(b"1 (UID 10 RFC822 {5}", b"body1"), (b"2 (UID 11 RFC822 {5}", b"body2")],
+            [(b"1 (UID 10 BODY[] {5}", b"body1"), (b"2 (UID 11 BODY[] {5}", b"body2")],
         )
         provider = _imap_provider(conn)
 
@@ -1441,6 +1458,37 @@ class TestImapBatchDownload:
         assert results["INBOX:10"][0] == b"body1"
         assert results["INBOX:11"][0] == b"body2"
         assert results["INBOX:10"][2] is None
+
+    def test_fetches_with_body_peek(self):
+        """The batch FETCH must ask for BODY.PEEK[], not RFC822.
+
+        iCloud answers an RFC822 fetch with a bare '* 1 FETCH (UID 194)' — OK
+        status, no message data — so every download fails. BODY.PEEK[] also
+        keeps \\Seen off without relying on the read-only SELECT.
+        """
+        conn = MagicMock()
+        conn.select.return_value = ("OK", [b"2"])
+        conn.uid.return_value = ("OK", [(b"1 (UID 10 BODY[] {5}", b"body1")])
+        provider = _imap_provider(conn)
+
+        provider.download_messages_batch(["INBOX:10"])
+
+        conn.uid.assert_called_once_with("fetch", "10", "(BODY.PEEK[])")
+
+    def test_response_without_message_data_is_flagged(self):
+        """A FETCH that returns UIDs but no bodies should error, not crash.
+
+        This is what iCloud does for RFC822: status OK, one bare line per UID.
+        """
+        conn = MagicMock()
+        conn.select.return_value = ("OK", [b"2"])
+        conn.uid.return_value = ("OK", [b"1 (UID 10)", b"2 (UID 11)"])
+        provider = _imap_provider(conn)
+
+        results = provider.download_messages_batch(["INBOX:10", "INBOX:11"])
+
+        assert results["INBOX:10"] == (None, [], "No data for UID 10")
+        assert results["INBOX:11"] == (None, [], "No data for UID 11")
 
     def test_unselectable_folder_errors_every_message(self):
         """If SELECT fails, every message in that folder should error."""
@@ -1480,7 +1528,7 @@ class TestImapBatchDownload:
         """A UID the server never returned should be reported as missing."""
         conn = MagicMock()
         conn.select.return_value = ("OK", [b"2"])
-        conn.uid.return_value = ("OK", [(b"1 (UID 10 RFC822 {5}", b"body1")])
+        conn.uid.return_value = ("OK", [(b"1 (UID 10 BODY[] {5}", b"body1")])
         provider = _imap_provider(conn)
 
         results = provider.download_messages_batch(["INBOX:10", "INBOX:11"])
@@ -1493,7 +1541,7 @@ class TestImapBatchDownload:
         """Without a dedup map, a message is labelled with its folder."""
         conn = MagicMock()
         conn.select.return_value = ("OK", [b"1"])
-        conn.uid.return_value = ("OK", [(b"1 (UID 10 RFC822 {5}", b"body1")])
+        conn.uid.return_value = ("OK", [(b"1 (UID 10 BODY[] {5}", b"body1")])
         provider = _imap_provider(conn)
 
         results = provider.download_messages_batch(["INBOX:10"])
@@ -1583,7 +1631,8 @@ class TestImapMessageIdExtraction:
 
         result = provider._get_message_ids_for_uids("INBOX", [10, 11])
 
-        assert result == {1: "<a@example.com>", 2: "<b@example.com>"}
+        # Keyed by UID, not by the leading sequence number
+        assert result == {10: "<a@example.com>", 11: "<b@example.com>"}
 
     def test_failed_fetch_batch_is_skipped(self):
         """A non-OK FETCH should contribute nothing rather than raise."""

@@ -247,21 +247,20 @@ class ImapProvider(EmailProvider):
             if status != "OK":
                 continue
 
-            current_uid = None
             for item in data:
-                if isinstance(item, tuple):
-                    # First element: b'123 (BODY[HEADER.FIELDS (MESSAGE-ID)] {xx}'
-                    header_info = item[0]
-                    header_body = item[1]
-
-                    uid_match = re.search(rb"(\d+) \(", header_info)
-                    if uid_match:
-                        current_uid = int(uid_match.group(1))
-
-                    if header_body and current_uid:
-                        msg_id = self._extract_message_id(header_body)
-                        if msg_id:
-                            result[current_uid] = msg_id
+                if not isinstance(item, tuple):
+                    continue
+                # First element: b'SEQ (UID NNNN BODY[HEADER.FIELDS (MESSAGE-ID)] {xx}'.
+                # Match the UID, not the leading sequence number — callers look
+                # these up by UID, and on servers where the two differ (any
+                # mailbox with deletions) a seq-keyed map silently misses every
+                # message, which loses cross-folder dedup and labels.
+                uid_match = re.search(rb"UID (\d+)", item[0])
+                if not uid_match or not item[1]:
+                    continue
+                msg_id = self._extract_message_id(item[1])
+                if msg_id:
+                    result[int(uid_match.group(1))] = msg_id
 
         return result
 
@@ -642,20 +641,22 @@ class ImapProvider(EmailProvider):
         folder, uid_str = msg_id.rsplit(":", 1)
         uid = int(uid_str)
 
-        # readonly=True is load-bearing, not a hint: RFC 3501 says fetching
-        # RFC822 sets \Seen as a side effect, so a writable SELECT here would
-        # mark the user's entire mailbox read while archiving it. Keep this
-        # read-only, or switch the fetch to BODY.PEEK[].
+        # readonly=True and BODY.PEEK[] both keep \Seen off: RFC 3501 says a
+        # plain RFC822/BODY[] fetch sets \Seen as a side effect, which would
+        # mark the user's entire mailbox read while archiving it. Don't drop
+        # either one.
         status, _ = self._conn.select(f'"{folder}"', readonly=True)
         if status != "OK":
             raise RuntimeError(f"Cannot select folder: {folder}")
 
-        # Fetch the full message
-        status, data = self._conn.uid("fetch", str(uid), "(RFC822)")
+        # Fetch the full message. BODY.PEEK[] rather than RFC822 because iCloud
+        # answers an RFC822 fetch with a bare '* 1 FETCH (UID 194)' — OK status,
+        # no message data — and every download fails.
+        status, data = self._conn.uid("fetch", str(uid), "(BODY.PEEK[])")
         if status != "OK" or not data or data[0] is None:
             raise RuntimeError(f"Failed to fetch message {msg_id}")
 
-        # data is [(b'uid (RFC822 {size}', b'raw_email'), b')']
+        # data is [(b'seq (UID nnn BODY[] {size}', b'raw_email'), b')']
         raw_data = None
         for item in data:
             if isinstance(item, tuple) and len(item) == 2:
@@ -692,9 +693,8 @@ class ImapProvider(EmailProvider):
             folder_groups.setdefault(folder, []).append((msg_id, uid))
 
         for folder, items in folder_groups.items():
-            # Select folder once for all messages in it. readonly=True also
-            # keeps the RFC822 fetch below from setting \Seen — see
-            # download_message.
+            # Select folder once for all messages in it. readonly=True is the
+            # second half of the \Seen protection — see download_message.
             status, _ = self._conn.select(f'"{folder}"', readonly=True)
             if status != "OK":
                 for msg_id, _ in items:
@@ -708,7 +708,7 @@ class ImapProvider(EmailProvider):
                 uid_map = {uid: mid for mid, uid in batch}
 
                 try:
-                    status, data = self._conn.uid("fetch", uid_set, "(RFC822)")
+                    status, data = self._conn.uid("fetch", uid_set, "(BODY.PEEK[])")
                 except Exception as e:
                     for mid, _ in batch:
                         results[mid] = (None, [], str(e))
@@ -719,8 +719,10 @@ class ImapProvider(EmailProvider):
                         results[mid] = (None, [], f"FETCH failed in {folder}")
                     continue
 
-                # Parse response — extract UID from inside parens
-                # IMAP response: b'SEQ (UID NNNN RFC822 {size}'
+                # Parse response — extract UID from inside parens.
+                # IMAP response: b'SEQ (UID NNNN BODY[] {size}'. Keying on the
+                # UID rather than position matters: iCloud returns the messages
+                # of a batch in whatever order it likes.
                 fetched_uids: set = set()
                 for item in data:
                     if isinstance(item, tuple) and len(item) == 2:
