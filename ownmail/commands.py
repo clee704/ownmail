@@ -1237,10 +1237,18 @@ def cmd_sync_check(
 
 
 def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
-    """Fetch/derive labels and update the database.
+    """Backfill labels for emails that have none.
 
-    For Gmail API: fetches labels from server via API.
-    For IMAP: derives labels from IMAP folder names (stored in provider_id).
+    This is a backfill, not a re-snapshot: the query below selects only
+    emails with no rows in ``email_labels``, so a message that already
+    carries labels is never revisited. That is deliberate under doc-8 —
+    capture transfers ownership, and re-reading label state from the server
+    afterwards would let a non-authoritative source overwrite ownmail's own.
+
+    Where a sidecar already exists it wins, and the DB is rebuilt from it
+    rather than the file being overwritten. Only an email with labels
+    nowhere — no DB rows, no sidecar — gets a derived value: the IMAP folder
+    it was downloaded from, or a fresh fetch for Gmail.
 
     Labels are stored in the DB and in a per-email JSON sidecar file
     (source of truth) - never injected into the .eml itself, which stays
@@ -1297,15 +1305,31 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
         print(f"update-labels is not supported for source type '{source_type}'")
 
 
-def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> None:
-    """Update labels for IMAP emails by extracting folder from provider_id.
+def _set_db_labels(conn, rowid: int, labels: list[str], email_date) -> None:
+    """Replace an email's rows in email_labels with ``labels``."""
+    conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
+    for label in labels:
+        conn.execute(
+            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+            (rowid, label, email_date),
+        )
 
-    IMAP provider_id format is "folder:uid", so the folder name IS the label.
-    No IMAP connection needed — this is a purely offline operation.
+
+def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> None:
+    """Backfill labels for IMAP emails from the folder in their provider_id.
+
+    IMAP provider_id format is "folder:uid", so the folder name is the only
+    label derivable offline — no IMAP connection needed. That makes this a
+    lossy source: a message the dedup scan found in several folders has one
+    folder in its provider_id and the rest only in its sidecar. So an
+    existing sidecar is restored, never overwritten; the folder name is used
+    only when there is no sidecar at all and the label would otherwise be
+    nothing.
     """
     print(f"Deriving labels from IMAP folder names for {len(emails)} emails...")
 
     success_count = 0
+    restored_count = 0
     skip_count = 0
 
     with sqlite3.connect(archive.db.db_path) as conn:
@@ -1328,25 +1352,37 @@ def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> No
                 continue
             rowid, email_date = row
 
-            conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
-            conn.execute(
-                "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                (rowid, folder, email_date),
-            )
-            sidecar.write_labels(archive.archive_dir / filename, [folder])
+            filepath = archive.archive_dir / filename
+            sidecar_labels = sidecar.read_labels(filepath)
+            if sidecar_labels is not None:
+                # Files are the source of truth — rebuild the DB from disk
+                # rather than flattening disk to one folder name.
+                _set_db_labels(conn, rowid, sidecar_labels, email_date)
+                restored_count += 1
+                continue
 
+            _set_db_labels(conn, rowid, [folder], email_date)
+            sidecar.write_labels(filepath, [folder])
             success_count += 1
 
     print("\n" + "-" * 50)
     print("Update Labels Complete!")
     print(f"  Updated: {success_count} emails")
+    if restored_count > 0:
+        print(f"  Restored from sidecar: {restored_count}")
     if skip_count > 0:
         print(f"  Skipped: {skip_count}")
     print("-" * 50 + "\n")
 
 
 def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> None:
-    """Update labels for Gmail API emails by fetching from server."""
+    """Backfill labels for Gmail API emails by fetching from the server.
+
+    An existing sidecar wins and is restored to the DB without a fetch —
+    the server is not authoritative for a message ownmail already captured.
+    A failed fetch is counted as an error, not as "no labels": clearing
+    label state on a rate-limited request would be silent data loss.
+    """
     from ownmail.providers.gmail import GmailProvider
 
     print(f"Fetching labels for {len(emails)} emails...")
@@ -1357,6 +1393,7 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> N
     provider.authenticate()
 
     success_count = 0
+    restored_count = 0
     skip_count = 0
     error_count = 0
     interrupted = False
@@ -1380,10 +1417,22 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> N
                 print(f"  [{i}/{len(emails)}] Fetching labels...\033[K", end="\r")
 
                 try:
-                    labels = provider.get_labels_for_message(provider_id)
-                    if not labels:
-                        skip_count += 1
-                        continue
+                    filepath = archive.archive_dir / filename
+                    sidecar_labels = sidecar.read_labels(filepath)
+
+                    if sidecar_labels is None:
+                        labels = provider.get_labels_for_message(provider_id)
+                        if labels is None:
+                            # The call failed. Leave the email alone so a
+                            # later run retries it, rather than recording
+                            # "no labels" and clearing it.
+                            print(f"\n  Could not fetch labels for {provider_id}")
+                            error_count += 1
+                            continue
+                    else:
+                        # Already owned locally — the DB is what's stale here,
+                        # so rebuild it from disk without asking the server.
+                        labels = sidecar_labels
 
                     row = conn.execute(
                         "SELECT rowid, email_date FROM emails WHERE email_id = ?",
@@ -1394,21 +1443,16 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> N
                         continue
                     rowid, email_date = row
 
-                    conn.execute(
-                        "DELETE FROM email_labels WHERE email_rowid = ?",
-                        (rowid,),
-                    )
-                    for label in labels:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                            (rowid, label, email_date),
-                        )
-                    sidecar.write_labels(archive.archive_dir / filename, labels)
+                    _set_db_labels(conn, rowid, labels, email_date)
 
-                    success_count += 1
+                    if sidecar_labels is None:
+                        sidecar.write_labels(filepath, labels)
+                        success_count += 1
+                    else:
+                        restored_count += 1
 
                     # Commit periodically
-                    if success_count % 50 == 0:
+                    if (success_count + restored_count) % 50 == 0:
                         conn.commit()
 
                 except Exception as e:
@@ -1424,7 +1468,9 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> N
     else:
         print("Update Labels Complete!")
     print(f"  Updated: {success_count} emails")
-    print(f"  Skipped (no labels): {skip_count}")
+    if restored_count > 0:
+        print(f"  Restored from sidecar: {restored_count}")
+    print(f"  Skipped (not in index): {skip_count}")
     if error_count > 0:
         print(f"  Errors: {error_count}")
     print("-" * 50 + "\n")

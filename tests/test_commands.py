@@ -1018,6 +1018,48 @@ class TestCmdUpdateLabels:
         assert sidecar.read_labels(temp_dir / "a.eml") == ["INBOX/Sub"]
         assert "Updated: 1 emails" in capsys.readouterr().out
 
+    def test_imap_multi_folder_sidecar_survives(self, temp_dir, capsys):
+        """A message found in several folders must not be flattened to one.
+
+        provider_id holds only the folder the message was downloaded from;
+        the other folders the dedup scan found live in the sidecar. Deriving
+        from provider_id and overwriting would destroy them — and the
+        sidecar is the source of truth, so `rebuild --only sidecars` would
+        then propagate the loss rather than repair it.
+        """
+        archive = self._archive(temp_dir, [{"name": "work", "type": "imap", "account": "a@example.com"}])
+        (temp_dir / "a.eml").write_bytes(b"From: x@example.com\n\nbody\n")
+        sidecar.write_labels(temp_dir / "a.eml", ["Archive", "INBOX", "Work"])
+        self._seed(archive, [("a", "Archive:42", "a.eml", "a@example.com")])
+
+        cmd_update_labels(archive)
+
+        assert sidecar.read_labels(temp_dir / "a.eml") == ["Archive", "INBOX", "Work"]
+        # The DB is the rebuildable side, so it gets restored from the file.
+        assert sorted(self._labels(archive)) == [("a", "Archive"), ("a", "INBOX"), ("a", "Work")]
+        assert "Restored from sidecar: 1" in capsys.readouterr().out
+
+    def test_gmail_sidecar_wins_over_the_server(self, temp_dir, capsys):
+        """After capture the archive is authoritative — don't re-read labels.
+
+        doc-8: following server changes post-capture would let a
+        non-authoritative source overwrite the authoritative one.
+        """
+        archive = self._archive(temp_dir, [{"name": "g", "type": "gmail_api", "account": "a@example.com"}])
+        (temp_dir / "a.eml").write_bytes(b"From: x@example.com\n\nbody\n")
+        sidecar.write_labels(temp_dir / "a.eml", ["Work", "Receipts"])
+        self._seed(archive, [("a", "msg1", "a.eml", "a@example.com")])
+
+        provider = MagicMock()
+        provider.get_labels_for_message.return_value = ["INBOX"]
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            cmd_update_labels(archive)
+
+        provider.get_labels_for_message.assert_not_called()
+        assert sidecar.read_labels(temp_dir / "a.eml") == ["Work", "Receipts"]
+        assert sorted(self._labels(archive)) == [("a", "Receipts"), ("a", "Work")]
+        assert "Restored from sidecar: 1" in capsys.readouterr().out
+
     def test_imap_skips_malformed_provider_ids(self, temp_dir, capsys):
         """provider_ids with no folder part should be skipped, not crash."""
         archive = self._archive(temp_dir, [{"name": "work", "type": "imap", "account": "a@example.com"}])
@@ -1034,9 +1076,13 @@ class TestCmdUpdateLabels:
         assert self._labels(archive) == []
         assert "Skipped: 2" in capsys.readouterr().out
 
-    def test_gmail_skips_messages_without_labels(self, temp_dir, capsys):
-        """A message the API returns no labels for should be skipped."""
+    def test_gmail_confirmed_empty_writes_an_empty_sidecar(self, temp_dir, capsys):
+        """A confirmed-empty label list is an answer, and gets recorded.
+
+        Writing the sidecar is what stops the next run asking again.
+        """
         archive = self._archive(temp_dir, [{"name": "g", "type": "gmail_api", "account": "a@example.com"}])
+        (temp_dir / "a.eml").write_bytes(b"From: x@example.com\n\nbody\n")
         self._seed(archive, [("a", "msg1", "a.eml", "a@example.com")])
 
         provider = MagicMock()
@@ -1045,7 +1091,24 @@ class TestCmdUpdateLabels:
             cmd_update_labels(archive)
 
         assert self._labels(archive) == []
-        assert "Skipped (no labels): 1" in capsys.readouterr().out
+        assert sidecar.read_labels(temp_dir / "a.eml") == []
+        assert "Errors" not in capsys.readouterr().out
+
+    def test_gmail_failed_fetch_is_an_error_not_an_empty_result(self, temp_dir, capsys):
+        """A failed call must not be recorded as "this message has no labels"."""
+        archive = self._archive(temp_dir, [{"name": "g", "type": "gmail_api", "account": "a@example.com"}])
+        (temp_dir / "a.eml").write_bytes(b"From: x@example.com\n\nbody\n")
+        self._seed(archive, [("a", "msg1", "a.eml", "a@example.com")])
+
+        provider = MagicMock()
+        provider.get_labels_for_message.return_value = None
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
+            cmd_update_labels(archive)
+
+        assert self._labels(archive) == []
+        # No sidecar written at all — a later run must be able to retry.
+        assert sidecar.read_labels(temp_dir / "a.eml") is None
+        assert "Errors: 1" in capsys.readouterr().out
 
     def test_gmail_per_message_errors_are_counted(self, temp_dir, capsys):
         """An API error on one message should not abort the whole run."""
@@ -2577,7 +2640,7 @@ class TestUpdateLabelsGmailEdgeCases:
         with patch("ownmail.providers.gmail.GmailProvider", return_value=provider):
             cmd_update_labels(archive)
 
-        assert "Skipped (no labels): 1" in capsys.readouterr().out
+        assert "Skipped (not in index): 1" in capsys.readouterr().out
 
     def test_second_interrupt_forces_quit(self, temp_dir):
         """A second Ctrl-C should exit immediately rather than finish the batch."""

@@ -869,8 +869,13 @@ Examples:
     # update-labels command
     update_labels_parser = subparsers.add_parser(
         "update-labels",
-        help="Fetch current labels from server for existing emails",
-        description="Fetch current Gmail labels from the server and update the database for already-downloaded emails.",
+        help="Backfill labels for archived emails that have none",
+        description=(
+            "Backfill labels for already-downloaded emails that have none. "
+            "Emails that already carry labels are left alone, and an existing "
+            "label sidecar is restored rather than overwritten — after capture, "
+            "the archive's labels are authoritative, not the server's."
+        ),
     )
     update_labels_parser.add_argument("--source", type=str, help="Source name to update (default: all sources)")
     _add_global_opts(update_labels_parser)

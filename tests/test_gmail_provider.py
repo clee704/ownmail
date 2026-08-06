@@ -1069,13 +1069,18 @@ class TestGmailLabels(_GmailFixture):
 
             assert provider.get_labels_for_message("msg1") == ["Work"]
 
-    def test_get_labels_for_message_error_returns_empty(self):
-        """An API error while fetching labels should yield an empty list."""
+    def test_get_labels_for_message_error_returns_none(self):
+        """An API error must be distinguishable from a message with no labels.
+
+        Returning [] here would let a rate-limited request read as "the
+        server says this message has no labels", which callers that write
+        label state would act on.
+        """
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
             service.users.return_value.messages.return_value.get.return_value.execute.side_effect = _http_error(500)
 
-            assert provider.get_labels_for_message("msg1") == []
+            assert provider.get_labels_for_message("msg1") is None
 
 
 class TestGmailBatchDownload(_GmailFixture):

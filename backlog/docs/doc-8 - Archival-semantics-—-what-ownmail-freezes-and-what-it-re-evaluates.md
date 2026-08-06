@@ -48,10 +48,11 @@ on, the question disappears entirely.
 - **Following server changes post-capture would be a bug, not a feature.** It
   would let a non-authoritative source overwrite the authoritative one. This is
   why capture-once is a correctness requirement and not merely cheap.
-- **`update-labels` is at odds with the model.** Re-snapshotting from the server
-  overwrites ownmail's own labels. Its defensible scope is a one-time backfill
-  for archives captured before local editing existed. See TASK-20, which also
-  documents that it currently destroys data.
+- **`update-labels` is a backfill, and only that.** Re-snapshotting from the
+  server would overwrite ownmail's own labels, so it doesn't: it visits only
+  emails carrying no labels at all, and where a sidecar exists it restores the
+  DB from the file rather than the other way round. That is its whole
+  defensible scope — archives captured before sidecars existed. TASK-20.
 - **Capture timing must match the handoff.** Ownership may only transfer at a
   point where the user is done with the message in their mail client. Eager
   inbox capture — what ownmail does today — hands over mail the user is still
@@ -80,9 +81,9 @@ commentary — never the reverse.
 ## What follows
 
 **Labels are a snapshot.** Whatever the provider reported at capture is what
-the archive keeps. Later additions and removals are not tracked. `update-labels`
-exists to re-snapshot on demand and is a manual, whole-archive operation, not
-part of sync. (It is also currently broken — TASK-20.)
+the archive keeps. Later additions and removals are not tracked, and there is
+no command that re-reads them: `update-labels` fills in emails that have no
+labels at all and leaves every other message untouched (TASK-20).
 
 **Read/unread is not captured at all.** It is the degenerate case: a value that
 is not merely stale after capture but actively false, because sync picks mail up
@@ -136,8 +137,8 @@ labels a message carries when it leaves the inbox are the ones it keeps.
 
 Stated plainly so they are not rediscovered as bugs:
 
-- Labels applied after capture never reach the archive without a manual
-  `update-labels`.
+- Labels applied after capture never reach the archive at all. `update-labels`
+  does not bring them in — it only fills gaps where there are no labels.
 - A message untrashed during a window when ownmail happens to run gets archived,
   even if the user re-trashes it immediately. Eligibility is evaluated at fetch
   time; there is no notion of "they didn't really mean it."

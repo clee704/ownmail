@@ -276,7 +276,9 @@ class GmailProvider(EmailProvider):
         # Fetch labels if enabled (stored in DB, not injected into .eml)
         labels = []
         if self._include_labels:
-            labels = self._get_labels_for_message(msg_id)
+            # A failed label lookup shouldn't fail the download — see the
+            # None contract on get_labels_for_message.
+            labels = self._get_labels_for_message(msg_id) or []
 
         return raw_data, labels
 
@@ -316,7 +318,7 @@ class GmailProvider(EmailProvider):
                             labels = self._resolve_label_names(label_ids)
                         else:
                             # Fallback: fetch labels individually if not in batch response
-                            labels = self._get_labels_for_message(request_id)
+                            labels = self._get_labels_for_message(request_id) or []
 
                     results[request_id] = (raw_data, labels, None)
                 except Exception as e:
@@ -366,14 +368,18 @@ class GmailProvider(EmailProvider):
 
         return results
 
-    def get_labels_for_message(self, message_id: str) -> list[str]:
+    def get_labels_for_message(self, message_id: str) -> list[str] | None:
         """Fetch Gmail labels for a message.
 
         Args:
             message_id: Gmail message ID
 
         Returns:
-            List of human-readable label names
+            List of human-readable label names, or None if the call failed.
+            An empty list means the server confirmed the message has no
+            labels; None means we don't know. Callers that write label state
+            must tell the two apart — a rate-limited request answered as "no
+            labels" would look like a message to clear.
         """
         try:
             message = (
@@ -385,7 +391,7 @@ class GmailProvider(EmailProvider):
             label_ids = message.get("labelIds", [])
             return self._resolve_label_names(label_ids)
         except HttpError:
-            return []
+            return None
 
     # Alias for backward compatibility
     _get_labels_for_message = get_labels_for_message
