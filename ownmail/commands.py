@@ -1491,7 +1491,7 @@ def _current_labels(conn, rowid: int, filepath: Path) -> list[str]:
 
 def cmd_relabel(
     archive: EmailArchive,
-    source_name: str,
+    source_name: str | None = None,
     strategy: str = "union",
     apply: bool = False,
 ) -> None:
@@ -1520,26 +1520,47 @@ def cmd_relabel(
       whether they have reorganised since capture.
 
     Nothing is written without ``apply``; the default run reports the diff.
+
+    With no ``source_name`` every IMAP source is repaired in turn. A named
+    source that isn't IMAP is an error, since the user asked for it by name;
+    the same source encountered while sweeping all of them is just skipped.
     """
     print("\n" + "=" * 50)
     print("ownmail - Relabel")
     print("=" * 50 + "\n")
 
-    from ownmail.config import get_source_by_name
+    from ownmail.config import get_source_by_name, get_sources
 
-    source = get_source_by_name(archive.config, source_name)
-    if not source:
-        print(f"❌ Source '{source_name}' not found")
-        return
+    if source_name:
+        source = get_source_by_name(archive.config, source_name)
+        if not source:
+            print(f"❌ Source '{source_name}' not found")
+            return
+        if source.get("type") != "imap":
+            print(f"relabel is not supported for source type '{source.get('type')}' — IMAP folders only")
+            return
+        sources = [source]
+    else:
+        sources = [s for s in get_sources(archive.config) if s.get("type") == "imap"]
+        if not sources:
+            print("No IMAP sources configured — relabel repairs IMAP folder labels only.")
+            return
 
-    if source.get("type") != "imap":
-        print(f"relabel is not supported for source type '{source.get('type')}' — IMAP folders only")
-        return
-
-    account = source["account"]
-    print(f"Source: {source['name']} ({account})")
     print(f"Strategy: {strategy}" + ("" if apply else "   (dry run — pass --apply to write)"))
-    print()
+
+    for source in sources:
+        _relabel_source(archive, source, strategy, apply)
+
+
+def _relabel_source(
+    archive: EmailArchive,
+    source: dict,
+    strategy: str,
+    apply: bool,
+) -> None:
+    """Rescan one IMAP source's folders and repair its archived labels."""
+    account = source["account"]
+    print(f"\nSource: {source['name']} ({account})")
 
     from ownmail.providers.imap import ImapProvider
 

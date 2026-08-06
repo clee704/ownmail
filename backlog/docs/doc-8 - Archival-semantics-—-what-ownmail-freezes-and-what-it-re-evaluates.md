@@ -90,9 +90,10 @@ exists because union can only fix a label that is *missing*, never one that is
 been reorganised since capture. It is opt-in, prints its diff first, and writes
 nothing without `--apply`.
 
-Both are explicitly invoked and scoped to a single source, and neither runs as
-part of `download`. That containment is what keeps this a repair tool rather
-than a mirroring mode.
+Both are hand-run, report before they write, and never run as part of
+`download`. A run can be scoped to one source, though it defaults to sweeping
+every IMAP source — the containment that matters is that nothing invokes this
+except a person, not how many sources one invocation covers.
 
 Label provenance (TASK-36) would settle half of this permanently: with
 server-provided and locally-added labels held apart, a re-scan replaces the

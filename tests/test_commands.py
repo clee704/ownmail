@@ -2693,14 +2693,15 @@ class TestCmdRelabel:
         }
         return EmailArchive(temp_dir, config)
 
-    def _add_email(self, archive, provider_id, labels, filename="emails/2024/01/m.eml"):
+    def _add_email(self, archive, provider_id, labels, filename="emails/2024/01/m.eml", account=None):
         """Archive one message with `labels` in both the DB and its sidecar."""
+        account = account or self.ACCOUNT
         path = archive.archive_dir / filename
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"From: a@b.c\r\nSubject: hi\r\n\r\nbody\r\n")
 
-        email_id = _eid(provider_id, self.ACCOUNT)
-        archive.db.mark_downloaded(email_id, provider_id, filename, content_hash="h", account=self.ACCOUNT)
+        email_id = _eid(provider_id, account)
+        archive.db.mark_downloaded(email_id, provider_id, filename, content_hash=filename, account=account)
         with sqlite3.connect(archive.db.db_path) as conn:
             rowid = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (email_id,)).fetchone()[0]
             for label in labels:
@@ -2712,18 +2713,23 @@ class TestCmdRelabel:
             sidecar.write_labels(path, labels)
         return path
 
-    def _run(self, archive, membership, **kwargs):
+    def _run(self, archive, membership, source_name="fastmail", **kwargs):
         provider = MagicMock()
         provider.scan_folder_membership.return_value = membership
         with patch("ownmail.providers.imap.ImapProvider", return_value=provider):
-            commands.cmd_relabel(archive, "fastmail", **kwargs)
+            commands.cmd_relabel(archive, source_name, **kwargs)
         return provider
 
     def _labels(self, archive, path):
+        """That email's labels as (sidecar, DB) — they should always agree."""
+        filename = str(path.relative_to(archive.archive_dir))
         with sqlite3.connect(archive.db.db_path) as conn:
             db = sorted(
                 row[0]
-                for row in conn.execute("SELECT label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid")
+                for row in conn.execute(
+                    "SELECT label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid WHERE e.filename = ?",
+                    (filename,),
+                )
             )
         return sorted(sidecar.read_labels(path)), db
 
@@ -2834,15 +2840,53 @@ class TestCmdRelabel:
     def test_other_accounts_are_not_touched(self, temp_dir):
         """A composite id can collide across sources; account scopes the match."""
         archive = self._archive(temp_dir)
-        other = "emails/2024/01/other.eml"
-        path = archive.archive_dir / other
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"From: x@y.z\r\n\r\nbody\r\n")
-        archive.db.mark_downloaded(
-            _eid("INBOX:1", "bob@example.com"), "INBOX:1", other, content_hash="h2", account="bob@example.com"
+        path = self._add_email(
+            archive, "INBOX:1", ["INBOX"], filename="emails/2024/01/other.eml", account="bob@example.com"
         )
-        sidecar.write_labels(path, ["INBOX"])
 
         self._run(archive, {"INBOX:1": ["INBOX", "Receipts"]}, apply=True)
 
         assert sidecar.read_labels(path) == ["INBOX"]
+
+    def _multi_source_archive(self, temp_dir):
+        return EmailArchive(
+            temp_dir,
+            {
+                "sources": [
+                    {"name": "fastmail", "type": "imap", "account": self.ACCOUNT, "host": "imap.fastmail.com"},
+                    {"name": "work", "type": "imap", "account": "bob@example.com", "host": "imap.work.test"},
+                    {"name": "gmail", "type": "gmail_api", "account": "carol@gmail.com"},
+                ]
+            },
+        )
+
+    def test_no_source_named_sweeps_every_imap_source(self, temp_dir):
+        """A bare run repairs each IMAP source in turn, and skips the rest."""
+        archive = self._multi_source_archive(temp_dir)
+        alice = self._add_email(archive, "INBOX:1", ["INBOX"], filename="emails/2024/01/a.eml")
+        bob = self._add_email(archive, "INBOX:1", ["INBOX"], filename="emails/2024/01/b.eml", account="bob@example.com")
+        carol = self._add_email(
+            archive, "INBOX:1", ["INBOX"], filename="emails/2024/01/c.eml", account="carol@gmail.com"
+        )
+
+        self._run(archive, {"INBOX:1": ["INBOX", "Receipts"]}, source_name=None, apply=True)
+
+        assert self._labels(archive, alice)[0] == ["INBOX", "Receipts"]
+        assert self._labels(archive, bob)[0] == ["INBOX", "Receipts"]
+        # The gmail_api source is not an IMAP source, so its mail is untouched.
+        assert self._labels(archive, carol)[0] == ["INBOX"]
+
+    def test_no_source_named_connects_once_per_imap_source(self, temp_dir, capsys):
+        archive = self._multi_source_archive(temp_dir)
+        self._add_email(archive, "INBOX:1", ["INBOX"])
+
+        provider = self._run(archive, {"INBOX:1": ["INBOX"]}, source_name=None)
+
+        assert provider.scan_folder_membership.call_count == 2
+        out = capsys.readouterr().out
+        assert "fastmail" in out and "work" in out and "carol@gmail.com" not in out
+
+    def test_no_imap_sources_configured(self, temp_dir, capsys):
+        archive = self._archive(temp_dir, source_type="gmail_api")
+        commands.cmd_relabel(archive)
+        assert "No IMAP sources configured" in capsys.readouterr().out

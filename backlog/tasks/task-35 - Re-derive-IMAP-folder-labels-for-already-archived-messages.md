@@ -108,5 +108,11 @@ behind.
 - Nothing is written without `--apply`; the default run prints the per-message
   diff. This is opposite to `import`/`scan`, whose flag is `--dry-run` — the
   asymmetry is deliberate, since `--strategy server` can remove labels.
+- `--source` is optional and defaults to every IMAP source, matching every
+  other `--source` in the CLI. It was briefly required, on the reasoning that a
+  command able to delete labels should make the operator name its target; that
+  was dropped as inconsistent, since `--apply` is already the gate that stops
+  an accidental run from writing anything. AC #3's "source-scoped" is still met
+  — a run can be scoped to one source, and nothing but a person invokes it.
 - Not supported for Gmail-over-IMAP or the Gmail API source type.
 <!-- SECTION:NOTES:END -->

@@ -891,7 +891,7 @@ Examples:
             "Reports what it would change; writes nothing without --apply."
         ),
     )
-    relabel_parser.add_argument("--source", type=str, required=True, help="Source name to relabel")
+    relabel_parser.add_argument("--source", type=str, help="Source name to relabel (default: every IMAP source)")
     relabel_parser.add_argument(
         "--strategy",
         choices=["union", "server"],
