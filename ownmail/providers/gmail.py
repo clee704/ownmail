@@ -10,7 +10,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from ownmail import roles
+from ownmail import capture, roles
 from ownmail.providers.base import EmailProvider
 
 # Gmail API scopes - readonly access
@@ -117,50 +117,47 @@ class GmailProvider(EmailProvider):
         self._keychain.save_gmail_token(self._account, creds)
         return creds
 
-    def get_all_message_ids(self, since: str | None = None, until: str | None = None) -> list[str]:
-        """Get all message IDs from Gmail.
+    def _list_message_ids(
+        self,
+        query: str = "",
+        label_ids: list[str] | None = None,
+        include_spam_trash: bool = False,
+        progress: str | None = None,
+    ) -> list[str]:
+        """Page through ``messages.list`` and collect every id it returns.
 
         Args:
-            since: Only get emails after this date (YYYY-MM-DD)
-            until: Only get emails before this date (YYYY-MM-DD)
+            query: Gmail search query, or empty for none
+            label_ids: Restrict to messages carrying all of these label IDs
+            include_spam_trash: Whether trash and spam are in scope
+            progress: Noun for the progress line, or None to stay quiet
         """
-        all_ids = []
+        all_ids: list[str] = []
         page_token = None
 
-        # Date filtering only. Trash and spam exclusion is the request
-        # parameter below, not a query term.
-        query_parts = []
-        if since:
-            query_parts.append(f"after:{since.replace('-', '/')}")
-        if until:
-            query_parts.append(f"before:{until.replace('-', '/')}")
-        query = " ".join(query_parts)
-
-        print("  Querying Gmail API...\033[K", end="\r", flush=True)
+        if progress:
+            print("  Querying Gmail API...\033[K", end="\r", flush=True)
 
         try:
             while True:
-                request_args = {
-                    "userId": "me",
-                    "pageToken": page_token,
-                    "maxResults": 500,
-                    "q": query,
-                    # This, not the query, is what excludes trash and spam,
-                    # and it is stated rather than defaulted so that is
-                    # visible: a matching ``-in:trash -in:spam`` in ``q`` used
-                    # to sit here restating it, so editing the exclusion there
-                    # did nothing. Covers exactly the two roles in
-                    # ``roles.DEFAULT_EXCLUDE_ROLES``, all-or-nothing, and
-                    # reaches no other — a third exclusion needs a query term
-                    # or a labelIds check of its own.
-                    "includeSpamTrash": False,
-                }
-
-                response = self._service.users().messages().list(**request_args).execute()
+                response = (
+                    self._service.users()
+                    .messages()
+                    .list(
+                        userId="me",
+                        pageToken=page_token,
+                        maxResults=500,
+                        q=query,
+                        labelIds=label_ids,
+                        includeSpamTrash=include_spam_trash,
+                    )
+                    .execute()
+                )
 
                 if "messages" in response:
                     all_ids.extend([msg["id"] for msg in response["messages"]])
-                    print(f"  Found {len(all_ids)} messages...\033[K", end="\r", flush=True)
+                    if progress:
+                        print(f"  Found {len(all_ids)} {progress}...\033[K", end="\r", flush=True)
 
                 page_token = response.get("nextPageToken")
                 if not page_token:
@@ -169,8 +166,62 @@ class GmailProvider(EmailProvider):
             print("\n\n⏸ Interrupted during Gmail query.")
             raise
 
+        return all_ids
+
+    def get_all_message_ids(self, since: str | None = None, until: str | None = None) -> list[str]:
+        """Get all message IDs from Gmail.
+
+        Args:
+            since: Only get emails after this date (YYYY-MM-DD)
+            until: Only get emails before this date (YYYY-MM-DD)
+        """
+        # Date filtering only. Trash and spam exclusion is the request
+        # parameter, not a query term: a matching ``-in:trash -in:spam`` in
+        # ``q`` used to sit here restating it, so editing the exclusion there
+        # did nothing.
+        query_parts = []
+        if since:
+            query_parts.append(f"after:{since.replace('-', '/')}")
+        if until:
+            query_parts.append(f"before:{until.replace('-', '/')}")
+
+        all_ids = self._list_message_ids(query=" ".join(query_parts), progress="messages")
         print(f"  Found {len(all_ids)} total messages")
         return all_ids
+
+    def _excluded_roles(self) -> frozenset[str]:
+        """Roles this source excludes from download.
+
+        Hardcoded until TASK-14.1 exposes it as per-source config; kept as a
+        method so the fingerprint and the enumeration below already read from
+        one place when it becomes configurable.
+        """
+        return roles.DEFAULT_EXCLUDE_ROLES
+
+    def _enumerate_excluded(self) -> frozenset[str]:
+        """Message ids currently sitting in a transient excluded role.
+
+        This is the set whose membership is diffed across runs, so that a
+        message *leaving* trash or spam becomes a download candidate. Gmail
+        emits no event for that: ``history.list`` reports ``messageAdded``,
+        and a rescued spam false positive was added long ago.
+
+        Asked by label ID rather than by search query — ``in:trash`` is
+        reliable but an unrecognized term would be read as a user label name
+        and filter nothing, which fails silently. Cost is flat in mailbox
+        size: these roles are bounded by the provider's own retention.
+        """
+        # Every transient role has a Gmail system label, so the lookup is
+        # total here — a new one without a label would have to add the mapping
+        # in roles.py rather than be skipped silently.
+        label_ids = [
+            roles.gmail_label_for_role(r) for r in sorted(self._excluded_roles() & roles.TRANSIENT_EXCLUDE_ROLES)
+        ]
+
+        ids: set[str] = set()
+        for label_id in label_ids:
+            ids.update(self._list_message_ids(label_ids=[label_id], include_spam_trash=True))
+        return frozenset(ids)
 
     def get_new_message_ids(
         self,
@@ -178,15 +229,27 @@ class GmailProvider(EmailProvider):
         since: str | None = None,
         until: str | None = None,
     ) -> tuple[list[str], str | None]:
-        """Get new message IDs since the given history ID.
+        """Get download candidates and the state to store for the next run.
+
+        Candidates are not "what arrived". They are what arrived *plus* what
+        left an excluded role, minus whatever is excluded right now::
+
+            (arrivals ∪ departures) − excluded_now
+
+        The final subtraction is what makes this eligibility-driven rather
+        than arrival-driven: a message is judged by where it sits now, not by
+        the labels its ``messageAdded`` event happened to carry. That event's
+        labels are a fact about the past, and acting on them is how mail that
+        lands in spam and is later rescued becomes permanently invisible.
 
         Args:
-            since_state: Gmail history ID from previous sync
+            since_state: Capture state from the previous sync
             since: Only get emails after this date (YYYY-MM-DD)
             until: Only get emails before this date (YYYY-MM-DD)
 
         Returns:
-            Tuple of (new_ids, new_history_id)
+            Tuple of (candidate_ids, new_state). ``new_state`` is None only
+            for date-filtered runs, which are partial and store nothing.
         """
         # If date filter is specified, always do a full filtered sync
         # (History API doesn't support date filtering)
@@ -194,17 +257,47 @@ class GmailProvider(EmailProvider):
             print("  Searching Gmail (this may take a minute)...", flush=True)
             return self.get_all_message_ids(since=since, until=until), None
 
-        if not since_state:
-            # Full sync needed
-            return self.get_all_message_ids(), None
+        state = capture.load(since_state)
+        fingerprint = capture.fingerprint(*self._excluded_roles())
 
-        try:
-            return self._get_messages_since_history(since_state)
-        except HttpError as e:
-            if e.resp.status == 404:
+        cursor = state.cursor
+        if cursor and state.stale(fingerprint):
+            # Messages the old filter skipped sit below the watermark, so a
+            # widened filter would otherwise capture nothing retroactively —
+            # and do it silently.
+            print("  Download filter changed since last sync, rescanning...")
+            cursor = None
+
+        arrivals, new_cursor = self._get_arrivals(cursor)
+        excluded_now = self._enumerate_excluded()
+
+        candidates = [mid for mid in arrivals if mid not in excluded_now]
+        recovered = sorted(state.departed(excluded_now) - set(arrivals))
+        if recovered:
+            print(f"  {len(recovered)} message(s) left trash or spam since last sync")
+            candidates.extend(recovered)
+
+        new_state = capture.CaptureState(cursor=new_cursor, excluded=excluded_now, fingerprint=fingerprint)
+        return candidates, capture.dump(new_state)
+
+    def _get_arrivals(self, cursor: str | None) -> tuple[list[str], str | None]:
+        """Messages added since ``cursor``, falling back to a full listing.
+
+        The full-sync watermark is read *before* the listing rather than after
+        it. A message arriving mid-listing is in neither the listing nor the
+        history that follows a later watermark, which is the same silent loss
+        the incremental path was fixed for in TASK-17.
+        """
+        if cursor:
+            try:
+                return self._get_messages_since_history(cursor)
+            except HttpError as e:
+                if e.resp.status != 404:
+                    raise
                 print("History expired, performing full sync...")
-                return self.get_all_message_ids(), None
-            raise
+
+        watermark = self.get_current_sync_state()
+        return self.get_all_message_ids(), watermark
 
     def _get_messages_since_history(self, history_id: str) -> tuple[list[str], str]:
         """Get new messages since the given history ID, and the next watermark.
@@ -236,9 +329,6 @@ class GmailProvider(EmailProvider):
                     for history in response["history"]:
                         if "messagesAdded" in history:
                             for msg in history["messagesAdded"]:
-                                label_ids = msg["message"].get("labelIds", [])
-                                if self._is_excluded(label_ids):
-                                    continue
                                 new_ids.append(msg["message"]["id"])
 
                 new_history_id = response.get("historyId", new_history_id)
@@ -251,16 +341,6 @@ class GmailProvider(EmailProvider):
             raise
 
         return new_ids, new_history_id
-
-    @staticmethod
-    def _is_excluded(label_ids: list[str]) -> bool:
-        """Whether a message is in a role excluded from download.
-
-        Full syncs get this from ``includeSpamTrash``. ``history.list`` has no
-        such parameter and reports trashed messages, so the same exclusion is
-        applied here against the label IDs it carries.
-        """
-        return any(roles.role_for_gmail_label(lid) in roles.DEFAULT_EXCLUDE_ROLES for lid in label_ids)
 
     def download_message(self, msg_id: str) -> tuple[bytes, list[str]]:
         """Download a message from Gmail.

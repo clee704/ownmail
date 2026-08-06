@@ -1,10 +1,10 @@
 ---
 id: TASK-14.3
 title: Make capture eligibility-driven rather than arrival-driven
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-25 05:53'
-updated_date: '2026-08-06 19:50'
+updated_date: '2026-08-06 19:56'
 labels: []
 milestone: m-5
 dependencies:
@@ -69,6 +69,45 @@ Also in scope, because they are the same class of problem (hole numbers refer to
 
 Depends on TASK-17: the history watermark race makes incremental sync lossy, and this task makes incremental sync the only capture path. Fixing the race first keeps the two failure modes separable.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 A message that becomes eligible after arrival is captured on a later run, on every provider path
+- [ ] #2 Departure from a transient excluded role is detected by diffing that role's membership across runs, not by a watermark
+- [ ] #3 The persisted excluded-membership set is replaced each run and never accumulates
+- [ ] #4 Eligibility is decided against the CURRENT excluded enumeration, so an arrival that was filed before ownmail saw it is judged by where it is now
+- [ ] #5 Per-run server cost is flat in mailbox size on the incremental path: no full enumeration of the eligible set
+- [ ] #6 Standing (named-folder) exclusions are not diffed, and config.example.yaml says moving mail out of one needs a resync
+- [ ] #7 Widening the filter invalidates the watermark and forces a full resync (hole 1)
+- [ ] #8 A folder excluded from download still contributes labels (hole 6)
+- [ ] #9 Existing sync state from before this change is read without a forced full resync
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Five steps, each independently committable.
+
+1. VOCABULARY. `roles.TRANSIENT_EXCLUDE_ROLES` — the subset of exclusions whose membership is diffed. Today {trash, spam}; inbox and drafts join it at TASK-14.1. Named folders never join it (standing exclusions are not diffed).
+
+2. CAPTURE STATE ENVELOPE (new module `capture.py`). Wraps what is stored in `sync_state`: {cursor, excluded, filter_fingerprint}. Must load both legacy shapes without forcing a resync — Gmail's bare history_id string and IMAP's JSON per-folder dict (AC #9).
+
+3. GMAIL API — the path with a real bug today. Enumerate current membership of each transient excluded role (`messages.list q=in:trash` / `in:spam`), then:
+       candidates = (arrivals ∪ (last_excluded − current_excluded)) − current_excluded
+   Note the trailing subtraction replaces `_is_excluded` on the history events: eligibility is judged against where the message is NOW, not the labelIds the event carried (AC #4).
+   CONCRETE BUG THIS FIXES: mail that lands in spam fires `messageAdded` with SPAM, is skipped, and is never revisited — so a spam false positive the user rescues is silently never archived. Today's only saving grace is that inbox mail is captured eagerly, which TASK-14.1 removes.
+
+4. IMAP — no diff, and that is the finding rather than a shortcut.
+   - Plain IMAP: a move allocates a new UID above the destination watermark, so departure is already an arrival. Nothing to add.
+   - Gmail-over-IMAP: trash and spam are NOT IN All Mail, so a trashed message is already invisible to the scan and reappears with a fresh UID above the watermark when restored — also free. The path only needs diffing once INBOX is excluded (TASK-14.1), because that is the case where the message stays in All Mail at an unchanged UID and merely loses a label. Then it is one `UID SEARCH X-GM-RAW "in:inbox"` inside All Mail, which answers in All-Mail UID space with no header fetches.
+   So providers declare which roles they can enumerate in their own download-id space, and IMAP declares none today. No dead code, and TASK-14.1 slots inbox in without new machinery.
+
+5. THE TWO HOLES.
+   - Hole 1 (AC #7): store a fingerprint of the effective filter in the envelope; a change invalidates the cursor and forces a full resync. Real consumer today — `exclude_folders` is already user-editable config.
+   - Hole 6 (AC #8): `_list_folders` currently drops excluded folders entirely, which also removes them as label sources. Split 'do not download from here' from 'do not read labels from here'.
+
+Then config.example.yaml for AC #6, and tests.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

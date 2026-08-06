@@ -71,43 +71,6 @@ class TestGmailProviderAuthentication:
                     captured = capsys.readouterr()
                     assert "Token refresh failed" in captured.out or "Authenticated" in captured.out
 
-    def test_get_new_message_ids_history_expired(self, capsys):
-        """Test get_new_message_ids when history has expired."""
-        with patch("ownmail.providers.gmail.build") as mock_build:
-            from googleapiclient.errors import HttpError
-
-            from ownmail.providers.gmail import GmailProvider
-
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-
-            # Mock history().list() to throw 404 (history expired)
-            mock_response = MagicMock()
-            mock_response.status = 404
-            http_error = HttpError(mock_response, b"Not Found")
-            mock_service.users.return_value.history.return_value.list.return_value.execute.side_effect = http_error
-
-            # Mock messages().list() for full sync fallback
-            mock_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
-                "messages": [{"id": "msg1"}],
-            }
-
-            mock_keychain = MagicMock()
-            mock_creds = MagicMock()
-            mock_creds.valid = True
-            mock_keychain.load_gmail_token.return_value = mock_creds
-
-            provider = GmailProvider(
-                account="alice@gmail.com",
-                keychain=mock_keychain,
-            )
-            provider.authenticate()
-
-            ids, new_state = provider.get_new_message_ids(since_state="old_history_id")
-
-            captured = capsys.readouterr()
-            assert "History expired" in captured.out or len(ids) >= 0
-
 
 class TestGmailProviderDownloadMessage:
     """Tests for Gmail provider download_message functionality."""

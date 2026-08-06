@@ -19,6 +19,10 @@ class TestLegacyState:
         raw = json.dumps({"INBOX": {"max_uid": 42, "uidvalidity": "7"}})
         assert capture.load(raw).cursor == raw
 
+    def test_non_numeric_cursor_that_is_not_json(self):
+        """A stored cursor need not be JSON-parseable to be a valid cursor."""
+        assert capture.load("cursor-abc").cursor == "cursor-abc"
+
     def test_empty_state(self):
         assert capture.load(None) == capture.CaptureState()
         assert capture.load("") == capture.CaptureState()

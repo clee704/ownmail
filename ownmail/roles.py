@@ -163,6 +163,26 @@ _GMAIL_LABEL_IDS = {
     "SPAM": SPAM,
 }
 
+_ROLE_TO_GMAIL_LABEL = {role: label_id for label_id, role in _GMAIL_LABEL_IDS.items()}
+
+
+def gmail_label_for_role(role: str) -> str | None:
+    """Resolve a canonical role back to its Gmail API label ID.
+
+    The inverse of ``role_for_gmail_label``, for asking Gmail *for* a role's
+    members rather than classifying what it returns. Answering with a label ID
+    matters: ``messages.list(labelIds=[...])`` is exact, where the search
+    query it replaces reads an unrecognized term as a user label name and
+    filters nothing — a wrong guess there fails silently.
+
+    Args:
+        role: Canonical role name
+
+    Returns:
+        Gmail label ID, or None for roles Gmail has no system label for.
+    """
+    return _ROLE_TO_GMAIL_LABEL.get(role)
+
 
 def role_for_gmail_label(label_id: str) -> str | None:
     """Resolve a Gmail API label ID to a canonical role.

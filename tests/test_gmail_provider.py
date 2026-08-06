@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ownmail import capture, roles
+
 
 class TestGmailProviderInit:
     """Tests for GmailProvider initialization."""
@@ -174,11 +176,15 @@ class TestGmailProviderMessageRetrieval:
                 keychain=mock_keychain,
             )
             provider.authenticate()
+            provider._enumerate_excluded = frozenset
+            mock_service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "42"}
 
             ids, new_state = provider.get_new_message_ids(None)
 
             assert len(ids) == 2
-            assert new_state is None  # Full sync doesn't return state inline
+            # A full sync stores state too, so the excluded membership it just
+            # read survives to be diffed against on the next run.
+            assert capture.load(new_state).cursor == "42"
 
     def test_get_current_sync_state(self):
         """Test getting current sync state (history ID)."""
@@ -489,6 +495,7 @@ class TestGmailProviderErrors:
                 keychain=mock_keychain,
             )
             provider.authenticate()
+            provider._enumerate_excluded = frozenset
 
             ids, new_state = provider.get_new_message_ids("12345")
 
@@ -708,6 +715,15 @@ class _GmailFixture:
         provider.authenticate()
         return provider, service, keychain
 
+    @staticmethod
+    def _excluded(provider, *ids):
+        """Pin what the excluded-role enumeration reports.
+
+        Every incremental sync now reads it, so a test that only cares about
+        the history half would otherwise depend on an unmocked messages.list.
+        """
+        provider._enumerate_excluded = lambda: frozenset(ids)
+
 
 class TestGmailAuthenticate(_GmailFixture):
     """Tests for GmailProvider.authenticate."""
@@ -867,6 +883,7 @@ class TestGmailMessageIds(_GmailFixture):
         """A history sync should return the new IDs and the new history ID."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.history.return_value.list.return_value.execute.return_value = {
                 "history": [{"messagesAdded": [{"message": {"id": "new1", "labelIds": ["INBOX"]}}]}],
                 "historyId": "400",
@@ -875,7 +892,7 @@ class TestGmailMessageIds(_GmailFixture):
             ids, state = provider.get_new_message_ids("100")
 
             assert ids == ["new1"]
-            assert state == "400"
+            assert capture.load(state).cursor == "400"
 
     def test_watermark_comes_from_history_not_profile(self):
         """The watermark must be the history response's, not a later getProfile.
@@ -886,6 +903,7 @@ class TestGmailMessageIds(_GmailFixture):
         """
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.history.return_value.list.return_value.execute.return_value = {
                 "history": [{"messagesAdded": [{"message": {"id": "new1", "labelIds": ["INBOX"]}}]}],
                 "historyId": "400",
@@ -896,24 +914,26 @@ class TestGmailMessageIds(_GmailFixture):
 
             _, state = provider.get_new_message_ids("100")
 
-            assert state == "400"
+            assert capture.load(state).cursor == "400"
             service.users.return_value.getProfile.assert_not_called()
 
     def test_watermark_holds_when_history_response_omits_it(self):
         """Without a historyId to advance to, keep the old one and re-list."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.history.return_value.list.return_value.execute.return_value = {}
 
             ids, state = provider.get_new_message_ids("100")
 
             assert ids == []
-            assert state == "100"
+            assert capture.load(state).cursor == "100"
 
-    def test_history_skips_trash_and_spam(self):
-        """Messages added straight to trash or spam should be skipped."""
+    def test_arrivals_still_in_trash_or_spam_are_skipped(self):
+        """A message added straight into an excluded role is not a candidate."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider, "trashed", "spammed")
             service.users.return_value.history.return_value.list.return_value.execute.return_value = {
                 "history": [
                     {
@@ -930,10 +950,30 @@ class TestGmailMessageIds(_GmailFixture):
 
             assert ids == ["keep"]
 
+    def test_arrival_judged_by_where_it_is_now_not_by_its_event(self):
+        """A message whose event said SPAM but which has since been rescued.
+
+        The old code read the event's labelIds and skipped it, and nothing
+        ever revisited the decision — so a rescued false positive was lost
+        permanently. Eligibility is now the current enumeration's answer.
+        """
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)  # no longer in spam
+            service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+                "history": [{"messagesAdded": [{"message": {"id": "rescued", "labelIds": ["SPAM"]}}]}],
+                "historyId": "400",
+            }
+
+            ids, _ = provider.get_new_message_ids("100")
+
+            assert ids == ["rescued"]
+
     def test_history_paginates(self):
         """History pages should be followed to the end, and the last one sets the watermark."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.history.return_value.list.return_value.execute.side_effect = [
                 {
                     "history": [{"messagesAdded": [{"message": {"id": "a", "labelIds": []}}]}],
@@ -949,22 +989,46 @@ class TestGmailMessageIds(_GmailFixture):
             ids, state = provider.get_new_message_ids("100")
 
             assert ids == ["a", "b"]
-            assert state == "400"
+            assert capture.load(state).cursor == "400"
 
     def test_expired_history_falls_back_to_full_sync(self, capsys):
         """A 404 from the History API should trigger a full sync."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.history.return_value.list.return_value.execute.side_effect = _http_error(404)
             service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
                 "messages": [{"id": "a"}]
             }
+            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "777"}
 
             ids, state = provider.get_new_message_ids("100")
 
             assert ids == ["a"]
-            assert state is None
+            assert capture.load(state).cursor == "777"
             assert "History expired" in capsys.readouterr().out
+
+    def test_full_sync_watermark_is_read_before_the_listing(self):
+        """Taking it afterwards loses anything that arrived mid-listing.
+
+        The message is in neither the listing (it wasn't there yet) nor the
+        history that follows a later watermark — the same silent loss the
+        incremental path was fixed for.
+        """
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
+            seen = []
+            service.users.return_value.getProfile.return_value.execute.side_effect = lambda: (
+                seen.append("profile") or {"historyId": "500"}
+            )
+            service.users.return_value.messages.return_value.list.return_value.execute.side_effect = lambda: (
+                seen.append("list") or {"messages": [{"id": "a"}]}
+            )
+
+            provider.get_new_message_ids(None)
+
+            assert seen == ["profile", "list"]
 
     def test_other_history_errors_propagate(self):
         """A non-404 History API error should not be swallowed."""
@@ -1298,3 +1362,140 @@ class TestGmailProviderProperties(_GmailFixture):
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, _, _ = self._provider(mock_build)
         assert provider.download_batch_size == BATCH_SIZE
+
+
+class TestGmailEligibility(_GmailFixture):
+    """Capture is driven by where a message is now, not by when it arrived."""
+
+    def _history(self, service, *ids):
+        service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+            "history": [{"messagesAdded": [{"message": {"id": i, "labelIds": []}} for i in ids]}] if ids else [],
+            "historyId": "400",
+        }
+
+    def test_departure_from_an_excluded_role_is_a_candidate(self, capsys):
+        """The transition Gmail emits no event for: leaving trash or spam.
+
+        history.list reports messageAdded, and a rescued message was added
+        long ago, so without the diff it is never revisited.
+        """
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._history(service)
+            self._excluded(provider)  # 'rescued' is no longer in spam
+
+            prior = capture.dump(
+                capture.CaptureState(
+                    cursor="100",
+                    excluded=frozenset({"rescued", "still-junk"}),
+                    fingerprint=capture.fingerprint(*provider._excluded_roles()),
+                )
+            )
+            ids, _ = provider.get_new_message_ids(prior)
+
+            assert ids == ["rescued", "still-junk"]
+            assert "left trash or spam" in capsys.readouterr().out
+
+    def test_a_message_that_stays_excluded_is_not_a_candidate(self):
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._history(service)
+            self._excluded(provider, "still-junk")
+
+            prior = capture.dump(capture.CaptureState(cursor="100", excluded=frozenset({"still-junk"})))
+
+            assert provider.get_new_message_ids(prior)[0] == []
+
+    def test_a_departure_that_also_arrived_is_listed_once(self):
+        """Both halves can name the same message; it must not be downloaded twice."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._history(service, "both")
+            self._excluded(provider)
+
+            prior = capture.dump(capture.CaptureState(cursor="100", excluded=frozenset({"both"})))
+
+            assert provider.get_new_message_ids(prior)[0] == ["both"]
+
+    def test_membership_is_replaced_not_accumulated(self):
+        """The stored set is this run's membership, not a growing history of it."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._history(service)
+            self._excluded(provider, "now-junk")
+
+            prior = capture.dump(capture.CaptureState(cursor="100", excluded=frozenset({"was-junk"})))
+            _, state = provider.get_new_message_ids(prior)
+
+            assert capture.load(state).excluded == frozenset({"now-junk"})
+
+    def test_changed_filter_forces_a_full_rescan(self, capsys):
+        """Messages the old filter skipped sit below the watermark."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
+            service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+                "messages": [{"id": "old"}]
+            }
+            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "900"}
+
+            prior = capture.dump(capture.CaptureState(cursor="100", fingerprint="a-different-filter"))
+            ids, _ = provider.get_new_message_ids(prior)
+
+            assert ids == ["old"]
+            service.users.return_value.history.assert_not_called()
+            assert "filter changed" in capsys.readouterr().out
+
+    def test_unchanged_filter_keeps_the_watermark(self):
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._history(service, "new")
+            self._excluded(provider)
+
+            prior = capture.dump(
+                capture.CaptureState(cursor="100", fingerprint=capture.fingerprint(*provider._excluded_roles()))
+            )
+            assert provider.get_new_message_ids(prior)[0] == ["new"]
+
+    def test_legacy_state_does_not_trigger_a_rescan(self):
+        """A bare history ID from before the envelope existed."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._history(service, "new")
+            self._excluded(provider)
+
+            ids, _ = provider.get_new_message_ids("100")
+
+            assert ids == ["new"]
+            service.users.return_value.messages.return_value.list.assert_not_called()
+
+
+class TestGmailExcludedEnumeration(_GmailFixture):
+    """How the excluded set is read from the server."""
+
+    def test_asks_by_label_id_for_each_transient_excluded_role(self):
+        """Not by search query: an unrecognized term filters nothing, silently."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            list_call = service.users.return_value.messages.return_value.list
+            list_call.return_value.execute.return_value = {"messages": [{"id": "x"}]}
+
+            assert provider._enumerate_excluded() == frozenset({"x"})
+
+            asked = [call.kwargs["labelIds"] for call in list_call.call_args_list]
+            assert sorted(asked) == [["SPAM"], ["TRASH"]]
+            assert all(call.kwargs["includeSpamTrash"] for call in list_call.call_args_list)
+
+    def test_only_transient_roles_are_enumerated(self):
+        """A standing exclusion has no bound, so it is never diffed."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            service.users.return_value.messages.return_value.list.return_value.execute.return_value = {}
+            provider._excluded_roles = lambda: frozenset({roles.TRASH, "Newsletters"})
+
+            provider._enumerate_excluded()
+
+            asked = [
+                call.kwargs["labelIds"] for call in service.users.return_value.messages.return_value.list.call_args_list
+            ]
+            assert asked == [["TRASH"]]
