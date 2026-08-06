@@ -5,6 +5,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ownmail import capture
+
+
+def _watermarks(state_json):
+    """The per-folder watermark map inside a stored capture state."""
+    return json.loads(capture.load(state_json).cursor)
+
 
 class TestImapProviderInit:
     """Tests for ImapProvider initialization."""
@@ -867,8 +874,7 @@ class TestImapProviderSyncState:
         provider._conn.response.return_value = ("OK", [b"12345"])
         provider._conn.uid.return_value = ("OK", [b"1 2 3 50"])
 
-        state_json = provider.get_current_sync_state()
-        state = json.loads(state_json)
+        state = _watermarks(provider.get_current_sync_state())
 
         assert "INBOX" in state
         assert state["INBOX"]["max_uid"] == 50
@@ -929,6 +935,7 @@ class TestImapScanGmail:
         provider._conn.uid.return_value = ("OK", [b"1 2 3 4 5"])
 
         folders = ["[Gmail]/All Mail", "INBOX"]
+        provider._label_folders = folders  # normally set by _list_folders
         result = provider._scan_gmail(folders, "[Gmail]/All Mail", None, None)
 
         assert len(result) == 5
@@ -960,6 +967,7 @@ class TestImapScanGmail:
         provider._conn.uid.side_effect = mock_uid
 
         folders = ["[Gmail]/All Mail", "INBOX"]
+        provider._label_folders = folders  # normally set by _list_folders
         result = provider._scan_gmail(folders, "[Gmail]/All Mail", None, None)
 
         assert len(result) == 2  # All Mail UIDs
@@ -982,6 +990,7 @@ class TestImapScanGmail:
         provider._conn.select.return_value = ("OK", [b"100"])
         provider._conn.uid.side_effect = mock_uid
 
+        provider._label_folders = ["[Gmail]/All Mail"]
         result = provider._scan_gmail(["[Gmail]/All Mail"], "[Gmail]/All Mail", "2024-01-01", "2024-12-31")
         # Should have filtered results
         assert len(result) <= 5
@@ -1013,6 +1022,7 @@ class TestImapScanGmail:
         provider._conn.uid.side_effect = mock_uid
 
         folders = ["INBOX", "Sent"]
+        provider._label_folders = folders  # normally set by _list_folders
         result = provider._scan_standard(folders, None, None)
 
         # msg1 and msg2 appear in both folders, but should be deduped
@@ -1025,6 +1035,7 @@ class TestImapScanGmail:
         provider._conn.select.return_value = ("OK", [b"0"])
         provider._conn.uid.return_value = ("OK", [b""])
 
+        provider._label_folders = ["EmptyFolder"]
         result = provider._scan_standard(["EmptyFolder"], None, None)
         assert result == []
 
@@ -1740,7 +1751,7 @@ class TestImapIncrementalScan:
             new_ids, new_state = provider.get_new_message_ids(state)
 
         assert new_ids == ["INBOX:10", "INBOX:11"]
-        assert json.loads(new_state)["INBOX"]["max_uid"] == 11
+        assert _watermarks(new_state)["INBOX"]["max_uid"] == 11
 
     def test_changed_uidvalidity_forces_full_rescan(self, capsys):
         """A rebuilt folder (new UIDVALIDITY) should be rescanned from zero."""
@@ -1926,3 +1937,158 @@ class TestImapFolderMembership:
             provider.scan_folder_membership()
 
         assert provider._message_id_to_folders == {}
+
+
+class TestImapLabelSources:
+    """Not downloading from a folder is not the same as disowning its name."""
+
+    def _conn(self, folders, contents):
+        """A connection where ``contents`` maps folder -> {uid: message-id}."""
+        conn = MagicMock()
+        conn.list.return_value = ("OK", [f'(\\HasNoChildren) "/" "{f}"'.encode() for f in folders])
+        conn.response.return_value = ("OK", [b"100"])
+        selected = {"folder": None}
+
+        def select(spec, readonly=False):
+            selected["folder"] = spec.strip('"')
+            return ("OK", [b"1"])
+
+        def uid(command, *args):
+            held = contents.get(selected["folder"], {})
+            if command == "search":
+                return ("OK", [b" ".join(str(u).encode() for u in held)])
+            payload = []
+            for u, msg_id in held.items():
+                payload.append(
+                    (f"1 (UID {u} BODY[HEADER.FIELDS (MESSAGE-ID)]".encode(), f"Message-ID: {msg_id}\r\n\r\n".encode())
+                )
+                payload.append(b")")
+            return ("OK", payload)
+
+        conn.select.side_effect = select
+        conn.uid.side_effect = uid
+        return conn
+
+    def test_named_exclusion_still_contributes_a_label(self):
+        """The folder describes real organization even when nothing is pulled from it."""
+        conn = self._conn(
+            ["INBOX", "Newsletters"],
+            {"INBOX": {1: "<a@x>"}, "Newsletters": {7: "<a@x>"}},
+        )
+        provider = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["Newsletters"])
+
+        with patch("time.sleep"):
+            ids = provider.get_all_message_ids()
+
+        assert ids == ["INBOX:1"]
+        assert provider._folder_lookup["INBOX:1"] == ["INBOX", "Newsletters"]
+
+    def test_role_excluded_folder_is_not_a_label_source(self):
+        """A trash copy shares its Message-ID with the filed copy.
+
+        Adopting the folder would relabel real mail as trash — the archive
+        damage TASK-25 exists to clean up.
+        """
+        conn = self._conn(
+            ["INBOX", "Trash"],
+            {"INBOX": {1: "<a@x>"}, "Trash": {7: "<a@x>"}},
+        )
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+
+        with patch("time.sleep"):
+            ids = provider.get_all_message_ids()
+
+        assert ids == ["INBOX:1"]
+        assert provider._folder_lookup["INBOX:1"] == ["INBOX"]
+
+    def test_a_message_held_only_in_an_excluded_folder_is_not_downloaded(self):
+        """Contributing a label must not smuggle the message into the archive."""
+        conn = self._conn(["INBOX", "Newsletters"], {"INBOX": {}, "Newsletters": {7: "<only@x>"}})
+        provider = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["Newsletters"])
+
+        with patch("time.sleep"):
+            assert provider.get_all_message_ids() == []
+
+    def test_download_source_wins_the_election_whatever_the_scan_order(self):
+        """The excluded copy is seen first here, so the primary must move."""
+        conn = self._conn(
+            ["Newsletters", "INBOX"],
+            {"Newsletters": {7: "<a@x>"}, "INBOX": {1: "<a@x>"}},
+        )
+        provider = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["Newsletters"])
+
+        with patch("time.sleep"):
+            assert provider.get_all_message_ids() == ["INBOX:1"]
+
+
+class TestImapFilterChange:
+    """Widening the filter has to invalidate the watermark."""
+
+    def _conn(self, folders, uids_by_folder):
+        conn = MagicMock()
+        conn.list.return_value = ("OK", [f'(\\HasNoChildren) "/" "{f}"'.encode() for f in folders])
+        conn.response.return_value = ("OK", [b"100"])
+        selected = {"folder": None}
+
+        def select(spec, readonly=False):
+            selected["folder"] = spec.strip('"')
+            return ("OK", [b"1"])
+
+        def uid(command, *args):
+            if command == "search":
+                return ("OK", [b" ".join(str(u).encode() for u in uids_by_folder.get(selected["folder"], []))])
+            return ("OK", [])
+
+        conn.select.side_effect = select
+        conn.uid.side_effect = uid
+        return conn
+
+    def test_changed_filter_rescans_from_zero(self, capsys):
+        """Previously-skipped messages sit below the watermark."""
+        conn = self._conn(["INBOX"], {"INBOX": [1, 2, 3]})
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+        stale = capture.dump(
+            capture.CaptureState(
+                cursor=json.dumps({"INBOX": {"max_uid": 3, "uidvalidity": "100"}}),
+                fingerprint="a-different-filter",
+            )
+        )
+
+        with patch("time.sleep"):
+            ids, _ = provider.get_new_message_ids(stale)
+
+        assert ids == ["INBOX:1", "INBOX:2", "INBOX:3"]
+        assert "filter changed" in capsys.readouterr().out
+
+    def test_unchanged_filter_keeps_the_watermark(self):
+        conn = self._conn(["INBOX"], {"INBOX": [1, 2, 3]})
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+        current = capture.dump(
+            capture.CaptureState(
+                cursor=json.dumps({"INBOX": {"max_uid": 3, "uidvalidity": "100"}}),
+                fingerprint=provider._filter_fingerprint(),
+            )
+        )
+
+        with patch("time.sleep"):
+            ids, _ = provider.get_new_message_ids(current)
+
+        assert ids == []
+
+    def test_legacy_watermark_state_does_not_force_a_rescan(self):
+        """State written before the envelope existed carries no fingerprint."""
+        conn = self._conn(["INBOX"], {"INBOX": [1, 2, 3]})
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+        legacy = json.dumps({"INBOX": {"max_uid": 3, "uidvalidity": "100"}})
+
+        with patch("time.sleep"):
+            ids, _ = provider.get_new_message_ids(legacy)
+
+        assert ids == []
+
+    def test_reordering_exclude_folders_is_not_a_filter_change(self):
+        conn = self._conn(["INBOX"], {"INBOX": []})
+        one = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["a", "b"])
+        two = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["b", "a"])
+
+        assert one._filter_fingerprint() == two._filter_fingerprint()

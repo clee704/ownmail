@@ -55,6 +55,25 @@ sources:
   #   #
   #   # An empty list is not a way to disable exclusion — it falls back to
   #   # the automatic behavior. Names must match the server exactly.
+  #   #
+  #   # Excluding a folder stops mail being DOWNLOADED from it. It does not
+  #   # stop the folder describing mail archived from elsewhere: a message
+  #   # held in both Newsletters and INBOX is downloaded from INBOX and keeps
+  #   # Newsletters as a label. (Trash and spam are the exception — they are
+  #   # skipped as label sources too, so a deleted copy never relabels the
+  #   # message you actually filed.)
+  #   #
+  #   # Editing this list changes what gets captured, so the next sync
+  #   # rescans from scratch rather than resuming from where it left off —
+  #   # otherwise mail the old setting skipped would stay skipped forever,
+  #   # silently. The rescan re-reads folders; it does not re-download
+  #   # anything already in the archive.
+  #   #
+  #   # What a rescan does NOT do is notice mail you MOVED OUT of an excluded
+  #   # folder without changing this list. Such a message is only picked up
+  #   # once it lands somewhere ownmail is watching, which is the normal case
+  #   # — moving it to another folder is enough. It stays invisible only if
+  #   # it moves between two excluded folders.
   #   exclude_folders:
   #     - Newsletters
   #     - '[Gmail]/Important'

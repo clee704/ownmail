@@ -12,7 +12,7 @@ import json
 import re
 import time
 
-from ownmail import roles
+from ownmail import capture, roles
 from ownmail.providers.base import EmailProvider
 
 # Default IMAP settings
@@ -126,6 +126,7 @@ class ImapProvider(EmailProvider):
         self._source_name = source_name
         self._conn: imaplib.IMAP4_SSL | None = None
         self._folder_roles: dict[str, str] = {}
+        self._label_folders: list[str] = []
         self._scan_used_all_mail = False
 
     @property
@@ -166,11 +167,12 @@ class ImapProvider(EmailProvider):
             raise RuntimeError(f"IMAP connection failed: {e}") from e
 
     def _list_folders(self) -> list[str]:
-        """List all IMAP folders, excluding trash/spam or the configured ones.
+        """List the folders to download from.
 
         Also records each folder's canonical role in ``_folder_roles``, which
         is where the SPECIAL-USE flags from the LIST response are captured —
-        they're only available here.
+        they're only available here — and ``_label_folders``, which is a
+        wider set: see ``_is_label_source``.
 
         Returns:
             List of folder names (decoded)
@@ -181,10 +183,14 @@ class ImapProvider(EmailProvider):
 
         folders = []
         self._folder_roles = {}
+        self._label_folders = []
         for folder_name, flags, delimiter in parse_list_response(folder_data):
             role = roles.role_for_imap_folder(folder_name, flags, delimiter)
             if role:
                 self._folder_roles[folder_name] = role
+
+            if self._is_label_source(folder_name, role):
+                self._label_folders.append(folder_name)
 
             if self._is_excluded(folder_name, role):
                 continue
@@ -194,7 +200,7 @@ class ImapProvider(EmailProvider):
         return folders
 
     def _is_excluded(self, folder_name: str, role: str | None) -> bool:
-        """Whether a folder should be skipped during sync.
+        """Whether a folder should be skipped as a DOWNLOAD source.
 
         An explicit ``exclude_folders`` list replaces the role-based default
         wholesale, so a source can opt into syncing its trash by listing
@@ -205,6 +211,24 @@ class ImapProvider(EmailProvider):
         if self._exclude_folders:
             return folder_name in self._exclude_folders
         return role in roles.DEFAULT_EXCLUDE_ROLES
+
+    def _is_label_source(self, folder_name: str, role: str | None) -> bool:
+        """Whether a folder may contribute its name as a label.
+
+        Not downloading from a folder is not the same as disowning what it
+        says about a message that lives elsewhere. A NAMED exclusion is a
+        statement about where mail comes from; the folder still describes
+        real organization, and dropping it silently loses a label on messages
+        that are archived from somewhere else.
+
+        A ROLE exclusion is the opposite. On plain IMAP a message is in one
+        folder, so a copy in trash sharing a Message-ID with the filed copy is
+        a separate message — adopting the folder would relabel real mail as
+        trash, which is exactly the archive damage TASK-25 exists to clean up.
+        """
+        if not self._is_excluded(folder_name, role):
+            return True
+        return bool(self._exclude_folders)
 
     def _get_folder_uids(self, folder: str) -> list[int]:
         """Get all UIDs in a folder.
@@ -350,9 +374,11 @@ class ImapProvider(EmailProvider):
         all_ids = [f"{all_mail}:{uid}" for uid in all_mail_uids]
 
         # Phase 2: Scan other folders for label mapping
-        # Build message_id -> [folders] from smaller folders
+        # Build message_id -> [folders] from smaller folders. Drawn from the
+        # label sources rather than the download sources, so a folder excluded
+        # by name still labels the copy in All Mail.
         message_id_to_folders: dict[str, list[str]] = {}
-        other_folders = [f for f in folders if f != all_mail]
+        other_folders = [f for f in self._label_folders if f != all_mail]
         total_label_msgs = 0
 
         for folder in other_folders:
@@ -374,7 +400,6 @@ class ImapProvider(EmailProvider):
         # Store for label enrichment during download
         self._message_id_to_folders = message_id_to_folders
         self._folder_lookup = {}
-        self._seen_map = {}
 
         print(f"  Found {len(all_ids)} messages ({total_label_msgs} label entries from {len(other_folders)} folders)")
         return all_ids
@@ -387,12 +412,17 @@ class ImapProvider(EmailProvider):
     ) -> list[str]:
         """Standard IMAP scan with Message-ID deduplication across folders."""
 
-        # Phase 1: Scan all folders for UIDs and Message-IDs
-        # message_id -> {"primary": "folder:uid", "folders": ["folder1", ...]}
+        # Phase 1: Scan every label source for UIDs and Message-IDs. That is a
+        # superset of the download sources, so a message is elected for
+        # download only from a folder it may be downloaded from — a copy
+        # sitting solely in an excluded folder contributes its label and
+        # nothing else.
+        # message_id -> {"primary": "folder:uid" | None, "folders": [...]}
         seen: dict[str, dict] = {}
         all_ids = []
+        downloadable = set(folders)
 
-        for folder in folders:
+        for folder in self._label_folders:
             print(f"  Scanning: {folder}...\033[K", end="\r", flush=True)
 
             uids = self._get_folder_uids(folder)
@@ -413,23 +443,30 @@ class ImapProvider(EmailProvider):
                 composite_id = f"{folder}:{uid}"
 
                 if msg_id and msg_id in seen:
-                    # Duplicate — just add this folder as an additional label
-                    seen[msg_id]["folders"].append(folder)
-                    seen[msg_id]["ids"].append(composite_id)
-                else:
+                    # Duplicate — add this folder as an additional label, and
+                    # let it stand in as the download source if the copies so
+                    # far were all in folders we don't download from.
+                    info = seen[msg_id]
+                    info["folders"].append(folder)
+                    info["ids"].append(composite_id)
+                    if info["primary"] is None and folder in downloadable:
+                        info["primary"] = composite_id
+                        all_ids.append(composite_id)
+                elif msg_id:
                     # New message
-                    if msg_id:
-                        seen[msg_id] = {
-                            "primary": composite_id,
-                            "folders": [folder],
-                            "ids": [composite_id],
-                        }
+                    seen[msg_id] = {
+                        "primary": composite_id if folder in downloadable else None,
+                        "folders": [folder],
+                        "ids": [composite_id],
+                    }
+                    if folder in downloadable:
+                        all_ids.append(composite_id)
+                elif folder in downloadable:
+                    # No Message-ID to dedup on, so it stands alone.
                     all_ids.append(composite_id)
 
             time.sleep(FOLDER_BATCH_DELAY)
 
-        # Store the dedup map for download_message to use
-        self._seen_map = seen
         self._message_id_to_folders = {}
         # Every composite id gets an entry, not just the elected primary. Only
         # primaries are ever downloaded, so the rest are inert here — but
@@ -497,33 +534,56 @@ class ImapProvider(EmailProvider):
         since: str | None = None,
         until: str | None = None,
     ) -> tuple[list[str], str | None]:
-        """Get new message IDs since the last sync.
+        """Get download candidates since the last sync.
 
-        Uses UID-based incremental sync. The sync state is a JSON dict
-        mapping folder names to {"max_uid": N, "uidvalidity": V}.
+        Uses UID-based incremental sync: the cursor is a JSON dict mapping
+        folder names to {"max_uid": N, "uidvalidity": V}.
+
+        IMAP needs no membership diff to be eligibility-driven, unlike the
+        Gmail API. A message that leaves an excluded folder is *delivered* to
+        its destination, which allocates a UID above that folder's watermark,
+        so the transition arrives as an arrival. Restoring from trash on
+        Gmail-over-IMAP works out the same way: All Mail holds neither trash
+        nor spam, so the message reappears there with a fresh UID. What that
+        argument does not cover is a message that stays put and merely loses
+        a label — which needs INBOX to be excluded before it can happen, so
+        it belongs to TASK-14.1 rather than here.
 
         Args:
-            since_state: JSON string of per-folder sync state
+            since_state: Capture state from the previous sync
             since: Date filter (YYYY-MM-DD)
             until: Date filter (YYYY-MM-DD)
 
         Returns:
-            Tuple of (new_ids, new_state_json)
+            Tuple of (candidate_ids, new_state)
         """
         # Date filtering always does a full scan
         if since or until:
             return self.get_all_message_ids(since=since, until=until), None
 
-        if not since_state:
+        prior = capture.load(since_state)
+        fingerprint = self._filter_fingerprint()
+
+        # A full scan returns no state: the watermarks it implies are only
+        # correct once every message has actually been downloaded, so
+        # get_current_sync_state writes them at the end of the run.
+        if not prior.cursor:
+            return self.get_all_message_ids(), None
+
+        if prior.stale(fingerprint):
+            # Messages the old filter skipped sit below the watermark, so a
+            # widened filter would otherwise capture nothing retroactively.
+            print("  Download filter changed since last sync, rescanning...")
             return self.get_all_message_ids(), None
 
         try:
-            state = json.loads(since_state)
+            state = json.loads(prior.cursor)
         except (json.JSONDecodeError, TypeError):
             print("  Invalid sync state, performing full sync...")
             return self.get_all_message_ids(), None
 
         folders = self._list_folders()
+        downloadable = set(folders)
         new_ids = []
         new_state = {}
 
@@ -535,7 +595,7 @@ class ImapProvider(EmailProvider):
         # For Gmail label mapping
         message_id_to_folders: dict[str, list[str]] = {}
 
-        for folder in folders:
+        for folder in self._label_folders:
             print(f"  Checking: {folder}...\033[K", end="\r", flush=True)
 
             status, select_data = self._conn.select(f'"{folder}"', readonly=True)
@@ -585,13 +645,19 @@ class ImapProvider(EmailProvider):
                         composite_id = f"{folder}:{uid}"
 
                         if msg_id and msg_id in seen:
-                            seen[msg_id]["folders"].append(folder)
-                        else:
-                            if msg_id:
-                                seen[msg_id] = {
-                                    "primary": composite_id,
-                                    "folders": [folder],
-                                }
+                            info = seen[msg_id]
+                            info["folders"].append(folder)
+                            if info["primary"] is None and folder in downloadable:
+                                info["primary"] = composite_id
+                                new_ids.append(composite_id)
+                        elif msg_id:
+                            seen[msg_id] = {
+                                "primary": composite_id if folder in downloadable else None,
+                                "folders": [folder],
+                            }
+                            if folder in downloadable:
+                                new_ids.append(composite_id)
+                        elif folder in downloadable:
                             new_ids.append(composite_id)
 
             # Update state for this folder
@@ -608,18 +674,35 @@ class ImapProvider(EmailProvider):
         if all_mail:
             self._message_id_to_folders = message_id_to_folders
             self._folder_lookup = {}
-            self._seen_map = {}
         else:
-            self._seen_map = seen
             self._folder_lookup = {}
-            for _msg_id_val, info in seen.items():
-                self._folder_lookup[info["primary"]] = info["folders"]
+            for info in seen.values():
+                if info["primary"]:
+                    self._folder_lookup[info["primary"]] = info["folders"]
 
             total_dupes = sum(len(info["folders"]) - 1 for info in seen.values() if len(info["folders"]) > 1)
             if total_dupes > 0:
                 print(f"  ({total_dupes} duplicates across folders)")
 
-        return new_ids, json.dumps(new_state)
+        return new_ids, self._dump_state(new_state, fingerprint)
+
+    def _filter_fingerprint(self) -> str:
+        """A digest of what this source excludes from download.
+
+        Both halves matter: the role defaults, and the ``exclude_folders``
+        override that replaces them. Editing either is a filter change.
+        """
+        return capture.fingerprint(*self._exclude_folders or roles.DEFAULT_EXCLUDE_ROLES)
+
+    @staticmethod
+    def _dump_state(cursor: dict, fingerprint: str) -> str:
+        """Wrap a per-folder watermark map in the capture envelope.
+
+        No excluded membership is carried: IMAP detects departures through
+        UID allocation, so there is nothing to diff. See
+        ``get_new_message_ids``.
+        """
+        return capture.dump(capture.CaptureState(cursor=json.dumps(cursor), fingerprint=fingerprint))
 
     def _get_uidvalidity(self, select_data) -> str | None:
         """Extract UIDVALIDITY from SELECT response."""
@@ -778,13 +861,19 @@ class ImapProvider(EmailProvider):
     def get_current_sync_state(self) -> str | None:
         """Get current sync state (per-folder max UID + UIDVALIDITY).
 
+        Written at the end of a full scan, once every message it listed has
+        been downloaded — which is what makes the watermarks it records safe
+        to resume from. Watermarks every LABEL source, not just the download
+        sources, so a folder that only contributes labels is also scanned
+        incrementally rather than in full on every run.
+
         Returns:
-            JSON string of sync state
+            Capture state as a JSON string
         """
-        folders = self._list_folders()
+        self._list_folders()
         state = {}
 
-        for folder in folders:
+        for folder in self._label_folders:
             status, _ = self._conn.select(f'"{folder}"', readonly=True)
             if status != "OK":
                 continue
@@ -798,7 +887,7 @@ class ImapProvider(EmailProvider):
                 "uidvalidity": uidvalidity,
             }
 
-        return json.dumps(state)
+        return self._dump_state(state, self._filter_fingerprint())
 
     def close(self) -> None:
         """Close the IMAP connection."""
