@@ -2092,3 +2092,23 @@ class TestImapFilterChange:
         two = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["b", "a"])
 
         assert one._filter_fingerprint() == two._filter_fingerprint()
+
+    def test_mail_moved_out_of_an_excluded_folder_becomes_a_candidate(self):
+        """IMAP needs no membership diff to be eligibility-driven.
+
+        The move is a delivery, so the destination allocates a UID above its
+        watermark and the transition arrives as an ordinary arrival.
+        """
+        conn = self._conn(["INBOX", "Trash"], {"INBOX": [1, 2], "Trash": [7]})
+        provider = _imap_provider(conn, host="imap.fastmail.com")
+        before = capture.dump(
+            capture.CaptureState(
+                cursor=json.dumps({"INBOX": {"max_uid": 1, "uidvalidity": "100"}}),
+                fingerprint=provider._filter_fingerprint(),
+            )
+        )
+
+        with patch("time.sleep"):
+            ids, _ = provider.get_new_message_ids(before)
+
+        assert ids == ["INBOX:2"]

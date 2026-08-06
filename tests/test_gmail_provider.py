@@ -1499,3 +1499,25 @@ class TestGmailExcludedEnumeration(_GmailFixture):
                 call.kwargs["labelIds"] for call in service.users.return_value.messages.return_value.list.call_args_list
             ]
             assert asked == [["TRASH"]]
+
+    def test_incremental_sync_never_enumerates_the_eligible_set(self):
+        """Cost must be flat in mailbox size.
+
+        Listing what the filter ADMITS is O(mailbox) and grows with the
+        archive forever, since the eligible set is essentially the whole
+        archive. Only the excluded roles are enumerated, and those are
+        bounded by the provider's own retention.
+        """
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            list_call = service.users.return_value.messages.return_value.list
+            list_call.return_value.execute.return_value = {}
+            service.users.return_value.history.return_value.list.return_value.execute.return_value = {
+                "history": [],
+                "historyId": "400",
+            }
+
+            provider.get_new_message_ids("100")
+
+            assert list_call.call_args_list, "expected the excluded roles to be enumerated"
+            assert all(call.kwargs["labelIds"] for call in list_call.call_args_list)
