@@ -1,10 +1,10 @@
 ---
 id: TASK-14.3
 title: Make capture eligibility-driven rather than arrival-driven
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-25 05:53'
-updated_date: '2026-08-06 19:56'
+updated_date: '2026-08-06 20:18'
 labels: []
 milestone: m-5
 dependencies:
@@ -72,15 +72,15 @@ Depends on TASK-17: the history watermark race makes incremental sync lossy, and
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A message that becomes eligible after arrival is captured on a later run, on every provider path
-- [ ] #2 Departure from a transient excluded role is detected by diffing that role's membership across runs, not by a watermark
-- [ ] #3 The persisted excluded-membership set is replaced each run and never accumulates
-- [ ] #4 Eligibility is decided against the CURRENT excluded enumeration, so an arrival that was filed before ownmail saw it is judged by where it is now
-- [ ] #5 Per-run server cost is flat in mailbox size on the incremental path: no full enumeration of the eligible set
-- [ ] #6 Standing (named-folder) exclusions are not diffed, and config.example.yaml says moving mail out of one needs a resync
-- [ ] #7 Widening the filter invalidates the watermark and forces a full resync (hole 1)
-- [ ] #8 A folder excluded from download still contributes labels (hole 6)
-- [ ] #9 Existing sync state from before this change is read without a forced full resync
+- [x] #1 A message that becomes eligible after arrival is captured on a later run, on every provider path
+- [x] #2 Departure from a transient excluded role is detected by diffing that role's membership across runs, not by a watermark
+- [x] #3 The persisted excluded-membership set is replaced each run and never accumulates
+- [x] #4 Eligibility is decided against the CURRENT excluded enumeration, so an arrival that was filed before ownmail saw it is judged by where it is now
+- [x] #5 Per-run server cost is flat in mailbox size on the incremental path: no full enumeration of the eligible set
+- [x] #6 Standing (named-folder) exclusions are not diffed, and config.example.yaml says moving mail out of one needs a resync
+- [x] #7 Widening the filter invalidates the watermark and forces a full resync (hole 1)
+- [x] #8 A folder excluded from download still contributes labels (hole 6)
+- [x] #9 Existing sync state from before this change is read without a forced full resync
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -140,6 +140,38 @@ STANDING EXCLUSIONS ARE NOT DIFFED, deliberately. A named 50k label is a durable
 STORAGE. `sync_state` (database.py:337) is a free-form key-value table, so this is a new key rather than a schema change. Not a STOP item.
 
 FULL ENUMERATION SURVIVES AS A FALLBACK ONLY — history expiry (gmail.py:204), UIDVALIDITY change, and hole 1's filter-widening resync. Re-adding `history.list`-style fast paths on top is available later if a run's wall clock ever bites; not built on spec.
+
+## Landed 2026-08-06
+
+Four commits: the state envelope, the Gmail path, the IMAP path, and direct evidence for the two ACs that were true by construction but not directly asserted. Every AC verified by a test that was checked against deliberately broken code.
+
+WHAT ACTUALLY CHANGES BEHAVIOUR TODAY, since the filter is still hardcoded to trash and spam:
+
+- **Gmail API: a rescued spam false positive is now archived.** It was not before, and nothing would ever have revisited it. Mail lands in spam, `messageAdded` fires carrying SPAM, the event's labels are read, the message is skipped — and there is no second event when the user marks it not-spam. That was silent permanent loss on the one path where the inbox exclusion did not save it. Both halves of the fix are needed: judging by the CURRENT enumeration rather than the event's labels, and the membership diff that makes the message a candidate again at all.
+- **Excluding a folder by name no longer strips its label** from mail archived out of another folder (hole 6).
+- **Editing `exclude_folders` now rescans** instead of silently capturing nothing retroactively (hole 1).
+
+NOT RETROACTIVE. The first run after this stores excluded membership rather than acting on it, so anything rescued from spam BEFORE the upgrade stays uncaptured. That is TASK-25's job.
+
+### The IMAP finding
+
+The plan expected to build a membership diff per provider. IMAP needs none, and the reason is worth keeping: a message leaving an excluded folder is DELIVERED to its destination, which allocates a UID above that folder's watermark, so the transition arrives as an ordinary arrival. Gmail-over-IMAP lands the same way for trash and spam — All Mail holds neither, so a restored message reappears there with a fresh UID.
+
+What that argument does not cover is a message that STAYS PUT and merely loses a label. That requires INBOX to be excluded before it can happen, so it belongs to TASK-14.1 — which will need exactly one `UID SEARCH X-GM-RAW "in:inbox"` inside All Mail, answering in All-Mail UID space with no header fetches. The provider-side hook for it is already here: `_excluded_roles()` is the single place the filter is read.
+
+### Two decisions taken while implementing
+
+**Role exclusions are not label sources; named exclusions are.** Hole 6 as filed says only 'do not download from here ≠ do not read labels from here', which taken literally would have made trash a label source. On plain IMAP a message lives in ONE folder, so a trash copy sharing a Message-ID with the filed copy is a separate message — adopting its folder would have relabelled real mail as trash, manufacturing exactly the archive damage TASK-25 exists to clean up. The split is by reason for exclusion, not by exclusion.
+
+**Enumerate by label ID, not by search query.** TASK-14.1 records `is:draft` vs `in:draft` as unsettled, noting a wrong guess fails silently because Gmail reads an unknown term as a user label name. `messages.list(labelIds=[...])` sidesteps the question entirely and is exact. That settles TASK-14.1's open question for free — drafts will be `labelIds=['DRAFT']`.
+
+### Absorbed, and why it was not left as separate work
+
+The full-sync watermark was read AFTER the listing, so a message arriving mid-listing was in neither the listing nor the history that followed — the same silent loss TASK-17 fixed on the incremental path. Unavoidable here: a full sync now has to persist state so the membership it read survives to be diffed against, and persisting a watermark taken at the wrong moment would have shipped the bug deliberately. One line of ordering, fixed in place rather than filed.
+
+### Deleted
+
+`_seen_map` was written on every IMAP scan and read nowhere.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
