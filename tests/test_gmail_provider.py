@@ -146,6 +146,7 @@ class TestGmailProviderMessageRetrieval:
                 keychain=mock_keychain,
             )
             provider.authenticate()
+            provider._enumerate_excluded = frozenset
 
             ids = provider.get_all_message_ids()
 
@@ -533,6 +534,7 @@ class TestGmailProviderErrors:
                 keychain=mock_keychain,
             )
             provider.authenticate()
+            provider._enumerate_excluded = frozenset
 
             ids = provider.get_all_message_ids()
 
@@ -812,6 +814,7 @@ class TestGmailMessageIds(_GmailFixture):
         """All pages should be followed until nextPageToken is absent."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.messages.return_value.list.return_value.execute.side_effect = [
                 {"messages": [{"id": "a"}], "nextPageToken": "p2"},
                 {"messages": [{"id": "b"}]},
@@ -869,6 +872,7 @@ class TestGmailMessageIds(_GmailFixture):
         """A date filter should bypass the History API entirely."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
                 "messages": [{"id": "a"}]
             }
@@ -1036,6 +1040,7 @@ class TestGmailMessageIds(_GmailFixture):
 
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.history.return_value.list.return_value.execute.side_effect = _http_error(500)
 
             with pytest.raises(HttpError):
@@ -1045,6 +1050,7 @@ class TestGmailMessageIds(_GmailFixture):
         """Ctrl-C during a history sync should be reported and re-raised."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
+            self._excluded(provider)
             service.users.return_value.history.return_value.list.return_value.execute.side_effect = KeyboardInterrupt
 
             with pytest.raises(KeyboardInterrupt):
@@ -1394,7 +1400,7 @@ class TestGmailEligibility(_GmailFixture):
             ids, _ = provider.get_new_message_ids(prior)
 
             assert ids == ["rescued", "still-junk"]
-            assert "left trash or spam" in capsys.readouterr().out
+            assert "became eligible" in capsys.readouterr().out
 
     def test_a_message_that_stays_excluded_is_not_a_candidate(self):
         with patch("ownmail.providers.gmail.build") as mock_build:
@@ -1483,7 +1489,7 @@ class TestGmailExcludedEnumeration(_GmailFixture):
             assert provider._enumerate_excluded() == frozenset({"x"})
 
             asked = [call.kwargs["labelIds"] for call in list_call.call_args_list]
-            assert sorted(asked) == [["SPAM"], ["TRASH"]]
+            assert sorted(asked) == [["DRAFT"], ["INBOX"], ["SPAM"], ["TRASH"]]
             assert all(call.kwargs["includeSpamTrash"] for call in list_call.call_args_list)
 
     def test_only_transient_roles_are_enumerated(self):

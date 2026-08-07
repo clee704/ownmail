@@ -373,8 +373,13 @@ class TestCmdSetup:
         assert "Setup complete" in captured.out
         mock_keychain.save_imap_password.assert_called_once()
 
-    def test_setup_imap_records_server_trash_folders(self, temp_dir, capsys, monkeypatch):
-        """Setup writes the server's own trash/spam names, commented out."""
+    def test_setup_imap_reports_the_server_s_own_excluded_names(self, temp_dir, capsys, monkeypatch):
+        """Setup shows which of this server's folders the filter skips.
+
+        Reported, not written into the config: naming them in
+        exclude_folders would teach that removing them re-admits the role,
+        which is exactly what the fixed exclusion prevents.
+        """
         from unittest.mock import MagicMock
 
         from ownmail.cli import cmd_setup
@@ -397,11 +402,11 @@ class TestCmdSetup:
                 mock_imap.return_value = mock_conn
                 cmd_setup(MagicMock(), {}, None, method="imap")
 
+        reported = capsys.readouterr().out
+        assert "Skipped by default: INBOX, Papierkorb, Unerwünscht" in reported
         written = (temp_dir / "config.yaml").read_text()
-        assert "#   - Papierkorb" in written
-        assert "#   - Unerwünscht" in written
-        # Commented out: role detection stays in charge unless the user opts in
         assert "\n    exclude_folders:" not in written
+        assert "\n    exclude_roles:" not in written
 
     def test_setup_imap_omits_block_when_nothing_found(self, temp_dir, capsys, monkeypatch):
         from unittest.mock import MagicMock
@@ -419,8 +424,10 @@ class TestCmdSetup:
                 mock_imap.return_value = mock_conn
                 cmd_setup(MagicMock(), {}, None, method="imap")
 
-        assert "exclude_folders" not in (temp_dir / "config.yaml").read_text()
-        # Verify config file was created
+        written = (temp_dir / "config.yaml").read_text()
+        assert "exclude_folders" not in written
+        # The filter itself is still described, since it applies regardless
+        assert "exclude_roles" in written
         assert (temp_dir / "config.yaml").exists()
 
     def test_setup_creates_config_with_comments(self, temp_dir, capsys, monkeypatch):

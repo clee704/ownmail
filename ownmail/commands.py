@@ -1161,6 +1161,7 @@ def cmd_sync_check(
             account=account,
             keychain=archive.keychain,
             source_name=source["name"],
+            exclude_roles=source.get("exclude_roles"),
         )
     elif source_type == "imap":
         from ownmail.providers.imap import ImapProvider
@@ -1172,6 +1173,7 @@ def cmd_sync_check(
             port=source.get("port", 993),
             exclude_folders=source.get("exclude_folders"),
             source_name=source["name"],
+            exclude_roles=source.get("exclude_roles"),
         )
     else:
         print(f"❌ sync-check is not supported for source type '{source_type}'")
@@ -1571,6 +1573,7 @@ def _relabel_source(
         port=source.get("port", 993),
         exclude_folders=source.get("exclude_folders"),
         source_name=source["name"],
+        exclude_roles=source.get("exclude_roles"),
     )
     provider.authenticate()
 

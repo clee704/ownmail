@@ -146,25 +146,23 @@ def _update_or_create_config(
         print(f"\n✓ Created {new_path}")
 
 
-def _exclude_folders_snippet(excluded_folders: list[str]) -> str:
-    """Render the commented-out exclude_folders block for a new source.
+_FILTER_SNIPPET = """\
+    # Not downloaded: inbox, drafts, trash and spam. Mail is archived once
+    # you have filed it, so your mail client stays in charge of triage.
+    # 'exclude_roles' relaxes the first two; see config.example.yaml.
+"""
 
-    Trash and spam are excluded by role without any config, so this is
-    documentation rather than configuration: it shows the names this
-    particular server uses, and uncommenting it takes over from the role
-    matching entirely.
+
+def _report_skipped_folders(excluded_folders: list[str]) -> None:
+    """Show which of this server's folders the default filter skips.
+
+    Informational, not configuration. The names are worth showing because
+    every server spells them differently and the role matching is invisible
+    when it works — but naming them in ``exclude_folders`` would be the wrong
+    lesson, since the roles are excluded whether or not they appear there.
     """
-    if not excluded_folders:
-        return ""
-
-    lines = [
-        "    # Skipped by default because they are this server's trash/spam",
-        "    # folders. Uncomment to take over the list yourself — doing so",
-        "    # replaces the automatic detection rather than adding to it.",
-        "    # exclude_folders:",
-    ]
-    lines += [f"    #   - {name}" for name in excluded_folders]
-    return "\n".join(lines) + "\n"
+    if excluded_folders:
+        print("\n  Skipped by default: " + ", ".join(excluded_folders))
 
 
 def _setup_imap(
@@ -225,11 +223,12 @@ def _setup_imap(
     try:
         conn = imaplib.IMAP4_SSL(host, 993)
         conn.login(account_email, password)
-        # Ask the server which folders it considers trash/spam while we're
+        # Ask the server which folders carry the excluded roles while we're
         # connected — the SPECIAL-USE flags aren't available any other time.
         excluded_folders = discover_role_folders(conn, roles.DEFAULT_EXCLUDE_ROLES)
         conn.logout()
         print(" ✓ Connected successfully!")
+        _report_skipped_folders(excluded_folders)
     except imaplib.IMAP4.error as e:
         error_msg = str(e)
         print(" ✗ Failed!")
@@ -262,7 +261,7 @@ def _setup_imap(
     account: {account_email}
     auth:
       secret_ref: keychain:imap-password/{account_email}
-{_exclude_folders_snippet(excluded_folders)}"""
+{_FILTER_SNIPPET}"""
 
     _update_or_create_config(config, config_path, source_name, source_snippet)
 
@@ -386,7 +385,7 @@ def _setup_oauth(
     auth:
       secret_ref: keychain:{token_key}
     include_labels: true
-"""
+{_FILTER_SNIPPET}"""
 
     _update_or_create_config(config, config_path, source_name, source_snippet)
 
@@ -471,6 +470,7 @@ def cmd_download(
                 keychain=keychain,
                 include_labels=source.get("include_labels", True),
                 source_name=name,
+                exclude_roles=source.get("exclude_roles"),
             )
 
             # Authenticate
@@ -528,6 +528,7 @@ def cmd_download(
                 port=port,
                 exclude_folders=exclude_folders,
                 source_name=name,
+                exclude_roles=source.get("exclude_roles"),
             )
 
             provider.authenticate()

@@ -35,7 +35,14 @@ class GmailProvider(EmailProvider):
     - Labels stored in database
     """
 
-    def __init__(self, account: str, keychain, include_labels: bool = True, source_name: str = "gmail"):
+    def __init__(
+        self,
+        account: str,
+        keychain,
+        include_labels: bool = True,
+        source_name: str = "gmail",
+        exclude_roles: list[str] | None = None,
+    ):
         """Initialize Gmail provider.
 
         Args:
@@ -43,11 +50,15 @@ class GmailProvider(EmailProvider):
             keychain: KeychainStorage instance for credential access
             include_labels: Whether to fetch and inject Gmail labels
             source_name: Source name from config
+            exclude_roles: Canonical roles this source keeps out of the
+                archive, or None for the default. Trash and spam are added
+                whatever this says.
         """
         self._account = account
         self._keychain = keychain
         self._include_labels = include_labels
         self._source_name = source_name
+        self._exclude_roles = roles.resolve_exclude_roles(exclude_roles)
         self._service = None
         self._label_cache = {}
 
@@ -169,16 +180,41 @@ class GmailProvider(EmailProvider):
         return all_ids
 
     def get_all_message_ids(self, since: str | None = None, until: str | None = None) -> list[str]:
-        """Get all message IDs from Gmail.
+        """Every message id currently ELIGIBLE for download.
+
+        Not "everything on the server": mail sitting in an excluded role is
+        left out, so callers comparing this against the archive — sync-check —
+        see what is genuinely missing rather than the whole inbox.
 
         Args:
+            since: Only get emails after this date (YYYY-MM-DD)
+            until: Only get emails before this date (YYYY-MM-DD)
+        """
+        return self._eligible(self._enumerate_excluded(), since, until)
+
+    def _eligible(
+        self,
+        excluded: frozenset[str],
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[str]:
+        """List every message, minus a membership snapshot the caller took.
+
+        The snapshot is the caller's because it has to be the same one that
+        gets persisted. Enumerating again after the listing would let a
+        message that left the inbox mid-listing fall out of both the listing
+        and the stored membership, so the next run's diff would never see it.
+
+        Args:
+            excluded: Ids in an excluded role, as of before this listing
             since: Only get emails after this date (YYYY-MM-DD)
             until: Only get emails before this date (YYYY-MM-DD)
         """
         # Date filtering only. Trash and spam exclusion is the request
         # parameter, not a query term: a matching ``-in:trash -in:spam`` in
         # ``q`` used to sit here restating it, so editing the exclusion there
-        # did nothing.
+        # did nothing. The remaining roles have no negatable query form that
+        # fails loudly, so they are subtracted rather than asked for.
         query_parts = []
         if since:
             query_parts.append(f"after:{since.replace('-', '/')}")
@@ -186,25 +222,27 @@ class GmailProvider(EmailProvider):
             query_parts.append(f"before:{until.replace('-', '/')}")
 
         all_ids = self._list_message_ids(query=" ".join(query_parts), progress="messages")
-        print(f"  Found {len(all_ids)} total messages")
-        return all_ids
+        eligible = [mid for mid in all_ids if mid not in excluded]
+        print(f"  Found {len(all_ids)} total messages, {len(eligible)} eligible")
+        return eligible
 
     def _excluded_roles(self) -> frozenset[str]:
         """Roles this source excludes from download.
 
-        Hardcoded until TASK-14.1 exposes it as per-source config; kept as a
-        method so the fingerprint and the enumeration below already read from
-        one place when it becomes configurable.
+        The single place the filter is read: the enumeration below, the
+        fingerprint that invalidates the cursor when the filter moves, and the
+        eligibility test in ``get_new_message_ids`` all come through here.
         """
-        return roles.DEFAULT_EXCLUDE_ROLES
+        return self._exclude_roles
 
     def _enumerate_excluded(self) -> frozenset[str]:
         """Message ids currently sitting in a transient excluded role.
 
         This is the set whose membership is diffed across runs, so that a
-        message *leaving* trash or spam becomes a download candidate. Gmail
-        emits no event for that: ``history.list`` reports ``messageAdded``,
-        and a rescued spam false positive was added long ago.
+        message *leaving* an excluded role becomes a download candidate. Gmail
+        emits no event for that: ``history.list`` reports ``messageAdded``, and
+        a filed inbox message or a rescued spam false positive was added long
+        ago.
 
         Asked by label ID rather than by search query — ``in:trash`` is
         reliable but an unrecognized term would be read as a user label name
@@ -268,19 +306,23 @@ class GmailProvider(EmailProvider):
             print("  Download filter changed since last sync, rescanning...")
             cursor = None
 
-        arrivals, new_cursor = self._get_arrivals(cursor)
+        # Read membership BEFORE listing arrivals, and persist this same
+        # snapshot: see _eligible. The cost is being one run eager about a
+        # message that entered an excluded role mid-listing; the alternative
+        # is losing one that left mid-listing, permanently.
         excluded_now = self._enumerate_excluded()
+        arrivals, new_cursor = self._get_arrivals(cursor, excluded_now)
 
         candidates = [mid for mid in arrivals if mid not in excluded_now]
         recovered = sorted(state.departed(excluded_now) - set(arrivals))
         if recovered:
-            print(f"  {len(recovered)} message(s) left trash or spam since last sync")
+            print(f"  {len(recovered)} message(s) became eligible since last sync")
             candidates.extend(recovered)
 
         new_state = capture.CaptureState(cursor=new_cursor, excluded=excluded_now, fingerprint=fingerprint)
         return candidates, capture.dump(new_state)
 
-    def _get_arrivals(self, cursor: str | None) -> tuple[list[str], str | None]:
+    def _get_arrivals(self, cursor: str | None, excluded: frozenset[str]) -> tuple[list[str], str | None]:
         """Messages added since ``cursor``, falling back to a full listing.
 
         The full-sync watermark is read *before* the listing rather than after
@@ -297,7 +339,7 @@ class GmailProvider(EmailProvider):
                 print("History expired, performing full sync...")
 
         watermark = self.get_current_sync_state()
-        return self.get_all_message_ids(), watermark
+        return self._eligible(excluded), watermark
 
     def _get_messages_since_history(self, history_id: str) -> tuple[list[str], str]:
         """Get new messages since the given history ID, and the next watermark.

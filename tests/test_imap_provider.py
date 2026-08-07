@@ -184,14 +184,14 @@ class TestImapProviderFolders:
         provider._conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Receipts"',
                 b'(\\HasNoChildren) "/" "Sent"',
                 b'(\\HasNoChildren) "/" "Archive"',
             ],
         )
 
         folders = provider._list_folders()
-        assert "INBOX" in folders
+        assert "Receipts" in folders
         assert "Sent" in folders
         assert "Archive" in folders
 
@@ -213,18 +213,20 @@ class TestImapProviderFolders:
     def test_list_folders_excludes_configured(self):
         """Test that excluded folders are skipped."""
         provider = self._make_provider()
-        provider._exclude_folders = ["[Gmail]/Trash", "[Gmail]/Spam"]
+        provider._exclude_folders = ["Receipts"]
         provider._conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
-                b'(\\HasNoChildren) "/" "[Gmail]/Trash"',
-                b'(\\HasNoChildren) "/" "[Gmail]/Spam"',
+                b'(\\HasNoChildren) "/" "Work"',
+                b'(\\HasNoChildren) "/" "Receipts"',
+                b'(\\HasNoChildren \\Trash) "/" "[Gmail]/Trash"',
+                b'(\\HasNoChildren \\Junk) "/" "[Gmail]/Spam"',
             ],
         )
 
         folders = provider._list_folders()
-        assert "INBOX" in folders
+        assert "Work" in folders
+        assert "Receipts" not in folders
         assert "[Gmail]/Trash" not in folders
         assert "[Gmail]/Spam" not in folders
 
@@ -237,7 +239,7 @@ class TestImapRoleExclusion:
     deleted mail as normal mail.
     """
 
-    def _make_provider(self, exclude_folders=None):
+    def _make_provider(self, exclude_folders=None, exclude_roles=None):
         from ownmail.providers.imap import ImapProvider
 
         provider = ImapProvider(
@@ -245,6 +247,7 @@ class TestImapRoleExclusion:
             keychain=MagicMock(),
             host="imap.company.com",
             exclude_folders=exclude_folders,
+            exclude_roles=exclude_roles,
         )
         provider._conn = MagicMock()
         return provider
@@ -258,12 +261,12 @@ class TestImapRoleExclusion:
         folders = self._listing(
             provider,
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Receipts"',
                 b'(\\HasNoChildren \\Trash) "/" "Prullenbak"',
                 b'(\\HasNoChildren \\Junk) "/" "Ongewenst"',
             ],
         )
-        assert folders == ["INBOX"]
+        assert folders == ["Receipts"]
 
     @pytest.mark.parametrize(
         "folder",
@@ -276,42 +279,71 @@ class TestImapRoleExclusion:
     def test_named_trash_excluded_without_special_use(self, folder):
         """Servers that don't advertise SPECIAL-USE fall back to names."""
         provider = self._make_provider()
-        assert self._listing(provider, [b'(\\HasNoChildren) "/" "INBOX"', folder]) == ["INBOX"]
+        assert self._listing(provider, [b'(\\HasNoChildren) "/" "Receipts"', folder]) == ["Receipts"]
 
     def test_ordinary_folders_kept(self):
         provider = self._make_provider()
         folders = self._listing(
             provider,
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Work"',
                 b'(\\HasNoChildren) "/" "Receipts"',
                 b'(\\HasNoChildren \\Sent) "/" "Sent"',
             ],
         )
-        assert folders == ["INBOX", "Receipts", "Sent"]
+        assert folders == ["Work", "Receipts", "Sent"]
 
-    def test_explicit_list_replaces_role_defaults(self):
-        """Setting exclude_folders takes over — trash syncs unless named.
+    def test_named_exclusion_adds_to_the_roles_rather_than_replacing_them(self):
+        """Naming a folder never re-admits a role.
 
-        This is what lets a source deliberately archive its trash to catch
-        mail deleted on a phone before ownmail's next run.
+        It used to: an explicit list took over wholesale, which was the only
+        way to archive your own trash. That configuration is gone — purge
+        moves mail TO trash, so a trash-inclusive filter would keep passing
+        everything it ever purged and the sweep would never settle.
         """
         provider = self._make_provider(exclude_folders=["Receipts"])
         folders = self._listing(
             provider,
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Work"',
                 b'(\\HasNoChildren) "/" "Receipts"',
                 b'(\\HasNoChildren \\Trash) "/" "Trash"',
             ],
         )
-        assert folders == ["INBOX", "Trash"]
+        assert folders == ["Work"]
 
-    def test_empty_list_falls_back_to_role_defaults(self):
+    def test_empty_list_still_excludes_the_roles(self):
         provider = self._make_provider(exclude_folders=[])
         folders = self._listing(
             provider,
-            [b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren \\Trash) "/" "Trash"'],
+            [b'(\\HasNoChildren) "/" "Work"', b'(\\HasNoChildren \\Trash) "/" "Trash"'],
+        )
+        assert folders == ["Work"]
+
+    def test_inbox_and_drafts_excluded_by_default(self):
+        """The filter admits a message once its owner has acted on it."""
+        provider = self._make_provider()
+        folders = self._listing(
+            provider,
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren \\Drafts) "/" "Concepten"',
+                b'(\\HasNoChildren \\Sent) "/" "Verzonden"',
+            ],
+        )
+        # Sent stays: outgoing mail has no triage step, so waiting for one
+        # would mean never archiving your own mail.
+        assert folders == ["Verzonden"]
+
+    def test_inbox_can_be_admitted_by_config(self):
+        provider = self._make_provider(exclude_roles=["drafts"])
+        folders = self._listing(
+            provider,
+            [
+                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren \\Drafts) "/" "Concepten"',
+                b'(\\HasNoChildren \\Trash) "/" "Trash"',
+            ],
         )
         assert folders == ["INBOX"]
 
@@ -360,7 +392,7 @@ class TestDiscoverRoleFolders:
             ],
         )
 
-        assert discover_role_folders(conn, roles.DEFAULT_EXCLUDE_ROLES) == ["Papierkorb", "Junk"]
+        assert discover_role_folders(conn, roles.DEFAULT_EXCLUDE_ROLES) == ["INBOX", "Papierkorb", "Junk"]
 
     def test_bad_status_returns_empty(self):
         from ownmail import roles
@@ -473,14 +505,14 @@ class TestImapProviderDedup:
         return provider
 
     def test_dedup_same_message_in_multiple_folders(self):
-        """Test that same message in INBOX and Sent is downloaded once."""
+        """Test that same message in Work and Sent is downloaded once."""
         provider = self._make_provider()
 
         # Two folders
         provider._conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Work"',
                 b'(\\HasNoChildren) "/" "Sent"',
             ],
         )
@@ -511,7 +543,7 @@ class TestImapProviderDedup:
 
         # Should only return one ID (deduplicated)
         assert len(ids) == 1
-        assert ids[0] == "INBOX:1"
+        assert ids[0] == "Work:1"
 
     def test_different_messages_not_deduped(self):
         """Test that different messages are both returned."""
@@ -520,7 +552,7 @@ class TestImapProviderDedup:
         provider._conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Work"',
                 b'(\\HasNoChildren) "/" "Sent"',
             ],
         )
@@ -573,7 +605,7 @@ class TestImapProviderDedup:
         provider._conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Work"',
                 b'(\\HasNoChildren) "/" "Important"',
             ],
         )
@@ -603,7 +635,7 @@ class TestImapProviderDedup:
 
         # The primary ID maps to both folders
         primary = ids[0]
-        assert "INBOX" in provider._folder_lookup[primary]
+        assert "Work" in provider._folder_lookup[primary]
         assert "Important" in provider._folder_lookup[primary]
 
 
@@ -731,14 +763,14 @@ class TestImapProviderIncrementalSync:
 
         old_state = json.dumps(
             {
-                "INBOX": {"max_uid": 100, "uidvalidity": "1"},
+                "Work": {"max_uid": 100, "uidvalidity": "1"},
             }
         )
 
         # Only one folder
         provider._conn.list.return_value = (
             "OK",
-            [b'(\\HasNoChildren) "/" "INBOX"'],
+            [b'(\\HasNoChildren) "/" "Work"'],
         )
 
         select_calls = [0]
@@ -789,7 +821,7 @@ class TestImapProviderIncrementalSync:
 
         ids, new_state = provider.get_new_message_ids(old_state)
         assert len(ids) == 3
-        assert all(id.startswith("INBOX:") for id in ids)
+        assert all(id.startswith("Work:") for id in ids)
 
 
 class TestImapProviderDateConversion:
@@ -868,7 +900,7 @@ class TestImapProviderSyncState:
 
         provider._conn.list.return_value = (
             "OK",
-            [b'(\\HasNoChildren) "/" "INBOX"'],
+            [b'(\\HasNoChildren) "/" "Work"'],
         )
         provider._conn.select.return_value = ("OK", [b"50"])
         provider._conn.response.return_value = ("OK", [b"12345"])
@@ -876,8 +908,8 @@ class TestImapProviderSyncState:
 
         state = _watermarks(provider.get_current_sync_state())
 
-        assert "INBOX" in state
-        assert state["INBOX"]["max_uid"] == 50
+        assert "Work" in state
+        assert state["Work"]["max_uid"] == 50
 
 
 class TestImapScanGmail:
@@ -894,6 +926,10 @@ class TestImapScanGmail:
             exclude_folders=["[Gmail]/Trash", "[Gmail]/Spam"],
         )
         provider._conn = MagicMock()
+        # Nothing is sitting in the inbox unless a test says so. Pinned
+        # because every All-Mail scan now reads it, and a mock that answers
+        # every SEARCH the same way would report the whole folder excluded.
+        provider._enumerate_excluded = lambda all_mail: frozenset()
         return provider
 
     def test_is_gmail_true(self):
@@ -1700,7 +1736,7 @@ class TestImapFolderListing:
         conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
+                b'(\\HasNoChildren) "/" "Work"',
                 b'(\\Noselect \\HasChildren) "/" "[Gmail]"',
                 b'(\\HasNoChildren) "/" "Work"',
             ],
@@ -1709,7 +1745,7 @@ class TestImapFolderListing:
 
         folders = provider._list_folders()
 
-        assert "INBOX" in folders
+        assert "Work" in folders
         assert "Work" in folders
         assert "[Gmail]" not in folders
 
@@ -1743,27 +1779,27 @@ class TestImapIncrementalScan:
 
     def test_only_uids_above_the_watermark_are_returned(self):
         """Messages at or below the stored max_uid should be skipped."""
-        conn = self._conn(["INBOX"], {"INBOX": [8, 9, 10, 11]})
+        conn = self._conn(["Work"], {"Work": [8, 9, 10, 11]})
         provider = _imap_provider(conn, exclude_folders=[])
-        state = json.dumps({"INBOX": {"max_uid": 9, "uidvalidity": "100"}})
+        state = json.dumps({"Work": {"max_uid": 9, "uidvalidity": "100"}})
 
         with patch("time.sleep"):
             new_ids, new_state = provider.get_new_message_ids(state)
 
-        assert new_ids == ["INBOX:10", "INBOX:11"]
-        assert _watermarks(new_state)["INBOX"]["max_uid"] == 11
+        assert new_ids == ["Work:10", "Work:11"]
+        assert _watermarks(new_state)["Work"]["max_uid"] == 11
 
     def test_changed_uidvalidity_forces_full_rescan(self, capsys):
         """A rebuilt folder (new UIDVALIDITY) should be rescanned from zero."""
-        conn = self._conn(["INBOX"], {"INBOX": [1, 2]}, uidvalidity="999")
+        conn = self._conn(["Work"], {"Work": [1, 2]}, uidvalidity="999")
         provider = _imap_provider(conn, exclude_folders=[])
-        state = json.dumps({"INBOX": {"max_uid": 5, "uidvalidity": "100"}})
+        state = json.dumps({"Work": {"max_uid": 5, "uidvalidity": "100"}})
 
         with patch("time.sleep"):
             new_ids, _ = provider.get_new_message_ids(state)
 
-        assert new_ids == ["INBOX:1", "INBOX:2"]
-        assert "UIDVALIDITY changed for INBOX" in capsys.readouterr().out
+        assert new_ids == ["Work:1", "Work:2"]
+        assert "UIDVALIDITY changed for Work" in capsys.readouterr().out
 
     def test_invalid_sync_state_falls_back_to_full_scan(self, capsys):
         """Unparseable state should trigger a full scan, not a crash."""
@@ -1791,7 +1827,7 @@ class TestImapIncrementalScan:
 
     def test_unselectable_folder_is_skipped(self):
         """A folder that cannot be selected should not abort the scan."""
-        conn = self._conn(["INBOX", "Broken"], {"INBOX": [1]})
+        conn = self._conn(["Work", "Broken"], {"Work": [1]})
         selected = {"folder": None}
 
         def select(spec, readonly=False):
@@ -1801,7 +1837,7 @@ class TestImapIncrementalScan:
 
         def uid(command, *args):
             if command == "search":
-                return ("OK", [b"1"]) if selected["folder"] == "INBOX" else ("OK", [b""])
+                return ("OK", [b"1"]) if selected["folder"] == "Work" else ("OK", [b""])
             return ("OK", [])
 
         conn.select.side_effect = select
@@ -1811,7 +1847,7 @@ class TestImapIncrementalScan:
         with patch("time.sleep"):
             new_ids, _ = provider.get_new_message_ids(json.dumps({}))
 
-        assert new_ids == ["INBOX:1"]
+        assert new_ids == ["Work:1"]
 
     def test_empty_search_result_yields_nothing(self):
         """A folder with no matching UIDs should contribute no ids."""
@@ -1891,26 +1927,26 @@ class TestImapFolderMembership:
         earlier run, where a different folder may have won the election.
         """
         conn = MagicMock()
-        conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"', b'(\\HasNoChildren) "/" "Receipts"'])
-        _wire_folders(conn, {"INBOX": {1: "<m1@test>"}, "Receipts": {7: "<m1@test>"}})
+        conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Work"', b'(\\HasNoChildren) "/" "Receipts"'])
+        _wire_folders(conn, {"Work": {1: "<m1@test>"}, "Receipts": {7: "<m1@test>"}})
         provider = _imap_provider(conn, host="imap.fastmail.com")
 
         with patch("time.sleep"):
             membership = provider.scan_folder_membership()
 
-        assert membership["INBOX:1"] == ["INBOX", "Receipts"]
-        assert membership["Receipts:7"] == ["INBOX", "Receipts"]
+        assert membership["Work:1"] == ["Work", "Receipts"]
+        assert membership["Receipts:7"] == ["Work", "Receipts"]
 
     def test_single_folder_message_maps_to_itself(self):
         conn = MagicMock()
-        conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "INBOX"'])
-        _wire_folders(conn, {"INBOX": {4: "<solo@test>"}})
+        conn.list.return_value = ("OK", [b'(\\HasNoChildren) "/" "Work"'])
+        _wire_folders(conn, {"Work": {4: "<solo@test>"}})
         provider = _imap_provider(conn, host="imap.fastmail.com")
 
         with patch("time.sleep"):
             membership = provider.scan_folder_membership()
 
-        assert membership == {"INBOX:4": ["INBOX"]}
+        assert membership == {"Work:4": ["Work"]}
 
     def test_gmail_all_mail_path_has_no_membership(self):
         """All Mail keys membership by Message-ID, which relabel can't join on."""
@@ -1972,16 +2008,16 @@ class TestImapLabelSources:
     def test_named_exclusion_still_contributes_a_label(self):
         """The folder describes real organization even when nothing is pulled from it."""
         conn = self._conn(
-            ["INBOX", "Newsletters"],
-            {"INBOX": {1: "<a@x>"}, "Newsletters": {7: "<a@x>"}},
+            ["Work", "Newsletters"],
+            {"Work": {1: "<a@x>"}, "Newsletters": {7: "<a@x>"}},
         )
         provider = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["Newsletters"])
 
         with patch("time.sleep"):
             ids = provider.get_all_message_ids()
 
-        assert ids == ["INBOX:1"]
-        assert provider._folder_lookup["INBOX:1"] == ["INBOX", "Newsletters"]
+        assert ids == ["Work:1"]
+        assert provider._folder_lookup["Work:1"] == ["Work", "Newsletters"]
 
     def test_role_excluded_folder_is_not_a_label_source(self):
         """A trash copy shares its Message-ID with the filed copy.
@@ -1990,16 +2026,16 @@ class TestImapLabelSources:
         damage TASK-25 exists to clean up.
         """
         conn = self._conn(
-            ["INBOX", "Trash"],
-            {"INBOX": {1: "<a@x>"}, "Trash": {7: "<a@x>"}},
+            ["Work", "Trash"],
+            {"Work": {1: "<a@x>"}, "Trash": {7: "<a@x>"}},
         )
         provider = _imap_provider(conn, host="imap.fastmail.com")
 
         with patch("time.sleep"):
             ids = provider.get_all_message_ids()
 
-        assert ids == ["INBOX:1"]
-        assert provider._folder_lookup["INBOX:1"] == ["INBOX"]
+        assert ids == ["Work:1"]
+        assert provider._folder_lookup["Work:1"] == ["Work"]
 
     def test_a_message_held_only_in_an_excluded_folder_is_not_downloaded(self):
         """Contributing a label must not smuggle the message into the archive."""
@@ -2012,13 +2048,13 @@ class TestImapLabelSources:
     def test_download_source_wins_the_election_whatever_the_scan_order(self):
         """The excluded copy is seen first here, so the primary must move."""
         conn = self._conn(
-            ["Newsletters", "INBOX"],
-            {"Newsletters": {7: "<a@x>"}, "INBOX": {1: "<a@x>"}},
+            ["Newsletters", "Work"],
+            {"Newsletters": {7: "<a@x>"}, "Work": {1: "<a@x>"}},
         )
         provider = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["Newsletters"])
 
         with patch("time.sleep"):
-            assert provider.get_all_message_ids() == ["INBOX:1"]
+            assert provider.get_all_message_ids() == ["Work:1"]
 
 
 class TestImapFilterChange:
@@ -2045,11 +2081,11 @@ class TestImapFilterChange:
 
     def test_changed_filter_rescans_from_zero(self, capsys):
         """Previously-skipped messages sit below the watermark."""
-        conn = self._conn(["INBOX"], {"INBOX": [1, 2, 3]})
+        conn = self._conn(["Work"], {"Work": [1, 2, 3]})
         provider = _imap_provider(conn, host="imap.fastmail.com")
         stale = capture.dump(
             capture.CaptureState(
-                cursor=json.dumps({"INBOX": {"max_uid": 3, "uidvalidity": "100"}}),
+                cursor=json.dumps({"Work": {"max_uid": 3, "uidvalidity": "100"}}),
                 fingerprint="a-different-filter",
             )
         )
@@ -2057,7 +2093,7 @@ class TestImapFilterChange:
         with patch("time.sleep"):
             ids, _ = provider.get_new_message_ids(stale)
 
-        assert ids == ["INBOX:1", "INBOX:2", "INBOX:3"]
+        assert ids == ["Work:1", "Work:2", "Work:3"]
         assert "filter changed" in capsys.readouterr().out
 
     def test_unchanged_filter_keeps_the_watermark(self):
@@ -2099,11 +2135,11 @@ class TestImapFilterChange:
         The move is a delivery, so the destination allocates a UID above its
         watermark and the transition arrives as an ordinary arrival.
         """
-        conn = self._conn(["INBOX", "Trash"], {"INBOX": [1, 2], "Trash": [7]})
+        conn = self._conn(["Work", "Trash"], {"Work": [1, 2], "Trash": [7]})
         provider = _imap_provider(conn, host="imap.fastmail.com")
         before = capture.dump(
             capture.CaptureState(
-                cursor=json.dumps({"INBOX": {"max_uid": 1, "uidvalidity": "100"}}),
+                cursor=json.dumps({"Work": {"max_uid": 1, "uidvalidity": "100"}}),
                 fingerprint=provider._filter_fingerprint(),
             )
         )
@@ -2111,4 +2147,4 @@ class TestImapFilterChange:
         with patch("time.sleep"):
             ids, _ = provider.get_new_message_ids(before)
 
-        assert ids == ["INBOX:2"]
+        assert ids == ["Work:2"]

@@ -24,6 +24,22 @@ FOLDER_BATCH_DELAY = 0.1  # Seconds between folder scans
 # Gmail-specific IMAP settings
 GMAIL_IMAP_HOST = "imap.gmail.com"
 
+# How to ask All Mail which of its messages a transient role holds, answered in
+# All-Mail UID space so no headers are fetched.
+#
+# Only the roles that can be IN All Mail are here. Gmail keeps trash and spam
+# out of it, so a message leaving either is delivered back into All Mail with a
+# fresh UID and arrives as an ordinary arrival — nothing to diff.
+#
+# Drafts uses the RFC 3501 \Draft flag rather than a Gmail search term. That
+# sidesteps the open question of whether the operator is `is:draft` or
+# `in:draft`, which matters because X-GM-RAW reads an unrecognized term as a
+# user label name and would filter nothing, silently.
+_ALL_MAIL_ROLE_SEARCH = {
+    roles.INBOX: 'X-GM-RAW "in:inbox"',
+    roles.DRAFTS: "DRAFT",
+}
+
 
 def parse_list_response(folder_data) -> list[tuple[str, str, str]]:
     """Parse an IMAP LIST response into (name, flags, delimiter) tuples.
@@ -105,6 +121,7 @@ class ImapProvider(EmailProvider):
         port: int = DEFAULT_PORT,
         exclude_folders: list[str] | None = None,
         source_name: str = "imap",
+        exclude_roles: list[str] | None = None,
     ):
         """Initialize IMAP provider.
 
@@ -113,21 +130,26 @@ class ImapProvider(EmailProvider):
             keychain: KeychainStorage instance
             host: IMAP server hostname
             port: IMAP server port (default: 993 for SSL)
-            exclude_folders: Literal folder names to skip during sync. When
-                left unset, folders are skipped by role instead, so trash and
-                spam are excluded whatever the server calls them.
+            exclude_folders: Literal folder names to skip, ON TOP OF the role
+                exclusion rather than instead of it. The escape hatch for
+                folders no role describes.
             source_name: Source name from config
+            exclude_roles: Canonical roles this source keeps out of the
+                archive, or None for the default. Trash and spam are added
+                whatever this says.
         """
         self._account = account
         self._keychain = keychain
         self._host = host
         self._port = port
         self._exclude_folders = exclude_folders or []
+        self._exclude_roles = roles.resolve_exclude_roles(exclude_roles)
         self._source_name = source_name
         self._conn: imaplib.IMAP4_SSL | None = None
         self._folder_roles: dict[str, str] = {}
         self._label_folders: list[str] = []
         self._scan_used_all_mail = False
+        self._excluded_ids: frozenset[str] = frozenset()
 
     @property
     def name(self) -> str:
@@ -189,7 +211,7 @@ class ImapProvider(EmailProvider):
             if role:
                 self._folder_roles[folder_name] = role
 
-            if self._is_label_source(folder_name, role):
+            if self._is_label_source(role):
                 self._label_folders.append(folder_name)
 
             if self._is_excluded(folder_name, role):
@@ -199,20 +221,27 @@ class ImapProvider(EmailProvider):
 
         return folders
 
+    def _excluded_roles(self) -> frozenset[str]:
+        """Roles this source excludes from download.
+
+        The single place the filter is read on this provider, matching
+        ``GmailProvider._excluded_roles``.
+        """
+        return self._exclude_roles
+
     def _is_excluded(self, folder_name: str, role: str | None) -> bool:
         """Whether a folder should be skipped as a DOWNLOAD source.
 
-        An explicit ``exclude_folders`` list replaces the role-based default
-        wholesale, so a source can opt into syncing its trash by listing
-        something else. Unset — the case for every config that never set the
-        option — excludes by role, which is what makes exclusion work on
-        servers that don't spell their folders the Gmail way.
+        The two halves are ADDITIVE. Role exclusion is what makes the filter
+        work on servers that don't spell their folders the Gmail way;
+        ``exclude_folders`` names the folders no role describes. Naming a
+        folder used to replace role exclusion wholesale, which was the only
+        way to opt into archiving trash — a configuration that no longer
+        exists, because purge cannot converge against it.
         """
-        if self._exclude_folders:
-            return folder_name in self._exclude_folders
-        return role in roles.DEFAULT_EXCLUDE_ROLES
+        return folder_name in self._exclude_folders or role in self._excluded_roles()
 
-    def _is_label_source(self, folder_name: str, role: str | None) -> bool:
+    def _is_label_source(self, role: str | None) -> bool:
         """Whether a folder may contribute its name as a label.
 
         Not downloading from a folder is not the same as disowning what it
@@ -225,10 +254,10 @@ class ImapProvider(EmailProvider):
         folder, so a copy in trash sharing a Message-ID with the filed copy is
         a separate message — adopting the folder would relabel real mail as
         trash, which is exactly the archive damage TASK-25 exists to clean up.
+        The same holds for the roles the filter is about: a healthy archive
+        carries no INBOX label, and it gets there by never reading one.
         """
-        if not self._is_excluded(folder_name, role):
-            return True
-        return bool(self._exclude_folders)
+        return role not in self._excluded_roles()
 
     def _get_folder_uids(self, folder: str) -> list[int]:
         """Get all UIDs in a folder.
@@ -248,6 +277,44 @@ class ImapProvider(EmailProvider):
             return []
 
         return [int(uid) for uid in data[0].split()]
+
+    def _enumerate_excluded(self, all_mail: str) -> frozenset[str]:
+        """Composite ids in All Mail that a transient excluded role holds now.
+
+        Gmail-over-IMAP downloads everything from All Mail, so a message
+        leaving the inbox does not move: it keeps its All Mail UID and merely
+        loses a label. No watermark can see that, and the folder scan cannot
+        either — INBOX is excluded, and its UIDs are in a different UID space
+        anyway. So membership is asked for in All-Mail UID space and diffed
+        across runs, the same shape the Gmail API path uses.
+
+        A failed SEARCH raises rather than answering "nothing is excluded".
+        The graceful degradation here would be capturing the entire inbox.
+
+        Args:
+            all_mail: The All Mail folder's name on this server
+
+        Returns:
+            "folder:uid" ids currently in a transient excluded role
+        """
+        wanted = self._excluded_roles() & roles.TRANSIENT_EXCLUDE_ROLES & _ALL_MAIL_ROLE_SEARCH.keys()
+        if not wanted:
+            return frozenset()
+
+        status, _ = self._conn.select(f'"{all_mail}"', readonly=True)
+        if status != "OK":
+            raise RuntimeError(f"Cannot select folder: {all_mail}")
+
+        ids: set[str] = set()
+        for role in sorted(wanted):
+            criterion = _ALL_MAIL_ROLE_SEARCH[role]
+            status, data = self._conn.uid("search", None, criterion)
+            if status != "OK":
+                raise RuntimeError(f"Cannot determine which messages are in {role}: SEARCH {criterion} failed")
+            if data and data[0]:
+                ids.update(f"{all_mail}:{int(uid)}" for uid in data[0].split())
+
+        return frozenset(ids)
 
     def _get_message_ids_for_uids(self, folder: str, uids: list[int]) -> dict[int, str]:
         """Fetch Message-ID headers for a batch of UIDs.
@@ -364,6 +431,13 @@ class ImapProvider(EmailProvider):
         Other folders are scanned for label mapping only (Message-ID headers
         fetched from smaller folders, not from All Mail).
         """
+        # Phase 0: which of All Mail's messages are excluded right now. Read
+        # before the listing, and kept for get_current_sync_state to store —
+        # re-reading it afterwards would drop a message that left the inbox
+        # mid-scan from both the listing and the stored membership, so the
+        # next run's diff would never see it.
+        self._excluded_ids = self._enumerate_excluded(all_mail)
+
         # Phase 1: Get all UIDs from All Mail (just SEARCH, no header fetch)
         print(f"  Scanning: {all_mail}...\033[K", end="\r", flush=True)
         all_mail_uids = self._get_folder_uids(all_mail)
@@ -371,7 +445,7 @@ class ImapProvider(EmailProvider):
         if since or until:
             all_mail_uids = self._filter_uids_by_date(all_mail, all_mail_uids, since, until)
 
-        all_ids = [f"{all_mail}:{uid}" for uid in all_mail_uids]
+        all_ids = [f"{all_mail}:{uid}" for uid in all_mail_uids if f"{all_mail}:{uid}" not in self._excluded_ids]
 
         # Phase 2: Scan other folders for label mapping
         # Build message_id -> [folders] from smaller folders. Drawn from the
@@ -401,6 +475,8 @@ class ImapProvider(EmailProvider):
         self._message_id_to_folders = message_id_to_folders
         self._folder_lookup = {}
 
+        if self._excluded_ids:
+            print(f"  {len(self._excluded_ids)} message(s) not yet eligible (inbox/drafts)")
         print(f"  Found {len(all_ids)} messages ({total_label_msgs} label entries from {len(other_folders)} folders)")
         return all_ids
 
@@ -421,6 +497,10 @@ class ImapProvider(EmailProvider):
         seen: dict[str, dict] = {}
         all_ids = []
         downloadable = set(folders)
+        # Nothing to diff on this path: a message leaving an excluded folder
+        # is delivered to its destination, which allocates a UID above that
+        # folder's watermark, so the departure arrives as an arrival.
+        self._excluded_ids = frozenset()
 
         for folder in self._label_folders:
             print(f"  Scanning: {folder}...\033[K", end="\r", flush=True)
@@ -539,15 +619,18 @@ class ImapProvider(EmailProvider):
         Uses UID-based incremental sync: the cursor is a JSON dict mapping
         folder names to {"max_uid": N, "uidvalidity": V}.
 
-        IMAP needs no membership diff to be eligibility-driven, unlike the
-        Gmail API. A message that leaves an excluded folder is *delivered* to
-        its destination, which allocates a UID above that folder's watermark,
-        so the transition arrives as an arrival. Restoring from trash on
-        Gmail-over-IMAP works out the same way: All Mail holds neither trash
-        nor spam, so the message reappears there with a fresh UID. What that
-        argument does not cover is a message that stays put and merely loses
-        a label — which needs INBOX to be excluded before it can happen, so
-        it belongs to TASK-14.1 rather than here.
+        Plain IMAP needs no membership diff to be eligibility-driven, unlike
+        the Gmail API. A message that leaves an excluded folder is *delivered*
+        to its destination, which allocates a UID above that folder's
+        watermark, so the transition arrives as an arrival. Restoring from
+        trash on Gmail-over-IMAP works out the same way: All Mail holds
+        neither trash nor spam, so the message reappears there with a fresh
+        UID.
+
+        What that argument does not cover is a message that stays put and
+        merely loses a label — which is exactly what filing an inbox message
+        does on Gmail-over-IMAP, where All Mail is the sole download source.
+        That path alone carries a membership diff; see ``_enumerate_excluded``.
 
         Args:
             since_state: Capture state from the previous sync
@@ -590,6 +673,16 @@ class ImapProvider(EmailProvider):
         # Gmail optimization: only check [Gmail]/All Mail for new messages
         all_mail = self._get_all_mail_folder(folders) if self._is_gmail() else None
 
+        # Read membership before listing arrivals, and store this same
+        # snapshot: a message filed mid-run is then seen as departed on the
+        # next run rather than falling through both. Empty on every path but
+        # Gmail-over-IMAP, which is the only one where filing a message does
+        # not move it.
+        self._excluded_ids = self._enumerate_excluded(all_mail) if all_mail else frozenset()
+        # A rebuilt All Mail throws away the UID space the stored membership
+        # is written in, leaving nothing to diff against.
+        all_mail_rebuilt = False
+
         # For dedup across folders (standard path only)
         seen: dict[str, dict] = {}
         # For Gmail label mapping
@@ -612,6 +705,7 @@ class ImapProvider(EmailProvider):
                 # UIDVALIDITY changed — folder was rebuilt, full rescan needed
                 print(f"  UIDVALIDITY changed for {folder}, rescanning...")
                 old_max_uid = 0
+                all_mail_rebuilt = all_mail_rebuilt or folder == all_mail
 
             # Search for UIDs > old_max_uid
             if old_max_uid > 0:
@@ -630,7 +724,9 @@ class ImapProvider(EmailProvider):
                 if all_mail and folder == all_mail:
                     # Gmail: All Mail UIDs are download candidates, no header fetch needed
                     for uid in all_uids:
-                        new_ids.append(f"{all_mail}:{uid}")
+                        composite_id = f"{all_mail}:{uid}"
+                        if composite_id not in self._excluded_ids:
+                            new_ids.append(composite_id)
                 elif all_mail:
                     # Gmail: other folders just contribute labels
                     msg_id_map = self._get_message_ids_for_uids(folder, all_uids)
@@ -672,6 +768,15 @@ class ImapProvider(EmailProvider):
 
         # Store dedup/label info
         if all_mail:
+            # Messages that merely lost their INBOX label since the last run.
+            # They never moved, so no watermark saw them — the set difference
+            # is the only evidence there is.
+            if not all_mail_rebuilt:
+                recovered = sorted(prior.departed(self._excluded_ids) - set(new_ids))
+                if recovered:
+                    print(f"  {len(recovered)} message(s) became eligible since last sync")
+                    new_ids.extend(recovered)
+
             self._message_id_to_folders = message_id_to_folders
             self._folder_lookup = {}
         else:
@@ -689,20 +794,27 @@ class ImapProvider(EmailProvider):
     def _filter_fingerprint(self) -> str:
         """A digest of what this source excludes from download.
 
-        Both halves matter: the role defaults, and the ``exclude_folders``
-        override that replaces them. Editing either is a filter change.
+        Both halves matter, and they are additive, so both go in: editing
+        either the roles or the folder names is a filter change and has to
+        invalidate the cursor.
         """
-        return capture.fingerprint(*self._exclude_folders or roles.DEFAULT_EXCLUDE_ROLES)
+        return capture.fingerprint(*self._excluded_roles(), *self._exclude_folders)
 
-    @staticmethod
-    def _dump_state(cursor: dict, fingerprint: str) -> str:
+    def _dump_state(self, cursor: dict, fingerprint: str) -> str:
         """Wrap a per-folder watermark map in the capture envelope.
 
-        No excluded membership is carried: IMAP detects departures through
-        UID allocation, so there is nothing to diff. See
-        ``get_new_message_ids``.
+        The excluded membership is empty except on Gmail-over-IMAP, where it
+        is the only record of which All Mail messages the inbox still holds.
+        Everywhere else IMAP detects departures through UID allocation, so
+        there is nothing to diff. See ``get_new_message_ids``.
         """
-        return capture.dump(capture.CaptureState(cursor=json.dumps(cursor), fingerprint=fingerprint))
+        return capture.dump(
+            capture.CaptureState(
+                cursor=json.dumps(cursor),
+                excluded=self._excluded_ids,
+                fingerprint=fingerprint,
+            )
+        )
 
     def _get_uidvalidity(self, select_data) -> str | None:
         """Extract UIDVALIDITY from SELECT response."""
@@ -866,6 +978,10 @@ class ImapProvider(EmailProvider):
         to resume from. Watermarks every LABEL source, not just the download
         sources, so a folder that only contributes labels is also scanned
         incrementally rather than in full on every run.
+
+        The excluded membership it stores is the one the scan read, not a
+        fresh one: see ``_scan_gmail`` for why re-reading it here would lose
+        anything filed while the run was downloading.
 
         Returns:
             Capture state as a JSON string

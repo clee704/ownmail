@@ -14,6 +14,31 @@ archive_root: /path/to/emails
 # db_dir: /path/to/fast/local/storage
 
 # ─── Email Sources ────────────────────────────────────────────
+#
+# THE DOWNLOAD FILTER
+#
+# ownmail does not archive everything on the server. It archives mail you
+# have finished with. A message is downloaded once it is no longer in any of
+# these roles, whatever your provider happens to call them:
+#
+#   inbox   — you have not decided about it yet. It is still live in your
+#             mail client, and adverts and one-time codes that you would have
+#             deleted there would otherwise sit in the archive forever.
+#   drafts  — the message is not finished. Capturing one freezes half a
+#             sentence into the archive permanently.
+#   trash   — you decided it was not worth keeping.
+#   spam    — your provider decided for you.
+#
+# Sent mail IS archived. There is no triage step for outgoing mail — nobody
+# files their Sent folder — so waiting for one would mean never archiving
+# your own mail. Sending is the decision.
+#
+# FILTERING IS NOT PERMANENT EXCLUSION. Every run re-checks where a message
+# is now, so mail you rescue from spam, or move out of the inbox, or send
+# from a draft, is picked up on the next run. Nothing is written off.
+#
+# 'exclude_roles' below relaxes the first two. Trash and spam are not
+# configurable and are always excluded — see the note under exclude_roles.
 
 sources:
   # Gmail via API (recommended)
@@ -23,6 +48,30 @@ sources:
     auth:
       secret_ref: keychain:oauth-token/you@gmail.com  # required
     include_labels: true                   # fetch Gmail labels (default: true)
+
+    # Roles to keep out of the archive.
+    # Default: [inbox, drafts]
+    #
+    # The only two values you can set. Trash and spam are ALWAYS excluded and
+    # naming them here is a config error, because a purge run (once you turn
+    # one on) moves mail to trash — a trash-inclusive archive would keep
+    # re-purging everything it ever purged and never settle.
+    #
+    # Set it to [] to archive your inbox as it arrives, and drafts with it.
+    # Set it to [inbox] to archive drafts but not inbox mail, [drafts] for
+    # the reverse.
+    #
+    # WIDENING THIS (removing a role) makes the next run rescan from scratch,
+    # because mail the old setting skipped sits behind ownmail's bookmark and
+    # would otherwise stay skipped forever, silently. The rescan re-reads the
+    # server; it does not re-download anything already archived.
+    #
+    # NARROWING IT (adding a role) does not remove anything already archived
+    # — but if you have purge enabled, the next purge run deletes more from
+    # the server, because purge deletes what the current filter admits.
+    # exclude_roles:
+    #   - inbox
+    #   - drafts
 
   # You can add multiple sources:
   # - name: work
@@ -40,28 +89,23 @@ sources:
   #   auth:
   #     secret_ref: keychain:imap-password/you@company.com
   #
-  #   # Folders to skip during sync.
+  #   # Extra folders to skip, BY NAME. The escape hatch for folders no role
+  #   # describes — a mailing list you don't want kept, a shared folder.
   #   #
-  #   # Leave this out and ownmail skips trash and spam automatically,
-  #   # identifying them by what the server says they are (IMAP SPECIAL-USE)
-  #   # rather than by name — so it works whether your server calls them
-  #   # 'Trash', 'Deleted Items', 'INBOX.Trash' or a localized name.
+  #   # This ADDS to the role exclusion above; it does not replace it. Trash
+  #   # and spam are skipped whether or not you name them, identified by what
+  #   # the server says they are (IMAP SPECIAL-USE) rather than by spelling,
+  #   # so it works whether yours are called 'Trash', 'Deleted Items',
+  #   # 'INBOX.Trash' or a localized name. Names here must match the server
+  #   # exactly.
   #   #
-  #   # Setting it REPLACES that automatic detection rather than adding to
-  #   # it: the list below is then the whole exclusion, and trash/spam are
-  #   # only skipped if you name them. Set it when you want to skip
-  #   # something else, or when you deliberately want your trash archived
-  #   # (to capture mail deleted on a phone before ownmail next syncs).
-  #   #
-  #   # An empty list is not a way to disable exclusion — it falls back to
-  #   # the automatic behavior. Names must match the server exactly.
-  #   #
-  #   # Excluding a folder stops mail being DOWNLOADED from it. It does not
-  #   # stop the folder describing mail archived from elsewhere: a message
-  #   # held in both Newsletters and INBOX is downloaded from INBOX and keeps
-  #   # Newsletters as a label. (Trash and spam are the exception — they are
-  #   # skipped as label sources too, so a deleted copy never relabels the
-  #   # message you actually filed.)
+  #   # Excluding a folder by name stops mail being DOWNLOADED from it. It
+  #   # does not stop the folder describing mail archived from elsewhere: a
+  #   # message held in both Newsletters and Projects is downloaded from
+  #   # Projects and keeps Newsletters as a label. Role-excluded folders are
+  #   # different — they are not label sources either, so a deleted copy
+  #   # never relabels the message you actually filed, and a healthy archive
+  #   # carries no 'INBOX' label.
   #   #
   #   # Editing this list changes what gets captured, so the next sync
   #   # rescans from scratch rather than resuming from where it left off —
@@ -69,11 +113,12 @@ sources:
   #   # silently. The rescan re-reads folders; it does not re-download
   #   # anything already in the archive.
   #   #
-  #   # What a rescan does NOT do is notice mail you MOVED OUT of an excluded
-  #   # folder without changing this list. Such a message is only picked up
-  #   # once it lands somewhere ownmail is watching, which is the normal case
-  #   # — moving it to another folder is enough. It stays invisible only if
-  #   # it moves between two excluded folders.
+  #   # What a rescan does NOT do is notice mail you MOVED OUT of a
+  #   # NAME-excluded folder without changing this list. Such a message is
+  #   # picked up once it lands somewhere ownmail is watching, which is the
+  #   # normal case — moving it to another folder is enough. It stays
+  #   # invisible only if it moves between two name-excluded folders. (The
+  #   # roles are re-read every run, so they do not have this gap.)
   #   exclude_folders:
   #     - Newsletters
   #     - '[Gmail]/Important'

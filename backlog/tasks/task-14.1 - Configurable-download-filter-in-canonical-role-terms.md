@@ -1,10 +1,10 @@
 ---
 id: TASK-14.1
 title: Configurable download filter in canonical role terms
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-25 05:38'
-updated_date: '2026-08-06 19:51'
+updated_date: '2026-08-07 18:05'
 labels: []
 milestone: m-5
 dependencies:
@@ -48,6 +48,18 @@ ACCEPTED COST, and it must be documented rather than discovered: a message delet
 
 WHY EXCLUDING INBOX MATTERS INDEPENDENTLY OF PURGE (user, 2026-07-25): doc-6 justifies the inbox exclusion only via purge safety. A second, independent reason holds with purge off. In the two-path model the mail client owns triage, so inbox means 'not yet decided'. If ownmail archives inbox mail, a message the user later deletes in the client is already captured, and the delete decision has to be made a second time in ownmail. Adverts, one-time codes and similar arrive in the inbox, get deleted in the client, and would otherwise persist in the archive forever.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 A per-source exclude_roles option is read from config and drives download exclusion on both providers; a role outside the configurable set is rejected by validate_config with a message that distinguishes always-excluded (trash, spam) from roles that are not filter terms
+- [ ] #2 With no config, the effective filter on both gmail_api and imap sources excludes inbox, drafts, trash and spam
+- [ ] #3 Trash and spam are excluded whatever exclude_roles and exclude_folders say — no configuration admits them
+- [ ] #4 exclude_folders is additive to role exclusion rather than replacing it; a named exclusion stays a label source, a role exclusion does not
+- [ ] #5 Gmail API: inbox and drafts membership is enumerated live each run, so inbox/draft mail is never captured — including on date-filtered runs — and mail leaving the inbox becomes a candidate
+- [ ] #6 Gmail-over-IMAP: All Mail candidates are filtered by current inbox/draft membership answered in All-Mail UID space, and that membership is diffed across runs so a message that merely loses the inbox label becomes a candidate
+- [ ] #7 Changing exclude_roles changes the filter fingerprint, forcing a rescan on the next run
+- [ ] #8 config.example.yaml documents the filter, the fixed trash/spam exclusion, that widening forces a full resync, and that narrowing makes a future purge delete more
+<!-- AC:END -->
 
 ## Implementation Notes
 

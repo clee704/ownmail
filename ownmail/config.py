@@ -3,6 +3,8 @@
 from pathlib import Path
 from typing import Any
 
+from ownmail import roles
+
 # Optional YAML support
 try:
     from ownmail.yaml_util import load_yaml
@@ -205,9 +207,42 @@ def validate_config(config: dict[str, Any]) -> list[str]:
             except ValueError as e:
                 errors.append(f"Source '{name}': {e}")
 
+        errors.extend(_validate_exclude_roles(name, source))
+
         # IMAP requires host
         if source_type == "imap":
             if "host" not in source:
                 errors.append(f"Source '{name}': IMAP requires 'host' field")
 
+    return errors
+
+
+def _validate_exclude_roles(name: str, source: dict[str, Any]) -> list[str]:
+    """Check a source's ``exclude_roles`` against the roles it may name.
+
+    Every rejection is spelled out rather than reported as "unknown value",
+    because the three ways to get this wrong need three different answers.
+    Listing ``trash`` in particular has to say that it is already excluded —
+    silently accepting it would leave the reader believing that removing it
+    again would let trash into the archive.
+    """
+    configured = source.get("exclude_roles")
+    if configured is None:
+        return []
+
+    if not isinstance(configured, list):
+        return [f"Source '{name}': 'exclude_roles' must be a list of role names"]
+
+    errors = []
+    for role in configured:
+        if role in roles.CONFIGURABLE_EXCLUDE_ROLES:
+            continue
+        if role in roles.FIXED_EXCLUDE_ROLES:
+            errors.append(
+                f"Source '{name}': '{role}' is always excluded and cannot be configured — "
+                f"remove it from 'exclude_roles'"
+            )
+        else:
+            allowed = ", ".join(sorted(roles.CONFIGURABLE_EXCLUDE_ROLES))
+            errors.append(f"Source '{name}': '{role}' is not an excludable role (choose from: {allowed})")
     return errors

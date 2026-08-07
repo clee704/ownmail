@@ -24,8 +24,34 @@ ALL = "all"
 
 ROLES = frozenset({INBOX, SENT, DRAFTS, TRASH, SPAM, ARCHIVE, ALL})
 
-# Roles excluded from download unless the source overrides exclude_folders.
-DEFAULT_EXCLUDE_ROLES = frozenset({TRASH, SPAM})
+# Roles no configuration can admit into the archive.
+#
+# Trash first, because the reason is structural rather than a preference:
+# purge moves a message TO trash, so a trash-inclusive filter would keep
+# passing every message it ever purged and the sweep set would grow without
+# bound. The only alternative fix is a "skip what is already in trash" case
+# inside purge, which is this exclusion again one layer down. Spam does not
+# break convergence — purge's destination is trash, not spam — and is fixed on
+# the weaker grounds that restoring a false positive in the mail client makes
+# it eligible on the next run anyway, so the knob buys nothing.
+#
+# Accepted and documented cost: mail deleted in a client and never restored is
+# never archived. See TASK-14.1 for the full argument.
+FIXED_EXCLUDE_ROLES = frozenset({TRASH, SPAM})
+
+# Roles a source may choose to exclude, on top of the fixed ones.
+#
+# Both mean "its owner has not acted on this yet". Inbox means no decision has
+# been made about a finished message; drafts means the message itself is not
+# finished, so capturing one freezes half a sentence into the archive forever.
+#
+# Sent is deliberately absent and must not be added: outgoing mail has no
+# triage step, so a rule demanding an action before capture would mean never
+# archiving your own mail. Sending is the settling action.
+CONFIGURABLE_EXCLUDE_ROLES = frozenset({INBOX, DRAFTS})
+
+# The filter a source gets when it configures nothing.
+DEFAULT_EXCLUDE_ROLES = FIXED_EXCLUDE_ROLES | CONFIGURABLE_EXCLUDE_ROLES
 
 # Excluded roles whose membership is re-read every run, so that a message
 # leaving one becomes a download candidate.
@@ -164,6 +190,26 @@ _GMAIL_LABEL_IDS = {
 }
 
 _ROLE_TO_GMAIL_LABEL = {role: label_id for label_id, role in _GMAIL_LABEL_IDS.items()}
+
+
+def resolve_exclude_roles(configured: list[str] | None) -> frozenset[str]:
+    """The effective role exclusion for a source's ``exclude_roles`` setting.
+
+    The fixed roles are unioned in unconditionally, so the answer is never
+    narrower than trash and spam however the source is configured. Absent
+    (``None``) takes the default; an explicit empty list is honoured as
+    written, and means "only the fixed roles" — unlike ``exclude_folders``,
+    where an empty list is indistinguishable from a list nobody filled in.
+
+    Args:
+        configured: Role names from config, or None if the key is absent
+
+    Returns:
+        The roles this source excludes from download.
+    """
+    if configured is None:
+        return DEFAULT_EXCLUDE_ROLES
+    return FIXED_EXCLUDE_ROLES | frozenset(configured)
 
 
 def gmail_label_for_role(role: str) -> str | None:
