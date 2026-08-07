@@ -186,18 +186,32 @@ sources:
   #   account: you@company.com
   #   auth:
   #     secret_ref: keychain:imap-password/you@company.com
+  #   exclude_roles: [inbox]    # optional — see below
   #   exclude_folders:          # optional — see below
   #     - Newsletters
 ```
 
-Trash and spam are skipped automatically. ownmail asks the server which
-folders those are (IMAP SPECIAL-USE), so it works whether yours are called
-`Trash`, `Deleted Items`, `INBOX.Trash` or something in your own language.
+### What gets archived
 
-Setting `exclude_folders` **replaces** that rather than adding to it — the
-list becomes the whole exclusion, and trash is only skipped if you name it.
-That's deliberate: it's how you opt into archiving your trash, so mail
-deleted on a phone still reaches the archive.
+ownmail archives mail you have finished with, not everything on the server.
+A message is downloaded once it is out of the **inbox**, **drafts**,
+**trash** and **spam** — whatever your provider calls those folders, since
+ownmail asks the server (IMAP SPECIAL-USE) rather than matching names.
+
+The idea is that your mail client owns triage. Inbox means you haven't
+decided yet; drafts means the message isn't finished; trash and spam mean a
+decision was made that it isn't worth keeping. **Sent mail is archived** —
+there's no triage step for your own outgoing mail, so waiting for one would
+mean never archiving it.
+
+Nothing is written off. Every run re-checks where a message is now, so mail
+you rescue from spam, file out of the inbox, or send from a draft is picked
+up on the next run.
+
+`exclude_roles` relaxes the first two — `[inbox]` archives your drafts,
+`[]` archives both as they arrive. Trash and spam are always excluded and
+naming them is a config error. `exclude_folders` skips extra folders by
+name, on top of the roles rather than instead of them.
 
 ## Search
 
