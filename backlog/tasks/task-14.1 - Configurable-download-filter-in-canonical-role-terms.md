@@ -1,10 +1,10 @@
 ---
 id: TASK-14.1
 title: Configurable download filter in canonical role terms
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-25 05:38'
-updated_date: '2026-08-07 18:05'
+updated_date: '2026-08-07 18:40'
 labels: []
 milestone: m-5
 dependencies:
@@ -51,70 +51,112 @@ WHY EXCLUDING INBOX MATTERS INDEPENDENTLY OF PURGE (user, 2026-07-25): doc-6 jus
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A per-source exclude_roles option is read from config and drives download exclusion on both providers; a role outside the configurable set is rejected by validate_config with a message that distinguishes always-excluded (trash, spam) from roles that are not filter terms
-- [ ] #2 With no config, the effective filter on both gmail_api and imap sources excludes inbox, drafts, trash and spam
-- [ ] #3 Trash and spam are excluded whatever exclude_roles and exclude_folders say — no configuration admits them
-- [ ] #4 exclude_folders is additive to role exclusion rather than replacing it; a named exclusion stays a label source, a role exclusion does not
-- [ ] #5 Gmail API: inbox and drafts membership is enumerated live each run, so inbox/draft mail is never captured — including on date-filtered runs — and mail leaving the inbox becomes a candidate
-- [ ] #6 Gmail-over-IMAP: All Mail candidates are filtered by current inbox/draft membership answered in All-Mail UID space, and that membership is diffed across runs so a message that merely loses the inbox label becomes a candidate
-- [ ] #7 Changing exclude_roles changes the filter fingerprint, forcing a rescan on the next run
-- [ ] #8 config.example.yaml documents the filter, the fixed trash/spam exclusion, that widening forces a full resync, and that narrowing makes a future purge delete more
+- [x] #1 A per-source exclude_roles option is read from config and drives download exclusion on both providers; a role outside the configurable set is rejected by validate_config with a message that distinguishes always-excluded (trash, spam) from roles that are not filter terms
+- [x] #2 With no config, the effective filter on both gmail_api and imap sources excludes inbox, drafts, trash and spam
+- [x] #3 Trash and spam are excluded whatever exclude_roles and exclude_folders say — no configuration admits them
+- [x] #4 exclude_folders is additive to role exclusion rather than replacing it; a named exclusion stays a label source, a role exclusion does not
+- [x] #5 Gmail API: inbox and drafts membership is enumerated live each run, so inbox/draft mail is never captured — including on date-filtered runs — and mail leaving the inbox becomes a candidate
+- [x] #6 Gmail-over-IMAP: All Mail candidates are filtered by current inbox/draft membership answered in All-Mail UID space, and that membership is diffed across runs so a message that merely loses the inbox label becomes a candidate
+- [x] #7 Changing exclude_roles changes the filter fingerprint, forcing a rescan on the next run
+- [x] #8 config.example.yaml documents the filter, the fixed trash/spam exclusion, that widening forces a full resync, and that narrowing makes a future purge delete more
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-## Hole audit, 2026-07-25
+## Landed 2026-08-07
 
-Verified against code, not inferred from doc-6. Two were found by the user (inbox capture, and trash→restore); the rest came from auditing the paths the filter would run through.
+Three commits: the mechanism, the tests, the README. Every AC verified by a
+test checked against deliberately broken code (eleven breaks, each caught by
+exactly the tests meant to catch it).
 
-### Capture-losing
+### The config surface as built
 
-1. **Widening the filter silently captures nothing.** doc-6 records that *narrowing* the filter is destructive under purge sweep. The mirror is unrecorded and worse for being silent: under watermark-based incremental sync everything previously skipped sits *below* the watermark, so removing `inbox` from the exclusions later captures nothing retroactively — no error, just an archive permanently missing that mail. A filter change must force a full resync (detect the change, reset the watermark) or the option is a trap.
+`exclude_roles`, per source, on both provider types. Values: `inbox`,
+`drafts`. Naming `trash` or `spam` is a CONFIG ERROR rather than a silent
+no-op — accepting it would leave the reader believing that removing it again
+re-admits trash, which is the exact false belief the fixed exclusion exists
+to prevent. `[]` is honoured as written (fixed roles only); absent takes the
+default. That distinction matters and is why `resolve_exclude_roles` checks
+`is None` rather than truthiness.
 
-2. **Gmail history watermark race** (gmail.py:191-192). `_get_messages_since_history()` lists history, then a *separate* `get_current_sync_state()` getProfile call supplies the new watermark. A message arriving between the two calls has a historyId below the new watermark but was never listed → missed permanently. The `history.list` response carries its own `historyId`, which is the correct watermark; it is discarded. Pre-existing, but currently masked by eager inbox capture. Under a filter, incremental sync becomes the only capture path, so this goes from rare to load-bearing. Fix: take the watermark from the history response.
+Drafts is excluded, per the 2026-08-06 amendment.
 
-3. **`includeSpamTrash` is a request parameter, not a query term** (gmail.py:142-147). `users.messages.list` defaults it to False and the request never sets it, so the `-in:trash -in:spam` in `q` is redundant today. Consequence: removing `trash` from the filter would silently do nothing, which is precisely the config the option exists for (capturing client-side deletions, the old TASK-15). The filter must drive the API parameter as well as the query.
+### exclude_folders: composition settled as ADDITIVE
 
-### Design-level
+The description left "retire it or define how the two compose" open. It
+stays, as the by-name escape hatch for folders no role describes, and it now
+ADDS to the role exclusion instead of replacing it wholesale. The old
+replace semantics had exactly one purpose — opting into archiving your own
+trash — and that configuration is gone by decision, so the semantics had no
+remaining consumer. Removing it also collapsed `_is_label_source` to
+`role not in excluded_roles`: a NAMED exclusion is still a label source, a
+ROLE exclusion never is. Two test expectations were deliberately reversed
+here, and one setup test: setup now REPORTS the server's excluded folder
+names instead of writing them into the config as a commented block.
 
-4. **Role vocabulary is asymmetric — the filter must be exclusion-only.** Gmail has no ARCHIVE label; archived means the *absence* of INBOX, which is why roles.py's Gmail map has no archive entry. A filter phrased as an inclusion ("download only archive") is well-defined for IMAP `\Archive` and unresolvable on Gmail. State exclusion-only in the config contract.
+### The Gmail-over-IMAP hole, which was the real work
 
-5. **Gmail-over-IMAP cannot answer "is it still in INBOX?" incrementally** (imap.py:546-551). Non-All-Mail folders contribute membership only for UIDs above their watermark. Arrival works (new in All Mail implies new in INBOX); departure does not, because a message leaving INBOX merely makes its UID vanish and nothing detects removal. Filtering on inbox requires *current* membership, so INBOX must be fully rescanned each run — cheap, since the inbox is bounded, but not what the code does.
+All Mail is that path's sole download source, so filing an inbox message
+does not move it — it keeps its UID and loses a label. Neither a watermark
+nor the folder scan can see that (INBOX is excluded, and its UIDs are a
+different UID space anyway). Membership is now read in All-Mail UID space
+and diffed across runs, the same shape TASK-14.3 built for the Gmail API.
 
-6. **Exclusion is folder-scoped; the filter must be message-scoped.** `_list_folders` drops excluded folders entirely, which also removes them as *label sources* — `_scan_gmail` uses non-All-Mail folders purely for label mapping. Excluding INBOX on Gmail-over-IMAP would silently stop INBOX ever being recorded as a label. The unified mechanism must keep "don't download from here" separate from "don't read labels from here".
+`X-GM-RAW "in:inbox"` for inbox, as TASK-14.3 predicted. **Drafts uses the
+RFC 3501 `DRAFT` flag search, not a Gmail term** — that closes TASK-18's
+open `is:draft` vs `in:draft` question a second way, by not asking Gmail at
+all. Standard IMAP, exact, and it cannot fail silently the way an
+unrecognized X-GM-RAW term would.
 
-### Lesser
+A failed SEARCH RAISES. The graceful answer — an empty excluded set — would
+capture the entire inbox, so this is a correctness failure for the run, not
+a skippable message.
 
-7. Sync state advances only when `error_count == 0` (archive.py:468). Correct today, but one reliably-failing message freezes the watermark indefinitely, and under candidate re-evaluation the frozen window is what gets re-checked every run.
+Plain IMAP needed nothing: a folder move is a delivery, so the destination
+allocates a UID above its watermark and the departure arrives as an arrival.
 
-8. Per-source vs global filter is unspecified in doc-6. `exclude_folders` is already per-source, so per-source is the consistent answer — decide it rather than defaulting into it.
+### Ordering, absorbed from a near-miss
 
-### The pattern, and what it means for scope
+Both providers now read excluded membership BEFORE listing arrivals and
+persist that same snapshot. Enumerating afterwards lets a message filed
+mid-run fall out of both the listing and the stored membership, so the next
+run's diff never sees it — the same shape as the watermark bug TASK-14.3
+fixed in its full-sync path. The accepted cost is the mirror: a message that
+ENTERS an excluded role mid-listing is captured one run early. Eager beats
+lossy.
 
-Holes 1, 2, 3, 5 and both user-found ones are one shape: **the filter is a statement about current server state, while every mechanism underneath it is a statement about arrival.** Watermarks, `messageAdded`, folder-membership snapshots — all arrival-shaped.
+Consequence worth knowing: on the Gmail API path the enumeration now runs
+before `history.list`, so it happens even on runs that then fail.
 
-doc-6 already named the right principle for purge ("the filter is evaluated live against server state at purge time"). The finding is that this is not a purge property; it is what a filter *is*. Applying it at download time is the actual work.
+### Date-filtered runs are filtered too
 
-**This makes 14.1 materially bigger than "expose a config option" as doc-6 implies.** Re-estimate before starting, and consider whether the eligibility-driven capture rework wants to be its own task with the config surface layered on top.
+`--since` used to be filtered only incidentally, by `includeSpamTrash=False`.
+Left alone it would have become a way to pull in the inbox mail every other
+path defers. `get_all_message_ids` now means "everything currently
+ELIGIBLE" on both providers rather than "everything on the server", which
+also fixes `sync-check`: it would otherwise have reported the whole inbox as
+missing and told the user to run `download`.
 
-## Amended 2026-08-06 (user): two settled points.
+### First run after upgrade
 
-### Sent is still admitted, but no longer unconditionally
+The default filter changed, so the stored fingerprint is stale on every
+existing archive and the first run rescans. Correct but strictly
+unnecessary: this is a NARROWING, and only widening can capture anything
+retroactively. `stale()` does not track direction and should not learn to —
+a one-off full scan re-reads folders without re-downloading, and the
+conservative answer is the right default. Nothing already archived is
+removed; that is TASK-25's job.
 
-The description says SENT IS DELIBERATELY ADMITTED and 'must not be fixed into the default exclusions later'. That stands as written — sent never becomes a ROLE EXCLUSION, and the reasoning (outgoing mail has no triage step, so a rule demanding an action before capture would mean never archiving your own mail) is untouched.
+### Not done, deliberately
 
-What changes is that a second, orthogonal condition is coming: thread-level deferral, settled in TASK-33 on 2026-08-06. Capture defers while any member of the message's thread is still in a transient excluded role (inbox or drafts). Sent gets no special handling under it — the rule is general, which is precisely why it is allowed to exist where a sent carve-out was rejected. The effect on sent is nonetheless the visible one, because sent mail is what most often becomes eligible mid-conversation.
-
-Note this does NOT reintroduce 'sending is not the settling action'. Sending is still settling; the thread is simply the unit that settles.
-
-### Drafts: excluded (user, 2026-08-06)
-
-The description left this open — doc-6 had drafts in the default, the user's 2026-07-26 list did not. Decided: **drafts are excluded by default**, restoring doc-6's position.
-
-Same rationale as inbox, one step stronger. A draft is live working state and its CONTENT is not final, so capturing one freezes a half-written message into the archive permanently — and under TASK-14.2 it would be yanked out from under a mail client mid-compose. Inbox means no decision has been made about a finished message; drafts means the message itself is not finished.
-
-Consequence: drafts joins inbox in the TRANSIENT half of TASK-14.3's transient/standing split, so its membership is enumerated live each run and departures from it are detected. Bounded like the others — a drafts folder is small by nature. A draft that gets sent leaves the role and becomes eligible as sent mail, which is the correct and only transition that matters.
+`X-GM-RAW "in:inbox"` has not been confirmed against a real Gmail account —
+only against mocks. The operator itself is documented and stable (unlike
+`is:draft`, which is why drafts avoids the question entirely), but the
+failure mode if it is wrong is the loud one, not the silent one: Gmail would
+read it as a user label, the search would return nothing, and the whole
+inbox would be captured on the next run. Worth one look at a real archive
+before purge is enabled.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
