@@ -1527,3 +1527,83 @@ class TestGmailExcludedEnumeration(_GmailFixture):
 
             assert list_call.call_args_list, "expected the excluded roles to be enumerated"
             assert all(call.kwargs["labelIds"] for call in list_call.call_args_list)
+
+
+class TestGmailConfiguredFilter(_GmailFixture):
+    """The filter is per-source config, read from one place."""
+
+    def test_configured_roles_drive_the_enumeration(self):
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build, exclude_roles=["inbox"])
+            list_call = service.users.return_value.messages.return_value.list
+            list_call.return_value.execute.return_value = {}
+
+            provider._enumerate_excluded()
+
+            asked = sorted(call.kwargs["labelIds"] for call in list_call.call_args_list)
+            assert asked == [["INBOX"], ["SPAM"], ["TRASH"]]
+
+    def test_trash_and_spam_survive_an_empty_choice(self):
+        """No configuration admits them — purge could not converge."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, _, _ = self._provider(mock_build, exclude_roles=[])
+
+            assert provider._excluded_roles() == frozenset({"trash", "spam"})
+
+    def test_the_default_defers_inbox_and_drafts(self):
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, _, _ = self._provider(mock_build)
+
+            assert provider._excluded_roles() == frozenset({"inbox", "drafts", "trash", "spam"})
+
+    def test_changing_the_roles_changes_the_fingerprint(self):
+        """Mail the old filter skipped sits below the watermark."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build, exclude_roles=[])
+            self._excluded(provider)
+            service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+                "messages": [{"id": "was-in-the-inbox"}]
+            }
+            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "900"}
+            written_under_the_old_filter = capture.dump(
+                capture.CaptureState(
+                    cursor="100",
+                    fingerprint=capture.fingerprint("inbox", "drafts", "trash", "spam"),
+                )
+            )
+
+            ids, _ = provider.get_new_message_ids(written_under_the_old_filter)
+
+            assert ids == ["was-in-the-inbox"]
+            service.users.return_value.history.assert_not_called()
+
+    def test_a_dated_run_is_still_eligibility_filtered(self):
+        """--since must capture less than a normal run, never more."""
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            self._excluded(provider, "still-in-the-inbox")
+            service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+                "messages": [{"id": "filed"}, {"id": "still-in-the-inbox"}]
+            }
+
+            ids, _ = provider.get_new_message_ids(None, since="2024-01-15")
+
+            assert ids == ["filed"]
+
+    def test_membership_is_read_before_the_listing(self):
+        """A message filed mid-listing must survive into the stored set.
+
+        Enumerating afterwards would drop it from both the listing and the
+        membership, so the next run's diff would never see it.
+        """
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            seen = []
+            provider._enumerate_excluded = lambda: seen.append("enumerate") or frozenset()
+            service.users.return_value.getProfile.return_value.execute.return_value = {"historyId": "1"}
+            list_call = service.users.return_value.messages.return_value.list
+            list_call.return_value.execute.side_effect = lambda: seen.append("list") or {}
+
+            provider.get_new_message_ids(None)
+
+            assert seen[0] == "enumerate"

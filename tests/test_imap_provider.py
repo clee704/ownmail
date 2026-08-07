@@ -2148,3 +2148,176 @@ class TestImapFilterChange:
             ids, _ = provider.get_new_message_ids(before)
 
         assert ids == ["Work:2"]
+
+
+class TestImapAllMailMembership:
+    """Gmail-over-IMAP: filing a message does not move it.
+
+    All Mail is the sole download source, so a filed message keeps its UID
+    and merely loses a label. No watermark can express that, so membership
+    is asked for in All-Mail UID space and diffed across runs.
+    """
+
+    def _conn(self, all_mail_uids, in_role):
+        """A Gmail connection where ``in_role`` maps a SEARCH term to UIDs."""
+        conn = MagicMock()
+        conn.list.return_value = (
+            "OK",
+            [
+                b'(\\HasNoChildren \\All) "/" "[Gmail]/All Mail"',
+                b'(\\HasNoChildren) "/" "INBOX"',
+            ],
+        )
+        conn.response.return_value = ("OK", [b"100"])
+        conn.select.return_value = ("OK", [b"1"])
+        searched = []
+
+        def uid(command, *args):
+            if command != "search":
+                return ("OK", [])
+            criterion = args[1]
+            searched.append(criterion)
+            if criterion in ("ALL", "UID 1:*"):
+                uids = all_mail_uids
+            else:
+                uids = in_role.get(criterion, [])
+            return ("OK", [b" ".join(str(u).encode() for u in uids)])
+
+        conn.uid.side_effect = uid
+        conn.searched = searched
+        return conn
+
+    def test_asks_all_mail_which_of_its_messages_the_inbox_holds(self):
+        """Answered in All-Mail UID space, so no headers are fetched."""
+        conn = self._conn([1, 2, 3], {'X-GM-RAW "in:inbox"': [2], "DRAFT": [3]})
+        provider = _imap_provider(conn)
+
+        excluded = provider._enumerate_excluded("[Gmail]/All Mail")
+
+        assert excluded == frozenset({"[Gmail]/All Mail:2", "[Gmail]/All Mail:3"})
+        assert 'X-GM-RAW "in:inbox"' in conn.searched
+        # The RFC 3501 \Draft flag, not a guessed `is:draft` — Gmail reads an
+        # unrecognized search term as a user label name and filters nothing.
+        assert "DRAFT" in conn.searched
+        conn.uid.assert_any_call("search", None, 'X-GM-RAW "in:inbox"')
+
+    def test_only_the_configured_roles_are_asked_for(self):
+        conn = self._conn([1, 2], {'X-GM-RAW "in:inbox"': [2]})
+        provider = _imap_provider(conn, exclude_roles=[])
+
+        assert provider._enumerate_excluded("[Gmail]/All Mail") == frozenset()
+        assert conn.searched == []
+
+    def test_a_failed_search_raises_rather_than_admitting_everything(self):
+        """Degrading gracefully here would capture the entire inbox."""
+        conn = self._conn([1, 2], {})
+        conn.uid.side_effect = lambda *a: ("NO", [b""])
+        provider = _imap_provider(conn)
+
+        with pytest.raises(RuntimeError, match="in the inbox|which messages"):
+            provider._enumerate_excluded("[Gmail]/All Mail")
+
+    def test_inbox_mail_is_not_a_download_candidate(self):
+        conn = self._conn([1, 2, 3], {'X-GM-RAW "in:inbox"': [2]})
+        provider = _imap_provider(conn)
+
+        with patch("time.sleep"):
+            ids = provider.get_all_message_ids()
+
+        assert ids == ["[Gmail]/All Mail:1", "[Gmail]/All Mail:3"]
+
+    def test_a_full_scan_stores_the_membership_it_read(self):
+        conn = self._conn([1, 2], {'X-GM-RAW "in:inbox"': [2]})
+        provider = _imap_provider(conn)
+
+        with patch("time.sleep"):
+            provider.get_all_message_ids()
+            state = capture.load(provider.get_current_sync_state())
+
+        assert state.excluded == frozenset({"[Gmail]/All Mail:2"})
+
+    def test_a_message_that_merely_lost_its_inbox_label_becomes_a_candidate(self):
+        """The set difference is the only evidence the transition happened."""
+        conn = self._conn([1, 2], {'X-GM-RAW "in:inbox"': []})
+        provider = _imap_provider(conn)
+        before = capture.dump(
+            capture.CaptureState(
+                cursor=json.dumps(
+                    {
+                        "[Gmail]/All Mail": {"max_uid": 2, "uidvalidity": "100"},
+                        "INBOX": {"max_uid": 9, "uidvalidity": "100"},
+                    }
+                ),
+                excluded=frozenset({"[Gmail]/All Mail:2"}),
+                fingerprint=provider._filter_fingerprint(),
+            )
+        )
+
+        with patch("time.sleep"):
+            ids, state = provider.get_new_message_ids(before)
+
+        assert ids == ["[Gmail]/All Mail:2"]
+        assert capture.load(state).excluded == frozenset()
+
+    def test_a_message_still_in_the_inbox_is_not_a_candidate(self):
+        conn = self._conn([1, 2], {'X-GM-RAW "in:inbox"': [2]})
+        provider = _imap_provider(conn)
+        before = capture.dump(
+            capture.CaptureState(
+                cursor=json.dumps(
+                    {
+                        "[Gmail]/All Mail": {"max_uid": 1, "uidvalidity": "100"},
+                        "INBOX": {"max_uid": 9, "uidvalidity": "100"},
+                    }
+                ),
+                excluded=frozenset({"[Gmail]/All Mail:2"}),
+                fingerprint=provider._filter_fingerprint(),
+            )
+        )
+
+        with patch("time.sleep"):
+            ids, _ = provider.get_new_message_ids(before)
+
+        assert ids == []
+
+    def test_a_rebuilt_all_mail_drops_the_stored_membership(self, capsys):
+        """The stored ids are UIDs in a space the server has thrown away."""
+        conn = self._conn([1], {'X-GM-RAW "in:inbox"': []})
+        conn.response.return_value = ("OK", [b"999"])
+        provider = _imap_provider(conn)
+        before = capture.dump(
+            capture.CaptureState(
+                cursor=json.dumps(
+                    {
+                        "[Gmail]/All Mail": {"max_uid": 2, "uidvalidity": "100"},
+                        "INBOX": {"max_uid": 9, "uidvalidity": "100"},
+                    }
+                ),
+                excluded=frozenset({"[Gmail]/All Mail:2"}),
+                fingerprint=provider._filter_fingerprint(),
+            )
+        )
+
+        with patch("time.sleep"):
+            ids, _ = provider.get_new_message_ids(before)
+
+        # UID 1 arrives from the rescan; the stale UID 2 does not come back.
+        assert ids == ["[Gmail]/All Mail:1"]
+
+
+class TestImapFilterFingerprint:
+    """Both halves of the filter are additive, so both are fingerprinted."""
+
+    def test_changing_the_roles_changes_it(self):
+        conn = MagicMock()
+        default = _imap_provider(conn, host="imap.fastmail.com")
+        relaxed = _imap_provider(conn, host="imap.fastmail.com", exclude_roles=["drafts"])
+
+        assert default._filter_fingerprint() != relaxed._filter_fingerprint()
+
+    def test_naming_a_folder_changes_it_too(self):
+        conn = MagicMock()
+        plain = _imap_provider(conn, host="imap.fastmail.com")
+        named = _imap_provider(conn, host="imap.fastmail.com", exclude_folders=["Newsletters"])
+
+        assert plain._filter_fingerprint() != named._filter_fingerprint()

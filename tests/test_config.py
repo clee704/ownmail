@@ -324,3 +324,58 @@ class TestGetDbDir:
         from ownmail.config import get_db_dir
 
         assert get_db_dir({"db_dir": ""}) is None
+
+
+class TestExcludeRolesValidation:
+    """The download filter's config surface rejects what it cannot honour."""
+
+    def _config(self, exclude_roles):
+        source = {
+            "name": "personal",
+            "type": "gmail_api",
+            "account": "alice@gmail.com",
+            "auth": {"secret_ref": "keychain:oauth-token/alice@gmail.com"},
+        }
+        if exclude_roles is not None:
+            source["exclude_roles"] = exclude_roles
+        return {"sources": [source]}
+
+    def test_the_configurable_roles_are_accepted(self):
+        from ownmail.config import validate_config
+
+        assert validate_config(self._config(["inbox", "drafts"])) == []
+
+    def test_an_absent_key_is_fine(self):
+        from ownmail.config import validate_config
+
+        assert validate_config(self._config(None)) == []
+
+    def test_an_empty_list_is_a_valid_choice(self):
+        from ownmail.config import validate_config
+
+        assert validate_config(self._config([])) == []
+
+    @pytest.mark.parametrize("role", ["trash", "spam"])
+    def test_a_fixed_role_is_rejected_as_already_excluded(self, role):
+        """Accepting it silently would teach that removing it re-admits trash."""
+        from ownmail.config import validate_config
+
+        errors = validate_config(self._config([role]))
+        assert len(errors) == 1
+        assert "always excluded" in errors[0]
+        assert role in errors[0]
+
+    @pytest.mark.parametrize("role", ["sent", "archive", "all", "Inbox", "newsletters"])
+    def test_anything_else_is_rejected_as_not_a_filter_term(self, role):
+        from ownmail.config import validate_config
+
+        errors = validate_config(self._config([role]))
+        assert len(errors) == 1
+        assert "not an excludable role" in errors[0]
+
+    def test_a_bare_string_is_rejected_rather_than_iterated(self):
+        """'inbox' would otherwise validate as the characters i, n, b, o, x."""
+        from ownmail.config import validate_config
+
+        errors = validate_config(self._config("inbox"))
+        assert errors == ["Source 'personal': 'exclude_roles' must be a list of role names"]
