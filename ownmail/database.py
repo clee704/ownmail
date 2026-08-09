@@ -584,11 +584,21 @@ class ArchiveDatabase:
         Python and joined back in as an inline VALUES table. That keeps it to
         one query — about 10ms on a 100k-email archive.
 
+        Stale state labels are left out, because a count is a claim about the
+        archive as it is now and theirs would answer "was in the inbox when
+        downloaded" — see roles.STALE_STATE_LABELS. Only the count is dropped:
+        the label is still stored, still searchable as ``label:INBOX``, and
+        ``role:inbox`` still finds it for anyone who asks on purpose.
+
         Returns:
             Mapping of role slug to count, omitting roles with no searchable email
         """
         with sqlite3.connect(self.db_path) as conn:
-            role_map = self._label_role_map(conn)
+            role_map = {
+                label: role
+                for label, role in self._label_role_map(conn).items()
+                if label not in roles.STALE_STATE_LABELS
+            }
             if not role_map:
                 return {}
             values = ",".join("(?,?)" for _ in role_map)

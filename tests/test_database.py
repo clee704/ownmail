@@ -1093,6 +1093,60 @@ class TestLabelCounts:
         assert ArchiveDatabase(temp_dir).get_label_counts() == {}
 
 
+class TestRoleCounts:
+    """Tests for get_role_counts, which feeds the sidebar's system entries."""
+
+    DATE = "2024-03-01T10:00:00+00:00"
+
+    def _db(self, temp_dir, rows):
+        """Build a database from (provider_id, labels) rows."""
+        db = ArchiveDatabase(temp_dir)
+        for provider_id, labels in rows:
+            email_id = _eid(provider_id)
+            db.mark_downloaded(email_id, provider_id, f"{provider_id}.eml", email_date=self.DATE)
+            db.index_email(
+                email_id=email_id,
+                subject=provider_id,
+                sender="alice@example.com",
+                recipients="user@example.com",
+                date_str=self.DATE,
+                body="body",
+                attachments="",
+                labels=labels,
+            )
+        return db
+
+    def test_stale_state_labels_are_not_counted(self, temp_dir):
+        """They record where a message was at capture — no sidebar entry."""
+        db = self._db(temp_dir, [("m1", "INBOX"), ("m2", "DRAFT")])
+        counts = db.get_role_counts()
+        assert "inbox" not in counts
+        assert "drafts" not in counts
+
+    def test_dropping_the_count_does_not_drop_the_label(self, temp_dir):
+        """Only the count goes: the archive still holds it, and still finds it."""
+        db = self._db(temp_dir, [("m1", "INBOX")])
+        assert db.get_labels_for_role("inbox") == ["INBOX"]
+        assert len(db.search("role:inbox")) == 1
+        assert len(db.search("label:INBOX")) == 1
+
+    def test_a_folder_named_inbox_still_counts(self, temp_dir):
+        """The rule is an exact id match, not a name match — see TASK-26."""
+        db = self._db(temp_dir, [("m1", "Inbox")])
+        assert db.get_role_counts()["inbox"] == 1
+
+    def test_user_labels_named_like_system_folders_still_count(self, temp_dir):
+        """'Archive' and 'Trash' must not be swept up by the stale-label rule."""
+        db = self._db(temp_dir, [("m1", "Archive"), ("m2", "Trash")])
+        counts = db.get_role_counts()
+        assert counts["archive"] == 1
+        assert counts["trash"] == 1
+
+    def test_one_message_with_two_spellings_counts_once(self, temp_dir):
+        db = self._db(temp_dir, [("m1", "SENT,[Gmail]/Sent Mail")])
+        assert db.get_role_counts()["sent"] == 1
+
+
 class TestSeparateDbDir:
     """Tests for keeping the database outside the archive directory."""
 

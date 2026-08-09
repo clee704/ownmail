@@ -145,3 +145,58 @@ class TestStoredLabels:
         """'Todos' is a plausible user label, so the table only holds phrases."""
         assert roles.role_for_label("Todos") is None
         assert roles.role_for_label("All") is None
+
+
+class TestStaleStateLabels:
+    """Labels that recorded where a message was, and were never refreshed."""
+
+    def test_holds_the_two_capture_time_states(self):
+        assert roles.STALE_STATE_LABELS == frozenset({"INBOX", "DRAFT"})
+
+    def test_excludes_trash_and_spam(self):
+        """reconcile sweeps the archive for exactly those, so it needs them."""
+        assert not roles.STALE_STATE_LABELS & {"TRASH", "SPAM"}
+
+    def test_every_member_resolves_to_a_role(self):
+        """A typo here would silently hide nothing at all."""
+        assert all(roles.role_for_label(label) for label in roles.STALE_STATE_LABELS)
+
+
+class TestRoleSet:
+    def test_default_exclusions_are_real_roles(self):
+        assert roles.DEFAULT_EXCLUDE_ROLES <= roles.ROLES
+
+    def test_every_resolvable_role_is_in_the_set(self):
+        resolved = {
+            roles.role_for_imap_folder("INBOX"),
+            roles.role_for_imap_folder("x", "\\All"),
+            roles.role_for_imap_folder("x", "\\Archive"),
+            roles.role_for_imap_folder("x", "\\Drafts"),
+            roles.role_for_imap_folder("x", "\\Junk"),
+            roles.role_for_imap_folder("x", "\\Sent"),
+            roles.role_for_imap_folder("x", "\\Trash"),
+        }
+        assert resolved == set(roles.ROLES)
+
+
+class TestResolveExcludeRoles:
+    """What a source's exclude_roles setting actually resolves to."""
+
+    def test_absent_takes_the_default(self):
+        assert roles.resolve_exclude_roles(None) == frozenset({"inbox", "drafts", "trash", "spam"})
+
+    def test_empty_list_is_honoured_and_still_fixes_trash_and_spam(self):
+        """Unlike exclude_folders, [] is a statement rather than an unset key."""
+        assert roles.resolve_exclude_roles([]) == frozenset({"trash", "spam"})
+
+    def test_a_choice_is_unioned_with_the_fixed_roles(self):
+        assert roles.resolve_exclude_roles(["inbox"]) == frozenset({"inbox", "trash", "spam"})
+
+    def test_sent_is_not_in_the_default(self):
+        """Outgoing mail has no triage step, so waiting for one archives nothing."""
+        assert roles.SENT not in roles.DEFAULT_EXCLUDE_ROLES
+        assert roles.SENT not in roles.CONFIGURABLE_EXCLUDE_ROLES
+
+    def test_every_configurable_role_is_transient(self):
+        """A configurable exclusion has to have its departures detected."""
+        assert roles.CONFIGURABLE_EXCLUDE_ROLES <= roles.TRANSIENT_EXCLUDE_ROLES

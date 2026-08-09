@@ -2335,6 +2335,27 @@ class TestViewEmailRendering:
         assert b"UNREAD" not in response.data
         assert b"Work" in response.data
 
+    def test_stale_state_label_is_not_offered_as_a_chip(self, archive):
+        """INBOX says where the message was at capture, not where it is."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.get_labels_for_email.return_value = ["INBOX", "DRAFT", "Work"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"INBOX" not in response.data
+        assert b"DRAFT" not in response.data
+        assert b"Work" in response.data
+
+    def test_a_user_label_named_like_a_system_one_still_gets_a_chip(self, archive):
+        """The stale rule matches label ids exactly — 'Trash' is a real label."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.get_labels_for_email.return_value = ["Archive", "Trash"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"Archive" in response.data
+        assert b"Trash" in response.data
+
     def test_trashed_email_renders(self, archive):
         """A trashed email should still be viewable."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n", trashed_at="2024-02-01")
@@ -3361,6 +3382,15 @@ class TestLabelSidebar:
         archive.db.get_label_counts.return_value = {"UNREAD": 12, "Work": 1}
         html = self._nav(archive)
         assert "UNREAD" not in html
+
+    def test_stale_state_label_is_not_offered(self, archive):
+        """A stored INBOX is a capture-time snapshot, not a place to browse."""
+        archive.db.get_label_counts.return_value = {"INBOX": 5, "DRAFT": 2, "Work": 1}
+        archive.db.get_role_counts.return_value = {}
+        html = self._nav(archive)
+        assert "INBOX" not in html
+        assert "DRAFT" not in html
+        assert "Work" in html
 
     def test_labels_section_is_hidden_when_there_are_none(self, archive):
         """No heading over an empty list."""

@@ -968,6 +968,11 @@ def _label_chips(labels: list) -> list:
         # search for. Only present in archives synced before TASK-5.3.
         if label in roles.EPHEMERAL_LABELS:
             continue
+        # Where the message was at capture, never refreshed since. The role it
+        # would name resolves to nothing now, so a chip would link to an empty
+        # search — see roles.STALE_STATE_LABELS.
+        if label in roles.STALE_STATE_LABELS:
+            continue
         role = roles.role_for_label(label)
         name, query = (_ROLE_NAMES[role], f"role:{role}") if role else (label, f'label:"{label}"')
         chip = chips.setdefault(name, {"name": name, "url": _label_search_url(query), "raw": []})
@@ -1005,8 +1010,10 @@ def _build_label_nav(label_counts: dict, role_counts: dict, active_query: str = 
     for label, count in label_counts.items():
         # Ephemeral labels are client state ownmail doesn't archive, and
         # searching one is a deliberate parse error — don't offer it as a
-        # destination. Labels with a role are already covered above.
-        if label in roles.EPHEMERAL_LABELS or roles.role_for_label(label):
+        # destination. Stale state labels are a capture-time snapshot nothing
+        # refreshes, so their count would answer a question nobody asked.
+        # Labels with a role are already covered above.
+        if label in roles.EPHEMERAL_LABELS or label in roles.STALE_STATE_LABELS or roles.role_for_label(label):
             continue
         user.append(_label_nav_entry(label, "🏷️", f'label:"{label}"', count, active_query))
     user.sort(key=lambda entry: entry["name"].lower())

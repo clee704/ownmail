@@ -82,6 +82,25 @@ TRANSIENT_EXCLUDE_ROLES = frozenset({INBOX, DRAFTS, TRASH, SPAM})
 # cased IMAP folder (`Unread`) is a real folder and is kept.
 EPHEMERAL_LABELS = frozenset({"UNREAD"})
 
+# Labels that recorded where a message was at capture, and that nothing since
+# has refreshed.
+#
+# Archives synced before TASK-14.3 downloaded mail on arrival, while it was
+# still in the inbox, so those messages carry an INBOX label meaning "was in
+# the inbox when downloaded" — not "is in the inbox". Same for a stored DRAFT.
+# The mail itself is real and stays; only the label is a fossil, so it is
+# hidden at read and nothing on disk is rewritten (the TASK-5.3 treatment of
+# UNREAD).
+#
+# Matched exactly for the reason EPHEMERAL_LABELS is: these are Gmail system
+# label IDs (and IMAP's INBOX, which RFC 3501 spells the same way). Running
+# them through ``role_for_label`` instead would case-fold against the folder
+# name table and hide a user label legitimately called 'Drafts' — see TASK-26.
+#
+# Trash and spam are deliberately absent: reconcile sweeps the archive for
+# exactly those stored labels, so hiding them would blind it.
+STALE_STATE_LABELS = frozenset({"INBOX", "DRAFT"})
+
 # RFC 6154 SPECIAL-USE attributes, as they appear in an IMAP LIST response.
 # The authoritative signal when the server advertises it.
 _SPECIAL_USE = {
