@@ -907,6 +907,23 @@ Examples:
     relabel_parser.add_argument("--apply", action="store_true", help="Write the changes (default: report only)")
     _add_global_opts(relabel_parser)
 
+    # reconcile command
+    reconcile_parser = subparsers.add_parser(
+        "reconcile",
+        help="Find archived mail the current download filter would now reject",
+        description=(
+            "Sweep the archive against each source's configured download filter and "
+            "report the mail it would no longer admit — mail archived before ownmail "
+            "could recognize a trash folder, or before you narrowed 'exclude_roles'. "
+            "Reports only; --apply moves them to ownmail's bin, where they stay on "
+            "disk and restorable until you empty it."
+        ),
+    )
+    reconcile_parser.add_argument(
+        "--apply", action="store_true", help="Move the reported emails to ownmail's bin (default: report only)"
+    )
+    _add_global_opts(reconcile_parser)
+
     # list-unknown command
     unknown_parser = subparsers.add_parser(
         "list-unknown",
@@ -1055,6 +1072,10 @@ Examples:
                 from ownmail.commands import cmd_relabel
 
                 cmd_relabel(archive, args.source, args.strategy, args.apply)
+            elif args.command == "reconcile":
+                from ownmail.commands import cmd_reconcile
+
+                cmd_reconcile(archive, args.apply, args.verbose)
             elif args.command == "list-unknown":
                 from ownmail.commands import cmd_list_unknown
 

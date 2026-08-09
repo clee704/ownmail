@@ -6,6 +6,7 @@ This module contains commands for archive maintenance:
 - sync_check: Compare local archive with server
 - update_labels: Update labels from server or derive from IMAP folders
 - relabel: Re-derive IMAP folder membership for already-archived messages
+- reconcile: Move archived mail the current download filter would now reject
 """
 
 import hashlib
@@ -17,7 +18,7 @@ from datetime import timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
-from ownmail import roles, sidecar
+from ownmail import reconcile, roles, sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
@@ -1053,6 +1054,8 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
         print("\n    Archived before ownmail could tell the folder was trash/spam.")
         print("    Nothing is changed automatically — the match is by folder name,")
         print("    so check them before deleting anything.")
+        print("    'ownmail reconcile' reports the same mail against the current")
+        print("    download filter and can move it to the bin, reversibly.")
     else:
         print("  ✓ No emails labelled trash/spam")
 
@@ -1085,9 +1088,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 if dup_count > 0:
                     suggestions.append("  • 'ownmail verify --fix' to remove duplicate emails")
                 if polluted:
-                    suggestions.append(
-                        f'  • Review trash/spam-labelled emails: ownmail search "label:{polluted[0][0]}"'
-                    )
+                    suggestions.append("  • 'ownmail reconcile' to review and bin trash/spam-labelled emails")
                 for s in suggestions:
                     print(s)
         else:
@@ -1106,7 +1107,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
             if dup_count > 0:
                 suggestions.append("  • 'ownmail verify --fix' to remove duplicate emails")
             if polluted:
-                suggestions.append(f'  • Review trash/spam-labelled emails: ownmail search "label:{polluted[0][0]}"')
+                suggestions.append("  • 'ownmail reconcile' to review and bin trash/spam-labelled emails")
             if suggestions:
                 print("\n  To fix:")
                 for s in suggestions:
@@ -1683,6 +1684,128 @@ def _relabel_source(
     if changed and not apply:
         print("\n  Re-run with --apply to write these changes.")
     print("-" * 50 + "\n")
+
+
+def cmd_reconcile(
+    archive: EmailArchive,
+    apply: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Sweep the archive for mail the current download filter would reject.
+
+    The filter only ever governed what came *in*. Anything already archived
+    under an older filter — before role-based exclusion could recognize a
+    trash folder, or before the operator narrowed ``exclude_roles`` — stays
+    put until something goes looking for it. This is that something, and it is
+    a standing capability rather than a migration because the filter is
+    user-editable and will move again. See ``ownmail/reconcile.py``.
+
+    Opt-in and separate from ``verify`` by design: verify reports the same
+    mail (phase 3) and stops there, so no health check can move a message as a
+    side effect. Nothing moves here either without ``apply``.
+
+    Args:
+        archive: EmailArchive instance
+        apply: Move the swept messages to ownmail's bin (default: report only)
+        verbose: List the affected message ids rather than just counts
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Reconcile")
+    print("=" * 50 + "\n")
+
+    plan = reconcile.build_plan(archive.db.db_path, archive.config)
+
+    if not plan.filters:
+        print("No sources configured — reconcile compares the archive against")
+        print("each source's download filter, so there is nothing to compare to.")
+        return
+
+    print("Download filter, per source:\n")
+    for source_filter in plan.filters:
+        print(f"  {source_filter.name} ({source_filter.account}): {source_filter.describe()}")
+
+    if plan.unconfigured:
+        total = sum(count for _, count in plan.unconfigured)
+        print(f"\n  Skipped {total} archived emails belonging to no configured source:")
+        for account, count in plan.unconfigured:
+            print(f"      {account}: {count}")
+
+    print(f"\n{'Moving' if apply else 'Would move'} to ownmail's bin: {len(plan.sweep)} emails")
+    for label, account, count in reconcile.counts_by_label(plan.sweep):
+        print(f"      {label} ({account}): {count}")
+    if verbose:
+        for candidate in plan.sweep:
+            print(f"        {candidate.email_id}  {', '.join(candidate.rejected)}")
+
+    if plan.reported:
+        print(f"\nReported only — filed elsewhere too: {len(plan.reported)} emails")
+        for label, account, count in reconcile.counts_by_label(plan.reported):
+            print(f"      {label} ({account}): {count}")
+        print("\n  These carry a real label alongside the rejected one, so the")
+        print("  archive holds them for a reason the filter doesn't see. Left alone.")
+        if verbose:
+            for candidate in plan.reported:
+                print(f"        {candidate.email_id}  {', '.join(candidate.rejected)} + {', '.join(candidate.kept)}")
+
+    print("\n" + "-" * 50)
+    if not plan.sweep:
+        print("Nothing to move — the archive matches the current filter.")
+        print("-" * 50 + "\n")
+        return
+
+    if not apply:
+        print("Dry run — nothing moved.")
+        print("  Re-run with --apply to move them to ownmail's bin, where they")
+        print("  stay on disk and restorable until you empty it.")
+        print("-" * 50 + "\n")
+        return
+
+    moved, missing = _move_to_bin(archive, plan.sweep)
+    print(f"Moved to the bin: {moved} emails")
+    if missing:
+        print(f"  Not found: {missing} (already moved or deleted)")
+    print("\n  Review them in the web UI's Trash, and restore anything that")
+    print("  should have stayed. Emptying the bin is what makes it permanent.")
+    print("-" * 50 + "\n")
+
+
+def _move_to_bin(archive: EmailArchive, candidates: list) -> tuple[int, int]:
+    """Move swept messages to ownmail's bin, one at a time.
+
+    Each move is independent and self-contained, so an interrupt costs at most
+    the message in flight and re-running picks up where it stopped — messages
+    already in the bin aren't candidates any more.
+
+    Returns:
+        (moved, missing) counts
+    """
+    moved = 0
+    missing = 0
+    interrupted = False
+
+    def signal_handler(signum, frame):
+        nonlocal interrupted
+        if interrupted:
+            print("\n\nForce quit.")
+            sys.exit(1)
+        interrupted = True
+        print("\n\n⏸ Stopping after current email... (Ctrl-C again to force quit)")
+
+    original_handler = signal.signal(signal.SIGINT, signal_handler)
+    try:
+        for candidate in candidates:
+            if interrupted:
+                break
+            if archive.trash_email(candidate.email_id):
+                moved += 1
+            else:
+                missing += 1
+            if moved % 500 == 0:
+                print(f"  Moved {moved}...\033[K", end="\r", flush=True)
+    finally:
+        signal.signal(signal.SIGINT, original_handler)
+
+    return moved, missing
 
 
 def _print_file_list(files: list, label: str, verbose: bool, max_show: int = 5) -> None:
