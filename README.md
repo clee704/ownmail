@@ -85,6 +85,7 @@ Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs 
 | `trash` | View and manage trashed emails |
 | `update-labels` | Update labels on existing emails |
 | `relabel` | Repair IMAP folder labels on archived mail by rescanning the server |
+| `reconcile` | Find archived mail the current download filter would now reject |
 | `rebuild` | Rebuild search index and populate metadata |
 | `reset-sync` | Reset sync state to force full re-download |
 | `list-unknown` | List emails with unparseable dates |
@@ -212,6 +213,25 @@ up on the next run.
 `[]` archives both as they arrive. Trash and spam are always excluded and
 naming them is a config error. `exclude_folders` skips extra folders by
 name, on top of the roles rather than instead of them.
+
+### Reconciling what is already archived
+
+The filter decides what comes *in*. Narrowing it — or upgrading from a
+version that couldn't recognize your server's trash folder — leaves mail in
+the archive the filter would reject today. `reconcile` finds it:
+
+```bash
+# Report what the current filter would no longer admit
+ownmail reconcile
+
+# Move it to ownmail's bin, where it stays restorable until you empty it
+ownmail reconcile --apply
+```
+
+It reads the filter from your config, so editing `exclude_roles` or
+`exclude_folders` changes what it reports. Mail carrying a real label
+alongside the rejected one was filed somewhere, so it is listed separately
+and left alone. Nothing moves without `--apply`, and nothing is deleted.
 
 ## Search
 

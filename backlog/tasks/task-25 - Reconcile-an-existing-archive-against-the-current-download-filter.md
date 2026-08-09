@@ -1,10 +1,10 @@
 ---
 id: TASK-25
 title: Reconcile an existing archive against the current download filter
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-26 05:30'
-updated_date: '2026-07-31 22:55'
+updated_date: '2026-08-09 16:54'
 labels: []
 milestone: m-5
 dependencies:
@@ -69,11 +69,54 @@ Do not extend the hiding to trash/spam labels: reconcile reads exactly those sto
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A dry-run reports which archived messages the current configured exclusion set would reject, with counts by label and account
-- [ ] #2 The exclusion set is read from config, so a filter edit changes what reconcile reports without a code change
-- [ ] #3 An explicit, opt-in action moves those messages to ownmail's local bin rather than deleting them, and they are restorable
-- [ ] #4 Nothing moves as a side effect of a plain verify run
-- [ ] #5 Messages carrying non-role labels alongside an excluded-role label are reported separately and not swept in
-- [ ] #6 A stale INBOX or DRAFT label no longer produces a sidebar entry, with nothing rewritten on disk
-- [ ] #7 A user label named 'Archive' or 'Trash' is not hidden by that rule
+- [x] #1 A dry-run reports which archived messages the current configured exclusion set would reject, with counts by label and account
+- [x] #2 The exclusion set is read from config, so a filter edit changes what reconcile reports without a code change
+- [x] #3 An explicit, opt-in action moves those messages to ownmail's local bin rather than deleting them, and they are restorable
+- [x] #4 Nothing moves as a side effect of a plain verify run
+- [x] #5 Messages carrying non-role labels alongside an excluded-role label are reported separately and not swept in
+- [x] #6 A stale INBOX or DRAFT label no longer produces a sidebar entry, with nothing rewritten on disk
+- [x] #7 A user label named 'Archive' or 'Trash' is not hidden by that rule
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Shipped as `ownmail reconcile` (report by default, `--apply` moves to the
+bin), plus the stale-label hiding. Files: `ownmail/reconcile.py` (the sweep,
+pure over the DB), `cmd_reconcile` in `commands.py` (presentation + the
+move), CLI verb, `roles.STALE_STATE_LABELS`.
+
+Decisions worth keeping:
+
+- **The filter is read per account, not globally.** Archived rows record the
+  account, so that is the only key available; two sources on one account
+  collapse to the first, as elsewhere. Mail belonging to no configured source
+  (imports, a removed source) is counted and skipped rather than swept under
+  a borrowed filter.
+- **`exclude_folders` is swept too**, not just roles. Consumer 2 in the
+  description names folders explicitly, and a name-excluded folder is an
+  exact string match against the stored label, so it costs nothing.
+- **The "unambiguous" rule had to be widened past the description's letter.**
+  Taken literally ("only labels that resolve to an excluded role"), the sweep
+  set is empty for both real archive shapes: Gmail API stores IMPORTANT and
+  CATEGORY_* on untouched mail, and Gmail-over-IMAP stores the All Mail
+  folder on every message. Neither is evidence anyone filed anything, so
+  `reconcile.NON_FILING_LABELS` plus the ALL role are ignored when deciding.
+  STARRED is deliberately NOT in that set — a star is an act — so a starred
+  message lands in the report-only pile.
+- **`role_for_label` could not resolve All Mail at all** — `_FOLDER_NAMES`
+  had no ALL entry, so `role:all` (documented in help.html) matched nothing
+  in every archive, and doc-9's reasoning for keeping All Mail out of the
+  sidebar had never actually taken effect. Fixed here because the sweep
+  depends on it; only multi-word spellings were added, since a bare 'Todos'
+  is a plausible user label (TASK-26's failure mode).
+- **The stale-label hiding is narrower than it could have been.** It drops
+  INBOX/DRAFT from `get_role_counts` (the sidebar) and from the detail-view
+  chips, and nothing else: `label:INBOX` and `role:inbox` still find them, so
+  an operator can eyeball what reconcile will move, and reconcile itself
+  reads `email_labels` directly. Exact id match only, per TASK-26.
+
+Verified: dry run and `--apply` against a synthetic multi-account archive,
+including restore after a move. Every new assertion was checked by mutation
+(breaking the rule under test fails exactly one test).
+<!-- SECTION:NOTES:END -->

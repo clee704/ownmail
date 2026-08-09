@@ -67,8 +67,10 @@ sources:
     # server; it does not re-download anything already archived.
     #
     # NARROWING IT (adding a role) does not remove anything already archived
-    # — but if you have purge enabled, the next purge run deletes more from
-    # the server, because purge deletes what the current filter admits.
+    # — 'ownmail reconcile' reports what the new setting would reject and can
+    # move it to ownmail's bin, reversibly. But if you have purge enabled,
+    # the next purge run deletes more from the server, because purge deletes
+    # what the current filter admits.
     # exclude_roles:
     #   - inbox
     #   - drafts
@@ -106,6 +108,9 @@ sources:
   #   # different — they are not label sources either, so a deleted copy
   #   # never relabels the message you actually filed, and a healthy archive
   #   # carries no 'INBOX' label.
+  #   #
+  #   # Mail already archived from a folder you add here stays put — run
+  #   # 'ownmail reconcile' to review it and move it to the bin.
   #   #
   #   # Editing this list changes what gets captured, so the next sync
   #   # rescans from scratch rather than resuming from where it left off —
