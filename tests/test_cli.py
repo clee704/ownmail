@@ -925,6 +925,22 @@ class TestMainEdgeCases:
                 main()
             assert mock_relabel.call_args[0][1:] == ("fastmail", "server", True)
 
+    def test_main_reconcile_command(self, temp_dir, capsys, monkeypatch):
+        """reconcile reaches the command, reporting unless --apply is given."""
+        from ownmail.cli import main
+
+        (temp_dir / "config.yaml").write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.commands.cmd_reconcile") as mock_reconcile:
+            with patch.object(sys, "argv", ["ownmail", "reconcile"]):
+                main()
+            assert mock_reconcile.call_args[0][1] is False
+
+            with patch.object(sys, "argv", ["ownmail", "reconcile", "--apply"]):
+                main()
+            assert mock_reconcile.call_args[0][1] is True
+
     def test_main_relabel_source_is_optional(self, temp_dir, monkeypatch):
         """Bare relabel sweeps every IMAP source rather than refusing to run."""
         from ownmail.cli import main

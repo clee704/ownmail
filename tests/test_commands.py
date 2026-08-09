@@ -494,11 +494,11 @@ class TestVerifySystemLabels:
         cmd_verify(archive)
         assert "No emails labelled trash/spam" in capsys.readouterr().out
 
-    def test_suggests_a_search_without_changing_anything(self, temp_dir, capsys):
+    def test_points_at_reconcile_without_changing_anything(self, temp_dir, capsys):
         archive = self._archive_with_labels(temp_dir, ["Deleted Items"])
         cmd_verify(archive)
         out = capsys.readouterr().out
-        assert 'ownmail search "label:Deleted Items"' in out
+        assert "'ownmail reconcile'" in out
 
         labels = archive.db.get_labels_for_email(_eid("m1", "user@company.com"))
         assert labels == ["Deleted Items"]
@@ -2890,3 +2890,164 @@ class TestCmdRelabel:
         archive = self._archive(temp_dir, source_type="gmail_api")
         commands.cmd_relabel(archive)
         assert "No IMAP sources configured" in capsys.readouterr().out
+
+
+class TestCmdReconcile:
+    """Tests for the reconcile command."""
+
+    ACCOUNT = "alice@example.com"
+
+    def _archive(self, temp_dir, exclude_roles=None, exclude_folders=None):
+        source = {"name": "personal", "type": "gmail_api", "account": self.ACCOUNT}
+        if exclude_roles is not None:
+            source["exclude_roles"] = exclude_roles
+        if exclude_folders is not None:
+            source["exclude_folders"] = exclude_folders
+        return EmailArchive(temp_dir, {"sources": [source]})
+
+    def _add_email(self, archive, provider_id, labels, account=None):
+        """Archive one message with `labels` in both the DB and its sidecar."""
+        account = account or self.ACCOUNT
+        filename = f"emails/2024/01/{provider_id}.eml"
+        path = archive.archive_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"From: a@b.c\r\nSubject: hi\r\n\r\nbody\r\n")
+
+        email_id = _eid(provider_id, account)
+        archive.db.mark_downloaded(email_id, provider_id, filename, content_hash=provider_id, account=account)
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rowid = conn.execute("SELECT rowid FROM emails WHERE email_id = ?", (email_id,)).fetchone()[0]
+            for label in labels:
+                conn.execute(
+                    "INSERT INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                    (rowid, label, "2024-01-01T00:00:00+00:00"),
+                )
+        if labels:
+            sidecar.write_labels(path, labels)
+        return email_id, path
+
+    def _trashed_at(self, archive, email_id):
+        with sqlite3.connect(archive.db.db_path) as conn:
+            return conn.execute("SELECT trashed_at FROM emails WHERE email_id = ?", (email_id,)).fetchone()[0]
+
+    def test_dry_run_reports_counts_by_label_and_account(self, temp_dir, capsys):
+        """AC #1."""
+        archive = self._archive(temp_dir)
+        self._add_email(archive, "m1", ["Deleted Items"])
+        self._add_email(archive, "m2", ["INBOX"])
+
+        commands.cmd_reconcile(archive)
+
+        out = capsys.readouterr().out
+        assert "Would move to ownmail's bin: 2 emails" in out
+        assert f"Deleted Items ({self.ACCOUNT}): 1" in out
+        assert f"INBOX ({self.ACCOUNT}): 1" in out
+
+    def test_dry_run_moves_nothing(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        email_id, path = self._add_email(archive, "m1", ["Deleted Items"])
+
+        commands.cmd_reconcile(archive)
+
+        assert "Dry run — nothing moved" in capsys.readouterr().out
+        assert self._trashed_at(archive, email_id) is None
+        assert path.exists()
+
+    def test_the_configured_filter_decides_what_is_reported(self, temp_dir, capsys):
+        """AC #2: an archive that only stops matching because config changed."""
+        eager = self._archive(temp_dir / "eager", exclude_roles=[])
+        self._add_email(eager, "m1", ["INBOX"])
+        commands.cmd_reconcile(eager)
+        assert "Would move to ownmail's bin: 0 emails" in capsys.readouterr().out
+
+        narrowed = self._archive(temp_dir / "narrowed", exclude_roles=["inbox"])
+        self._add_email(narrowed, "m1", ["INBOX"])
+        commands.cmd_reconcile(narrowed)
+        assert "Would move to ownmail's bin: 1 emails" in capsys.readouterr().out
+
+    def test_a_named_folder_the_user_stopped_wanting(self, temp_dir, capsys):
+        archive = self._archive(temp_dir, exclude_folders=["Newsletters"])
+        self._add_email(archive, "m1", ["Newsletters"])
+
+        commands.cmd_reconcile(archive)
+
+        assert f"Newsletters ({self.ACCOUNT}): 1" in capsys.readouterr().out
+
+    def test_apply_moves_to_the_bin_and_leaves_it_restorable(self, temp_dir, capsys):
+        """AC #3: on disk in the bin, not deleted."""
+        archive = self._archive(temp_dir)
+        email_id, path = self._add_email(archive, "m1", ["Deleted Items"])
+
+        commands.cmd_reconcile(archive, apply=True)
+
+        assert "Moved to the bin: 1 emails" in capsys.readouterr().out
+        assert self._trashed_at(archive, email_id) is not None
+        assert not path.exists()
+        assert (archive.archive_dir / "trash" / f"{email_id}.eml").exists()
+
+        assert archive.restore_email(email_id) is True
+        assert path.exists()
+        assert self._trashed_at(archive, email_id) is None
+
+    def test_a_message_filed_elsewhere_is_reported_but_not_moved(self, temp_dir, capsys):
+        """AC #5."""
+        archive = self._archive(temp_dir)
+        email_id, path = self._add_email(archive, "m1", ["INBOX", "Receipts"])
+
+        commands.cmd_reconcile(archive, apply=True)
+
+        out = capsys.readouterr().out
+        assert "Reported only — filed elsewhere too: 1 emails" in out
+        assert "Nothing to move" in out
+        assert self._trashed_at(archive, email_id) is None
+        assert path.exists()
+
+    def test_a_second_run_finds_nothing_left(self, temp_dir, capsys):
+        """What is in the bin has been dealt with."""
+        archive = self._archive(temp_dir)
+        self._add_email(archive, "m1", ["Deleted Items"])
+        commands.cmd_reconcile(archive, apply=True)
+        capsys.readouterr()
+
+        commands.cmd_reconcile(archive)
+
+        assert "Nothing to move" in capsys.readouterr().out
+
+    def test_mail_from_no_configured_source_is_named_and_skipped(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        email_id, _ = self._add_email(archive, "m1", ["Deleted Items"], account="imported@elsewhere.com")
+
+        commands.cmd_reconcile(archive, apply=True)
+
+        assert "belonging to no configured source" in capsys.readouterr().out
+        assert self._trashed_at(archive, email_id) is None
+
+    def test_verbose_lists_the_messages(self, temp_dir, capsys):
+        archive = self._archive(temp_dir)
+        email_id, _ = self._add_email(archive, "m1", ["Deleted Items"])
+
+        commands.cmd_reconcile(archive, verbose=True)
+
+        assert email_id in capsys.readouterr().out
+
+    def test_no_sources_configured(self, temp_dir, capsys):
+        commands.cmd_reconcile(EmailArchive(temp_dir, {}))
+        assert "No sources configured" in capsys.readouterr().out
+
+    def test_a_missing_file_still_leaves_the_row_binned(self, temp_dir, capsys):
+        """A file deleted behind ownmail's back must not abort the sweep."""
+        archive = self._archive(temp_dir)
+        email_id, path = self._add_email(archive, "m1", ["Deleted Items"])
+        path.unlink()
+
+        commands.cmd_reconcile(archive, apply=True)
+
+        assert "Moved to the bin: 1 emails" in capsys.readouterr().out
+        assert self._trashed_at(archive, email_id) is not None
+
+    def test_a_message_binned_mid_run_is_counted_apart(self, temp_dir, capsys):
+        """The web UI can trash something between the plan and the move."""
+        archive = self._archive(temp_dir)
+        gone = commands.reconcile.Candidate(email_id="nosuchid", account=self.ACCOUNT, rejected=("TRASH",), kept=())
+
+        assert commands._move_to_bin(archive, [gone]) == (0, 1)
