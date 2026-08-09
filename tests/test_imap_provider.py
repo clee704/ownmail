@@ -1276,6 +1276,10 @@ class TestImapGetNewMessageIds:
             exclude_folders=[],
         )
         provider._conn = MagicMock()
+        # Nothing is sitting in the inbox unless a test says so — these mocks
+        # answer every SEARCH alike, which would otherwise read as "the whole
+        # folder is excluded".
+        provider._enumerate_excluded = lambda all_mail: frozenset()
         return provider
 
     def test_no_state_does_full_scan(self, capsys):

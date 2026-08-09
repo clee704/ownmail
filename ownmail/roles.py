@@ -165,6 +165,19 @@ _FOLDER_NAMES = {
         "보낸편지함",
         "已发送邮件",
     ),
+    ALL: (
+        # Gmail's catch-all, whose SPECIAL-USE flag is gone once the folder
+        # name has been stored as a label. Only multi-word spellings, so a
+        # user label can't collide the way a bare 'Todos' or 'All' would.
+        "all mail",
+        "alle nachrichten",
+        "tous les messages",
+        "todos los mensajes",
+        "tutti i messaggi",
+        "すべてのメール",
+        "전체보관함",
+        "所有邮件",
+    ),
     ARCHIVE: (
         "archive",
         "archives",
