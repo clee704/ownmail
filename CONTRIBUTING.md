@@ -23,7 +23,7 @@ source venv/bin/activate
 # Install in development mode
 pip install -e ".[dev]"
 
-# Install the git hooks (runs lint, format, deptry, and tests on commit)
+# Install commit checks and the full test suite at push time
 pre-commit install
 ```
 
@@ -76,7 +76,7 @@ We enforce a coverage barrier to prevent regressions. Run tests with coverage:
 pytest --cov=ownmail --cov-report=term-missing
 ```
 
-Current minimum coverage: **80%** (configured in `pyproject.toml`).
+Current minimum coverage: **95%**, including branches (configured in `pyproject.toml`).
 
 When adding new code, write tests to maintain or improve coverage. The build will fail if coverage drops below the barrier.
 
@@ -258,7 +258,9 @@ When changing the database schema:
 
 ### Before v1.0.0 (Pre-release)
 
-We can change the schema freely since there are no published versions. Just update the `CREATE TABLE` statements in `_init_db()`.
+For an unreleased schema that no existing archive uses, update the `CREATE TABLE`
+statements in `_init_db()`. Schemas already in use need migrations and tests
+against existing archives, even before v1.0.0.
 
 ### After v1.0.0 (Post-release)
 

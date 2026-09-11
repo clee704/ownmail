@@ -1,10 +1,10 @@
 ---
 id: TASK-41
 title: Reload the web server during development
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-11 10:50'
-updated_date: '2026-09-11 10:54'
+updated_date: '2026-09-11 10:55'
 labels: []
 dependencies: []
 priority: medium
