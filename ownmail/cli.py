@@ -942,6 +942,9 @@ Examples:
     serve_parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
     serve_parser.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
     serve_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    serve_parser.add_argument(
+        "--reload", action="store_true", help="Reload on Python source changes without enabling the debugger"
+    )
     serve_parser.add_argument("--block-images", action="store_true", help=argparse.SUPPRESS)
     serve_parser.add_argument("--no-browser", action="store_true", help="Don't open a browser window automatically")
     _add_global_opts(serve_parser)
@@ -1122,6 +1125,7 @@ Examples:
                     display_timezone,
                     detail_date_format,
                     open_browser=not args.no_browser,
+                    reload=args.reload,
                 )
 
     except KeyboardInterrupt:

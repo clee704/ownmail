@@ -1423,12 +1423,26 @@ class TestMainServeCommand:
             with patch.object(sys, "argv", ["ownmail", "serve"]):
                 main()
 
-        args, _ = mock_run.call_args
+        args, kwargs = mock_run.call_args
         assert args[5] is True  # block_images defaults on
         assert args[6] == 20  # page_size
         assert args[7] == []  # trusted_senders
         assert args[10] is True  # auto_scale
         assert args[11] == "ownmail"  # brand_name
+        assert kwargs["reload"] is False
+
+    def test_serve_reload_without_debug(self, temp_dir, monkeypatch):
+        from ownmail.cli import main
+
+        self._write_config(temp_dir, "archive_root: .\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch("ownmail.web.run_server") as mock_run:
+            with patch.object(sys, "argv", ["ownmail", "serve", "--reload"]):
+                main()
+
+        assert mock_run.call_args.kwargs["reload"] is True
+        assert mock_run.call_args.args[3] is False  # debug
 
     def test_serve_cli_flags_override(self, temp_dir, monkeypatch):
         """--host/--port/--no-browser should be honoured."""

@@ -2071,18 +2071,21 @@ class TestRunServer:
             patch("webbrowser.open"),
         )
 
-    def test_starts_and_stops_sanitizer(self, archive, sanitizer):
+    @pytest.mark.parametrize("debug,reload", [(False, False), (False, True), (True, False), (True, True)])
+    def test_starts_and_stops_sanitizer(self, archive, sanitizer, debug, reload):
         """The server should start the sanitizer and stop it on exit."""
         from ownmail.web import run_server
 
         san_patch, run_patch, _ = self._patches(sanitizer)
         with san_patch, run_patch as mock_run:
-            run_server(archive, open_browser=False)
+            run_server(archive, debug=debug, reload=reload, open_browser=False)
         sanitizer.start.assert_called_once()
         sanitizer.stop.assert_called_once()
         mock_run.assert_called_once()
         assert mock_run.call_args.kwargs["host"] == "127.0.0.1"
         assert mock_run.call_args.kwargs["port"] == 8080
+        assert mock_run.call_args.kwargs["debug"] is debug
+        assert mock_run.call_args.kwargs["use_reloader"] is (debug or reload)
 
     def test_stops_sanitizer_when_app_run_raises(self, archive, sanitizer):
         """A crash inside app.run must still stop the sanitizer."""
@@ -2123,8 +2126,10 @@ class TestRunServer:
         from ownmail.web import run_server
 
         san_patch, run_patch, _ = self._patches(sanitizer)
-        with san_patch, run_patch:
-            run_server(archive, host="0.0.0.0", open_browser=False)
+        with san_patch, run_patch as mock_run:
+            run_server(archive, host="0.0.0.0", reload=True, open_browser=False)
+        assert mock_run.call_args.kwargs["debug"] is False
+        assert mock_run.call_args.kwargs["use_reloader"] is True
         assert "WARNING: Binding to non-localhost address" in capsys.readouterr().out
 
     def test_verbose_and_block_images_notices(self, archive, sanitizer, capsys):
@@ -2173,8 +2178,10 @@ class TestRunServer:
                 mock_timer.call_args.args[1]()
         mock_open.assert_called_once_with("http://localhost:8080")
 
-    def test_debug_reloader_parent_does_not_open_browser(self, archive, sanitizer):
-        """Under the Werkzeug reloader parent process, no browser should open."""
+    @pytest.mark.parametrize("mode", [{"debug": True}, {"reload": True}])
+    @pytest.mark.parametrize("child", [False, True])
+    def test_reloader_opens_browser_only_in_parent(self, archive, sanitizer, mode, child):
+        """The supervisor launches one browser across all server restarts."""
         import os
         from unittest.mock import patch
 
@@ -2182,11 +2189,37 @@ class TestRunServer:
 
         san_patch, run_patch, _ = self._patches(sanitizer)
         env = {k: v for k, v in os.environ.items() if k != "WERKZEUG_RUN_MAIN"}
+        if child:
+            env["WERKZEUG_RUN_MAIN"] = "true"
         with san_patch, run_patch:
             with patch.dict(os.environ, env, clear=True):
                 with patch("threading.Timer") as mock_timer:
-                    run_server(archive, debug=True, open_browser=True)
-        mock_timer.assert_not_called()
+                    run_server(archive, **mode, open_browser=True)
+        assert mock_timer.call_count == (0 if child else 1)
+
+    def test_reload_refreshes_templates(self, archive, sanitizer, tmp_path):
+        import os
+        from unittest.mock import patch
+
+        from flask import render_template
+
+        from ownmail.web import run_server
+
+        template = tmp_path / "reload.html"
+        template.write_text("Before")
+
+        def check_template_reload(app, **kwargs):
+            app.template_folder = str(tmp_path)
+            with app.test_request_context():
+                assert render_template("reload.html") == "Before"
+                previous_mtime = template.stat().st_mtime
+                template.write_text("After")
+                os.utime(template, (previous_mtime + 2, previous_mtime + 2))
+                assert render_template("reload.html") == "After"
+
+        san_patch, _, _ = self._patches(sanitizer)
+        with san_patch, patch("flask.Flask.run", autospec=True, side_effect=check_template_reload):
+            run_server(archive, reload=True, open_browser=False)
 
 
 class TestViewEmailRendering:

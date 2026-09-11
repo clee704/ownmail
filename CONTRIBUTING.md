@@ -37,6 +37,17 @@ python3 -m ownmail --help
 ownmail --help
 ```
 
+When developing the web interface, run:
+
+```bash
+ownmail serve --reload
+```
+
+Python source edits restart the server, and template edits appear on the next
+page refresh. This leaves the interactive debugger disabled. `--debug` enables
+both reloading and the debugger and is restricted to localhost. Add
+`--no-browser` to suppress the initial browser tab.
+
 ## Code Style
 
 - Python 3.10+ (see `requires-python` in `pyproject.toml`)
