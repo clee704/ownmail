@@ -1,7 +1,7 @@
 ---
 id: TASK-43
 title: Align quality gates and documentation with repository policy
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-11 10:54'
 updated_date: '2026-09-11 10:56'
