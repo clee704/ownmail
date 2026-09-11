@@ -219,6 +219,8 @@ def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
             0x20 <= code <= 0x7E  # ASCII printable
             or code in (0x09, 0x0A, 0x0D)  # tab, newline, CR
             or 0x80 <= code <= 0xFF  # Latin extended
+            # Hidden preview padding must not force a different charset.
+            or code in (0x2007, 0x034F)  # Figure space / combining grapheme joiner
             or 0x200B <= code <= 0x200D  # Zero-width space/non-joiner/joiner
             or code == 0xFEFF  # BOM / zero-width no-break space
             or code == 0x00AD  # Soft hyphen

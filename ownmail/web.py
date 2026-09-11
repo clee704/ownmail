@@ -21,7 +21,7 @@ from flask import Flask, abort, g, redirect, render_template, request, send_file
 
 from ownmail import roles
 from ownmail.archive import EmailArchive
-from ownmail.parser import EmailParser, extract_attachment_filename
+from ownmail.parser import EmailParser, _validate_decoded_text, extract_attachment_filename
 from ownmail.query import parse_query
 
 # Regex to find external images in HTML
@@ -516,56 +516,6 @@ def _clean_snippet_text(text: str) -> str:
     # Collapse whitespace
     text = " ".join(text.split())
     return text
-
-
-def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
-    """Check if decoded text looks like valid readable content.
-
-    Args:
-        text: Decoded text to validate
-        min_readable_ratio: Minimum ratio of readable characters
-
-    Returns:
-        True if text appears to be valid readable content
-    """
-    if not text:
-        return False
-
-    # Check for replacement characters (decoding failed)
-    if "\ufffd" in text:
-        return False
-
-    # Count readable vs unreadable characters
-    readable = 0
-    total = 0
-
-    for char in text[:1000]:  # Sample first 1000 chars
-        code = ord(char)
-        total += 1
-
-        # Consider readable:
-        # - ASCII printable, whitespace
-        # - Latin extended (accented chars)
-        # - CJK characters (Chinese, Japanese, Korean)
-        # - Common punctuation and symbols
-        if (
-            0x20 <= code <= 0x7E  # ASCII printable
-            or code in (0x09, 0x0A, 0x0D)  # tab, newline, CR
-            or 0x80 <= code <= 0xFF  # Latin extended
-            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs
-            or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
-            or 0x1100 <= code <= 0x11FF  # Hangul Jamo
-            or 0x3040 <= code <= 0x309F  # Hiragana
-            or 0x30A0 <= code <= 0x30FF  # Katakana
-            or 0x3000 <= code <= 0x303F  # CJK Punctuation
-            or 0xFF00 <= code <= 0xFFEF
-        ):  # Fullwidth forms
-            readable += 1
-
-    if total == 0:
-        return True
-
-    return (readable / total) >= min_readable_ratio
 
 
 def _try_decode(payload: bytes, encoding: str) -> str | None:

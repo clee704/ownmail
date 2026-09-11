@@ -911,6 +911,16 @@ class TestSafeGetContentCharsets:
 
         return email_mod.message_from_bytes(raw)
 
+    def test_utf8_preview_padding_preserves_punctuation(self):
+        from email.message import EmailMessage
+
+        padding = "\u2007\u034f" * 400
+        body = f'<div style="display:none">{padding}</div><p>• Café — update</p>\n'
+        part = EmailMessage()
+        part.set_content(body, subtype="html", charset="utf-8", cte="base64")
+
+        assert EmailParser._safe_get_content(part) == body
+
     def test_uses_declared_header_charset(self):
         """A correct Content-Type charset should be used directly."""
         raw = b'Content-Type: text/plain; charset="euc-kr"\r\n\r\n' + "안녕하세요 반갑습니다".encode("euc-kr")

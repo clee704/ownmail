@@ -414,6 +414,14 @@ class TestDecodeTextBody:
 class TestDecodeHtmlBody:
     """Tests for _decode_html_body function."""
 
+    def test_utf8_preview_padding_preserves_punctuation(self):
+        from ownmail.web import _decode_html_body
+
+        padding = "\u2007\u034f" * 400
+        body = f'<div style="display:none">{padding}</div><p>• Café — update</p>'
+
+        assert _decode_html_body(body.encode("utf-8"), "utf-8") == body
+
     def test_html_with_meta_charset(self):
         """HTML with meta charset should use it."""
         from ownmail.web import _decode_html_body
