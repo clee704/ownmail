@@ -1,7 +1,7 @@
 ---
 id: TASK-39
 title: Preserve UTF-8 bodies with hidden preview padding
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-11 10:43'
 updated_date: '2026-09-11 10:45'
