@@ -143,6 +143,33 @@ TASK-28 (active messages) depends on TASK-14.3 but is a pure addition — a
 read-only window onto the pre-capture set. It is not required for the archive
 to be correct, and it is deliberately left unscheduled.
 
+## UI redesign (filed 2026-09-12)
+
+TASK-32 now has six subtasks following renewed feedback about the current UI.
+This is an unscheduled workstream; the existing milestone order is unchanged.
+The ordinals below order this parent's children, not all unmilestoned work.
+
+| Order | Task | Outcome | Hard dependency |
+|---|---|---|---|
+| 1 | TASK-32.1 | Compare visual directions and apply shared styles to the app shell | None |
+| 2 | TASK-32.2 | Responsive sidebar and folder navigation | TASK-32.1 |
+| 3 | TASK-32.3 | Clear message rows, search controls and pagination | TASK-32.1 |
+| 4 | TASK-32.4 | Readable message detail and return to the originating results | TASK-32.1 |
+| 5 | TASK-32.5 | Accessible names, keyboard operation and focus handling | None |
+| 6 | TASK-32.6 | Empty states and pending, success and failure feedback | None |
+
+Settle the visual direction first so navigation, lists and reading views use
+the same styles. Their listed order reduces shared-template churn; they do
+not depend on each other's completion. Accessibility and action feedback can
+land independently on the current UI and should retain their behavior through
+the redesign.
+
+These tasks do not require conversation grouping, local label editing or
+active-message storage. Those remain TASK-6, TASK-5.4 and TASK-28. Label
+exclusion, classification and storage repair remain TASK-19, TASK-26 and
+TASK-27. UI work preserves the existing distinction between the local bin
+and historical server-trash labels described in doc-9.
+
 ## Keeping this current
 
 If a task's priority, scope, or dependencies change materially, update its
