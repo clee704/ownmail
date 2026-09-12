@@ -1,10 +1,10 @@
 ---
 id: TASK-32
 title: Visual design pass across the web UI
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-31 19:45'
-updated_date: '2026-09-12 18:35'
+updated_date: '2026-09-12 21:31'
 labels:
   - enhancement
   - ui
@@ -40,25 +40,21 @@ Not in scope: which labels are shown at all. Raw provider labels (CATEGORY_*, IM
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A decision recorded on visual direction and on whether the palette and spacing move to CSS custom properties
-- [ ] #2 Emoji removed as iconography, replaced by a monochrome SVG set that inherits currentColor
-- [ ] #3 A type scale and spacing scale applied across search results, sidebar and message detail
-- [ ] #4 Sender and label columns stop truncating at fixed widths on wide viewports
-- [ ] #5 Light and dark both derive from the same tokens rather than parallel rule sets
-- [ ] #6 Folder and label navigation remains available on narrow screens, with the active destination visible.
-- [ ] #7 Message reading provides an explicit return to the originating query, sort and page, restoring list position in the same tab.
-- [ ] #8 Controls have meaningful accessible names, visible focus and predictable keyboard/menu behavior.
-- [ ] #9 Empty views and pending, successful and failed message actions provide clear, accessible feedback.
+- [x] #1 A decision recorded on visual direction and on whether the palette and spacing move to CSS custom properties
+- [x] #2 Emoji removed as iconography, replaced by a monochrome SVG set that inherits currentColor
+- [x] #3 A type scale and spacing scale applied across search results, sidebar and message detail
+- [x] #4 Sender and label columns stop truncating at fixed widths on wide viewports
+- [x] #5 Light and dark both derive from the same tokens rather than parallel rule sets
+- [x] #6 Folder and label navigation remains available on narrow screens, with the active destination visible.
+- [x] #7 Message reading provides an explicit return to the originating query, sort and page, restoring list position in the same tab.
+- [x] #8 Controls have meaningful accessible names, visible focus and predictable keyboard/menu behavior.
+- [x] #9 Empty views and pending, successful and failed message actions provide clear, accessible feedback.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Split into TASK-32.1 through TASK-32.6 on 2026-09-12 after source inspection and a browser review using synthetic list/detail content. No personal archive was opened.
+Compact was approved after two synthetic visual alternatives; the requested denser implementation is complete across TASK-32.1 through TASK-32.6. Shared light/dark tokens, monochrome SVG icons, responsive navigation, dense result rows, reader return navigation, accessible controls and action feedback replace the previous presentation. The actual app was checked with synthetic content in both themes at 390px, 768px and 1440px; no personal archive was opened. Detailed evidence and reference links are recorded in the subtasks. Independent code reviews found no verified introduced issues in layout/navigation, action requests or wide-message fitting. Final validation: pre-commit run -a --hook-stage pre-push passed, including formatting, dependency checks and the full test suite with its coverage gate. Implementation committed in a7d6062.
 
-Suggested sequence: visual direction and shared styles (32.1), responsive navigation (32.2), list/search layout (32.3), message reading (32.4). Accessibility (32.5) and empty/action states (32.6) can proceed independently. Detailed sequencing is recorded in doc-4; this work remains unscheduled relative to the existing milestones.
-
-Original acceptance criteria remain open: 32.1 owns the design direction, shared styles and shell icons; 32.2-32.4 apply them across components. The added criteria cover the newly explicit usability gaps. Filing these tasks does not complete the redesign.
-
-Related work remains separate: TASK-5.4 local label editing; TASK-6 conversation view; TASK-28 active messages; TASK-19/26/27 label filtering and correctness. Preserve the distinction between local Trash and server-trash labels described in doc-9. A specific visual direction has not yet been selected.
+Related work remains separate: TASK-5.4 label editing; TASK-6 conversation view; TASK-28 active messages; TASK-19/26/27 label filtering and correctness. Local Trash remains distinct from historical server-trash labels. TASK-44 records an existing trusted-sender persistence error-reporting problem discovered during review.
 <!-- SECTION:NOTES:END -->

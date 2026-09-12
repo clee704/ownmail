@@ -1,9 +1,10 @@
 ---
 id: TASK-32.3
 title: Improve message list hierarchy and search layout
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-12 18:33'
+updated_date: '2026-09-12 21:31'
 labels:
   - ui
   - ux
@@ -26,8 +27,16 @@ Evidence: ownmail/static/style.css (.ownmail-email-sender, .ownmail-email-row-co
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sender, subject, preview and date have a consistent visual hierarchy in light/dark views, demonstrated with short/long subjects, missing subjects, long senders and CJK text.
-- [ ] #2 List columns respond to available width; narrow layouts retain sender, subject and date without page-level horizontal scrolling or overlapping selection controls.
-- [ ] #3 Search, sorting, selection count and pagination have clear grouping and labels; opening a message remains distinct from selecting it.
-- [ ] #4 Existing query, sort and pagination behavior is preserved, with no unread badges or per-row label chips added; record visual checks at 390px, 768px and 1440px.
+- [x] #1 Sender, subject, preview and date have a consistent visual hierarchy in light/dark views, demonstrated with short/long subjects, missing subjects, long senders and CJK text.
+- [x] #2 List columns respond to available width; narrow layouts retain sender, subject and date without page-level horizontal scrolling or overlapping selection controls.
+- [x] #3 Search, sorting, selection count and pagination have clear grouping and labels; opening a message remains distinct from selecting it.
+- [x] #4 Existing query, sort and pagination behavior is preserved, with no unread badges or per-row label chips added; record visual checks at 390px, 768px and 1440px.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The list uses 36px desktop rows and 56px two-line rows on phones, responsive sender columns, stronger subjects, muted previews/dates and a separate sort control. Browser checks in both themes at 390px, 768px and 1440px covered long senders/subjects, a missing subject, CJK text, selection, query submission, sorting and pagination. No page-level horizontal overflow was observed. Long destination headings retain a fully readable sort control. Selecting a checkbox remains separate from opening its message; existing unread-state and per-row-label decisions are preserved.
+
+Final validation: pre-commit run -a --hook-stage pre-push passed, including formatting, dependency checks and the full test suite with its coverage gate. Implementation committed in a7d6062.
+<!-- SECTION:NOTES:END -->

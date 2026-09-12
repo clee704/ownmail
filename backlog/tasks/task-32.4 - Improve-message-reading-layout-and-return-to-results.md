@@ -1,9 +1,10 @@
 ---
 id: TASK-32.4
 title: Improve message reading layout and return to results
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-12 18:33'
+updated_date: '2026-09-12 21:31'
 labels:
   - ui
   - ux
@@ -26,8 +27,16 @@ Evidence: ownmail/templates/_email_list.html, email.html and base.html; ownmail/
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An explicit Back to results control preserves query, sort and page; returning in the same tab restores list position, and direct message links have a safe local fallback.
-- [ ] #2 Long subjects, recipient lists and label sets fit without obscuring the body or action controls; secondary metadata remains accessible.
-- [ ] #3 Plain-text messages, wide HTML messages and attachment lists remain readable at narrow/wide widths in light/dark mode, with app styles kept separate from authored email content.
-- [ ] #4 Existing image-loading choices, attachment preview/download and original-message access remain discoverable and functional; validation records synthetic examples and navigation checks.
+- [x] #1 An explicit Back to results control preserves query, sort and page; returning in the same tab restores list position, and direct message links have a safe local fallback.
+- [x] #2 Long subjects, recipient lists and label sets fit without obscuring the body or action controls; secondary metadata remains accessible.
+- [x] #3 Plain-text messages, wide HTML messages and attachment lists remain readable at narrow/wide widths in light/dark mode, with app styles kept separate from authored email content.
+- [x] #4 Existing image-loading choices, attachment preview/download and original-message access remain discoverable and functional; validation records synthetic examples and navigation checks.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The reader now keeps search available, groups routine actions above the subject, and puts complete recipients and labels in a native Message details disclosure. Explicit local return links preserve query, sort and page; a same-tab browser round trip restored the exact list scroll position and focused message. Direct, external and malformed return targets have tested local fallbacks. Browser checks covered plain text, a 1200px authored HTML newsletter, attachments, long subjects, 16 recipients and a large label set in both themes. Plain text has a bounded reading width. Wide HTML initially follows the existing auto_scale preference and offers Show actual size / Fit to width; actual-size content scrolls within the reader without widening the page. At 320px, toolbar actions wrap and remain reachable. Existing original/download URLs, attachment preview/download, image controls and authored-content styling remain intact; existing reader/image/attachment tests and new navigation/fitting tests pass.
+
+Final validation: pre-commit run -a --hook-stage pre-push passed, including formatting, dependency checks and the full test suite with its coverage gate. Implementation committed in a7d6062.
+<!-- SECTION:NOTES:END -->
