@@ -8,7 +8,7 @@
         <p class="ownmail-settings-config-path">Config: <code>{{ config_path }}</code></p>
 
         {% if saved %}
-        <div class="ownmail-settings-saved">✓ Settings saved.</div>
+        <div class="ownmail-settings-saved" role="status">{{ icon('check') }} Settings saved.</div>
         {% endif %}
 
         <form method="POST" action="/settings" class="ownmail-settings-form">

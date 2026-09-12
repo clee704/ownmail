@@ -14,7 +14,7 @@ import webbrowser
 from datetime import datetime
 from email.policy import default as email_policy
 from email.utils import parsedate_to_datetime
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
 from flask import Flask, abort, g, redirect, render_template, request, send_file
@@ -868,12 +868,12 @@ _ROLE_NAMES = {
 # "All Mail" nav item above it with a near-identical count. The raw label stays
 # searchable, and a message that carries it still says so in the detail view.
 _ROLE_NAV = (
-    (roles.INBOX, "📥"),
-    (roles.SENT, "📤"),
-    (roles.DRAFTS, "📝"),
-    (roles.ARCHIVE, "🗄️"),
-    (roles.SPAM, "⚠️"),
-    (roles.TRASH, "🗑️"),
+    (roles.INBOX, "inbox"),
+    (roles.SENT, "sent"),
+    (roles.DRAFTS, "draft"),
+    (roles.ARCHIVE, "archive"),
+    (roles.SPAM, "spam"),
+    (roles.TRASH, "trash"),
 )
 
 
@@ -965,7 +965,7 @@ def _build_label_nav(label_counts: dict, role_counts: dict, active_query: str = 
         # Labels with a role are already covered above.
         if label in roles.EPHEMERAL_LABELS or label in roles.STALE_STATE_LABELS or roles.role_for_label(label):
             continue
-        user.append(_label_nav_entry(label, "🏷️", f'label:"{label}"', count, active_query))
+        user.append(_label_nav_entry(label, "label", f'label:"{label}"', count, active_query))
     user.sort(key=lambda entry: entry["name"].lower())
 
     return {"system": system, "user": user}
@@ -1113,28 +1113,22 @@ def create_app(
         return redirect("/search")
 
     def get_back_to_search_url() -> str | None:
-        """Get the URL to go back to search results, if applicable.
-
-        Returns the search URL from the Referer header if the user came from
-        a search page, otherwise returns None.
-        """
-        referer = request.headers.get("Referer", "")
-        if not referer:
+        """Recover a local results URL from the link or the previous page."""
+        explicit = "return_to" in request.args
+        target = request.args.get("return_to", "") if explicit else request.headers.get("Referer", "")
+        if not target or "\\" in target or any(ord(char) < 32 or ord(char) == 127 for char in target):
             return None
-
-        # Parse the referer to check if it's a search page on this host
-        from urllib.parse import urlparse
-
-        parsed = urlparse(referer)
-
-        # Check if it's the same host and a search path
-        if parsed.path == "/search" or parsed.path.startswith("/search?"):
-            # Return just the path and query (relative URL)
-            if parsed.query:
-                return f"/search?{parsed.query}"
-            return "/search"
-
-        return None
+        try:
+            parsed = urlsplit(target)
+        except ValueError:
+            return None
+        if explicit and (parsed.scheme or parsed.netloc):
+            return None
+        if not explicit and parsed.netloc and (parsed.netloc != request.host or parsed.scheme != request.scheme):
+            return None
+        if parsed.path not in ("/search", "/trash"):
+            return None
+        return parsed.path + ("?" + parsed.query if parsed.query else "")
 
     @app.route("/help")
     def help_page():

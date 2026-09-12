@@ -6,8 +6,8 @@
     <div class="ownmail-trash-header">
         <h2>Trash</h2>
         {% if results %}
-        <form action="/empty-trash" method="post" onsubmit="return confirm('Permanently delete all {{ trash_count }} email(s) in trash? This cannot be undone.');">
-            <button type="submit" class="ownmail-empty-trash-btn">Empty Trash</button>
+        <form action="/empty-trash" method="post" onsubmit="return emptyTrash(event)">
+            <button type="submit" data-message-action class="ownmail-empty-trash-btn">Empty Trash</button>
         </form>
         {% endif %}
     </div>
@@ -15,13 +15,13 @@
     {% if results %}
         <div class="ownmail-toolbar" id="ownmail-toolbar">
             <div class="ownmail-toolbar-left">
-                <label class="ownmail-toolbar-checkbox"><input type="checkbox" id="ownmail-select-all" onchange="toggleSelectAll(this)"></label>
-                <a href="javascript:location.reload()" class="ownmail-toolbar-btn" title="Refresh">↻</a>
+                <label class="ownmail-toolbar-checkbox"><input type="checkbox" id="ownmail-select-all" aria-label="Select all messages" onchange="toggleSelectAll(this)"></label>
+                <button type="button" onclick="location.reload()" class="ownmail-toolbar-btn" aria-label="Refresh results" title="Refresh results">{{ icon('refresh') }}</button>
                 <span class="ownmail-toolbar-actions" id="ownmail-toolbar-actions">
                     <span><span id="ownmail-selected-count">0</span> selected</span>
-                    <button onclick="restoreSelected()" class="ownmail-bulk-restore-btn">Restore</button>
-                    <button onclick="deleteForeverSelected()" class="ownmail-bulk-delete-btn">Delete Forever</button>
-                    <button onclick="clearSelection()" class="ownmail-bulk-cancel-btn">Cancel</button>
+                    <button data-message-action onclick="restoreSelected()" class="ownmail-bulk-restore-btn">Restore</button>
+                    <button data-message-action onclick="deleteForeverSelected()" class="ownmail-bulk-delete-btn">Delete forever</button>
+                    <button data-message-action onclick="clearSelection()" class="ownmail-bulk-cancel-btn">Cancel</button>
                 </span>
             </div>
             <div class="ownmail-toolbar-right">
@@ -43,7 +43,10 @@
             count.textContent = checked.length;
             actions.style.display = checked.length > 0 ? 'flex' : 'none';
             var selectAll = document.getElementById('ownmail-select-all');
-            if (selectAll) selectAll.checked = checked.length === allCheckboxes.length;
+            if (selectAll) {
+                selectAll.checked = checked.length === allCheckboxes.length;
+                selectAll.indeterminate = checked.length > 0 && checked.length < allCheckboxes.length;
+            }
         }
         function onCheckboxChange(event, cb) {
             var idx = allCheckboxes.indexOf(cb);
@@ -71,25 +74,44 @@
         function restoreSelected() {
             var ids = getChecked().map(function(cb) { return cb.value; }).join(',');
             if (!ids) return;
-            fetch('/restore-bulk', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'ids=' + encodeURIComponent(ids)
-            }).then(function(r) { if (r.ok) location.href = location.href; });
+            ownmailMessageAction({
+                url: '/restore-bulk',
+                request: {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'ids=' + encodeURIComponent(ids)},
+                pending: 'Restoring messages…',
+                success: 'Messages restored from trash.',
+                failure: 'Could not restore messages.',
+                navigate: function() { location.href = location.href; }
+            });
         }
         function deleteForeverSelected() {
             var checked = getChecked();
             var ids = checked.map(function(cb) { return cb.value; }).join(',');
             if (!ids || !confirm('Permanently delete ' + checked.length + ' email(s)? This cannot be undone.')) return;
-            fetch('/delete-forever', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'ids=' + encodeURIComponent(ids)
-            }).then(function(r) { if (r.ok) location.href = location.href; });
+            ownmailMessageAction({
+                url: '/delete-forever',
+                request: {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'ids=' + encodeURIComponent(ids)},
+                pending: 'Deleting messages forever…',
+                success: 'Messages deleted forever.',
+                failure: 'Could not delete messages forever.',
+                navigate: function() { location.href = location.href; }
+            });
+        }
+        function emptyTrash(event) {
+            event.preventDefault();
+            if (!confirm('Permanently delete all {{ trash_count }} email(s) in trash? This cannot be undone.')) return false;
+            ownmailMessageAction({
+                url: '/empty-trash',
+                request: {method: 'POST'},
+                pending: 'Emptying trash…',
+                success: 'Trash emptied.',
+                failure: 'Could not empty trash.',
+                navigate: function() { location.href = '/trash'; }
+            });
+            return false;
         }
         </script>
     {% else %}
-        <div class="ownmail-no-results">Trash is empty</div>
+        <div class="ownmail-no-results"><h3>Trash is empty</h3><p>Messages you move to trash will appear here.</p><a class="ownmail-empty-action" href="/">Back to all mail</a></div>
     {% endif %}
 
     <p class="ownmail-trash-notice">Emails in trash are automatically deleted after {{ expiry_days }} days.</p>

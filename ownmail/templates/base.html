@@ -1,3 +1,4 @@
+{% from '_icons.html' import icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,7 +7,7 @@
     <title>{% block title %}{{ brand_name }}{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
     <script>
-    // Apply theme immediately to prevent flash of wrong theme
+    // Apply the saved theme before the first paint.
     (function() {
         var pref = localStorage.getItem('ownmail-theme') || 'auto';
         var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -14,55 +15,74 @@
     })();
     </script>
 </head>
-<body>
-    <div class="ownmail-loading-overlay" id="ownmail-loading-overlay">
+<body class="ownmail-app-shell">
+    <a href="#ownmail-main" class="ownmail-skip-link">Skip to content</a>
+    <div class="ownmail-loading-overlay" id="ownmail-loading-overlay" aria-hidden="true">
         <div class="ownmail-loading-spinner"></div>
     </div>
-    <div class="ownmail-header">
+    <div class="ownmail-action-feedback" id="ownmail-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden>
+        <span id="ownmail-action-message"></span>
+        <button type="button" class="ownmail-icon-button" id="ownmail-action-dismiss" aria-label="Dismiss notification" title="Dismiss notification">{{ icon('close') }}</button>
+    </div>
+    <script src="/static/message-actions.js"></script>
+    <header class="ownmail-header">
+        <div class="ownmail-brand">
+            <button type="button" class="ownmail-sidebar-toggle ownmail-icon-button" id="ownmail-sidebar-toggle" onclick="toggleSidebar()" aria-label="Collapse navigation" aria-controls="ownmail-sidebar" aria-expanded="true" title="Collapse navigation">{{ icon('sidebar', 18) }}</button>
+            <h1><a href="/">{{ brand_name }}</a></h1>
+        </div>
+        <div class="ownmail-header-search">{% block searchbar %}
+            <form class="ownmail-search-form" action="/search" method="get" role="search">
+                <label class="ownmail-search-field">{{ icon('search') }}<input type="text" name="q" placeholder="Search mail" aria-label="Search mail"></label>
+                <button type="submit">Search</button>
+            </form>
+            {% endblock %}</div>
         <div class="ownmail-hamburger" id="ownmail-hamburger">
-            <button class="ownmail-hamburger-btn" onclick="toggleHamburger(event)" title="Menu">☰</button>
-            <div class="ownmail-hamburger-dropdown" id="ownmail-hamburger-dropdown">
-                <span class="ownmail-hamburger-info">{{ stats.total_emails | default(0) | int }} emails archived</span>
-                <hr class="ownmail-hamburger-divider">
-                <a href="#" class="ownmail-hamburger-theme" onclick="toggleTheme(); return false;">
-                    <span id="ownmail-hamburger-theme-icon">☀️</span>
+            <button type="button" class="ownmail-hamburger-btn ownmail-icon-button" id="ownmail-hamburger-btn" onclick="toggleHamburger(event)" aria-label="Application menu" aria-haspopup="menu" aria-controls="ownmail-hamburger-dropdown" aria-expanded="false" title="Application menu">{{ icon('more', 18) }}</button>
+            <div class="ownmail-hamburger-dropdown" id="ownmail-hamburger-dropdown" role="menu" aria-label="Application" hidden>
+                <span class="ownmail-hamburger-info" role="presentation">{{ stats.total_emails | default(0) | int }} emails archived</span>
+                <hr class="ownmail-hamburger-divider" role="separator">
+                <button type="button" class="ownmail-hamburger-theme" role="menuitem" tabindex="-1" onclick="toggleTheme()">
+                    <span id="ownmail-theme-sun">{{ icon('sun') }}</span>
+                    <span id="ownmail-theme-moon" hidden>{{ icon('moon') }}</span>
                     <span id="ownmail-hamburger-theme-label">Switch to light mode</span>
-                </a>
-                <hr class="ownmail-hamburger-divider">
-                <a href="/settings">Settings</a>
-                <a href="/help">Search help</a>
+                </button>
+                <hr class="ownmail-hamburger-divider" role="separator">
+                <a href="/settings" role="menuitem" tabindex="-1">{{ icon('settings') }}Settings</a>
+                <a href="/help" role="menuitem" tabindex="-1">{{ icon('help') }}Search help</a>
             </div>
         </div>
-        <h1><a href="/">{{ brand_name }}</a></h1>
-    </div>
-    {% block searchbar %}{% endblock %}
+    </header>
+    <div class="ownmail-nav-backdrop" id="ownmail-nav-backdrop" onclick="closeMobileNavigation()" hidden></div>
     <div class="ownmail-layout">
-        <nav class="ownmail-sidebar" id="ownmail-sidebar">
-            <button class="ownmail-sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">◀</button>
-            <ul class="ownmail-sidebar-nav">
-                <li><a href="/" class="{% if request.path.startswith('/search') and not request.args.get('q') %}active{% elif request.path == '/' %}active{% endif %}">📬 <span class="ownmail-sidebar-label">All Mail</span></a></li>
-                {% for entry in label_nav.system %}
-                <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}" onclick="showLoading(event)">{{ entry.icon }} <span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
-                {% endfor %}
-            </ul>
-            {% if label_nav.user %}
-            <div class="ownmail-sidebar-heading">Labels</div>
-            <ul class="ownmail-sidebar-nav ownmail-sidebar-labels">
-                {% for entry in label_nav.user %}
-                <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}" title="{{ entry.name }} — {{ entry.count }}" onclick="showLoading(event)">{{ entry.icon }} <span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
-                {% endfor %}
-            </ul>
-            {% endif %}
-            <ul class="ownmail-sidebar-nav">
-                <li><a href="/trash" class="{% if request.path == '/trash' %}active{% endif %}">🗑️ <span class="ownmail-sidebar-label">Trash</span>{% if stats.trash_count %}<span class="ownmail-sidebar-badge">{{ stats.trash_count }}</span>{% endif %}</a></li>
+        <nav class="ownmail-sidebar" id="ownmail-sidebar" aria-label="Mail navigation">
+            <div class="ownmail-sidebar-scroll">
+                <ul class="ownmail-sidebar-nav">
+                    {% set all_mail_active = request.path == '/' or (request.path.startswith('/search') and not request.args.get('q')) %}
+                    <li><a href="/" class="{% if all_mail_active %}active{% endif %}"{% if all_mail_active %} aria-current="page"{% endif %} title="All Mail" aria-label="All Mail">{{ icon('mail') }}<span class="ownmail-sidebar-label">All Mail</span></a></li>
+                    {% for entry in label_nav.system %}
+                    <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}"{% if entry.active %} aria-current="page"{% endif %} title="{{ entry.name }} — {{ entry.count }}" aria-label="{{ entry.name }}" onclick="showLoading(event)">{{ icon(entry.icon) }}<span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
+                    {% endfor %}
+                    <li><a href="/trash" class="{% if request.path == '/trash' %}active{% endif %}"{% if request.path == '/trash' %} aria-current="page"{% endif %} title="Trash in this archive" aria-label="Trash in this archive">{{ icon('trash') }}<span class="ownmail-sidebar-label">Trash</span>{% if stats.trash_count %}<span class="ownmail-sidebar-badge">{{ stats.trash_count }}</span>{% endif %}</a></li>
+                </ul>
+                {% if label_nav.user %}
+                <div class="ownmail-sidebar-heading">Labels</div>
+                <ul class="ownmail-sidebar-nav ownmail-sidebar-labels">
+                    {% for entry in label_nav.user %}
+                    <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}"{% if entry.active %} aria-current="page"{% endif %} title="{{ entry.name }} — {{ entry.count }}" aria-label="{{ entry.name }}" onclick="showLoading(event)">{{ icon(entry.icon) }}<span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            <ul class="ownmail-sidebar-nav ownmail-sidebar-footer">
+                <li><a href="/settings" class="{% if request.path == '/settings' %}active{% endif %}"{% if request.path == '/settings' %} aria-current="page"{% endif %} title="Settings" aria-label="Settings">{{ icon('settings') }}<span class="ownmail-sidebar-label">Settings</span></a></li>
+                <li><a href="/help" class="{% if request.path == '/help' %}active{% endif %}"{% if request.path == '/help' %} aria-current="page"{% endif %} title="Search help" aria-label="Search help">{{ icon('help') }}<span class="ownmail-sidebar-label">Search help</span></a></li>
             </ul>
         </nav>
-        <main class="ownmail-main">
+        <main class="ownmail-main" id="ownmail-main" tabindex="-1">
             {% block content %}{% endblock %}
         </main>
     </div>
     <script>
-    // Theme: reads localStorage preference (auto/light/dark)
     function isDarkMode() {
         var pref = localStorage.getItem('ownmail-theme') || 'auto';
         return pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -70,31 +90,129 @@
     function applyTheme() {
         var dark = isDarkMode();
         document.documentElement.classList.toggle('ownmail-dark', dark);
-        updateThemeIcon(dark);
+        document.getElementById('ownmail-theme-sun').hidden = !dark;
+        document.getElementById('ownmail-theme-moon').hidden = dark;
+        document.getElementById('ownmail-hamburger-theme-label').textContent = dark ? 'Switch to light mode' : 'Switch to dark mode';
         if (typeof updateEmailDarkMode === 'function') updateEmailDarkMode(dark);
     }
-    function updateThemeIcon(dark) {
-        var icon = document.getElementById('ownmail-hamburger-theme-icon');
-        var label = document.getElementById('ownmail-hamburger-theme-label');
-        if (icon) icon.textContent = dark ? '☀️' : '🌙';
-        if (label) label.textContent = dark ? 'Switch to light mode' : 'Switch to dark mode';
-    }
     function toggleTheme() {
-        var dark = isDarkMode();
-        localStorage.setItem('ownmail-theme', dark ? 'light' : 'dark');
+        localStorage.setItem('ownmail-theme', isDarkMode() ? 'light' : 'dark');
         applyTheme();
+        closeHamburger(true);
+    }
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+    applyTheme();
+
+    var appMenu = document.getElementById('ownmail-hamburger-dropdown');
+    var appMenuButton = document.getElementById('ownmail-hamburger-btn');
+    function closeHamburger(returnFocus) {
+        appMenu.hidden = true;
+        appMenu.classList.remove('ownmail-show');
+        appMenuButton.setAttribute('aria-expanded', 'false');
+        if (returnFocus) appMenuButton.focus();
+    }
+    function openHamburger(lastItem) {
+        appMenu.hidden = false;
+        appMenu.classList.add('ownmail-show');
+        appMenuButton.setAttribute('aria-expanded', 'true');
+        var items = appMenu.querySelectorAll('[role="menuitem"]');
+        items[lastItem ? items.length - 1 : 0].focus();
     }
     function toggleHamburger(event) {
         event.stopPropagation();
-        var dropdown = document.getElementById('ownmail-hamburger-dropdown');
-        dropdown.classList.toggle('ownmail-show');
+        if (appMenu.hidden) openHamburger(false);
+        else closeHamburger(true);
     }
-    // Listen for OS theme changes (matters when pref is 'auto')
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
-        applyTheme();
+    appMenuButton.addEventListener('keydown', function(event) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            openHamburger(event.key === 'ArrowUp');
+        }
     });
-    applyTheme();
+    appMenu.addEventListener('keydown', function(event) {
+        var items = Array.from(appMenu.querySelectorAll('[role="menuitem"]'));
+        var index = items.indexOf(document.activeElement);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+        } else if (event.key === 'Home' || event.key === 'End') {
+            event.preventDefault();
+            items[event.key === 'Home' ? 0 : items.length - 1].focus();
+        } else if (event.key === 'Tab') {
+            closeHamburger(true);
+        }
+    });
+    document.addEventListener('click', function(event) {
+        if (!document.getElementById('ownmail-hamburger').contains(event.target)) closeHamburger(false);
+    });
 
+    var sidebar = document.getElementById('ownmail-sidebar');
+    var sidebarToggle = document.getElementById('ownmail-sidebar-toggle');
+    var navigationBreakpoint = window.matchMedia('(max-width: 900px)');
+    function syncNavigation() {
+        var mobile = navigationBreakpoint.matches;
+        var open = mobile && document.body.classList.contains('ownmail-nav-open');
+        var collapsed = !mobile && localStorage.getItem('ownmail-sidebar') === 'collapsed';
+        sidebar.classList.toggle('collapsed', collapsed);
+        document.body.classList.toggle('ownmail-sidebar-collapsed', collapsed);
+        sidebar.inert = mobile && !open;
+        if (mobile && !open) sidebar.setAttribute('aria-hidden', 'true');
+        else sidebar.removeAttribute('aria-hidden');
+        document.getElementById('ownmail-nav-backdrop').hidden = !open;
+        document.getElementById('ownmail-main').inert = open;
+        document.querySelector('.ownmail-header-search').inert = open;
+        document.getElementById('ownmail-hamburger').inert = open;
+        sidebarToggle.setAttribute('aria-expanded', String(mobile ? open : !collapsed));
+        var label = mobile ? (open ? 'Close navigation' : 'Open navigation') : (collapsed ? 'Expand navigation' : 'Collapse navigation');
+        sidebarToggle.setAttribute('aria-label', label);
+        sidebarToggle.title = label;
+    }
+    function closeMobileNavigation() {
+        document.body.classList.remove('ownmail-nav-open');
+        syncNavigation();
+        sidebarToggle.focus();
+    }
+    function toggleSidebar() {
+        if (navigationBreakpoint.matches) {
+            var open = document.body.classList.toggle('ownmail-nav-open');
+            closeHamburger(false);
+            syncNavigation();
+            if (open) (sidebar.querySelector('[aria-current="page"]') || sidebar.querySelector('a')).focus();
+        } else {
+            localStorage.setItem('ownmail-sidebar', sidebar.classList.contains('collapsed') ? 'expanded' : 'collapsed');
+            syncNavigation();
+        }
+    }
+    navigationBreakpoint.addEventListener('change', function() {
+        var focusWasInSidebar = sidebar.contains(document.activeElement);
+        document.body.classList.remove('ownmail-nav-open');
+        syncNavigation();
+        if (navigationBreakpoint.matches && focusWasInSidebar) sidebarToggle.focus();
+    });
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            if (!appMenu.hidden) {
+                event.preventDefault();
+                closeHamburger(true);
+            } else if (document.body.classList.contains('ownmail-nav-open')) {
+                event.preventDefault();
+                closeMobileNavigation();
+            }
+        }
+        if (event.key === 'Tab' && navigationBreakpoint.matches && document.body.classList.contains('ownmail-nav-open')) {
+            var links = Array.from(sidebar.querySelectorAll('a'));
+            var first = sidebarToggle;
+            var last = links[links.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        }
+    });
+    syncNavigation();
     function showLoading(event) {
         // Don't show loading overlay for cmd+click or ctrl+click (new tab)
         if (event && (event.metaKey || event.ctrlKey)) {
@@ -114,14 +232,6 @@
     window.addEventListener('load', function() {
         hideLoading();
     });
-    // Close hamburger menu when clicking outside
-    document.addEventListener('click', function(event) {
-        var hamburger = document.getElementById('ownmail-hamburger');
-        var dropdown = document.getElementById('ownmail-hamburger-dropdown');
-        if (hamburger && dropdown && !hamburger.contains(event.target)) {
-            dropdown.classList.remove('ownmail-show');
-        }
-    });
     // Show loading on form submit (skip if onsubmit handler cancelled it)
     document.querySelectorAll('form').forEach(function(form) {
         form.addEventListener('submit', function(e) {
@@ -140,19 +250,6 @@
             showLoading(e);
         });
     });
-    // Sidebar toggle with localStorage persistence
-    function toggleSidebar() {
-        var sidebar = document.getElementById('ownmail-sidebar');
-        var collapsed = sidebar.classList.toggle('collapsed');
-        localStorage.setItem('ownmail-sidebar', collapsed ? 'collapsed' : 'expanded');
-    }
-    (function() {
-        var pref = localStorage.getItem('ownmail-sidebar');
-        var sidebar = document.getElementById('ownmail-sidebar');
-        if (sidebar && pref === 'collapsed') {
-            sidebar.classList.add('collapsed');
-        }
-    })();
     </script>
 </body>
 </html>

@@ -3,71 +3,64 @@
 {% block title %}Search - {{ brand_name }}{% endblock %}
 
 {% block searchbar %}
-<div class="ownmail-searchbar">
-    <form class="ownmail-search-form" action="/search" method="get">
-        <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search emails..." autofocus>
-        <select name="sort" class="ownmail-sort-select" id="sort-select">
+<form class="ownmail-search-form" id="ownmail-search-form" action="/search" method="get" role="search">
+    <label class="ownmail-search-field">
+        {{ icon('search') }}
+        <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search mail" aria-label="Search mail" autofocus>
+    </label>
+    <button type="submit">Search</button>
+</form>
+{% endblock %}
+
+{% block content %}
+    {% set location = namespace(name='Search results' if query else 'All Mail') %}
+    {% for entry in label_nav.system + label_nav.user %}{% if entry.active %}{% set location.name = entry.name %}{% endif %}{% endfor %}
+    <div class="ownmail-view-heading">
+        <h2>{{ location.name }}</h2>
+        <select name="sort" form="ownmail-search-form" class="ownmail-sort-select" id="sort-select" aria-label="Sort messages" onchange="document.getElementById('ownmail-search-form').requestSubmit()">
             <option value="relevance" id="relevance-option" {{ 'selected' if sort == 'relevance' else '' }}{% if hide_relevance %} disabled{% endif %}>Relevance</option>
             <option value="date_desc" {{ 'selected' if sort == 'date_desc' else '' }}>Newest first</option>
             <option value="date_asc" {{ 'selected' if sort == 'date_asc' else '' }}>Oldest first</option>
         </select>
-        <button type="submit">Search</button>
-    </form>
-</div>
-<script>
-// Enable/disable Relevance option based on search input
-(function() {
-    var input = document.getElementById('search-input');
-    var relevanceOpt = document.getElementById('relevance-option');
-    var sortSelect = document.getElementById('sort-select');
-
-    function updateRelevanceOption() {
-        var query = input.value.trim();
-        // Remove date/label filters to check for FTS terms
-        var withoutFilters = query
-            .replace(/\b(before|after):\d{4}-?\d{2}-?\d{2}\b/gi, '')
-            .replace(/\b(label|tag):\S+\b/gi, '')
-            .replace(/\bAND\b/gi, '')
-            .trim();
-        var hasFtsTerms = withoutFilters.length > 0;
-
-        relevanceOpt.disabled = !hasFtsTerms;
-
-        // If relevance is selected but disabled, switch to date_desc
-        if (!hasFtsTerms && sortSelect.value === 'relevance') {
-            sortSelect.value = 'date_desc';
+    </div>
+    <script>
+    (function() {
+        var input = document.getElementById('search-input');
+        var relevance = document.getElementById('relevance-option');
+        var select = document.getElementById('sort-select');
+        function updateRelevance() {
+            var terms = input.value.trim()
+                .replace(/\b(before|after):\d{4}-?\d{2}-?\d{2}\b/gi, '')
+                .replace(/\b(label|tag):\S+\b/gi, '')
+                .replace(/\bAND\b/gi, '').trim();
+            relevance.disabled = !terms;
+            if (!terms && select.value === 'relevance') select.value = 'date_desc';
         }
-    }
-
-    input.addEventListener('input', updateRelevanceOption);
-    // Run on page load too
-    updateRelevanceOption();
-})();
-</script>
-{% endblock %}
-
-{% block content %}
+        input.addEventListener('input', updateRelevance);
+        updateRelevance();
+    })();
+    </script>
     {% if results %}
         <div class="ownmail-toolbar" id="ownmail-toolbar">
             <div class="ownmail-toolbar-left">
-                <label class="ownmail-toolbar-checkbox"><input type="checkbox" id="ownmail-select-all" onchange="toggleSelectAll(this)"></label>
-                <a href="javascript:location.reload()" class="ownmail-toolbar-btn" title="Refresh">↻</a>
+                <label class="ownmail-toolbar-checkbox"><input type="checkbox" id="ownmail-select-all" aria-label="Select all messages" onchange="toggleSelectAll(this)"></label>
+                <button type="button" onclick="location.reload()" class="ownmail-toolbar-btn" aria-label="Refresh results" title="Refresh results">{{ icon('refresh') }}</button>
                 <span class="ownmail-toolbar-actions" id="ownmail-toolbar-actions">
-                    <span><span id="ownmail-selected-count">0</span> selected</span>
-                    <button onclick="trashSelected()" class="ownmail-bulk-delete-btn">Delete</button>
-                    <button onclick="clearSelection()" class="ownmail-bulk-cancel-btn">Cancel</button>
+                    <span><span id="ownmail-selected-count" aria-live="polite">0</span> selected</span>
+                    <button data-message-action onclick="trashSelected()" class="ownmail-bulk-delete-btn">Move to trash</button>
+                    <button data-message-action onclick="clearSelection()" class="ownmail-bulk-cancel-btn">Cancel</button>
                 </span>
             </div>
             <div class="ownmail-toolbar-right">
                 <span class="ownmail-toolbar-range">{{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more or has_prev %} of {% if query %}many{% else %}{{ stats.total_emails | default(0) | int }}{% endif %}{% endif %}</span>
-                {% if has_prev %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">‹</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">‹</span>{% endif %}
-                {% if has_more %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">›</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">›</span>{% endif %}
+                {% if has_prev %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}" class="ownmail-toolbar-arrow" aria-label="Previous page" title="Previous page" onclick="showLoading(event)">{{ icon('chevron-left') }}</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled" aria-hidden="true">{{ icon('chevron-left') }}</span>{% endif %}
+                {% if has_more %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}" class="ownmail-toolbar-arrow" aria-label="Next page" title="Next page" onclick="showLoading(event)">{{ icon('chevron-right') }}</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled" aria-hidden="true">{{ icon('chevron-right') }}</span>{% endif %}
             </div>
         </div>
     {% endif %}
 
     {% if search_error %}
-        <div class="ownmail-search-error">
+        <div class="ownmail-search-error" role="alert">
             <strong>Search error:</strong> {{ search_error }}
             {% if show_fts_hint %}<p>Try quoting phrases with special characters, e.g., <code>"tpc-ds"</code></p>{% endif %}
             <p><a href="/help">Search syntax</a></p>
@@ -88,7 +81,10 @@
                 count.textContent = checked.length;
                 actions.style.display = checked.length > 0 ? 'flex' : 'none';
                 var selectAll = document.getElementById('ownmail-select-all');
-                if (selectAll) selectAll.checked = checked.length === allCheckboxes.length;
+                if (selectAll) {
+                    selectAll.checked = checked.length === allCheckboxes.length;
+                    selectAll.indeterminate = checked.length > 0 && checked.length < allCheckboxes.length;
+                }
             }
             function onCheckboxChange(event, cb) {
                 var idx = allCheckboxes.indexOf(cb);
@@ -116,11 +112,14 @@
             function trashSelected() {
                 var ids = getChecked().map(function(cb) { return cb.value; }).join(',');
                 if (!ids || !confirm('Move ' + getChecked().length + ' email(s) to trash?')) return;
-                fetch('/trash-bulk', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: 'ids=' + encodeURIComponent(ids)
-                }).then(function(r) { if (r.ok) location.href = location.href; });
+                ownmailMessageAction({
+                    url: '/trash-bulk',
+                    request: {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'ids=' + encodeURIComponent(ids)},
+                    pending: 'Moving messages to trash…',
+                    success: 'Messages moved to trash.',
+                    failure: 'Could not move messages to trash.',
+                    navigate: function() { location.href = location.href; }
+                });
             }
             </script>
             {% if has_prev or has_more %}
@@ -128,12 +127,14 @@
                 <div></div>
                 <div class="ownmail-toolbar-right">
                     <span class="ownmail-toolbar-range">{{ start_idx + 1 }}&ndash;{{ start_idx + results|length }}{% if has_more or has_prev %} of {% if query %}many{% else %}{{ stats.total_emails | default(0) | int }}{% endif %}{% endif %}</span>
-                    {% if has_prev %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">‹</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">‹</span>{% endif %}
-                    {% if has_more %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}" class="ownmail-toolbar-arrow" onclick="showLoading(event)">›</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled">›</span>{% endif %}
+                    {% if has_prev %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page - 1 }}" class="ownmail-toolbar-arrow" aria-label="Previous page" title="Previous page" onclick="showLoading(event)">{{ icon('chevron-left') }}</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled" aria-hidden="true">{{ icon('chevron-left') }}</span>{% endif %}
+                    {% if has_more %}<a href="/search?q={{ query | urlencode }}&sort={{ sort }}&page={{ page + 1 }}" class="ownmail-toolbar-arrow" aria-label="Next page" title="Next page" onclick="showLoading(event)">{{ icon('chevron-right') }}</a>{% else %}<span class="ownmail-toolbar-arrow ownmail-disabled" aria-hidden="true">{{ icon('chevron-right') }}</span>{% endif %}
                 </div>
             </div>
             {% endif %}
     {% elif query %}
-        <div class="ownmail-no-results">No results found for "{{ query }}"</div>
+        <div class="ownmail-no-results"><h3>No results found for "{{ query }}"</h3><p>Try fewer search terms or <a href="/help">check the search syntax</a>.</p><a class="ownmail-empty-action" href="/">Show all mail</a></div>
+    {% else %}
+        <div class="ownmail-no-results"><h3>No archived mail yet</h3><p>Messages will appear here after you sync or import mail.</p><a class="ownmail-empty-action" href="https://github.com/clee704/ownmail#quick-start">Set up your archive</a></div>
     {% endif %}
 {% endblock %}
