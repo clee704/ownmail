@@ -212,7 +212,9 @@
     window.addEventListener('pageshow', hideLoading);
     window.addEventListener('load', hideLoading);
     document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') hideLoading();
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        if (loadingRow) window.stop();
+        hideLoading();
     });
     document.addEventListener('click', function(event) {
         if (!loadingRow || event.defaultPrevented || event.button !== 0 ||

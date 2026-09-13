@@ -4,7 +4,7 @@ title: Restore loading feedback when opening a message row
 status: In Progress
 assignee: []
 created_date: '2026-09-13 05:15'
-updated_date: '2026-09-13 21:17'
+updated_date: '2026-09-13 21:29'
 labels:
   - ui
   - ux
@@ -30,25 +30,19 @@ Keep normal browser navigation and separate sender and checkbox interactions. Re
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A normal message-row click navigates immediately; after 200 ms, a slow response shows a 14 px spinner using --ownmail-accent, with no visible loading label or layout shift. Pending sender and subject use --ownmail-secondary in both themes.
-- [ ] #2 Fast navigation and modified or prevented clicks do not start row feedback. Sender links, checkboxes, and mobile long-press selection retain their separate behavior; controls remain usable while navigation is pending.
-- [ ] #3 Repeated clicks on the same pending message keep one indicator without restarting its visual delay. A new message moves pending feedback; another same-tab destination clears it. Superseded timers cannot restore stale feedback.
-- [ ] #4 Returning through browser history clears pending styling. Cancelling navigation must leave the message link usable for retry. Reduced motion disables spinner animation, and a polite hidden status announces loading.
-- [ ] #5 Regression coverage exercises rendered message links and fails with the obsolete selector. Slow navigation checks cover repeated clicks, message-to-message navigation, and message-to-Settings navigation; the unused listener is removed.
+- [x] #1 A normal message-row click navigates immediately; after 200 ms, a slow response shows a 14 px spinner using --ownmail-accent, with no visible loading label or layout shift. Pending sender and subject use --ownmail-secondary in both themes.
+- [x] #2 Fast navigation and modified or prevented clicks do not start row feedback. Sender links, checkboxes, and mobile long-press selection retain their separate behavior; controls remain usable while navigation is pending.
+- [x] #3 Repeated clicks on the same pending message keep one indicator without restarting its visual delay. A new message moves pending feedback; another same-tab destination clears it. Superseded timers cannot restore stale feedback.
+- [x] #4 Returning through browser history clears pending styling. Cancelling navigation must leave the message link usable for retry. Reduced motion disables spinner animation, and a polite hidden status announces loading.
+- [x] #5 Regression coverage exercises rendered message links and fails with the obsolete selector. Slow navigation checks cover repeated clicks, message-to-message navigation, and message-to-Settings navigation; the unused listener is removed.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design reviewed in an interactive preview. The spinner uses the Search button fill (#edb928), with a 2 px stroke. Pending text uses the existing secondary color; the spinner stays at full strength. Use the neutral hover background for the pending row so it remains distinct from checkbox selection.
+Implemented the approved row feedback: a 14 px spinner with a 2 px stroke using the Search button accent, muted sender/subject text, and a polite hidden loading status. The date content retains its space while hidden, so the row and date column do not move. Reduced motion disables spinner animation.
 
-The browser owns replacement of pending native navigation. Keep feedback state separate from request state: clicking another destination must remove the old row indicator. Repeated clicks must not stack indicators or restart the visual delay. Avoid disabling the row, which could prevent retry after cancellation.
+Native links remain usable. Repeated message clicks keep the current feedback delay and spinner; choosing another message or destination removes stale row feedback. Checkboxes, search editing, modified clicks, and mobile long-press selection keep their separate behavior. Escape calls the browser Stop operation before clearing a pending message; Escape consumed by the mobile navigation panel only closes that panel. Page lifecycle events clear feedback for history navigation and retry.
 
-Checkbox changes and typing do not cancel an already pending native navigation. The destination may still open afterward. Modified clicks must leave the current pending destination alone. The existing global overlay only guards Ctrl/Meta, so any shared feedback handler must use the complete normal-click predicate.
-
-The preview simulates these interactions; production implementation and slow native-navigation regression coverage remain outstanding. No acceptance criteria have been completed.
-
-Native navigation replacement is defined by the [HTML navigation algorithm](https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate); this does not imply cancellation of server-side work.
-
-Implementation started: the existing delayed loader now tracks the clicked row, preserves native navigation, clears pending row feedback on a new destination, and resets on Escape and page lifecycle events. Focused modifier and long-press tests are being extended; real-browser navigation tests and review are in progress.
+Validation: 11 Chromium tests pass against held native document requests, including message replacement, Settings, fast responses, cancellation/retry, and light/dark desktop/mobile layout. Focused tests cover the exact 200 ms delay, modifiers, mobile selection, and Escape handling. Both rendered-list regression cases fail with the obsolete selector substituted in memory. Independent review found no actionable issues. The full pre-push gate remains to be run before closing the task.
 <!-- SECTION:NOTES:END -->
