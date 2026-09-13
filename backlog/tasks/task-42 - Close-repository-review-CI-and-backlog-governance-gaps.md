@@ -4,7 +4,7 @@ title: 'Close repository review, CI, and backlog governance gaps'
 status: In Progress
 assignee: []
 created_date: '2026-09-11 10:52'
-updated_date: '2026-09-13 18:21'
+updated_date: '2026-09-13 18:24'
 labels: []
 dependencies: []
 documentation:
@@ -37,4 +37,6 @@ Removed personal export paths, archive statistics, and a real folder hierarchy f
 Prepared the rewrite in a separate local copy. Verified all 164 outgoing commits retain their parent relationships and author/committer metadata; changes are confined to the intended documentation. The rewritten tip has the same file tree as the sanitized original, and published commit f6c86e5 remains unchanged. Independent verification found none of the identified private-data markers in the outgoing blobs or commit bodies. Gitleaks 8.30.1 found no credentials. Updated the formatting revision in .git-blame-ignore-revs for the rewritten history.
 
 Local validation passed Ruff lint/format, deptry, file hygiene, and 2,384 tests with one expected failure and no skips; overall coverage including branches was 95.55%, above the 95% minimum. Publish master and verify the remote lint and Python 3.10-3.12 jobs, including skip counts, before checking AC 1.
+
+The first published CI run (34774436331) exposed a formatter mismatch: the pre-commit hook pins Ruff 0.15.0, but the development dependency allowed CI to install Ruff 0.16.7, which also checks Markdown code blocks. Pin the development dependency to 0.15.0 so local hooks and CI enforce the same formatter version.
 <!-- SECTION:NOTES:END -->
