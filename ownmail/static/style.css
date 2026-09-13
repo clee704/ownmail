@@ -184,7 +184,8 @@ a:hover { text-decoration: underline; }
 .ownmail-search-form { display: flex; align-items: center; gap: var(--ownmail-space-2); margin: 0; }
 .ownmail-search-field { display: flex; align-items: center; gap: var(--ownmail-space-2); flex: 1; min-width: 0; position: relative; color: var(--ownmail-muted); }
 .ownmail-search-field > .ownmail-icon { position: absolute; left: 10px; pointer-events: none; }
-.ownmail-search-form input[type="text"] { width: 100%; min-width: 0; height: 32px; border: 1px solid var(--ownmail-border); border-radius: var(--ownmail-radius); background: var(--ownmail-sidebar); padding: 6px 10px; color: var(--ownmail-text); }
+.ownmail-search-form input[type="text"], .ownmail-search-form button { height: 32px; appearance: none; }
+.ownmail-search-form input[type="text"] { width: 100%; min-width: 0; border: 1px solid var(--ownmail-border); border-radius: var(--ownmail-radius); background: var(--ownmail-sidebar); padding: 6px 10px; color: var(--ownmail-text); }
 .ownmail-search-field input[type="text"] { padding-left: 32px; }
 .ownmail-search-form input::placeholder { color: var(--ownmail-muted); }
 .ownmail-search-form input:focus { background: var(--ownmail-bg); }
@@ -203,8 +204,7 @@ a:hover { text-decoration: underline; }
 .ownmail-toolbar-checkbox { display: flex; justify-content: center; align-items: center; flex: none; width: 24px; height: 30px; cursor: pointer; }
 .ownmail-toolbar-actions { display: flex; align-items: center; gap: var(--ownmail-space-1); margin-left: auto; }
 .ownmail-selection-count { white-space: nowrap; margin-inline: var(--ownmail-space-2); color: var(--ownmail-text); font-weight: 500; }
-.ownmail-toolbar.ownmail-selecting { background: var(--ownmail-selected); }
-.ownmail-list-toolbar { margin-top: var(--ownmail-space-2); }
+.ownmail-toolbar.ownmail-selecting { background: var(--ownmail-selected); border-bottom-color: var(--ownmail-input-border); }
 .ownmail-toolbar-range { min-width: 0; overflow: hidden; text-overflow: ellipsis; margin: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ownmail-toolbar-bottom { border: 0; justify-content: flex-end; }
 .ownmail-empty-trash-btn, .ownmail-button {
@@ -384,13 +384,13 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-reader-actions :is(.ownmail-back-to-results, .ownmail-email-menu-btn) { width: 40px; height: 40px; }
 }
 @media (max-width: 600px) {
-    .ownmail-app-shell { --ownmail-header-height: 108px; --ownmail-text-xs: 13px; --ownmail-text-sm: 15px; --ownmail-text-md: 16px; --ownmail-text-lg: 20px; }
-    .ownmail-header { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px 64px; }
+    .ownmail-app-shell { --ownmail-header-height: 105px; --ownmail-text-xs: 13px; --ownmail-text-sm: 15px; --ownmail-text-md: 16px; --ownmail-text-lg: 20px; }
+    .ownmail-header { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px minmax(0, 1fr); }
     .ownmail-brand { background: var(--ownmail-bg); }
     .ownmail-brand h1 { font-size: var(--ownmail-text-md); }
-    .ownmail-header-search { grid-row: 2; grid-column: 1 / -1; padding: 4px var(--ownmail-space-3) var(--ownmail-space-4); }
-    .ownmail-search-form input[type="text"] { height: 44px; font-size: 16px; }
-    .ownmail-search-form button { height: 44px; }
+    .ownmail-header-search { grid-row: 2; grid-column: 1 / -1; padding: 4px var(--ownmail-space-3) var(--ownmail-space-3); }
+    .ownmail-search-form input[type="text"], .ownmail-search-form button { height: 44px; }
+    .ownmail-search-form input[type="text"] { font-size: 16px; }
     .ownmail-trash-header { padding: var(--ownmail-space-2) var(--ownmail-space-3); min-height: 52px; }
     .ownmail-toolbar { min-height: 52px; padding: var(--ownmail-space-1) var(--ownmail-space-2); gap: 0; }
     .ownmail-toolbar-left, .ownmail-toolbar-right { gap: 0; }

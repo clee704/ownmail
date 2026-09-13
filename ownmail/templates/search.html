@@ -16,7 +16,7 @@
     {% set location = namespace(name='Search results' if query else 'All Mail') %}
     {% for entry in label_nav.system + label_nav.user %}{% if entry.active %}{% set location.name = entry.name %}{% endif %}{% endfor %}
     <h2 class="ownmail-sr-only">{{ location.name }}</h2>
-    <div class="ownmail-toolbar ownmail-list-toolbar" id="ownmail-toolbar">
+    <div class="ownmail-toolbar" id="ownmail-toolbar">
         <div class="ownmail-toolbar-left">
             {% if results %}
             <label class="ownmail-toolbar-checkbox"><input type="checkbox" id="ownmail-select-all" aria-label="Select all messages" onchange="toggleSelectAll(this)"></label>
