@@ -63,6 +63,7 @@
                 position.restore = true;
                 savePosition(position);
             }
+            showLoading(event);
         });
     }
 })();

@@ -165,6 +165,7 @@ function page(path, reader = false, storageBlocked = false) {
     const location = new URL(path, 'http://localhost');
     let focused = false;
     let scrolled = null;
+    let loadingCalls = 0;
     const row = {
         href: 'http://localhost/email/message?return_to=' + encodeURIComponent(path),
         focus(options) { focused = options.preventScroll; }
@@ -179,6 +180,7 @@ function page(path, reader = false, storageBlocked = false) {
     };
     const context = {
         URL, location,
+        showLoading() { loadingCalls++; },
         document: { getElementById(id) {
             if (id === 'ownmail-email-list' && !reader) return list;
             if (id === 'ownmail-back-to-results' && reader) return back;
@@ -198,12 +200,18 @@ function page(path, reader = false, storageBlocked = false) {
     vm.runInNewContext(SOURCE, context);
     return {
         click(overrides = {}) {
-            const event = {button: 0, target: {closest() { return row; }}, ...overrides};
+            const event = {
+                button: 0, defaultPrevented: false,
+                preventDefault() { this.defaultPrevented = true; },
+                target: {closest() { return row; }}, ...overrides
+            };
             handlers[reader ? 'back:click' : 'list:click'](event);
+            return event;
         },
         show() { handlers.pageshow(); },
         get focused() { return focused; },
-        get scrolled() { return scrolled; }
+        get scrolled() { return scrolled; },
+        get loadingCalls() { return loadingCalls; }
     };
 }
 const listUrl = '/search?q=annual&sort=date_asc&page=3';
@@ -221,7 +229,11 @@ def run_position_script(assertions):
 def test_explicit_back_restores_scroll_and_focus_once():
     run_position_script("""
 page(listUrl).click();
-page('/email/message', true).click();
+const reader = page('/email/message', true);
+const click = reader.click();
+assert.equal(reader.loadingCalls, 1);
+assert.equal(reader.scrolled, null);
+assert(!click.defaultPrevented);
 const returned = page(listUrl);
 returned.show();
 assert.deepEqual(returned.scrolled, [0, 648]);
@@ -233,9 +245,28 @@ assert.equal(fresh.scrolled, null);
 """)
 
 
-@pytest.mark.parametrize("modifiers", [{"ctrlKey": True}, {"metaKey": True}, {"shiftKey": True}, {"button": 1}])
-def test_new_tab_and_modified_clicks_do_not_save_position(modifiers):
-    run_position_script("page(listUrl).click(" + json.dumps(modifiers) + "); assert.equal(storage.size, 0);")
+@pytest.mark.parametrize(
+    "modifiers",
+    [
+        {"ctrlKey": True},
+        {"metaKey": True},
+        {"shiftKey": True},
+        {"altKey": True},
+        {"button": 1},
+        {"defaultPrevented": True},
+    ],
+)
+def test_modified_or_prevented_clicks_do_not_save_position_or_start_loading(modifiers):
+    run_position_script(
+        """
+const modifiers = MODIFIERS;
+page(listUrl).click(modifiers);
+const reader = page('/email/message', true);
+reader.click(modifiers);
+assert.equal(storage.size, 0);
+assert.equal(reader.loadingCalls, 0);
+""".replace("MODIFIERS", json.dumps(modifiers))
+    )
 
 
 def test_result_position_does_not_change_other_queries_or_browser_back():
@@ -257,7 +288,9 @@ assert.equal(storage.size, 0);
 def test_unavailable_storage_does_not_interrupt_navigation():
     run_position_script("""
 page(listUrl, false, true).click();
-page('/email/message', true, true).click();
+const reader = page('/email/message', true, true);
+reader.click();
+assert.equal(reader.loadingCalls, 1);
 page(listUrl, false, true).show();
 assert.equal(storage.size, 0);
 """)
