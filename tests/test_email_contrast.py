@@ -47,7 +47,20 @@ engine.launch({headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECU
     return node
 
 
-def run_contrast_browser(app, node, body, css, assertions, theme="dark", system_theme="light"):
+def run_contrast_browser(
+    app,
+    node,
+    body,
+    css,
+    assertions,
+    theme="dark",
+    system_theme="light",
+    *,
+    auto_scale=False,
+    viewport=(900, 1400),
+    is_mobile=False,
+    attachments=(),
+):
     with app.test_request_context("/email/synthetic"):
         page = render_template(
             "email.html",
@@ -56,7 +69,8 @@ def run_contrast_browser(app, node, body, css, assertions, theme="dark", system_
             sender="sender@example.com",
             body_html=f"<style>{css}</style>{body}",
             supports_dark=True,
-            auto_scale=False,
+            auto_scale=auto_scale,
+            attachments=attachments,
         )
     tree = html.fromstring(page)
     paths = tree.xpath('//script[@src]/@src | //link[@rel="stylesheet"]/@href')
@@ -66,7 +80,14 @@ def run_contrast_browser(app, node, body, css, assertions, theme="dark", system_
         response = client.get(path)
         assert response.status_code == 200, path
         files[path] = {"body": response.data.decode(), "contentType": response.mimetype}
-    payload = {"page": page, "files": files, "theme": theme, "systemTheme": system_theme}
+    payload = {
+        "page": page,
+        "files": files,
+        "theme": theme,
+        "systemTheme": system_theme,
+        "viewport": {"width": viewport[0], "height": viewport[1]},
+        "isMobile": is_mobile,
+    }
     script = r"""
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -77,7 +98,8 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
     });
     try {
-        const page = await browser.newPage({viewport: {width: 900, height: 1400}, colorScheme: input.systemTheme});
+        const page = await browser.newPage({viewport: input.viewport, colorScheme: input.systemTheme,
+            isMobile: input.isMobile, hasTouch: input.isMobile});
         const errors = [];
         const requests = new Map();
         page.on('pageerror', error => errors.push(error.message));

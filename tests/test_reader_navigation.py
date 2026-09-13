@@ -398,16 +398,17 @@ const dom = new JSDOM(PAGE, {
     beforeParse(window) {
         window.matchMedia = () => ({ matches: false, addEventListener() {} });
         Object.defineProperty(window.HTMLElement.prototype, 'clientWidth', {
-            get() { return this.id === 'ownmail-email-content' ? contentWidth : 0; }
+            get() { return ['ownmail-email-content', 'ownmail-email-viewport'].includes(this.id) ? contentWidth : 0; }
         });
         Object.defineProperty(window.HTMLElement.prototype, 'scrollWidth', {
-            get() { return this.id === 'ownmail-email-content' ? 1200 : 0; }
+            get() { return ['ownmail-email-content', 'ownmail-email-viewport'].includes(this.id) ? 1200 : 0; }
         });
     }
 });
 const { window } = dom;
 const { document } = window;
 const content = document.getElementById('ownmail-email-content');
+const viewport = document.getElementById('ownmail-email-viewport');
 const button = document.getElementById('ownmail-fit-message');
 const menu = document.querySelector('.ownmail-email-menu');
 ASSERTIONS
@@ -435,7 +436,7 @@ menu.open = true;
 button.click();
 assert.equal(button.textContent, initiallyFit ? 'Fit to width' : 'Show actual size');
 assert.equal(String(content.style.zoom), initiallyFit ? '' : String(1 / 3));
-assert.equal(content.style.overflow, initiallyFit ? 'auto' : 'hidden');
+assert.equal(viewport.style.overflow, initiallyFit ? 'auto hidden' : 'clip visible');
 assert(!menu.open);
 assert.equal(document.activeElement, menu.querySelector('summary'));
 button.click();
@@ -463,7 +464,7 @@ contentWidth = 1400;
 window.dispatchEvent(new window.Event('resize'));
 assert(button.hidden);
 assert.equal(content.style.zoom, '');
-assert.equal(content.style.overflow, 'auto');
+assert.equal(viewport.style.overflow, 'clip visible');
 """,
     )
 

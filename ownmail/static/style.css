@@ -294,7 +294,9 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-sort-options label:has(input:disabled) { color: var(--ownmail-muted); cursor: default; }
 .ownmail-email-menu-divider { border: 0; border-top: 1px solid var(--ownmail-border); margin: var(--ownmail-space-1) 0; }
 .ownmail-email-content-area { background: var(--ownmail-bg); display: flow-root; min-width: 0; }
+#ownmail-email-viewport { display: flow-root; overflow: clip visible; }
 #ownmail-email-content { min-height: 200px; overflow: auto; overflow-wrap: break-word; font-family: var(--ownmail-font); font-size: 16px; }
+#ownmail-email-content:where(.ownmail-email-content-html) { display: flow-root; overflow: visible; }
 .ownmail-email-content-padded { padding: var(--ownmail-space-4); }
 .ownmail-email-content-plain { padding: var(--ownmail-space-4) 0; }
 .ownmail-email-body { font-family: inherit; margin: 0; max-width: 70ch; line-height: 1.65; }
