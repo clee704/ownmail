@@ -1,7 +1,7 @@
 ---
 id: TASK-68
 title: Serve the Archive icon as a desktop favicon
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 20:09'
 updated_date: '2026-09-13 20:12'
