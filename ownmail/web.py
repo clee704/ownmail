@@ -1191,12 +1191,6 @@ def create_app(
         if not has_fts_terms and sort == "relevance":
             sort = "date_desc"
 
-        # If no query at all, show newest emails
-        if not query:
-            query = ""  # Will trigger filter-only path in database
-            has_fts_terms = False
-            sort = "date_desc"
-
         # Server-side pagination: fetch only what we need + 1 to check if more exist
         offset = (page - 1) * per_page
 

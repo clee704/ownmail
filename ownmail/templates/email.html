@@ -8,22 +8,16 @@
         <a class="ownmail-back-to-results" id="ownmail-back-to-results" href="{{ back_url or ('/trash' if is_trashed else '/search') }}" title="Back to results">
             {{ icon('arrow-left') }}<span class="ownmail-sr-only">Back to results</span>
         </a>
-        <span class="ownmail-reader-action-divider" aria-hidden="true"></span>
-        {% if is_trashed %}
-        <button type="button" class="ownmail-reader-action" data-message-action onclick="restoreEmail('{{ email_id }}')" aria-label="Restore from trash" title="Restore from trash">{{ icon('refresh') }}<span>Restore</span></button>
-        {% else %}
-        <button type="button" class="ownmail-reader-action" data-message-action onclick="trashEmail('{{ email_id }}')" aria-label="Move to trash" title="Move to trash">{{ icon('trash') }}<span>Trash</span></button>
-        {% endif %}
         <details class="ownmail-email-menu">
             <summary class="ownmail-email-menu-btn" aria-label="More message actions" title="More message actions">{{ icon('more') }}</summary>
             <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
                 <a href="/raw/{{ email_id }}" title="Show original message">{{ icon('file') }}<span>Original</span></a>
                 <a href="/download/{{ email_id }}" title="Download message">{{ icon('download') }}<span>Download</span></a>
-                {% if has_external_images or is_trashed %}<hr class="ownmail-email-menu-divider">{% endif %}
                 {% if body_html %}
                 <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-content" hidden>Show actual size</button>
                 {% endif %}
                 {% if has_external_images %}
+                <hr class="ownmail-email-menu-divider">
                 <button type="button" id="menu-load-images" {% if not images_blocked %}style="display: none;"{% endif %} onclick="loadImages()">Load images</button>
                 <button type="button" id="menu-block-images" {% if images_blocked %}style="display: none;"{% endif %} onclick="blockImages()">Block images</button>
                 {% if sender_email %}
@@ -31,8 +25,12 @@
                 <button type="button" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="untrustSender()">Untrust this sender</button>
                 {% endif %}
                 {% endif %}
+                <hr class="ownmail-email-menu-divider">
                 {% if is_trashed %}
+                <button type="button" data-message-action onclick="restoreEmail('{{ email_id }}')" aria-label="Restore from trash" title="Restore from trash">{{ icon('refresh') }}<span>Restore from trash</span></button>
                 <button type="button" class="ownmail-menu-danger" data-message-action onclick="deleteForever('{{ email_id }}')">Delete forever</button>
+                {% else %}
+                <button type="button" class="ownmail-menu-danger" data-message-action onclick="trashEmail('{{ email_id }}')" aria-label="Move to trash" title="Move to trash">{{ icon('trash') }}<span>Move to trash</span></button>
                 {% endif %}
             </div>
         </details>
@@ -294,21 +292,6 @@ function updateEmailDarkMode(siteIsDark) {
     var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     updateEmailDarkMode(dark);
 })();
-
-document.addEventListener('click', function(event) {
-    var menu = document.querySelector('.ownmail-email-menu');
-    if (menu.open && (!menu.contains(event.target) || event.target.closest('button, a'))) {
-        menu.open = false;
-        if (menu.contains(event.target)) menu.querySelector('summary').focus();
-    }
-});
-document.addEventListener('keydown', function(event) {
-    var menu = document.querySelector('.ownmail-email-menu');
-    if (event.key === 'Escape' && menu.open) {
-        menu.open = false;
-        menu.querySelector('summary').focus();
-    }
-});
 
 function trashEmail(emailId) {
     if (!confirm('Move this email to trash?')) return;

@@ -313,3 +313,88 @@ window.hideLoading();
 assert(!visible());
 """.replace("COMPLETION_EVENT", json.dumps(completion_event)),
     )
+
+
+def test_list_sort_menu_submits_current_query_and_preserves_sort(shell_app, shell_browser):
+    app, _ = shell_app
+    run_shell_browser(
+        app,
+        shell_browser,
+        """
+const menu = byId('ownmail-list-menu');
+const form = byId('ownmail-search-form');
+let submitted;
+form.requestSubmit = () => { submitted = new window.FormData(form); };
+menu.open = true;
+document.querySelector('input[value="date_asc"]').click();
+assert.equal(submitted.get('sort'), 'date_asc');
+assert.equal(submitted.get('q'), 'annual');
+assert.equal(submitted.getAll('sort').length, 1);
+assert(!menu.open);
+byId('search-input').value = 'updated';
+byId('search-input').dispatchEvent(new window.Event('input'));
+assert.equal(new window.FormData(form).get('sort'), 'date_asc');
+menu.open = true;
+byId('relevance-option').click();
+assert.equal(submitted.get('sort'), 'relevance');
+assert.equal(submitted.get('q'), 'updated');
+byId('search-input').value = '';
+byId('search-input').dispatchEvent(new window.Event('input'));
+assert(byId('relevance-option').disabled);
+assert.equal(new window.FormData(form).get('sort'), 'date_desc');
+menu.open = true;
+key(menu.querySelector('summary'), 'Escape');
+assert(!menu.open);
+assert.equal(document.activeElement, menu.querySelector('summary'));
+menu.open = true;
+byId('search-input').click();
+assert(!menu.open);
+""",
+        path="/search?q=annual",
+    )
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
+def test_selection_replaces_list_controls_and_clear_restores_focus(shell_app, shell_browser, path):
+    app, archive = shell_app
+    rows = [
+        (identifier, "message.eml", "Annual review", "sender@example.com", "2024-01-15", "Message body")
+        for identifier in ["first", "second"]
+    ]
+    archive.search.return_value = rows
+    archive.db.get_trashed_emails.return_value = [(*row, "2024-01-16", "message.eml") for row in rows]
+    run_shell_browser(
+        app,
+        shell_browser,
+        """
+const checkboxes = document.querySelectorAll('.ownmail-email-checkbox input');
+const actions = byId('ownmail-toolbar-actions');
+const controls = byId('ownmail-list-controls');
+const selectAll = byId('ownmail-select-all');
+const count = byId('ownmail-selection-count');
+assert(actions.hidden);
+assert(!controls.hidden);
+checkboxes[0].click();
+assert.equal(count.textContent, '1 selected');
+assert(!count.hidden);
+assert(!actions.hidden);
+assert(controls.hidden);
+assert(byId('ownmail-refresh-results').hidden);
+assert(selectAll.indeterminate);
+selectAll.click();
+assert.equal(count.textContent, '2 selected');
+assert(Array.from(checkboxes).every(checkbox => checkbox.checked));
+const clear = actions.querySelector('[aria-label="Clear selection"]');
+clear.focus();
+clear.click();
+assert(actions.hidden);
+assert(count.hidden);
+assert(!controls.hidden);
+assert(!byId('ownmail-refresh-results').hidden);
+assert(!selectAll.checked);
+assert(!selectAll.indeterminate);
+assert(Array.from(checkboxes).every(checkbox => !checkbox.checked));
+assert.equal(document.activeElement, selectAll);
+""",
+        path=path,
+    )

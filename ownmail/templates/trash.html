@@ -16,15 +16,15 @@
         <div class="ownmail-toolbar" id="ownmail-toolbar">
             <div class="ownmail-toolbar-left">
                 <label class="ownmail-toolbar-checkbox"><input type="checkbox" id="ownmail-select-all" aria-label="Select all messages" onchange="toggleSelectAll(this)"></label>
-                <button type="button" onclick="location.reload()" class="ownmail-toolbar-btn" aria-label="Refresh results" title="Refresh results">{{ icon('refresh') }}</button>
-                <span class="ownmail-toolbar-actions" id="ownmail-toolbar-actions">
-                    <span><span id="ownmail-selected-count">0</span> selected</span>
-                    <button data-message-action onclick="restoreSelected()" class="ownmail-bulk-restore-btn">Restore</button>
-                    <button data-message-action onclick="deleteForeverSelected()" class="ownmail-bulk-delete-btn">Delete forever</button>
-                    <button data-message-action onclick="clearSelection()" class="ownmail-bulk-cancel-btn">Cancel</button>
-                </span>
+                <button type="button" id="ownmail-refresh-results" onclick="location.reload()" class="ownmail-toolbar-btn" aria-label="Refresh results" title="Refresh results">{{ icon('refresh') }}</button>
+                <span class="ownmail-selection-count" id="ownmail-selection-count" role="status" hidden><span id="ownmail-selected-count">0</span> selected</span>
             </div>
-            <div class="ownmail-toolbar-right">
+            <div class="ownmail-toolbar-actions" id="ownmail-toolbar-actions" hidden>
+                <button type="button" data-message-action onclick="restoreSelected()" class="ownmail-toolbar-btn" aria-label="Restore selected messages" title="Restore selected messages">{{ icon('refresh') }}</button>
+                <button type="button" data-message-action onclick="deleteForeverSelected()" class="ownmail-toolbar-btn ownmail-menu-danger" aria-label="Delete selected messages forever" title="Delete forever">{{ icon('trash') }}</button>
+                <button type="button" data-message-action onclick="clearSelection()" class="ownmail-toolbar-btn" aria-label="Clear selection" title="Clear selection">{{ icon('close') }}</button>
+            </div>
+            <div class="ownmail-toolbar-right" id="ownmail-list-controls">
                 <span class="ownmail-toolbar-range">1&ndash;{{ results|length }} of {{ trash_count }}</span>
             </div>
         </div>
@@ -41,7 +41,12 @@
             var actions = document.getElementById('ownmail-toolbar-actions');
             var count = document.getElementById('ownmail-selected-count');
             count.textContent = checked.length;
-            actions.style.display = checked.length > 0 ? 'flex' : 'none';
+            var selecting = checked.length > 0;
+            actions.hidden = !selecting;
+            document.getElementById('ownmail-selection-count').hidden = !selecting;
+            document.getElementById('ownmail-list-controls').hidden = selecting;
+            document.getElementById('ownmail-refresh-results').hidden = selecting;
+            document.getElementById('ownmail-toolbar').classList.toggle('ownmail-selecting', selecting);
             var selectAll = document.getElementById('ownmail-select-all');
             if (selectAll) {
                 selectAll.checked = checked.length === allCheckboxes.length;
@@ -70,6 +75,7 @@
             if (selectAll) selectAll.checked = false;
             lastCheckedIdx = null;
             updateToolbar();
+            if (selectAll) selectAll.focus();
         }
         function restoreSelected() {
             var ids = getChecked().map(function(cb) { return cb.value; }).join(',');

@@ -4,16 +4,24 @@
     var dismiss = document.getElementById('ownmail-action-dismiss');
     var pending = false;
     var noticeKey = 'ownmail-action-notice';
+    var dismissTimer;
 
     function announce(text, state) {
+        clearTimeout(dismissTimer);
         feedback.dataset.state = state;
         feedback.setAttribute('role', state === 'error' ? 'alert' : 'status');
         feedback.setAttribute('aria-live', state === 'error' ? 'assertive' : 'polite');
         message.textContent = text;
         dismiss.hidden = state === 'pending';
         feedback.hidden = false;
+        if (state === 'success') {
+            dismissTimer = setTimeout(function() { feedback.hidden = true; }, 4000);
+        }
     }
-    dismiss.addEventListener('click', function() { feedback.hidden = true; });
+    dismiss.addEventListener('click', function() {
+        clearTimeout(dismissTimer);
+        feedback.hidden = true;
+    });
 
     // Carry confirmed feedback through the action's existing redirect or reload.
     try {

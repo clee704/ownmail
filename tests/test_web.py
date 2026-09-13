@@ -5,6 +5,7 @@ import sqlite3
 from unittest.mock import MagicMock
 
 import pytest
+from lxml import html
 
 from ownmail.web import (
     _extract_body_content,
@@ -2681,12 +2682,21 @@ class TestSearchRoute:
             client.get("/search?q=invoice&sort=bogus")
         assert archive.search.call_args.kwargs["sort"] == "relevance"
 
-    def test_explicit_sort_is_honoured(self, archive):
-        """A valid sort parameter should be passed through."""
-        app = create_app(archive)
+    @pytest.mark.parametrize("query", ["", "invoice"])
+    @pytest.mark.parametrize("sort", ["date_asc", "date_desc"])
+    def test_explicit_sort_is_honoured(self, archive, query, sort):
+        """The requested date order stays selected and survives pagination."""
+        archive.search.return_value = [self._row(i) for i in range(2)]
+        app = create_app(archive, page_size=1)
         with app.test_client() as client:
-            client.get("/search?q=invoice&sort=date_asc")
-        assert archive.search.call_args.kwargs["sort"] == "date_asc"
+            response = client.get("/search", query_string={"q": query, "sort": sort, "page": 2})
+        assert archive.search.call_args.kwargs["sort"] == sort
+        tree = html.fromstring(response.data)
+        assert tree.xpath('//*[@id="ownmail-list-menu"]//input[@name="sort"][@checked]/@value') == [sort]
+        for label, page in [("Previous page", 1), ("Next page", 3)]:
+            assert set(tree.xpath(f'//a[@aria-label="{label}"]/@href')) == {
+                f"/search?q={query}&sort={sort}&page={page}"
+            }
 
     def test_pagination_offset(self, archive):
         """Page 3 at 20 per page should request offset 40."""

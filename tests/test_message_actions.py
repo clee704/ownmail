@@ -36,6 +36,23 @@ const source = SOURCE;
 const feedback = document.getElementById('ownmail-action-feedback');
 const checkbox = document.querySelector('.ownmail-email-checkbox input');
 const button = document.querySelector('[data-message-action]');
+let now = 0;
+let nextTimer = 0;
+const timers = new Map();
+window.setTimeout = (callback, delay) => {
+    timers.set(++nextTimer, { callback, deadline: now + delay });
+    return nextTimer;
+};
+window.clearTimeout = id => timers.delete(id);
+function advance(milliseconds) {
+    now += milliseconds;
+    for (const [id, timer] of timers) {
+        if (timer.deadline <= now) {
+            timers.delete(id);
+            timer.callback();
+        }
+    }
+}
 let cleaned = 0;
 window.hideLoading = () => cleaned++;
 window.eval(source);
@@ -79,6 +96,8 @@ assert.equal(success, 0);
 const duplicate = window.ownmailMessageAction(action);
 assert.equal(requests, 1);
 assert.equal(await duplicate, false);
+advance(10000);
+assert(!feedback.hidden);
 resolve({ ok: true });
 assert.equal(await pending, true);
 assert.equal(success, 1);
@@ -111,10 +130,66 @@ assert(!navigated);
 assert.equal(window.location.search, '?q=project&page=2');
 assert.equal(window.sessionStorage.getItem('ownmail-action-notice'), null);
 assert.equal(cleaned, 1);
+advance(10000);
+assert(!feedback.hidden);
 window.fetch = () => Promise.resolve({ok: true});
 assert.equal(await window.ownmailMessageAction(action), true);
 assert(navigated);
 """.replace("FAILURE", failure),
+    )
+
+
+def test_success_feedback_disappears_after_four_seconds_without_moving_focus(shell_browser):
+    run_action_script(
+        shell_browser,
+        """
+window.fetch = () => Promise.resolve({ok: true});
+action.success = 'Sender trusted.';
+await window.ownmailMessageAction(action);
+button.focus();
+advance(3999);
+assert(!feedback.hidden);
+assert.equal(document.getElementById('ownmail-action-message').textContent, 'Sender trusted.');
+advance(1);
+assert(feedback.hidden);
+assert.equal(document.activeElement, button);
+""",
+    )
+
+
+def test_new_action_cancels_previous_feedback_timeout(shell_browser):
+    run_action_script(
+        shell_browser,
+        """
+window.fetch = () => Promise.resolve({ok: true});
+await window.ownmailMessageAction(action);
+advance(3000);
+let resolve;
+window.fetch = () => new Promise(done => resolve = done);
+const pending = window.ownmailMessageAction(action);
+advance(1000);
+assert.equal(feedback.dataset.state, 'pending');
+assert(!feedback.hidden);
+resolve({ok: true});
+await pending;
+advance(3999);
+assert(!feedback.hidden);
+advance(1);
+assert(feedback.hidden);
+""",
+    )
+
+
+def test_manual_feedback_dismissal_clears_timeout(shell_browser):
+    run_action_script(
+        shell_browser,
+        """
+window.fetch = () => Promise.resolve({ok: true});
+await window.ownmailMessageAction(action);
+document.getElementById('ownmail-action-dismiss').click();
+assert(feedback.hidden);
+assert.equal(timers.size, 0);
+""",
     )
 
 
@@ -132,7 +207,8 @@ assert(!feedback.hidden);
 assert.equal(feedback.dataset.state, 'success');
 assert.equal(document.getElementById('ownmail-action-message').textContent, action.success);
 assert.equal(window.sessionStorage.getItem('ownmail-action-notice'), null);
-feedback.hidden = true;
+advance(4000);
+assert(feedback.hidden);
 window.eval(source);
 assert(feedback.hidden);
 """,
