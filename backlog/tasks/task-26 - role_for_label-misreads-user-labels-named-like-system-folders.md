@@ -4,6 +4,7 @@ title: role_for_label misreads user labels named like system folders
 status: To Do
 assignee: []
 created_date: '2026-07-26 05:31'
+updated_date: '2026-09-13 18:18'
 labels:
   - bug
 dependencies: []

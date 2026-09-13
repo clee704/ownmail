@@ -4,7 +4,7 @@ title: 'Close repository review, CI, and backlog governance gaps'
 status: In Progress
 assignee: []
 created_date: '2026-09-11 10:52'
-updated_date: '2026-09-13 18:16'
+updated_date: '2026-09-13 18:18'
 labels: []
 dependencies: []
 documentation:
@@ -37,4 +37,6 @@ Local validation passed Ruff lint/format, deptry, file hygiene, and 2,384 tests 
 Privacy review confirmed personal export paths and archive statistics in historical TASK-1.1, TASK-1.3, and TASK-7. Current files are sanitized; the rewrite will remove those details from unpublished versions and generalize install-specific wording in TASK-1.2 and TASK-27. A deeper check corrected the initial classification of TASK-27 message-ID examples: they are synthetic placeholders. Its observed counts still need generalization.
 
 Prepare the rewrite in a separate local copy, preserve published commits and the application tree, rescan the exact publication history, then push master and verify remote lint and Python 3.10-3.12 runs, including skip counts. GitHub Actions is enabled, but the workflow has not yet been published.
+
+The final privacy pass also generalized a real folder hierarchy in TASK-26 and a deleted historical design document, preserving the reproduction with a synthetic child label.
 <!-- SECTION:NOTES:END -->
