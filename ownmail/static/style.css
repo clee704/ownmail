@@ -357,7 +357,9 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
 }
 @media (max-width: 900px) {
     .ownmail-app-shell { --ownmail-sidebar-width: 176px; }
-    .ownmail-header { grid-template-columns: 176px minmax(0, 1fr); }
+    /* Keep the header outside Safari's sticky-position restoration during swipe Back. */
+    .ownmail-app-shell:not(.ownmail-reader-page) { padding-top: var(--ownmail-header-height); }
+    .ownmail-header { position: fixed; left: 0; right: 0; grid-template-columns: 176px minmax(0, 1fr); }
     .ownmail-brand { border-right: 0; }
     .ownmail-sidebar-collapsed .ownmail-brand h1 { display: block; }
     .ownmail-layout { display: block; }
@@ -423,6 +425,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
 }
 @media print {
     :root, html.ownmail-dark { color-scheme: light; --ownmail-bg: #fff; --ownmail-text: #222; --ownmail-secondary: #444; --ownmail-muted: #555; --ownmail-border: #ddd; --ownmail-accent: #333; }
+    .ownmail-app-shell:not(.ownmail-reader-page) { padding-top: 0; }
     .ownmail-header, .ownmail-sidebar, .ownmail-reader-actions, .ownmail-image-banner, .ownmail-loading-overlay, .ownmail-action-feedback, .ownmail-nav-backdrop, .ownmail-skip-link { display: none !important; }
     .ownmail-layout { display: block; max-width: none; }
     .ownmail-reader-page .ownmail-layout, .ownmail-reader-page .ownmail-main { min-height: 0; }
