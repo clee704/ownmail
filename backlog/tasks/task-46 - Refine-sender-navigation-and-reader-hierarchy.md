@@ -1,7 +1,7 @@
 ---
 id: TASK-46
 title: Refine sender navigation and reader hierarchy
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 03:48'
 updated_date: '2026-09-13 04:26'
