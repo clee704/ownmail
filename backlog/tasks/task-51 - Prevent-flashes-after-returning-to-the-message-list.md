@@ -1,10 +1,10 @@
 ---
 id: TASK-51
 title: Prevent flashes after returning to the message list
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 05:14'
-updated_date: '2026-09-13 05:42'
+updated_date: '2026-09-13 05:43'
 labels:
   - ui
   - mobile
@@ -43,4 +43,6 @@ The supplied recording identifies the remaining path: an iPhone native swipe Bac
 Matched the recording in iOS 26.4 standalone with native history Back: a pointer row click focuses the main ancestor because it has tabindex=-1. On return, the trace shows the saved list position followed by a jump to the main offset. Removing only that tabindex in a controlled preview preserves the saved position after native restoration; no history mode or scroll timing change was needed. Verified Skip to content followed by Tab enters the main controls using native keyboard events.
 
 Removed the permanent focusable main container while preserving its native skip-link fragment target. The focus regression fails the prior markup. Native iPhone history Back now settles at the saved list position without the subsequent main-offset jump; native keyboard Skip to content still moves subsequent Tab navigation into the main controls. All 16 shell tests and the full pre-push gate pass. Both active servers serve the corrected markup, and temporary instrumentation was removed.
+
+Committed as 43486c9. Existing cached lists must be reloaded once to use the corrected focus behavior.
 <!-- SECTION:NOTES:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-53
 title: Preserve keyboard focus without highlighting pointer returns
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 05:29'
-updated_date: '2026-09-13 05:42'
+updated_date: '2026-09-13 05:43'
 labels:
   - web
   - ux
@@ -31,4 +31,6 @@ Returning to results with the reader Back button forces focus onto the previous 
 
 <!-- SECTION:NOTES:BEGIN -->
 Back records whether activation is keyboard-style (click detail zero). The returned list restores row focus only for that activation; saved scroll restoration remains unconditional. Verified touch return in the iPhone Home Screen simulator has no row outline, and keyboard Enter on Back restores the 2px focus-visible indicator. All 37 reader tests and the full pre-push gate pass. Pointer cases fail the previous implementation, and always-focus and never-focus mutations are both rejected. The separate native-history jump is handled in TASK-51.
+
+Committed as 12bc6d1.
 <!-- SECTION:NOTES:END -->
