@@ -287,7 +287,8 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-email-menu-divider { border: 0; border-top: 1px solid var(--ownmail-border); margin: var(--ownmail-space-1) 0; }
 .ownmail-email-content-area { background: var(--ownmail-bg); display: flow-root; min-width: 0; }
 #ownmail-email-content { min-height: 200px; overflow: auto; overflow-wrap: break-word; font-family: var(--ownmail-font); font-size: 16px; }
-.ownmail-email-content-padded, .ownmail-email-content-plain { padding: var(--ownmail-space-4) 0; }
+.ownmail-email-content-padded { padding: var(--ownmail-space-4); }
+.ownmail-email-content-plain { padding: var(--ownmail-space-4) 0; }
 .ownmail-email-body { font-family: inherit; margin: 0; max-width: 70ch; line-height: 1.65; }
 .ownmail-email-body a { color: var(--ownmail-accent); }
 .ownmail-email-body .ownmail-email-header-label { font-weight: 500; color: var(--ownmail-secondary); }
@@ -403,7 +404,8 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-reader-page .ownmail-email-detail { padding: var(--ownmail-space-3) var(--ownmail-space-2); }
     .ownmail-reader-subject { font-size: 20px; }
     .ownmail-email-header { padding-bottom: var(--ownmail-space-2); }
-    .ownmail-email-content-padded, .ownmail-email-content-plain { padding: var(--ownmail-space-2) 0; }
+    .ownmail-email-content-padded { padding: var(--ownmail-space-2); }
+    .ownmail-email-content-plain { padding: var(--ownmail-space-2) 0; }
     .ownmail-attachments { margin-top: var(--ownmail-space-4); padding-top: var(--ownmail-space-3); }
     .ownmail-email-header-top h2 { font-size: 20px; }
     .ownmail-help-page, .ownmail-settings-page { padding: var(--ownmail-space-3) var(--ownmail-space-2); }
