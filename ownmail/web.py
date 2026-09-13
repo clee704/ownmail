@@ -784,6 +784,14 @@ def block_external_images(html: str) -> tuple[str, bool]:
     return blocked_html, True
 
 
+def _unquote_display_name(name: str) -> str:
+    """Remove header quoting while preserving quotes inside a display name."""
+    name = (name or "").strip()
+    if name.startswith('"') and name.endswith('"'):
+        return name[1:-1].replace('\\"', '"').strip()
+    return name
+
+
 def parse_email_address(addr: str) -> tuple:
     """Parse email address into (name, email) tuple.
 
@@ -805,9 +813,7 @@ def parse_email_address(addr: str) -> tuple:
         email_addr = addr[last_open + 1 : -1].strip()
         name = addr[:last_open].strip()
         # Strip surrounding quotes from name and unescape internal quotes
-        if name.startswith('"') and name.endswith('"'):
-            name = name[1:-1].replace('\\"', '"').strip()
-        return (name, email_addr)
+        return (_unquote_display_name(name), email_addr)
 
     # Try to match just email
     match = re.match(r"^<?([^@\s]+@[^>\s]+)>?$", addr)
@@ -815,6 +821,17 @@ def parse_email_address(addr: str) -> tuple:
         return ("", match.group(1))
 
     return ("", "")
+
+
+def sender_search_url(name: str, address: str) -> str:
+    """Find a sender by exact email address, falling back to their name."""
+    name = _unquote_display_name(name)
+    address = (address or "").strip()
+    value = address.lower() if re.fullmatch(r"[^@\s<>]+@[^@\s<>]+", address) else name
+    if not value:
+        return ""
+    query = 'from:"' + value.replace('"', '""') + '"'
+    return "/search?" + urlencode({"q": query, "sort": "date_desc"})
 
 
 def parse_recipients(recipients_str: str) -> list:
@@ -1249,6 +1266,7 @@ def create_app(
                     "subject": subject,
                     "sender": sender,
                     "sender_name": sender_name,
+                    "sender_search_url": sender_search_url(sender_name, sender_email_parsed),
                     "date_str": date_str,
                     "date_short": date_short,
                     "snippet": snippet,
@@ -1522,6 +1540,7 @@ def create_app(
             sender=email_data["sender"],
             sender_name=sender_name,
             sender_email=sender_email,
+            sender_search_url=sender_search_url(sender_name or email_data["sender"], sender_email),
             recipients=email_data["recipients"],
             recipients_parsed=recipients_parsed,
             date=email_data["date"],
@@ -1822,6 +1841,7 @@ def create_app(
                     "subject": subject or "(No subject)",
                     "sender": sender,
                     "sender_name": sender_name,
+                    "sender_search_url": sender_search_url(sender_name, sender_email_parsed),
                     "snippet": snippet,
                     "date_short": date_short,
                 }

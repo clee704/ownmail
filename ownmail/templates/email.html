@@ -11,12 +11,17 @@
                     {{ icon('arrow-left') }}<span class="ownmail-sr-only">Back to results</span>
                 </a>
                 <span class="ownmail-reader-action-divider" aria-hidden="true"></span>
+                {% if is_trashed %}
+                <button type="button" class="ownmail-reader-action" data-message-action onclick="restoreEmail('{{ email_id }}')" aria-label="Restore from trash" title="Restore from trash">{{ icon('refresh') }}<span>Restore</span></button>
+                {% else %}
+                <button type="button" class="ownmail-reader-action" data-message-action onclick="trashEmail('{{ email_id }}')" aria-label="Move to trash" title="Move to trash">{{ icon('trash') }}<span>Trash</span></button>
+                {% endif %}
                 <details class="ownmail-email-menu">
                     <summary class="ownmail-email-menu-btn" aria-label="More message actions" title="More message actions">{{ icon('more') }}</summary>
                     <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
                         <a href="/raw/{{ email_id }}" title="Show original message">{{ icon('file') }}<span>Original</span></a>
                         <a href="/download/{{ email_id }}" title="Download message">{{ icon('download') }}<span>Download</span></a>
-                        <hr class="ownmail-email-menu-divider">
+                        {% if has_external_images or is_trashed %}<hr class="ownmail-email-menu-divider">{% endif %}
                         {% if body_html %}
                         <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-content" hidden>Show actual size</button>
                         {% endif %}
@@ -27,27 +32,23 @@
                         <button type="button" id="menu-trust-sender" {% if sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="trustSender()">Always trust this sender</button>
                         <button type="button" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="untrustSender()">Untrust this sender</button>
                         {% endif %}
-                        <hr class="ownmail-email-menu-divider">
                         {% endif %}
                         {% if is_trashed %}
-                        <button type="button" data-message-action onclick="restoreEmail('{{ email_id }}')">Restore from trash</button>
                         <button type="button" class="ownmail-menu-danger" data-message-action onclick="deleteForever('{{ email_id }}')">Delete forever</button>
-                        {% else %}
-                        <button type="button" class="ownmail-menu-danger" data-message-action onclick="trashEmail('{{ email_id }}')">Move to trash</button>
                         {% endif %}
                     </div>
                 </details>
             </div>
             <h2 class="ownmail-reader-subject">{{ subject or '(No subject)' }}</h2>
             <div class="ownmail-reader-byline">
-                <span class="ownmail-reader-sender">{% if sender_email %}<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" title="{{ sender_email }}" onclick="showLoading(event)">{{ sender_name or sender_email }}</a>{% else %}{{ sender or '(Unknown sender)' }}{% endif %}</span>
+                <span class="ownmail-reader-sender">{% if sender_search_url %}<a href="{{ sender_search_url }}" title="{{ sender_email or sender_name or sender }}" onclick="showLoading(event)">{{ sender_name or sender_email or sender }}</a>{% else %}{{ sender or '(Unknown sender)' }}{% endif %}</span>
                 <button type="button" class="ownmail-reader-date" id="ownmail-message-details-toggle" aria-expanded="false" aria-controls="ownmail-message-metadata" aria-label="Message details: {{ date or 'No date' }}" title="Show message details">
                     <span>{{ date or 'No date' }}</span><span class="ownmail-metadata-chevron">{{ icon('chevron-right', 12) }}</span>
                 </button>
             </div>
             <dl class="ownmail-message-metadata" id="ownmail-message-metadata" hidden>
                 <dt>From</dt>
-                <dd>{% if sender_name and sender_email %}{{ sender_name }} &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ sender_email }}</a>&gt;{% elif sender_email %}<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ sender_email }}</a>{% else %}{{ sender }}{% endif %}</dd>
+                <dd>{% if sender_name and sender_email %}{{ sender_name }} &lt;<a href="{{ sender_search_url }}" onclick="showLoading(event)">{{ sender_email }}</a>&gt;{% elif sender_search_url %}<a href="{{ sender_search_url }}" onclick="showLoading(event)">{{ sender_email or sender_name or sender }}</a>{% else %}{{ sender }}{% endif %}</dd>
                 <dt>To</dt>
                 <dd>{% for rcpt in recipients_parsed %}
                     {% if not loop.first %}, {% endif %}

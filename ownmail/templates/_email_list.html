@@ -5,13 +5,17 @@
         <label class="ownmail-email-checkbox" onclick="event.stopPropagation()">
             <input type="checkbox" aria-label="Select {{ result.subject or '(No subject)' }}" value="{{ result.email_id }}" onchange="onCheckboxChange(event, this)">
         </label>
-        <a href="{{ url_for('view_email', email_id=result.email_id, return_to=request.full_path.rstrip('?')) }}" class="ownmail-email-row-link">
-            <span class="ownmail-email-sender" title="{{ result.sender_name or result.sender or '(Unknown)' }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
+        {% if result.sender_search_url %}
+        <a href="{{ result.sender_search_url }}" class="ownmail-email-sender" id="sender-{{ loop.index }}" title="Find messages from {{ result.sender_name or result.sender }}" onclick="showLoading(event)">{{ result.sender_name or result.sender }}</a>
+        {% else %}
+        <span class="ownmail-email-sender" id="sender-{{ loop.index }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
+        {% endif %}
+        <a href="{{ url_for('view_email', email_id=result.email_id, return_to=request.full_path.rstrip('?')) }}" class="ownmail-email-row-link" aria-labelledby="sender-{{ loop.index }} subject-{{ loop.index }} date-{{ loop.index }}">
             <span class="ownmail-email-row-content">
-                <span class="ownmail-email-subject" title="{{ result.subject or '(No subject)' }}">{{ result.subject or '(No subject)' }}</span>
+                <span class="ownmail-email-subject" id="subject-{{ loop.index }}" title="{{ result.subject or '(No subject)' }}">{{ result.subject or '(No subject)' }}</span>
                 {% if result.snippet %}<span class="ownmail-email-snippet">{{ result.snippet }}</span>{% endif %}
             </span>
-            <span class="ownmail-email-date">{{ result.date_short }}</span>
+            <span class="ownmail-email-date" id="date-{{ loop.index }}">{{ result.date_short }}</span>
         </a>
     </li>
 {% endfor %}

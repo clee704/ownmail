@@ -52,6 +52,7 @@ class Token:
     value: str
     field: str = ""  # For FILTER tokens: from, to, subject, etc.
     negated: bool = False  # For negated filters: -from:alice
+    quoted: bool = False  # Preserve literal names in quoted from: filters
 
 
 @dataclass
@@ -103,8 +104,17 @@ KNOWN_FILTERS = frozenset(
     }
 )
 
+
 # Date pattern: YYYY-MM-DD or YYYYMMDD
 DATE_PATTERN = re.compile(r"^(\d{4})-?(\d{2})-?(\d{2})$")
+
+
+def _quoted_value(query: str, start: int) -> tuple[str, int]:
+    """Read a quoted value, including doubled quotes in sender names."""
+    match = re.match(r'"((?:[^"]|"")*)"', query[start:])
+    if not match:
+        return "", -1
+    return match.group(1).replace('""', '"'), start + match.end() - 1
 
 
 def _tokenize(query: str) -> tuple[list[Token], str | None]:
@@ -128,14 +138,13 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
 
         # Quoted phrase
         if char == '"':
-            end = query.find('"', i + 1)
+            phrase, end = _quoted_value(query, i)
             if end == -1:
                 # Unclosed quote - find the partial phrase for error message
                 partial = query[i + 1 : i + 20]
                 if len(query) > i + 20:
                     partial += "..."
                 return tokens, f"Unclosed quote after '{partial}'"
-            phrase = query[i + 1 : end]
             tokens.append(Token(TokenType.PHRASE, phrase))
             i = end + 1
             continue
@@ -156,13 +165,12 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
 
             # Negated phrase: -"exact phrase"
             if next_char == '"':
-                end = query.find('"', i + 2)
+                phrase, end = _quoted_value(query, i + 1)
                 if end == -1:
                     partial = query[i + 2 : i + 22]
                     if len(query) > i + 22:
                         partial += "..."
                     return tokens, f"Unclosed quote after '{partial}'"
-                phrase = query[i + 2 : end]
                 # Negated phrase - add as NEGATION with the phrase value
                 tokens.append(Token(TokenType.NEGATION, phrase))
                 i = end + 1
@@ -181,15 +189,15 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                     field_value = word[colon_pos + 1 :]
 
                     if field_name in KNOWN_FILTERS:
+                        quoted = not field_value and j < len(query) and query[j] == '"'
                         # Support quoted filter values: -label:"[Gmail]/All Mail"
-                        if not field_value and j < len(query) and query[j] == '"':
-                            end = query.find('"', j + 1)
+                        if quoted:
+                            field_value, end = _quoted_value(query, j)
                             if end == -1:
                                 partial = query[j + 1 : j + 21]
                                 if len(query) > j + 21:
                                     partial += "..."
                                 return tokens, f"Unclosed quote after '{partial}'"
-                            field_value = query[j + 1 : end]
                             j = end + 1
 
                         if not field_value:
@@ -205,7 +213,15 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                             field_name = "attachment"
                         # Note: has:attachment stays as-is, attachment:pdf stays as-is
 
-                        tokens.append(Token(TokenType.FILTER, field_value, field=field_name, negated=True))
+                        tokens.append(
+                            Token(
+                                TokenType.FILTER,
+                                field_value,
+                                field=field_name,
+                                negated=True,
+                                quoted=quoted and field_name == "from",
+                            )
+                        )
                         i = j
                         continue
 
@@ -244,15 +260,15 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
             field_value = segment[colon_pos + 1 :]
 
             if field_name in KNOWN_FILTERS:
+                quoted = not field_value and j < len(query) and query[j] == '"'
                 # Support quoted filter values: label:"[Gmail]/All Mail"
-                if not field_value and j < len(query) and query[j] == '"':
-                    end = query.find('"', j + 1)
+                if quoted:
+                    field_value, end = _quoted_value(query, j)
                     if end == -1:
                         partial = query[j + 1 : j + 21]
                         if len(query) > j + 21:
                             partial += "..."
                         return tokens, f"Unclosed quote after '{partial}'"
-                    field_value = query[j + 1 : end]
                     j = end + 1
 
                 if not field_value:
@@ -268,7 +284,9 @@ def _tokenize(query: str) -> tuple[list[Token], str | None]:
                     field_name = "attachment"
                 # Note: has:attachment stays as-is, attachment:pdf stays as-is
 
-                tokens.append(Token(TokenType.FILTER, field_value, field=field_name))
+                tokens.append(
+                    Token(TokenType.FILTER, field_value, field=field_name, quoted=quoted and field_name == "from")
+                )
                 i = j
                 continue
 
@@ -446,7 +464,7 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
             negated = token.negated
 
             if field == "from":
-                if "@" in value:
+                if re.fullmatch(r"[^@\s<>]+@[^@\s<>]+", value):
                     # Email address - exact match on sender_email column
                     if negated:
                         where_clauses.append("e.sender_email != ?")
@@ -454,8 +472,8 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                         where_clauses.append("e.sender_email = ?")
                     params.append(value.lower())
                 else:
-                    # Name search - use FTS on sender field
-                    escaped = _escape_fts5_value(value)
+                    # Keep quoted display names literal, including punctuation and *.
+                    escaped = '"' + value.replace('"', '""') + '"' if token.quoted else _escape_fts5_value(value)
                     if negated:
                         fts_parts.append(f"NOT sender:{escaped}")
                     else:

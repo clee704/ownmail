@@ -129,6 +129,32 @@ def test_secondary_metadata_disclosure_keeps_headers_and_actions_accessible(read
     ]
 
 
+@pytest.mark.parametrize("trashed", [False, True])
+def test_toolbar_exposes_trash_or_restore_and_keeps_permanent_delete_in_more(reader, trashed):
+    client, archive = reader
+    archive.db.get_email_by_id.return_value = (
+        "message",
+        "message.eml",
+        None,
+        None,
+        None,
+        "2024-01-16" if trashed else None,
+    )
+    document = html.fromstring(client.get("/email/message").data)
+    toolbar = document.xpath('//div[@class="ownmail-reader-actions"]')[0]
+    buttons = toolbar.xpath("./button")
+    assert len(buttons) == 1
+    button = buttons[0]
+    action, label = ("restoreEmail", "Restore from trash") if trashed else ("trashEmail", "Move to trash")
+    assert button.get("onclick") == f"{action}('message')"
+    assert button.get("aria-label") == button.get("title") == label
+    assert "data-message-action" in button.attrib
+    menu = toolbar.find("details")
+    assert not menu.xpath(f".//button[@onclick=\"{action}('message')\"]")
+    permanent_delete = menu.xpath(".//button[@onclick=\"deleteForever('message')\"]")
+    assert bool(permanent_delete) is trashed
+
+
 _POSITION_SCRIPT = Path(__file__).parents[1] / "ownmail" / "static" / "result-state.js"
 _POSITION_HARNESS = """
 const assert = require('node:assert/strict');
