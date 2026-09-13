@@ -199,8 +199,8 @@ a:hover { text-decoration: underline; }
     background: var(--ownmail-accent); color: var(--ownmail-on-accent); font-weight: 500;
 }
 :is(.ownmail-search-form button, .ownmail-settings-save):hover { background: var(--ownmail-accent-hover); }
-.ownmail-search-form .ownmail-search-clear { display: none; position: absolute; top: 0; right: 0; width: 44px; height: 100%; padding: 0; border: 0; background: transparent; color: var(--ownmail-muted); }
-.ownmail-search-form .ownmail-search-clear:hover { background: var(--ownmail-selected); color: var(--ownmail-text); }
+.ownmail-search-form .ownmail-search-clear { display: none; position: absolute; top: 50%; right: 0; transform: translateY(-50%); width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ownmail-muted); -webkit-tap-highlight-color: transparent; }
+.ownmail-search-form .ownmail-search-clear:hover { background: transparent; color: var(--ownmail-text); }
 
 /* List columns share a compact reading area. */
 .ownmail-trash-header { display: flex; align-items: center; justify-content: space-between; gap: var(--ownmail-space-3); min-height: 48px; padding: var(--ownmail-space-3) var(--ownmail-space-4); }
