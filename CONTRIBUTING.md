@@ -68,6 +68,19 @@ both reloading and the debugger and is restricted to localhost. Add
 pytest
 ```
 
+Message contrast tests use a real browser. Install their development dependency
+and browser once:
+
+```bash
+npm --prefix ownmail/sanitizer install --include=dev
+npm --prefix ownmail/sanitizer exec -- playwright install chromium
+OWNMAIL_REQUIRE_BROWSER_TESTS=1 pytest tests/test_email_contrast.py
+```
+
+These tests skip when Playwright or its browser is unavailable locally. CI
+requires them on Python 3.12. Set `OWNMAIL_BROWSER_ENGINE=webkit` to check WebKit
+after installing it with `playwright install webkit`.
+
 ### Code Coverage
 
 We enforce a coverage barrier to prevent regressions. Run tests with coverage:
