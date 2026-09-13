@@ -401,7 +401,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-header-search { grid-row: 2; grid-column: 1 / -1; padding: 4px var(--ownmail-space-3) var(--ownmail-space-3); }
     .ownmail-search-field, .ownmail-search-form button { height: 44px; }
     .ownmail-search-form input[type="text"], .ownmail-search-form button { font-size: 16px; }
-    .ownmail-search-field input[type="text"] { padding-right: 44px; }
+    .ownmail-search-field:focus-within input[type="text"]:not(:placeholder-shown) { padding-right: 44px; }
     .ownmail-search-field:focus-within input:not(:placeholder-shown) + .ownmail-search-clear { display: inline-flex; }
     .ownmail-trash-header { padding: var(--ownmail-space-2) var(--ownmail-space-3); min-height: 52px; }
     .ownmail-toolbar { min-height: 52px; padding: var(--ownmail-space-1) var(--ownmail-space-2) var(--ownmail-space-1) 0; gap: 0; }
