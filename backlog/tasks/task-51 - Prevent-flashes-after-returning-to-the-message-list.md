@@ -1,10 +1,10 @@
 ---
 id: TASK-51
 title: Prevent flashes after returning to the message list
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 05:14'
-updated_date: '2026-09-13 06:03'
+updated_date: '2026-09-13 06:20'
 labels:
   - ui
   - mobile
@@ -22,9 +22,9 @@ An intermittent visual flash occurs after the message list appears when returnin
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Returning from a message renders the list without a delayed visual reset.
+- [x] #1 Returning from a message renders the list without a delayed visual reset.
 - [x] #2 List position and keyboard return focus remain correct.
-- [ ] #3 The reproduced cause has a regression check and required repository checks pass.
+- [x] #3 The reproduced cause has a regression check and required repository checks pass.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -51,4 +51,8 @@ A second device recording still shows a return-transition glitch after the main-
 Frame-by-frame analysis of the second device recording isolates a different remaining defect: the list stays at the correct position, but the branding/search header disappears for one 60 Hz frame during swipe completion. The rows beneath become visible without moving. Replace the mobile sticky header with a fixed header and reserve the same height in non-reader pages; preserve desktop sticky behavior, reader spacing, and print layout. Physical edge-swipe confirmation remains outstanding.
 
 The CSS change preserves the exact phone list geometry: header 84px, list top 160px, document height unchanged. Browser checks also verify 56px tablet spacing, zero reader padding, drawer/backdrop alignment, native keyboard skip navigation, desktop breakpoints, and zero print padding. The iOS standalone simulator retains the scrolled list position on keyboard history Back. Both active servers serve the new stylesheet and the full pre-push gate passes. Independent review found no layout issue. The available simulator input does not reproduce a true edge swipe, so the one-frame physical-device symptom and a matching rendering regression check remain unverified; keep this task In Progress.
+
+User confirmed that the remaining flash is resolved after the fixed mobile header change in 0bdc4b2. The header rendering regression is checked manually in the iPhone Home Screen app: open a message from a scrolled list, swipe Back, and verify that the header stays visible and the list retains its position through swipe completion. Native edge-swipe automation remains unavailable; existing automated regressions cover inline position restoration, main focus, and pointer versus keyboard return focus.
+
+Final validation: 2,282 tests passed, one expected failure, and 95.42% coverage. The reported UI fixes are complete; broader standalone-app improvements and slow message-row loading feedback remain separate work in TASK-50 and TASK-52.
 <!-- SECTION:NOTES:END -->
