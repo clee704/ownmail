@@ -145,6 +145,23 @@ const key = (target, name, shift = false) => target.dispatchEvent(
     assert result.returncode == 0, result.stderr
 
 
+def test_skip_link_targets_main_without_making_main_focusable(shell_app, shell_browser):
+    app, _ = shell_app
+    run_shell_browser(
+        app,
+        shell_browser,
+        """
+const skipLink = document.querySelector('.ownmail-skip-link');
+const main = byId('ownmail-main');
+assert.equal(document.querySelector(skipLink.getAttribute('href')), main);
+skipLink.focus();
+assert.equal(document.activeElement, skipLink);
+main.focus();
+assert.equal(document.activeElement, skipLink);
+""",
+    )
+
+
 def test_mobile_navigation_focus_and_saved_desktop_width(shell_app, shell_browser):
     app, _ = shell_app
     run_shell_browser(

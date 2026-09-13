@@ -64,7 +64,7 @@
                 <li><a href="/help" class="{% if request.path == '/help' %}active{% endif %}"{% if request.path == '/help' %} aria-current="page"{% endif %} title="Search help" aria-label="Search help">{{ icon('help') }}<span class="ownmail-sidebar-label">Search help</span></a></li>
             </ul>
         </nav>
-        <main class="ownmail-main" id="ownmail-main" tabindex="-1">
+        <main class="ownmail-main" id="ownmail-main">
             {% block content %}{% endblock %}
         </main>
     </div>
