@@ -23,6 +23,7 @@
     <div class="ownmail-loading-overlay" id="ownmail-loading-overlay" aria-hidden="true">
         <div class="ownmail-loading-spinner"></div>
     </div>
+    <div class="ownmail-sr-only" id="ownmail-loading-status" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="ownmail-action-feedback" id="ownmail-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden>
         <span id="ownmail-action-message"></span>
         <button type="button" class="ownmail-icon-button" id="ownmail-action-dismiss" aria-label="Dismiss notification" title="Dismiss notification">{{ icon('close') }}</button>
@@ -174,43 +175,62 @@
         });
     });
     var loadingTimer = null;
+    var loadingRow = null;
     var loadingOverlay = document.getElementById('ownmail-loading-overlay');
+    var loadingStatus = document.getElementById('ownmail-loading-status');
     function showLoading(event) {
-        // Don't show loading overlay for cmd+click or ctrl+click (new tab)
-        if (event && (event.metaKey || event.ctrlKey)) {
+        if (event && (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey ||
+                (event.button !== undefined && event.button !== 0))) {
             return;
         }
-        if (loadingTimer !== null || loadingOverlay.classList.contains('ownmail-active')) return;
-        // Fast navigation should finish before an overlay is painted.
+        var link = event && event.target && event.target.closest && event.target.closest('.ownmail-email-row-link');
+        var row = link ? link.closest('.ownmail-email-row') : null;
+        if (row === loadingRow && (loadingTimer !== null ||
+                (row ? row.classList.contains('ownmail-loading') : loadingOverlay.classList.contains('ownmail-active')))) return;
+        hideLoading();
+        loadingRow = row;
+        // Keep native navigation immediate; fast responses need no feedback.
         loadingTimer = setTimeout(function() {
             loadingTimer = null;
-            loadingOverlay.classList.add('ownmail-active');
+            if (loadingRow) {
+                loadingRow.classList.add('ownmail-loading');
+                loadingStatus.textContent = 'Opening message';
+            } else {
+                loadingOverlay.classList.add('ownmail-active');
+            }
         }, 200);
     }
     function hideLoading() {
         clearTimeout(loadingTimer);
         loadingTimer = null;
+        if (loadingRow) loadingRow.classList.remove('ownmail-loading');
+        loadingRow = null;
+        loadingStatus.textContent = '';
         loadingOverlay.classList.remove('ownmail-active');
     }
-    // Hide loading overlay when page is shown (handles back/forward navigation)
-    // This fires when page is restored from bfcache (back-forward cache)
-    window.addEventListener('pageshow', function(event) {
-        hideLoading();
+    window.addEventListener('pagehide', hideLoading);
+    window.addEventListener('pageshow', hideLoading);
+    window.addEventListener('load', hideLoading);
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') hideLoading();
     });
-    // Also hide on regular page load just in case
-    window.addEventListener('load', function() {
+    document.addEventListener('click', function(event) {
+        if (!loadingRow || event.defaultPrevented || event.button !== 0 ||
+                event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        var link = event.target.closest('a[href]');
+        if (!link || loadingRow.contains(link) && link.classList.contains('ownmail-email-row-link') ||
+                link.hasAttribute('download') || link.target && link.target !== '_self') return;
+        var destination = new URL(link.href);
+        if (destination.protocol !== 'http:' && destination.protocol !== 'https:') return;
+        // In-page links and separate controls do not replace the pending page.
+        if (destination.origin === location.origin && destination.pathname === location.pathname &&
+                destination.search === location.search && destination.hash) return;
         hideLoading();
     });
     // Show loading on form submit (skip if onsubmit handler cancelled it)
     document.querySelectorAll('form').forEach(function(form) {
         form.addEventListener('submit', function(e) {
             if (!e.defaultPrevented) showLoading(e);
-        });
-    });
-    // Show loading on email item click
-    document.querySelectorAll('.ownmail-email-item a').forEach(function(link) {
-        link.addEventListener('click', function(e) {
-            showLoading(e);
         });
     });
     // Show loading on pagination click

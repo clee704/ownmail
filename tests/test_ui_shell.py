@@ -306,7 +306,7 @@ assert(!document.documentElement.classList.contains('ownmail-dark'));
     )
 
 
-@pytest.mark.parametrize("completion_event", ["load", "pageshow"])
+@pytest.mark.parametrize("completion_event", ["load", "pageshow", "pagehide"])
 def test_loading_overlay_waits_for_slow_navigation_and_cancels(shell_app, shell_browser, completion_event):
     app, _ = shell_app
     run_shell_browser(
@@ -332,8 +332,10 @@ function advance(milliseconds) {
 }
 const overlay = byId('ownmail-loading-overlay');
 const visible = () => overlay.classList.contains('ownmail-active');
-window.showLoading({metaKey: true});
-window.showLoading({ctrlKey: true});
+for (const event of [{metaKey: true}, {ctrlKey: true}, {shiftKey: true}, {altKey: true},
+        {button: 1}, {defaultPrevented: true}]) {
+    window.showLoading(event);
+}
 assert.equal(timers.size, 0);
 const click = new window.MouseEvent('click', {cancelable: true});
 window.showLoading(click);
@@ -536,6 +538,37 @@ mobile.change(true);
 
 
 @pytest.mark.parametrize("path", ["/search", "/trash"])
+def test_message_row_click_keeps_one_delayed_indicator(shell_list_app, shell_browser, path):
+    run_list_browser(
+        shell_list_app,
+        shell_browser,
+        """
+window.addEventListener('click', event => {
+    assert(!event.defaultPrevented);
+    event.preventDefault();
+});
+const link = rows[0].querySelector('.ownmail-email-row-link');
+const click = () => link.dispatchEvent(new window.MouseEvent('click', {bubbles: true, cancelable: true}));
+const visible = () => rows[0].classList.contains('ownmail-loading');
+click();
+assert(!visible());
+advance(100);
+click();
+advance(99);
+assert(!visible());
+advance(1);
+assert(visible());
+assert.equal(list.querySelectorAll('.ownmail-loading').length, 1);
+assert(!byId('ownmail-loading-overlay').classList.contains('ownmail-active'));
+assert.equal(byId('ownmail-loading-status').textContent, 'Opening message');
+click();
+assert(visible());
+""",
+        path,
+    )
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
 @pytest.mark.parametrize("target", [".ownmail-email-sender", ".ownmail-email-row-link", ".ownmail-email-row"])
 def test_mobile_hold_selects_message_and_suppresses_navigation(shell_list_app, shell_browser, path, target):
     run_list_browser(
@@ -562,6 +595,8 @@ const click = new window.MouseEvent('click', {bubbles: true, cancelable: true});
 target.dispatchEvent(click);
 assert(click.defaultPrevented);
 assert.equal(clicks, 0);
+advance(200);
+assert(!list.querySelector('.ownmail-loading'));
 assert(!byId('ownmail-loading-overlay').classList.contains('ownmail-active'));
 checkboxes[0].click();
 assert(!list.classList.contains('ownmail-selecting'));

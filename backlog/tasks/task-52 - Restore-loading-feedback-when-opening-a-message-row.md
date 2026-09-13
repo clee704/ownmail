@@ -1,10 +1,10 @@
 ---
 id: TASK-52
 title: Restore loading feedback when opening a message row
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-13 05:15'
-updated_date: '2026-09-13 21:07'
+updated_date: '2026-09-13 21:17'
 labels:
   - ui
   - ux
@@ -49,4 +49,6 @@ Checkbox changes and typing do not cancel an already pending native navigation. 
 The preview simulates these interactions; production implementation and slow native-navigation regression coverage remain outstanding. No acceptance criteria have been completed.
 
 Native navigation replacement is defined by the [HTML navigation algorithm](https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate); this does not imply cancellation of server-side work.
+
+Implementation started: the existing delayed loader now tracks the clicked row, preserves native navigation, clears pending row feedback on a new destination, and resets on Escape and page lifecycle events. Focused modifier and long-press tests are being extended; real-browser navigation tests and review are in progress.
 <!-- SECTION:NOTES:END -->

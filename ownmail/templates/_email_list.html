@@ -21,6 +21,7 @@
                 <span class="ownmail-email-attachment" title="Has attachments">{{ icon('paperclip') }}<span class="ownmail-sr-only" id="attachment-{{ loop.index }}">Has attachments</span></span>
                 {% endif %}
                 <span id="date-{{ loop.index }}">{{ result.date_short }}</span>
+                <span class="ownmail-loading-spinner" aria-hidden="true"></span>
             </span>
         </a>
     </li>

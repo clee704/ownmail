@@ -289,10 +289,12 @@ def test_modified_or_prevented_clicks_do_not_save_position_or_start_loading(modi
     run_position_script(
         """
 const modifiers = MODIFIERS;
-page(listUrl).click(modifiers);
+const list = page(listUrl);
+list.click(modifiers);
 const reader = page('/email/message', true);
 reader.click(modifiers);
 assert.equal(storage.size, 0);
+assert.equal(list.loadingCalls, 0);
 assert.equal(reader.loadingCalls, 0);
 """.replace("MODIFIERS", json.dumps(modifiers))
     )
@@ -316,7 +318,10 @@ assert.equal(storage.size, 0);
 
 def test_unavailable_storage_does_not_interrupt_navigation():
     run_position_script("""
-page(listUrl, false, true).click();
+const list = page(listUrl, false, true);
+const click = list.click();
+assert.equal(list.loadingCalls, 1);
+assert(!click.defaultPrevented);
 const reader = page('/email/message', true, true);
 reader.click();
 assert.equal(reader.loadingCalls, 1);
