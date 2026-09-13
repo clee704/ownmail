@@ -1,7 +1,7 @@
 ---
 id: TASK-58
 title: Prevent message overflow from capturing vertical swipes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 06:52'
 updated_date: '2026-09-13 20:33'
@@ -38,4 +38,6 @@ Nine synthetic browser regressions pass in both engines. They cover tiny overflo
 Native XCTest swipes on an iPhone 17 Pro simulator running iOS 26.5 reproduce the original capture on the exact message and synthetic narrow fixture. With the fix, the same gestures scroll the page with zero inner vertical offset and range. Wide actual-size horizontal swipes pan the message; subsequent vertical swipes scroll the page while retaining horizontal position. Returning to fit exposes both edges and leaves no inner scroll range. Trusted touchstart/touchmove instrumentation verifies native gesture delivery. Physical-device hardware was not tested.
 
 The full pre-push gate passes with browser tests required. Implementation is ready to commit.
+
+Implementation committed in 9f126fd; all acceptance criteria are verified.
 <!-- SECTION:NOTES:END -->
