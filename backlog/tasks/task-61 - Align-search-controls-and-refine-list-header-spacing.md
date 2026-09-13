@@ -1,10 +1,10 @@
 ---
 id: TASK-61
 title: Align search controls and refine list header spacing
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 07:39'
-updated_date: '2026-09-13 07:42'
+updated_date: '2026-09-13 07:43'
 labels:
   - ui
   - mobile
