@@ -77,9 +77,9 @@ def test_list_trash_and_reader_share_sender_rule(tmp_path, path, sender, expecte
     archive.db = mock_archive_db()
     archive.db.get_email_by_id.return_value = ("message", "message.eml", None, None, None, None)
     archive.db.get_labels_for_email.return_value = []
-    archive.search.return_value = [("message", "message.eml", "Synthetic", sender, "2024-01-01", "Body")]
+    archive.search.return_value = [("message", "message.eml", "Synthetic", sender, "2024-01-01", "Body", 0)]
     archive.db.get_trashed_emails.return_value = [
-        ("message", "message.eml", "Synthetic", sender, "2024-01-01", "Body", "2024-01-02", "original.eml")
+        ("message", "message.eml", "Synthetic", sender, "2024-01-01", "Body", "2024-01-02", "original.eml", 0)
     ]
     app = create_app(archive)
     contexts = []

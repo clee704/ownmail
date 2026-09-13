@@ -1229,7 +1229,7 @@ def create_app(
 
         # Format results - use database values, decode MIME headers as needed
         results = []
-        for msg_id, filename, subject, sender, date_str, snippet in raw_results:
+        for msg_id, filename, subject, sender, date_str, snippet, has_attachments in raw_results:
             # Use values from database - they're already indexed
             # Only decode MIME-encoded headers if present
             if subject:
@@ -1274,6 +1274,7 @@ def create_app(
                     "date_str": date_str,
                     "date_short": date_short,
                     "snippet": snippet,
+                    "has_attachments": bool(has_attachments),
                 }
             )
 
@@ -1811,7 +1812,7 @@ def create_app(
 
         results = []
         for row in rows:
-            email_id, filename, subject, sender, date_str, snippet, trashed_at, original_filename = row
+            email_id, filename, subject, sender, date_str, snippet, trashed_at, original_filename, has_attachments = row
 
             # Decode MIME headers if present
             if subject and "=?" in subject:
@@ -1847,6 +1848,7 @@ def create_app(
                     "sender_name": sender_name,
                     "sender_search_url": sender_search_url(sender_name, sender_email_parsed),
                     "snippet": snippet,
+                    "has_attachments": bool(has_attachments),
                     "date_short": date_short,
                 }
             )

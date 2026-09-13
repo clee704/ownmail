@@ -316,7 +316,7 @@ class TestCreateApp:
         """Search with pagination should work."""
         # Return more than one page of results
         mock_archive.search.return_value = [
-            (f"msg{i}", f"file{i}.eml", f"Subject {i}", "sender@example.com", "2024-01-01", "snippet")
+            (f"msg{i}", f"file{i}.eml", f"Subject {i}", "sender@example.com", "2024-01-01", "snippet", 0)
             for i in range(25)  # More than default page size
         ]
         app = create_app(mock_archive, page_size=20)
@@ -1404,7 +1404,7 @@ class TestTimezoneSettings:
         mock_archive.db.get_email_count.return_value = 100
         # UTC midnight → Tokyo is +9 hours → still Jan 2
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Test", "a@b.com", "Thu, 02 Jan 2020 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Test", "a@b.com", "Thu, 02 Jan 2020 00:00:00 +0000", "snippet", 0)
         ]
         app = create_app(mock_archive, display_timezone="Asia/Tokyo")
         with app.test_client() as client:
@@ -1515,6 +1515,7 @@ class TestTrashRoutes:
                 "This is a snippet...",
                 "2024-01-15T10:00:00",
                 "sources/gmail/2024/01/test.eml",
+                0,
             )
         ]
         mock_archive.auto_expire_trash.return_value = 0
@@ -2013,6 +2014,7 @@ class TestViewTrash:
                 "=?UTF-8?B?7YWM7Iqk7Yq4?=",
                 "2024-01-02",
                 "orig.eml",
+                0,
             )
         ]
         app = create_app(archive)
@@ -2024,7 +2026,7 @@ class TestViewTrash:
 
     def test_missing_subject_and_date(self, archive):
         """A row with no subject or date should render placeholders."""
-        archive.db.get_trashed_emails.return_value = [("id2", "f2.eml", "", "", "", "", "2024-01-02", "orig.eml")]
+        archive.db.get_trashed_emails.return_value = [("id2", "f2.eml", "", "", "", "", "2024-01-02", "orig.eml", 0)]
         app = create_app(archive)
         with app.test_client() as client:
             response = client.get("/trash")
@@ -2034,7 +2036,7 @@ class TestViewTrash:
     def test_unparseable_date_falls_back_to_first_token(self, archive):
         """A date that can't be parsed should degrade to its first token."""
         archive.db.get_trashed_emails.return_value = [
-            ("id3", "f3.eml", "Subj", "a@example.com", "20240101 garbage", "snip", "2024-01-02", "orig.eml")
+            ("id3", "f3.eml", "Subj", "a@example.com", "20240101 garbage", "snip", "2024-01-02", "orig.eml", 0)
         ]
         app = create_app(archive)
         with app.test_client() as client:
@@ -2645,7 +2647,7 @@ class TestSearchRoute:
         return archive
 
     def _row(self, i=1, subject="Subject", sender="a@example.com", date="Mon, 1 Jan 2024 10:00:00 +0000", snippet="s"):
-        return (f"id{i}", f"f{i}.eml", subject, sender, date, snippet)
+        return (f"id{i}", f"f{i}.eml", subject, sender, date, snippet, 0)
 
     def test_empty_query_lists_newest_first(self, archive):
         """With no query, results should be sorted newest-first."""

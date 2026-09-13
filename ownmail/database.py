@@ -700,12 +700,13 @@ class ArchiveDatabase:
         """List trashed emails, newest first.
 
         Returns:
-            List of (email_id, filename, subject, sender, date_str, snippet, trashed_at, original_filename)
+            List of (email_id, filename, subject, sender, date_str, snippet,
+            trashed_at, original_filename, has_attachments)
         """
         with sqlite3.connect(self.db_path) as conn:
             return conn.execute(
                 """SELECT email_id, filename, subject, sender, date_str, snippet,
-                          trashed_at, original_filename
+                          trashed_at, original_filename, has_attachments
                    FROM emails
                    WHERE trashed_at IS NOT NULL
                    ORDER BY trashed_at DESC
@@ -927,7 +928,7 @@ class ArchiveDatabase:
             tz: Optional ZoneInfo timezone for date filter interpretation
 
         Returns:
-            List of tuples: (message_id, filename, subject, sender, date_str, snippet)
+            List of (email_id, filename, subject, sender, date_str, snippet, has_attachments)
         """
         import time
 
@@ -1125,7 +1126,8 @@ class ArchiveDatabase:
                             e.subject,
                             e.sender,
                             e.date_str,
-                            e.snippet
+                            e.snippet,
+                            e.has_attachments
                         FROM emails e
                         JOIN emails_fts f ON f.rowid = e.rowid
                         {join_sql}
@@ -1184,7 +1186,8 @@ class ArchiveDatabase:
                         e.subject,
                         e.sender,
                         e.date_str,
-                        e.snippet
+                        e.snippet,
+                        e.has_attachments
                     FROM emails e
                     {join_sql}
                     WHERE {where_sql}

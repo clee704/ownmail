@@ -84,6 +84,35 @@ def test_home_screen_manifest_keeps_reader_and_utility_routes_in_scope(shell_app
     assert manifest["scope"] == "/", "Reader, Trash, and Settings must share the installed app's scope"
 
 
+@pytest.mark.parametrize("path", ["/", "/search?q=annual", "/trash"])
+def test_message_lists_indicate_attachments_with_accessible_text(shell_app, path):
+    app, archive = shell_app
+    rows = [
+        (identifier, "message.eml", "Annual review", "sender@example.com", "2024-01-15", "Message body")
+        for identifier in ["with-attachment", "without-attachment"]
+    ]
+    archive.search.return_value = [(*row, flag) for row, flag in zip(rows, [1, 0])]
+    archive.db.get_trashed_emails.return_value = [
+        (*row, "2024-01-16", "message.eml", flag) for row, flag in zip(rows, [1, 0])
+    ]
+    response = app.test_client().get(path, follow_redirects=True)
+    assert response.status_code == 200
+    tree = html.fromstring(response.data)
+    rendered_rows = tree.xpath('//li[@class="ownmail-email-row"]')
+    assert len(rendered_rows) == 2
+    for row, has_attachments in zip(rendered_rows, [True, False]):
+        link = row.xpath('.//a[@class="ownmail-email-row-link"]')[0]
+        indicators = link.xpath('.//span[@class="ownmail-email-attachment"]')
+        assert len(indicators) == int(has_attachments)
+        if has_attachments:
+            assert indicators[0].get("title") == "Has attachments"
+            assert indicators[0].xpath('.//svg[@aria-hidden="true"]')
+            description = tree.get_element_by_id(link.get("aria-describedby"))
+            assert description.text_content() == "Has attachments"
+        else:
+            assert link.get("aria-describedby") is None
+
+
 @pytest.fixture(scope="module")
 def shell_browser():
     if not shutil.which("node"):
@@ -361,8 +390,8 @@ def test_selection_replaces_list_controls_and_clear_restores_focus(shell_app, sh
         (identifier, "message.eml", "Annual review", "sender@example.com", "2024-01-15", "Message body")
         for identifier in ["first", "second"]
     ]
-    archive.search.return_value = rows
-    archive.db.get_trashed_emails.return_value = [(*row, "2024-01-16", "message.eml") for row in rows]
+    archive.search.return_value = [(*row, 0) for row in rows]
+    archive.db.get_trashed_emails.return_value = [(*row, "2024-01-16", "message.eml", 0) for row in rows]
     run_shell_browser(
         app,
         shell_browser,

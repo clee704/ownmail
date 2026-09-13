@@ -231,7 +231,8 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-email-subject { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
 .ownmail-email-snippet { color: var(--ownmail-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1000000 auto; }
 .ownmail-email-snippet::before { content: ' \2013  '; white-space: pre; color: var(--ownmail-muted); }
-.ownmail-email-date { color: var(--ownmail-muted); font-size: var(--ownmail-text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ownmail-email-date { display: flex; align-items: center; justify-content: flex-end; gap: var(--ownmail-space-2); color: var(--ownmail-muted); font-size: var(--ownmail-text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ownmail-email-attachment { display: inline-flex; }
 .ownmail-no-results { padding: 64px var(--ownmail-space-5); text-align: center; color: var(--ownmail-secondary); }
 .ownmail-no-results h3 { color: var(--ownmail-text); font-size: var(--ownmail-text-md); font-weight: 500; margin: 0 0 var(--ownmail-space-2); }
 .ownmail-no-results p { margin: var(--ownmail-space-2) 0; }
@@ -401,7 +402,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-toolbar-left { flex: 1 0 auto; }
     .ownmail-toolbar-right { margin-left: auto; }
     .ownmail-main { --ownmail-checkbox-column: 44px; }
-    .ownmail-email-row { grid-template-columns: var(--ownmail-checkbox-column) minmax(0, 1fr) 104px; }
+    .ownmail-email-row { grid-template-columns: var(--ownmail-checkbox-column) minmax(0, 1fr) 128px; }
     .ownmail-email-checkbox, .ownmail-toolbar-checkbox { padding-left: 0; }
     .ownmail-email-row-link { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'sender date' 'content content'; gap: var(--ownmail-space-1) var(--ownmail-space-2); padding: 10px var(--ownmail-space-3) 10px var(--ownmail-space-2); line-height: 22px; }
     .ownmail-email-row-link::before { grid-area: sender; }

@@ -329,7 +329,7 @@ def test_returned_list_restores_while_parsing_without_external_resources(reader,
     client, archive = reader
     client.application.config["page_size"] = 2
     archive.search.return_value = [
-        (identifier, "message.eml", "Annual review", "alex@example.com", "2024-01-15", "Message body")
+        (identifier, "message.eml", "Annual review", "alex@example.com", "2024-01-15", "Message body", 0)
         for identifier in ["other", "message", "next"]
     ]
     path = "/search?q=annual&sort=date_asc&page=3"

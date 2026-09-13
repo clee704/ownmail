@@ -198,6 +198,25 @@ class TestFullTextSearch:
         assert len(results) == 1
         assert results[0][0] == _eid("msg1")
 
+    @pytest.mark.parametrize("query", ["", "report"])
+    def test_search_returns_attachment_flags(self, temp_dir, query):
+        db = ArchiveDatabase(temp_dir)
+        for provider_id, attachments in [("attached", "report.pdf"), ("plain", "")]:
+            email_id = _eid(provider_id)
+            db.mark_downloaded(email_id, provider_id, f"{provider_id}.eml")
+            db.index_email(
+                email_id,
+                "Report",
+                "sender@example.com",
+                "reader@example.com",
+                "Mon, 1 Jan 2024 10:00:00 +0000",
+                "Report body",
+                attachments,
+                email_date="2024-01-01T10:00:00",
+            )
+
+        assert {row[0]: row[6] for row in db.search(query)} == {_eid("attached"): 1, _eid("plain"): 0}
+
     def test_search_attachment_type(self, temp_dir):
         """Test attachment:type filter finds emails with specific attachment types."""
         db = ArchiveDatabase(temp_dir)
@@ -650,16 +669,19 @@ class TestTrashOperations:
         db = ArchiveDatabase(temp_dir)
         assert db.permanently_delete_emails([]) == 0
 
-    def test_get_trashed_emails(self, temp_dir):
+    @pytest.mark.parametrize("attachments", ["", "report.pdf"])
+    def test_get_trashed_emails(self, temp_dir, attachments):
         """Test listing trashed emails."""
         db = ArchiveDatabase(temp_dir)
         eid = _eid("msg1")
         db.mark_downloaded(eid, "msg1", "test.eml")
+        db.index_email(eid, "Report", "sender", "reader", "2024-01-01", "Report body", attachments)
         db.trash_email(eid, "trash/test.eml")
 
         rows = db.get_trashed_emails()
         assert len(rows) == 1
         assert rows[0][0] == eid
+        assert rows[0][8] == bool(attachments)
 
     def test_get_trash_count(self, temp_dir):
         """Test counting trashed emails."""

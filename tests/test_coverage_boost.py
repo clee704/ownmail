@@ -4553,6 +4553,7 @@ class TestWebSearchWithMimeHeaders:
                 "sender@test.com",
                 "Mon, 01 Jan 2024 00:00:00 +0000",
                 "snippet",
+                0,
             )
         ]
 
@@ -4578,6 +4579,7 @@ class TestWebSearchWithMimeHeaders:
                 "=?UTF-8?B?7ZWc6riA?= <test@test.com>",
                 "Mon, 01 Jan 2024 00:00:00 +0000",
                 "snippet",
+                0,
             )
         ]
 
@@ -4596,7 +4598,7 @@ class TestWebSearchWithMimeHeaders:
         mock_archive.db.get_email_count.return_value = 100
         # Return result with empty subject
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", None, "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", None, "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -4621,7 +4623,7 @@ class TestWebSearchDateFormatting:
         # Return result with date from current year
         now = datetime.now()
         date_str = now.strftime("%a, %d %b %Y %H:%M:%S +0000")
-        mock_archive.search.return_value = [("msg1", "test.eml", "Subject", "sender@test.com", date_str, "snippet")]
+        mock_archive.search.return_value = [("msg1", "test.eml", "Subject", "sender@test.com", date_str, "snippet", 0)]
 
         app = create_app(mock_archive)
         with app.test_client() as client:
@@ -4638,7 +4640,7 @@ class TestWebSearchDateFormatting:
         mock_archive.db.get_email_count.return_value = 100
         # Return result with date from previous year
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2020 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2020 00:00:00 +0000", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -4656,7 +4658,7 @@ class TestWebSearchDateFormatting:
         mock_archive.db.get_email_count.return_value = 100
         # Return result with invalid date string
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "sender@test.com", "invalid-date", "snippet")
+            ("msg1", "test.eml", "Subject", "sender@test.com", "invalid-date", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -4673,7 +4675,7 @@ class TestWebSearchDateFormatting:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet", 0)
         ]
 
         app = create_app(mock_archive, date_format="%Y-%m-%d")
@@ -4865,7 +4867,7 @@ class TestWebSearchSenderParsing:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "John Doe <john@test.com>", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Subject", "John Doe <john@test.com>", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -4882,7 +4884,7 @@ class TestWebSearchSenderParsing:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "john@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Subject", "john@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -4899,7 +4901,7 @@ class TestWebSearchSenderParsing:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", None, "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Subject", None, "Mon, 01 Jan 2024 00:00:00 +0000", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -4977,6 +4979,7 @@ class TestWebSearchSnippetCleaning:
                 "sender@test.com",
                 "Mon, 01 Jan 2024 00:00:00 +0000",
                 "=?UTF-8?B?7ZWc6riA?=",
+                0,
             )
         ]
 
@@ -5255,7 +5258,15 @@ class TestWebSearchPaginationV4:
 
         # Return 50 results
         results = [
-            (f"msg{i}", f"test{i}.eml", f"Subject {i}", "sender@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet")
+            (
+                f"msg{i}",
+                f"test{i}.eml",
+                f"Subject {i}",
+                "sender@test.com",
+                "Mon, 01 Jan 2024 00:00:00 +0000",
+                "snippet",
+                0,
+            )
             for i in range(50)
         ]
         mock_archive.search.return_value = results
@@ -5402,7 +5413,7 @@ class TestWebSearchOperators:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "alice@test.com", "Mon, 01 Jan 2024", "snippet")
+            ("msg1", "test.eml", "Subject", "alice@test.com", "Mon, 01 Jan 2024", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -5946,7 +5957,7 @@ class TestWebSearchResultFormatting:
         mock_archive.db.get_email_count.return_value = 100
         # Date from 2020
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Old Email", "sender@test.com", "Thu, 02 Jan 2020 12:00:00 +0000", "snippet")
+            ("msg1", "test.eml", "Old Email", "sender@test.com", "Thu, 02 Jan 2020 12:00:00 +0000", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -5966,7 +5977,7 @@ class TestWebSearchResultFormatting:
         mock_archive.db.get_email_count.return_value = 100
         # Malformed date
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Bad Date Email", "sender@test.com", "not-a-date", "snippet")
+            ("msg1", "test.eml", "Bad Date Email", "sender@test.com", "not-a-date", "snippet", 0)
         ]
 
         app = create_app(mock_archive)
@@ -6095,6 +6106,7 @@ class TestWebComplexMimeDecoding:
                 "sender@test.com",
                 "Mon, 01 Jan 2024",
                 "snippet",
+                0,
             )
         ]
 
@@ -6638,7 +6650,7 @@ class TestWebSearchResultDisplay:
         mock_archive.db.get_email_count.return_value = 100
         # HTML in snippet should be escaped
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "HTML Test", "sender@test.com", "Mon, 01 Jan 2024", "<b>bold</b> text")
+            ("msg1", "test.eml", "HTML Test", "sender@test.com", "Mon, 01 Jan 2024", "<b>bold</b> text", 0)
         ]
 
         app = create_app(mock_archive)
@@ -6656,7 +6668,7 @@ class TestWebSearchResultDisplay:
         mock_archive.db.get_email_count.return_value = 500
         # Return many results
         results = [
-            (f"msg{i}", f"test{i}.eml", f"Subject {i}", "sender@test.com", "Mon, 01 Jan 2024", "snippet")
+            (f"msg{i}", f"test{i}.eml", f"Subject {i}", "sender@test.com", "Mon, 01 Jan 2024", "snippet", 0)
             for i in range(100)
         ]
         mock_archive.search.return_value = results
@@ -7490,9 +7502,9 @@ class TestWebSearchSortingV4:
         mock_archive.db.get_email_count.return_value = 100
         # Multiple results with different dates
         mock_archive.search.return_value = [
-            ("msg1", "test1.eml", "Subject 1", "a@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet1"),
-            ("msg2", "test2.eml", "Subject 2", "b@test.com", "Tue, 02 Jan 2024 00:00:00 +0000", "snippet2"),
-            ("msg3", "test3.eml", "Subject 3", "c@test.com", "Wed, 03 Jan 2024 00:00:00 +0000", "snippet3"),
+            ("msg1", "test1.eml", "Subject 1", "a@test.com", "Mon, 01 Jan 2024 00:00:00 +0000", "snippet1", 0),
+            ("msg2", "test2.eml", "Subject 2", "b@test.com", "Tue, 02 Jan 2024 00:00:00 +0000", "snippet2", 0),
+            ("msg3", "test3.eml", "Subject 3", "c@test.com", "Wed, 03 Jan 2024 00:00:00 +0000", "snippet3", 0),
         ]
 
         app = create_app(mock_archive)
@@ -7617,7 +7629,7 @@ class TestWebLabelsInSearchResults:
         mock_archive.db.get_email_count.return_value = 100
         # Result with labels in tuple
         mock_archive.search.return_value = [
-            ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2024", "snippet")
+            ("msg1", "test.eml", "Subject", "sender@test.com", "Mon, 01 Jan 2024", "snippet", 0)
         ]
 
         app = create_app(mock_archive)

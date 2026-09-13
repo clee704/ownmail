@@ -588,7 +588,7 @@ def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
 
     print(f"Found {len(results)} results:\n")
 
-    for _msg_id, filename, subject, sender, date_str, snippet in results:
+    for _msg_id, filename, subject, sender, date_str, snippet, _has_attachments in results:
         print(f"  {date_str}")
         print(f"  From: {sender}")
         print(f"  Subject: {subject}")

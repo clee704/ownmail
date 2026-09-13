@@ -1,4 +1,5 @@
 {# Shared partial for email list rows #}
+{% from '_icons.html' import icon %}
 <ul class="ownmail-email-list" id="ownmail-email-list">
 {% for result in results %}
     <li class="ownmail-email-row">
@@ -10,12 +11,17 @@
         {% else %}
         <span class="ownmail-email-sender" id="sender-{{ loop.index }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
         {% endif %}
-        <a href="{{ url_for('view_email', email_id=result.email_id, return_to=request.full_path.rstrip('?')) }}" class="ownmail-email-row-link" aria-labelledby="sender-{{ loop.index }} subject-{{ loop.index }} date-{{ loop.index }}">
+        <a href="{{ url_for('view_email', email_id=result.email_id, return_to=request.full_path.rstrip('?')) }}" class="ownmail-email-row-link" aria-labelledby="sender-{{ loop.index }} subject-{{ loop.index }} date-{{ loop.index }}"{% if result.has_attachments %} aria-describedby="attachment-{{ loop.index }}"{% endif %}>
             <span class="ownmail-email-row-content">
                 <span class="ownmail-email-subject" id="subject-{{ loop.index }}" title="{{ result.subject or '(No subject)' }}">{{ result.subject or '(No subject)' }}</span>
                 {% if result.snippet %}<span class="ownmail-email-snippet">{{ result.snippet }}</span>{% endif %}
             </span>
-            <span class="ownmail-email-date" id="date-{{ loop.index }}">{{ result.date_short }}</span>
+            <span class="ownmail-email-date">
+                {% if result.has_attachments %}
+                <span class="ownmail-email-attachment" title="Has attachments">{{ icon('paperclip') }}<span class="ownmail-sr-only" id="attachment-{{ loop.index }}">Has attachments</span></span>
+                {% endif %}
+                <span id="date-{{ loop.index }}">{{ result.date_short }}</span>
+            </span>
         </a>
     </li>
 {% endfor %}
