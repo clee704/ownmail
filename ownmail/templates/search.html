@@ -4,10 +4,7 @@
 
 {% block searchbar %}
 <form class="ownmail-search-form" id="ownmail-search-form" action="/search" method="get" role="search">
-    <label class="ownmail-search-field">
-        {{ icon('search') }}
-        <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search mail" aria-label="Search mail">
-    </label>
+    {% include '_search_field.html' %}
     <button type="submit">Search</button>
 </form>
 {% endblock %}

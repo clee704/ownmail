@@ -368,6 +368,37 @@ assert(!visible());
     )
 
 
+@pytest.mark.parametrize("path", ["/search?q=annual", "/help"])
+def test_search_clear_keeps_focus_and_notifies_without_submitting(shell_app, shell_browser, path):
+    app, _ = shell_app
+    run_shell_browser(
+        app,
+        shell_browser,
+        """
+const input = byId('search-input');
+const clear = byId('ownmail-search-clear');
+assert(clear, 'Search field has a clear button');
+let submissions = 0;
+input.form.addEventListener('submit', event => { submissions++; event.preventDefault(); });
+const changes = [];
+input.form.addEventListener('input', event => changes.push([event.target, event.target.value]));
+input.value = 'updated query';
+input.focus();
+const press = new window.MouseEvent('mousedown', {bubbles: true, cancelable: true});
+clear.dispatchEvent(press);
+assert(press.defaultPrevented);
+assert.equal(document.activeElement, input);
+clear.focus();
+clear.click();
+assert.equal(input.value, '');
+assert.equal(document.activeElement, input);
+assert.deepEqual(changes, [[input, '']]);
+assert.equal(submissions, 0);
+""",
+        path=path,
+    )
+
+
 def test_list_sort_menu_submits_current_query_and_preserves_sort(shell_app, shell_browser):
     app, _ = shell_app
     run_shell_browser(
@@ -391,8 +422,7 @@ menu.open = true;
 byId('relevance-option').click();
 assert.equal(submitted.get('sort'), 'relevance');
 assert.equal(submitted.get('q'), 'updated');
-byId('search-input').value = '';
-byId('search-input').dispatchEvent(new window.Event('input'));
+byId('ownmail-search-clear').click();
 assert(byId('relevance-option').disabled);
 assert.equal(new window.FormData(form).get('sort'), 'date_desc');
 menu.open = true;

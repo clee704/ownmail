@@ -1,0 +1,5 @@
+<div class="ownmail-search-field">
+    {{ icon('search') }}
+    <input type="text" name="q" id="search-input" value="{{ query | default('') }}" placeholder="Search mail" aria-label="Search mail">
+    <button type="button" class="ownmail-search-clear" id="ownmail-search-clear" aria-label="Clear search" title="Clear search">{{ icon('close') }}</button>
+</div>

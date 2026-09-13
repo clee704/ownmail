@@ -199,6 +199,8 @@ a:hover { text-decoration: underline; }
     background: var(--ownmail-accent); color: var(--ownmail-on-accent); font-weight: 500;
 }
 :is(.ownmail-search-form button, .ownmail-settings-save):hover { background: var(--ownmail-accent-hover); }
+.ownmail-search-form .ownmail-search-clear { display: none; position: absolute; top: 0; right: 0; width: 44px; height: 100%; padding: 0; border: 0; background: transparent; color: var(--ownmail-muted); }
+.ownmail-search-form .ownmail-search-clear:hover { background: var(--ownmail-selected); color: var(--ownmail-text); }
 
 /* List columns share a compact reading area. */
 .ownmail-trash-header { display: flex; align-items: center; justify-content: space-between; gap: var(--ownmail-space-3); min-height: 48px; padding: var(--ownmail-space-3) var(--ownmail-space-4); }
@@ -399,6 +401,8 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-header-search { grid-row: 2; grid-column: 1 / -1; padding: 4px var(--ownmail-space-3) var(--ownmail-space-3); }
     .ownmail-search-field, .ownmail-search-form button { height: 44px; }
     .ownmail-search-form input[type="text"], .ownmail-search-form button { font-size: 16px; }
+    .ownmail-search-field input[type="text"] { padding-right: 44px; }
+    .ownmail-search-field:focus-within input:not(:placeholder-shown) + .ownmail-search-clear { display: inline-flex; }
     .ownmail-trash-header { padding: var(--ownmail-space-2) var(--ownmail-space-3); min-height: 52px; }
     .ownmail-toolbar { min-height: 52px; padding: var(--ownmail-space-1) var(--ownmail-space-2) var(--ownmail-space-1) 0; gap: 0; }
     .ownmail-toolbar-left, .ownmail-toolbar-right { gap: 0; }

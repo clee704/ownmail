@@ -35,7 +35,7 @@
         </div>
         <div class="ownmail-header-search">{% block searchbar %}
             <form class="ownmail-search-form" action="/search" method="get" role="search">
-                <label class="ownmail-search-field">{{ icon('search') }}<input type="text" name="q" placeholder="Search mail" aria-label="Search mail"></label>
+                {% include '_search_field.html' %}
                 <button type="submit">Search</button>
             </form>
             {% endblock %}</div>
@@ -71,6 +71,19 @@
         </main>
     </div>
     <script>
+    (function() {
+        var input = document.getElementById('search-input');
+        var clear = document.getElementById('ownmail-search-clear');
+        clear.addEventListener('mousedown', function(event) {
+            // Keep the mobile keyboard open while clearing the field.
+            event.preventDefault();
+        });
+        clear.addEventListener('click', function() {
+            input.value = '';
+            input.focus({preventScroll: true});
+            input.dispatchEvent(new Event('input', {bubbles: true}));
+        });
+    })();
     function isDarkMode() {
         var pref = localStorage.getItem('ownmail-theme') || 'auto';
         return pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
