@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 
 {% block title %}{{ subject }} - {{ brand_name }}{% endblock %}
+{% block body_class %}ownmail-reader-page{% endblock %}
 
 {% block content %}
     <article class="ownmail-email-detail">
         <header class="ownmail-email-header">
-            <div class="ownmail-reader-heading">
+            <div class="ownmail-reader-actions">
                 <a class="ownmail-back-to-results" id="ownmail-back-to-results" href="{{ back_url or ('/trash' if is_trashed else '/search') }}" title="Back to results">
                     {{ icon('arrow-left') }}<span class="ownmail-sr-only">Back to results</span>
                 </a>
-                <h2 class="ownmail-reader-subject">{{ subject or '(No subject)' }}</h2>
+                <span class="ownmail-reader-action-divider" aria-hidden="true"></span>
                 <details class="ownmail-email-menu">
                     <summary class="ownmail-email-menu-btn" aria-label="More message actions" title="More message actions">{{ icon('more') }}</summary>
                     <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
@@ -37,32 +38,32 @@
                     </div>
                 </details>
             </div>
+            <h2 class="ownmail-reader-subject">{{ subject or '(No subject)' }}</h2>
             <div class="ownmail-reader-byline">
                 <span class="ownmail-reader-sender">{% if sender_email %}<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" title="{{ sender_email }}" onclick="showLoading(event)">{{ sender_name or sender_email }}</a>{% else %}{{ sender or '(Unknown sender)' }}{% endif %}</span>
-                <span class="ownmail-reader-date">{{ date }}</span>
+                <button type="button" class="ownmail-reader-date" id="ownmail-message-details-toggle" aria-expanded="false" aria-controls="ownmail-message-metadata" aria-label="Message details: {{ date or 'No date' }}" title="Show message details">
+                    <span>{{ date or 'No date' }}</span><span class="ownmail-metadata-chevron">{{ icon('chevron-right', 12) }}</span>
+                </button>
             </div>
-            <details class="ownmail-message-details">
-                <summary>Message details</summary>
-                <dl class="ownmail-message-metadata">
-                    <dt>From</dt>
-                    <dd>{% if sender_name and sender_email %}{{ sender_name }} &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ sender_email }}</a>&gt;{% elif sender_email %}<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ sender_email }}</a>{% else %}{{ sender }}{% endif %}</dd>
-                    <dt>To</dt>
-                    <dd>{% for rcpt in recipients_parsed %}
-                        {% if not loop.first %}, {% endif %}
-                        {% if rcpt.name and rcpt.email %}{{ rcpt.name }} &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ rcpt.email }}</a>&gt;{% elif rcpt.email %}<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ rcpt.email }}</a>{% else %}{{ rcpt.raw }}{% endif %}
-                    {% endfor %}</dd>
-                    <dt>Date</dt>
-                    <dd>{{ date }}</dd>
-                    {% if labels %}
-                    <dt>Labels</dt>
-                    <dd class="ownmail-labels">
-                        {% for label in labels %}
-                        <a href="{{ label.url }}" class="ownmail-label ownmail-clickable-label" title="{{ label.raw | join(', ') }}" onclick="showLoading(event)">{{ label.name }}</a>
-                        {% endfor %}
-                    </dd>
-                    {% endif %}
-                </dl>
-            </details>
+            <dl class="ownmail-message-metadata" id="ownmail-message-metadata" hidden>
+                <dt>From</dt>
+                <dd>{% if sender_name and sender_email %}{{ sender_name }} &lt;<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ sender_email }}</a>&gt;{% elif sender_email %}<a href="/search?q=from:{{ sender_email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ sender_email }}</a>{% else %}{{ sender }}{% endif %}</dd>
+                <dt>To</dt>
+                <dd>{% for rcpt in recipients_parsed %}
+                    {% if not loop.first %}, {% endif %}
+                    {% if rcpt.name and rcpt.email %}{{ rcpt.name }} &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ rcpt.email }}</a>&gt;{% elif rcpt.email %}<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ rcpt.email }}</a>{% else %}{{ rcpt.raw }}{% endif %}
+                {% endfor %}</dd>
+                <dt>Date</dt>
+                <dd>{{ date }}</dd>
+                {% if labels %}
+                <dt>Labels</dt>
+                <dd class="ownmail-labels">
+                    {% for label in labels %}
+                    <a href="{{ label.url }}" class="ownmail-label ownmail-clickable-label" title="{{ label.raw | join(', ') }}" onclick="showLoading(event)">{{ label.name }}</a>
+                    {% endfor %}
+                </dd>
+                {% endif %}
+            </dl>
         </header>
 
         <div class="ownmail-email-content-area" data-supports-dark="{{ 'true' if supports_dark else 'false' }}">
@@ -244,6 +245,12 @@
 
 <script src="/static/result-state.js" defer></script>
 <script>
+document.getElementById('ownmail-message-details-toggle').addEventListener('click', function() {
+    var expanded = this.getAttribute('aria-expanded') !== 'true';
+    this.setAttribute('aria-expanded', String(expanded));
+    this.title = expanded ? 'Hide message details' : 'Show message details';
+    document.getElementById('ownmail-message-metadata').hidden = !expanded;
+});
 
 // Called by base.html theme system whenever site theme changes
 function updateEmailDarkMode(siteIsDark) {

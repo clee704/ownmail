@@ -106,9 +106,14 @@ def test_referer_fallback_only_accepts_local_result_lists(reader, referer, desti
 def test_secondary_metadata_disclosure_keeps_headers_and_actions_accessible(reader):
     client, _ = reader
     document = html.fromstring(client.get("/email/message").data)
-    details = document.xpath('//details[@class="ownmail-message-details"]')[0]
-    assert "open" not in details.attrib
-    assert details.find("summary").text == "Message details"
+    details = document.get_element_by_id("ownmail-message-metadata")
+    assert "hidden" in details.attrib
+    toggle = document.get_element_by_id("ownmail-message-details-toggle")
+    assert toggle.tag == "button"
+    assert toggle.get("aria-expanded") == "false"
+    assert toggle.get("aria-controls") == details.get("id")
+    assert toggle.get("aria-label").startswith("Message details:")
+    assert "2024" in toggle.text_content()
     for address in ["alex@example.com", "pat@example.com", "lee@example.com"]:
         assert address in details.text_content()
     assert "Project planning" in details.text_content()
@@ -334,5 +339,29 @@ assert(download.querySelector('span').dispatchEvent(click));
 assert(!click.defaultPrevented);
 assert(!menu.open);
 assert.equal(document.activeElement, menu.querySelector('summary'));
+""",
+    )
+
+
+def test_timestamp_toggles_metadata_without_moving_keyboard_focus(reader, shell_browser):
+    run_fit_browser(
+        reader,
+        shell_browser,
+        True,
+        1200,
+        """
+const timestamp = document.getElementById('ownmail-message-details-toggle');
+const metadata = document.getElementById(timestamp.getAttribute('aria-controls'));
+assert.equal(timestamp.tagName, 'BUTTON');
+assert(metadata.hidden);
+timestamp.focus();
+timestamp.click();
+assert.equal(timestamp.getAttribute('aria-expanded'), 'true');
+assert(!metadata.hidden);
+assert.equal(document.activeElement, timestamp);
+timestamp.click();
+assert.equal(timestamp.getAttribute('aria-expanded'), 'false');
+assert(metadata.hidden);
+assert.equal(document.activeElement, timestamp);
 """,
     )
