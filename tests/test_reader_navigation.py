@@ -508,3 +508,31 @@ assert(metadata.hidden);
 assert.equal(document.activeElement, timestamp);
 """,
     )
+
+
+@pytest.mark.parametrize("sender_sizing", ["", "box-sizing:border-box;"])
+def test_message_image_box_sizing_matches_standalone_html(reader, shell_browser, sender_sizing):
+    client, archive = reader
+    image = f'<img id="padded-logo" style="width:120px;height:40px;padding-right:24px;{sender_sizing}">'
+    (archive.archive_dir / "message.eml").write_text(
+        "From: sender@example.com\nSubject: Padded logo\nContent-Type: text/html\n\n" + image
+    )
+    stylesheet = client.get("/static/style.css").data.decode()
+    test_ui_shell.run_shell_browser(
+        client.application,
+        shell_browser,
+        """
+const style = document.createElement('style');
+style.textContent = STYLESHEET;
+document.head.appendChild(style);
+const standalone = new JSDOM(IMAGE);
+const expected = standalone.window.getComputedStyle(
+    standalone.window.document.querySelector('img')
+).boxSizing;
+assert.equal(window.getComputedStyle(byId('padded-logo')).boxSizing, expected);
+assert.equal(window.getComputedStyle(byId('ownmail-email-content')).boxSizing, 'border-box');
+assert.equal(window.getComputedStyle(document.querySelector('.ownmail-app-shell')).boxSizing, 'border-box');
+standalone.window.close();
+""".replace("STYLESHEET", json.dumps(stylesheet)).replace("IMAGE", json.dumps(image)),
+        path="/email/message",
+    )

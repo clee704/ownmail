@@ -66,7 +66,8 @@ html.ownmail-dark {
     --ownmail-overlay: rgb(0 0 0 / 48%);
     --ownmail-shadow: 0 4px 18px rgb(0 0 0 / 28%), 0 1px 3px rgb(0 0 0 / 20%);
 }
-* { box-sizing: border-box; }
+/* Authored message dimensions can rely on the browser's content-box default. */
+*:not(:where(#ownmail-email-content *)) { box-sizing: border-box; }
 body {
     margin: 0;
     background: var(--ownmail-bg);
