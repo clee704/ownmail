@@ -4,7 +4,7 @@ title: Add the Archive app icon
 status: Done
 assignee: []
 created_date: '2026-09-13 08:47'
-updated_date: '2026-09-13 08:56'
+updated_date: '2026-09-13 09:28'
 labels:
   - ui
   - mobile
@@ -26,12 +26,15 @@ Use the selected Bauhaus Archive design as the Home Screen and website icon: a y
 - [x] #2 The manifest declares reachable PNG icons with sizes matching their image dimensions.
 - [x] #3 Icon files are included in built packages and the required repository checks pass.
 - [x] #4 Shared pages declare the Archive PNG as their browser tab icon.
+- [x] #5 The Archive symbol is slightly larger and its artwork uses flat fills without shading, bevels, or embossed edges.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Added the selected Archive design as an opaque 180px Apple touch icon and 192px/512px manifest icons. The shared page head declares the touch icon. Verified HTTP responses, PNG dimensions and opacity, and byte-identical inclusion in both wheel and source distribution. Reviewed the 180px preview for readability. All pre-push checks pass: 2,384 tests passed, one expected failure, and 95.55% coverage. Physical iPhone installation remains unverified; theme colors, navigation, connection recovery, and device validation remain in TASK-50.
+The Archive icon has a flat SVG source at ownmail/static/icon.svg. Its letter, stamp, and tray preserve the selected proportions at 112% scale around the center. Solid fills use ivory #f4f0e6, gold #edb928, red #d83a26, and black #191919. There are no gradients, filters, shadows, or bevels. Exported opaque 180px, 192px, and 512px PNGs with rsvg-convert, without adding a runtime dependency.
 
-Added a browser tab icon declaration to shared pages and the separate Original-message view, reusing the existing 192px Archive PNG. Verified the rendered links and successful PNG responses with the Flask test client.
+Shared pages declare the Apple touch icon and browser tab icon; the Original-message view also declares the browser icon. Both manifest icons and all HTML icon links use ?v=2. Existing app identity, launch URL, and scope are unchanged.
+
+Verified uniform interior pixels, opacity, dimensions, enlarged bounds, HTTP responses, and exact asset inclusion in wheel and source distribution. Reviewed 512px and 60px renders. All pre-push checks pass. New physical iPhone installation remains unverified; installed Home Screen apps may need to be added again, and system-applied outer highlights are separate from the artwork. Other Home Screen behavior remains in TASK-50.
 <!-- SECTION:NOTES:END -->

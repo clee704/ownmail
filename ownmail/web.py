@@ -1138,8 +1138,8 @@ def create_app(
             "scope": "/",
             "display": "standalone",
             "icons": [
-                {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
-                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                {"src": "/static/icon-192.png?v=2", "sizes": "192x192", "type": "image/png"},
+                {"src": "/static/icon-512.png?v=2", "sizes": "512x512", "type": "image/png"},
             ],
         }, {"Content-Type": "application/manifest+json"}
 
@@ -1595,7 +1595,7 @@ def create_app(
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raw Email - {escape(filename)}</title>
-    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v=2">
     <style>
         body {{ font-family: monospace; margin: 0; padding: 20px; background: #f5f5f5; }}
         .ownmail-filepath {{ background: #fff; padding: 10px 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; word-break: break-all; font-size: 13px; }}
