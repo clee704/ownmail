@@ -1,7 +1,7 @@
 ---
 id: TASK-62
 title: Align select-all and message checkboxes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 07:45'
 updated_date: '2026-09-13 07:47'
