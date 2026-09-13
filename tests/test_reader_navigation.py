@@ -113,8 +113,15 @@ def test_secondary_metadata_disclosure_keeps_headers_and_actions_accessible(read
         assert address in details.text_content()
     assert "Project planning" in details.text_content()
     assert "The message body remains visible." in document.get_element_by_id("ownmail-email-content").text_content()
-    assert document.xpath('//a[@href="/raw/message" and not(ancestor::details)]')
-    assert document.xpath('//a[@href="/download/message" and not(ancestor::details)]')
+    back = document.get_element_by_id("ownmail-back-to-results")
+    assert back.get("title") == "Back to results"
+    assert back.text_content().strip() == "Back to results"
+    menu = document.xpath('//details[@class="ownmail-email-menu"]')[0]
+    assert menu.find("summary").get("aria-label") == "More message actions"
+    assert [(link.get("href"), link.text_content().strip()) for link in menu.xpath(".//a")] == [
+        ("/raw/message", "Original"),
+        ("/download/message", "Download"),
+    ]
 
 
 _POSITION_SCRIPT = Path(__file__).parents[1] / "ownmail" / "static" / "result-state.js"
@@ -308,5 +315,24 @@ window.dispatchEvent(new window.Event('resize'));
 assert(button.hidden);
 assert.equal(content.style.zoom, '');
 assert.equal(content.style.overflow, 'auto');
+""",
+    )
+
+
+def test_message_download_closes_menu_without_canceling_navigation(reader, shell_browser):
+    run_fit_browser(
+        reader,
+        shell_browser,
+        True,
+        1200,
+        """
+const download = menu.querySelector('a[href="/download/message"]');
+menu.open = true;
+download.focus();
+const click = new window.MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+assert(download.querySelector('span').dispatchEvent(click));
+assert(!click.defaultPrevented);
+assert(!menu.open);
+assert.equal(document.activeElement, menu.querySelector('summary'));
 """,
     )
