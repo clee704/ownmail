@@ -4,6 +4,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ownmail import ArchiveDatabase
@@ -254,6 +256,47 @@ class TestFullTextSearch:
         assert not db.is_indexed(_eid("msg1"))
 
 
+class TestIndexLabels:
+    def test_label_strings_are_preserved_exactly(self, temp_dir):
+        db = ArchiveDatabase(temp_dir)
+        email_id = _eid("msg1")
+        db.mark_downloaded(email_id, "msg1", "test.eml")
+        labels = ["Receipts, 2026", " Work ", "Work"]
+
+        db.index_email(email_id, "Test", "from", "to", "date", "body", "", labels=labels)
+
+        assert sorted(db.get_labels_for_email(email_id)) == sorted(labels)
+        assert [row[0] for row in db.search('label:"Receipts, 2026"', include_unknown=True)] == [email_id]
+        assert db.search("label:Receipts", include_unknown=True) == []
+        assert db.search("label:2026", include_unknown=True) == []
+
+    @pytest.mark.parametrize("labels", [None, []])
+    def test_omitted_labels_preserve_and_empty_labels_clear(self, temp_dir, labels):
+        db = ArchiveDatabase(temp_dir)
+        email_id = _eid("msg1")
+        db.mark_downloaded(email_id, "msg1", "test.eml")
+        existing = ["Receipts, 2026", " Work "]
+        db.index_email(email_id, "Old", "from", "to", "date", "body", "", labels=existing)
+
+        db.index_email(email_id, "New", "from", "to", "date", "body", "", labels=labels)
+
+        assert sorted(db.get_labels_for_email(email_id)) == (sorted(existing) if labels is None else [])
+
+    def test_comma_separated_string_is_rejected_before_writes(self, temp_dir):
+        db = ArchiveDatabase(temp_dir)
+        email_id = _eid("msg1")
+        db.mark_downloaded(email_id, "msg1", "test.eml")
+        db.index_email(email_id, "Original", "from", "to", "date", "body", "", labels=["Work"])
+
+        with sqlite3.connect(db.db_path) as conn:
+            with pytest.raises(TypeError, match="labels must be a list"):
+                db.index_email(email_id, "Changed", "from", "to", "date", "body", "", conn=conn, labels="a,b")
+            assert conn.execute("SELECT subject FROM emails WHERE email_id = ?", (email_id,)).fetchone() == (
+                "Original",
+            )
+        assert db.get_labels_for_email(email_id) == ["Work"]
+
+
 class TestDatabaseStats:
     """Tests for database statistics."""
 
@@ -461,8 +504,8 @@ class TestSearchLabelFilter:
 
         db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml")
         db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml")
-        db.index_email(_eid("msg1"), "Test1", "from", "to", "date", "body", "", labels="INBOX,IMPORTANT")
-        db.index_email(_eid("msg2"), "Test2", "from", "to", "date", "body", "", labels="INBOX")
+        db.index_email(_eid("msg1"), "Test1", "from", "to", "date", "body", "", labels=["INBOX", "IMPORTANT"])
+        db.index_email(_eid("msg2"), "Test2", "from", "to", "date", "body", "", labels=["INBOX"])
 
         results = db.search("label:IMPORTANT", include_unknown=True)
 
@@ -475,8 +518,8 @@ class TestSearchLabelFilter:
 
         db.mark_downloaded(_eid("msg1"), "msg1", "emails/2024/01/20240115_120000_abc.eml")
         db.mark_downloaded(_eid("msg2"), "msg2", "emails/2024/02/20240215_120000_def.eml")
-        db.index_email(_eid("msg1"), "Invoice", "from", "to", "date", "body", "", labels="IMPORTANT")
-        db.index_email(_eid("msg2"), "Invoice", "from", "to", "date", "body", "", labels="INBOX")
+        db.index_email(_eid("msg1"), "Invoice", "from", "to", "date", "body", "", labels=["IMPORTANT"])
+        db.index_email(_eid("msg2"), "Invoice", "from", "to", "date", "body", "", labels=["INBOX"])
 
         results = db.search("invoice label:IMPORTANT", include_unknown=True)
 
@@ -969,12 +1012,12 @@ class TestRoleFilter:
 
     # Two providers spelling 'sent' differently, and one message carrying both.
     ROWS = [
-        ("m1", "From the API", "SENT"),
-        ("m2", "From IMAP", "[Gmail]/Sent Mail"),
-        ("m3", "Both spellings", "SENT,[Gmail]/Sent Mail"),
-        ("m4", "Inbox only", "INBOX"),
-        ("m5", "Dovecot trash", "INBOX.Trash"),
-        ("m6", "User label", "Receipts"),
+        ("m1", "From the API", ["SENT"]),
+        ("m2", "From IMAP", ["[Gmail]/Sent Mail"]),
+        ("m3", "Both spellings", ["SENT", "[Gmail]/Sent Mail"]),
+        ("m4", "Inbox only", ["INBOX"]),
+        ("m5", "Dovecot trash", ["INBOX.Trash"]),
+        ("m6", "User label", ["Receipts"]),
     ]
 
     def _subjects(self, db, query, **kwargs):
@@ -1021,7 +1064,7 @@ class TestRoleFilter:
         """Neither term may be dropped: nothing here is both sent and inbox."""
         db = self._db(temp_dir, self.ROWS)
         assert db.search("role:sent role:inbox") == []
-        db2 = self._db(temp_dir / "two", [("m7", "Sent and inboxed", "SENT,INBOX")])
+        db2 = self._db(temp_dir / "two", [("m7", "Sent and inboxed", ["SENT", "INBOX"])])
         assert self._subjects(db2, "role:sent role:inbox") == ["Sent and inboxed"]
 
     def test_unknown_role_matches_nothing(self, temp_dir):
@@ -1042,10 +1085,10 @@ class TestLabelCounts:
     def _db(self, temp_dir):
         db = ArchiveDatabase(temp_dir)
         rows = [
-            ("m1", "Kept", "2024-03-01T10:00:00+00:00", "Work,INBOX"),
-            ("m2", "Also kept", "2024-04-01T10:00:00+00:00", "Work"),
-            ("m3", "Trashed later", "2024-05-01T10:00:00+00:00", "Work,Receipts"),
-            ("m4", "No parsed date", None, "Work,Undated"),
+            ("m1", "Kept", "2024-03-01T10:00:00+00:00", ["Work", "INBOX"]),
+            ("m2", "Also kept", "2024-04-01T10:00:00+00:00", ["Work"]),
+            ("m3", "Trashed later", "2024-05-01T10:00:00+00:00", ["Work", "Receipts"]),
+            ("m4", "No parsed date", None, ["Work", "Undated"]),
         ]
         for provider_id, subject, date, labels in rows:
             email_id = _eid(provider_id)
@@ -1118,32 +1161,32 @@ class TestRoleCounts:
 
     def test_stale_state_labels_are_not_counted(self, temp_dir):
         """They record where a message was at capture — no sidebar entry."""
-        db = self._db(temp_dir, [("m1", "INBOX"), ("m2", "DRAFT")])
+        db = self._db(temp_dir, [("m1", ["INBOX"]), ("m2", ["DRAFT"])])
         counts = db.get_role_counts()
         assert "inbox" not in counts
         assert "drafts" not in counts
 
     def test_dropping_the_count_does_not_drop_the_label(self, temp_dir):
         """Only the count goes: the archive still holds it, and still finds it."""
-        db = self._db(temp_dir, [("m1", "INBOX")])
+        db = self._db(temp_dir, [("m1", ["INBOX"])])
         assert db.get_labels_for_role("inbox") == ["INBOX"]
         assert len(db.search("role:inbox")) == 1
         assert len(db.search("label:INBOX")) == 1
 
     def test_a_folder_named_inbox_still_counts(self, temp_dir):
         """The rule is an exact id match, not a name match — see TASK-26."""
-        db = self._db(temp_dir, [("m1", "Inbox")])
+        db = self._db(temp_dir, [("m1", ["Inbox"])])
         assert db.get_role_counts()["inbox"] == 1
 
     def test_user_labels_named_like_system_folders_still_count(self, temp_dir):
         """'Archive' and 'Trash' must not be swept up by the stale-label rule."""
-        db = self._db(temp_dir, [("m1", "Archive"), ("m2", "Trash")])
+        db = self._db(temp_dir, [("m1", ["Archive"]), ("m2", ["Trash"])])
         counts = db.get_role_counts()
         assert counts["archive"] == 1
         assert counts["trash"] == 1
 
     def test_one_message_with_two_spellings_counts_once(self, temp_dir):
-        db = self._db(temp_dir, [("m1", "SENT,[Gmail]/Sent Mail")])
+        db = self._db(temp_dir, [("m1", ["SENT", "[Gmail]/Sent Mail"])])
         assert db.get_role_counts()["sent"] == 1
 
 

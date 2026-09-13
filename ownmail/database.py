@@ -786,7 +786,7 @@ class ArchiveDatabase:
         body: str,
         attachments: str,
         conn: sqlite3.Connection = None,
-        labels: str = "",
+        labels: list[str] | None = None,
         skip_delete: bool = False,
         email_date: str = None,
     ) -> None:
@@ -795,11 +795,14 @@ class ArchiveDatabase:
         Args:
             email_id: 24-char hex hash
             subject, sender, recipients, date_str, body, attachments: Parsed email fields
-            labels: Comma-separated labels string (written to email_labels table only)
+            labels: Exact label strings; None preserves existing labels, [] clears them
             conn: Optional existing connection (for batching)
             skip_delete: Ignored (kept for API compatibility)
             email_date: ISO-formatted UTC date string (populates email_date if NULL)
         """
+        if isinstance(labels, str):
+            raise TypeError("labels must be a list of strings, not a comma-separated string")
+
         should_close = conn is None
         if conn is None:
             conn = sqlite3.connect(self.db_path)
@@ -859,19 +862,18 @@ class ArchiveDatabase:
                             (rowid, email_addr),
                         )
 
-            # Update normalized labels table for fast lookups
+            # Missing sidecars must not erase labels from older archives.
+            if labels is None:
+                labels = [
+                    row[0] for row in conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,))
+                ]
             conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
-            if labels:
-                # Use the newly-computed email_date if available, otherwise existing
-                label_date = email_date or existing_email_date
-                # labels is comma-separated: "INBOX,IMPORTANT,CATEGORY_PERSONAL"
-                for label in labels.split(","):
-                    label = label.strip()
-                    if label:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                            (rowid, label, label_date),
-                        )
+            label_date = email_date or existing_email_date
+            for label in labels:
+                conn.execute(
+                    "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                    (rowid, label, label_date),
+                )
 
             # Update FTS (contentless mode - we manage manually)
             if was_indexed:

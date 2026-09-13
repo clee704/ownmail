@@ -566,6 +566,7 @@ def _index_single_email(
             date_str=parsed["date_str"],
             body=parsed["body"],
             attachments=parsed["attachments"],
+            labels=sidecar.read_labels(filepath),
             email_date=email_date_iso,
         )
         return True
@@ -594,12 +595,13 @@ def _index_email_for_rebuild(
         body = parsed["body"]
         snippet = body[:200] + "..." if len(body) > 200 else body
 
-        # Preserve existing labels from email_labels table
-        existing_labels_rows = conn.execute(
-            "SELECT el.label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid WHERE e.email_id = ?",
-            (email_id,),
-        ).fetchall()
-        labels_list = [row[0] for row in existing_labels_rows]
+        labels_list = sidecar.read_labels(filepath)
+        if labels_list is None:
+            existing_labels_rows = conn.execute(
+                "SELECT el.label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid WHERE e.email_id = ?",
+                (email_id,),
+            ).fetchall()
+            labels_list = [row[0] for row in existing_labels_rows]
         recipients = parsed["recipients"]
 
         # recipient_emails normalized table is populated below
@@ -680,14 +682,11 @@ def _index_email_for_rebuild(
             email_date = email_date_row[0] if email_date_row else None
 
             conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
-            if labels_list:
-                for label in labels_list:
-                    label = label.strip()
-                    if label:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                            (rowid, label, email_date),
-                        )
+            for label in labels_list:
+                conn.execute(
+                    "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+                    (rowid, label, email_date),
+                )
 
         return True
     except Exception as e:

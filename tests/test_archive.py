@@ -1,5 +1,7 @@
 """Tests for EmailArchive class."""
 
+import pytest
+
 from ownmail import sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
@@ -321,7 +323,10 @@ class TestBackupWritesSidecars:
     """Backup writes a label sidecar file alongside every downloaded .eml,
     matching what got written to the email_labels DB table."""
 
-    def test_backup_writes_sidecar_with_labels(self, temp_dir):
+    @pytest.mark.parametrize("labels", [["INBOX", "IMPORTANT"], ["Receipts, 2026", " Work "], []])
+    @pytest.mark.parametrize("orphan_sidecar", [False, True])
+    def test_backup_labels_survive_capture_and_reindex(self, temp_dir, labels, orphan_sidecar):
+        """Provider labels survive capture, reindexing, and quoted label search."""
         from unittest.mock import MagicMock
 
         archive = EmailArchive(temp_dir, {})
@@ -338,39 +343,27 @@ Date: Mon, 15 Jan 2024 10:00:00 +0000
 
 Body content
 """
-        mock_provider.download_message.return_value = (raw_email, ["INBOX", "IMPORTANT"])
+        mock_provider.download_message.return_value = (raw_email, labels)
+        if orphan_sidecar:
+            filepath, _ = archive._save_email(
+                raw_email, "msg1", mock_provider.account, archive.get_emails_dir(mock_provider.source_name)
+            )
+            sidecar.write_labels(filepath, ["Old label"])
 
         result = archive.backup(mock_provider)
         assert result["success_count"] == 1
 
         eml_files = list(temp_dir.rglob("*.eml"))
         assert len(eml_files) == 1
-        assert sidecar.read_labels(eml_files[0]) == ["INBOX", "IMPORTANT"]
+        assert sidecar.read_labels(eml_files[0]) == labels
+        email_id = _eid("msg1", mock_provider.account)
+        assert sorted(archive.db.get_labels_for_email(email_id)) == sorted(labels)
 
-    def test_backup_writes_empty_sidecar_when_no_labels(self, temp_dir):
-        from unittest.mock import MagicMock
+        assert archive._index_email(email_id, eml_files[0]) is True
 
-        archive = EmailArchive(temp_dir, {})
-
-        mock_provider = MagicMock()
-        mock_provider.account = "test@gmail.com"
-        mock_provider.source_name = "test_source"
-        mock_provider.get_new_message_ids.return_value = (["msg1"], None)
-        mock_provider.get_current_sync_state.return_value = "12345"
-
-        raw_email = b"""From: sender@example.com
-Subject: Test
-Date: Mon, 15 Jan 2024 10:00:00 +0000
-
-Body content
-"""
-        mock_provider.download_message.return_value = (raw_email, [])
-
-        result = archive.backup(mock_provider)
-        assert result["success_count"] == 1
-
-        eml_files = list(temp_dir.rglob("*.eml"))
-        assert sidecar.read_labels(eml_files[0]) == []
+        assert sorted(archive.db.get_labels_for_email(email_id)) == sorted(labels)
+        for label in labels:
+            assert [row[0] for row in archive.db.search(f'label:"{label}"')] == [email_id]
 
 
 class TestSaveEmailEdgeCases:
@@ -1191,16 +1184,53 @@ class TestImportEmail:
         assert len(copied) == 1
         assert copied[0].read_bytes() == sample_eml_simple
 
+    def test_import_preserves_sidecar_metadata_and_label_search(self, temp_dir, sample_eml_simple):
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "src.eml"
+        src.write_bytes(sample_eml_simple)
+        metadata = {"version": 1, "labels": ["Receipts, 2026", " Work "], "note": "Retained metadata"}
+        sidecar.write_metadata(src, metadata)
+
+        assert archive.import_email(src, account="me@example.com") == "imported"
+
+        copied = next((temp_dir / "sources" / "local").rglob("*.eml"))
+        assert sidecar.read_metadata(copied) == metadata
+        assert sidecar.read_metadata(src) == metadata
+        email_id = _eid("local:<test123@example.com>", "me@example.com")
+        assert sorted(archive.db.get_labels_for_email(email_id)) == sorted(metadata["labels"])
+        assert [row[0] for row in archive.search('label:"Receipts, 2026"')] == [email_id]
+        assert archive.search("label:Receipts") == []
+
+    @pytest.mark.parametrize("raw_sidecar", [None, b"{invalid json", b"null", b"[]", b'{"labels":"Work"}', b"\xff"])
+    def test_import_ignores_missing_or_malformed_sidecar(self, temp_dir, sample_eml_simple, raw_sidecar):
+        archive = EmailArchive(temp_dir, {})
+        src = temp_dir / "src.eml"
+        src.write_bytes(sample_eml_simple)
+        if raw_sidecar is not None:
+            sidecar.sidecar_path(src).write_bytes(raw_sidecar)
+
+        assert archive.import_email(src, account="me@example.com") == "imported"
+
+        copied = next((temp_dir / "sources" / "local").rglob("*.eml"))
+        assert not sidecar.sidecar_path(copied).exists()
+        assert len(archive.search("test email")) == 1
+        email_id = _eid("local:<test123@example.com>", "me@example.com")
+        assert archive.db.get_labels_for_email(email_id) == []
+
     def test_import_move_deletes_source(self, temp_dir, sample_eml_simple):
         """--move deletes the source file after a successful import."""
         archive = EmailArchive(temp_dir, {})
         src = temp_dir / "src.eml"
         src.write_bytes(sample_eml_simple)
+        sidecar.write_labels(src, ["Receipts, 2026"])
 
         status = archive.import_email(src, account="me@example.com", move=True)
 
         assert status == "imported"
         assert not src.exists()
+        assert sidecar.read_labels(src) == ["Receipts, 2026"]
+        copied = next((temp_dir / "sources" / "local").rglob("*.eml"))
+        assert sidecar.read_labels(copied) == ["Receipts, 2026"]
 
     def test_import_duplicate_is_skipped(self, temp_dir, sample_eml_simple):
         """Importing the same email twice is a no-op the second time."""
@@ -1209,6 +1239,8 @@ class TestImportEmail:
         src1.write_bytes(sample_eml_simple)
         src2 = temp_dir / "src2.eml"
         src2.write_bytes(sample_eml_simple)
+        sidecar.write_labels(src1, ["Original, label"])
+        sidecar.write_labels(src2, ["Other label"])
 
         first = archive.import_email(src1, account="me@example.com")
         second = archive.import_email(src2, account="me@example.com")
@@ -1218,6 +1250,7 @@ class TestImportEmail:
         # Only one copy should exist in the archive
         copied = list((temp_dir / "sources" / "local").rglob("*.eml"))
         assert len(copied) == 1
+        assert sidecar.read_labels(copied[0]) == ["Original, label"]
 
     def test_import_missing_file_is_an_error(self, temp_dir):
         """Importing a nonexistent file returns 'error', not a crash."""
@@ -1776,6 +1809,12 @@ class TestImportAndScanErrors:
         archive = EmailArchive(temp_dir, {})
         filepath = temp_dir / "sitting.eml"
         filepath.write_bytes(self.RAW)
+        labels = ["Receipts, 2026", " Work "]
+        sidecar.write_labels(filepath, labels)
 
         assert archive.register_scanned_email(filepath) == "imported"
+
         assert filepath.exists()
+        matches = archive.db.search('label:"Receipts, 2026"', include_unknown=True)
+        assert len(matches) == 1
+        assert sorted(archive.db.get_labels_for_email(matches[0][0])) == sorted(labels)

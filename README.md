@@ -285,6 +285,38 @@ ownmail verify --fix
 ownmail sync-check
 ```
 
+### Repairing Legacy Labels
+
+Older releases could append message IDs from a folded `References` header to
+the `SENT` label. From a source checkout, preview the affected metadata with:
+
+```bash
+python scripts/repair_labels.py --archive /path/to/archive
+```
+
+Add `--database /path/to/ownmail.db` if the index is stored separately. Stop
+downloads and other archive maintenance before applying a repair, and provide
+a directory for the original metadata backups:
+
+```bash
+python scripts/repair_labels.py --archive /path/to/archive \
+  --apply --backup-dir /path/to/label-repair-backup
+```
+
+The repair requires an exact match to the message's folded header and a valid
+recorded file hash. It updates the JSON sidecar and database labels, preserves
+other sidecar fields, and leaves `.eml` files unchanged. Interrupted repairs can
+be rerun with the same backup directory. Values without matching evidence are
+left for inspection; long names and names containing angle brackets are not
+rejected on appearance alone.
+
+Labels retain commas and whitespace during capture, indexing, and rebuilding.
+For example, `label:"Receipts, 2026"` searches for one label. Rebuilding uses
+sidecar labels when available and preserves indexed labels otherwise. Labels
+already split by older code can be restored from an intact sidecar with
+`ownmail rebuild --only sidecars`. Without the original sidecar, the intended
+label boundaries cannot be recovered reliably from the index alone.
+
 ### Resumable Downloads
 
 Press **Ctrl-C** anytime to pause:

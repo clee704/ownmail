@@ -7,6 +7,7 @@ A file-based email backup and search tool.
 __version__ = "0.4.0-dev"
 
 # Re-export main classes for backward compatibility
+from ownmail import sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
 from ownmail.keychain import KeychainStorage
@@ -74,6 +75,7 @@ def _create_gmail_archive_compat():
                     date_str=parsed["date_str"],
                     body=parsed["body"],
                     attachments=parsed["attachments"],
+                    labels=sidecar.read_labels(filepath),
                     conn=conn,
                     skip_delete=skip_delete,
                 )

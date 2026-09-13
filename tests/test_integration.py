@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ownmail import GmailArchive
+from ownmail import GmailArchive, sidecar
 from ownmail.database import ArchiveDatabase
 
 
@@ -163,6 +163,15 @@ class TestGmailArchiveIndexEmail:
         expected = hashlib.sha256(self.EML).hexdigest()
         assert self._hashes(archive, email_id) == (expected, expected)
         assert archive.db.search("Indexed") != []
+
+    def test_indexes_labels_from_sidecar(self, temp_dir):
+        archive, email_id, filepath = self._archive_with_email(temp_dir)
+        labels = ["Receipts, 2026", " Work "]
+        sidecar.write_labels(filepath, labels)
+
+        assert archive.index_email(email_id, filepath) is True
+
+        assert sorted(archive.db.get_labels_for_email(email_id)) == sorted(labels)
 
     def test_update_hash_false_leaves_hashes_alone(self, temp_dir):
         """With update_hash off, the stored hashes should not change."""

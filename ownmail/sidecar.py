@@ -33,16 +33,22 @@ def read_labels(eml_path: Path) -> list[str] | None:
         List of labels (may be empty) if a sidecar exists, or None if
         there is no sidecar for this email yet.
     """
-    path = sidecar_path(eml_path)
+    data = read_metadata(eml_path)
+    if data is None:
+        return None
+    return [str(label) for label in data.get("labels", [])]
+
+
+def read_metadata(eml_path: Path) -> dict | None:
+    """Read a complete sidecar, or return None if it is missing or malformed."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(sidecar_path(eml_path), encoding="utf-8") as f:
             data = json.load(f)
-    except FileNotFoundError:
+    except (OSError, ValueError):
         return None
-    except (OSError, json.JSONDecodeError):
+    if not isinstance(data, dict) or not isinstance(data.get("labels", []), list):
         return None
-    labels = data.get("labels", [])
-    return [str(label) for label in labels]
+    return data
 
 
 def write_labels(eml_path: Path, labels: list[str]) -> None:
@@ -52,9 +58,6 @@ def write_labels(eml_path: Path, labels: list[str]) -> None:
         eml_path: Path to the .eml file (sidecar is derived from this)
         labels: Labels/tags to store (order preserved, duplicates removed)
     """
-    path = sidecar_path(eml_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
     # Dedup while preserving order
     seen = set()
     deduped = []
@@ -63,14 +66,20 @@ def write_labels(eml_path: Path, labels: list[str]) -> None:
             seen.add(label)
             deduped.append(label)
 
-    data = {"version": SIDECAR_VERSION, "labels": deduped}
+    write_metadata(eml_path, {"version": SIDECAR_VERSION, "labels": deduped})
+
+
+def write_metadata(eml_path: Path, data: dict) -> None:
+    """Atomically write a complete sidecar, retaining caller-supplied metadata."""
+    path = sidecar_path(eml_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     fd, temp_path = tempfile.mkstemp(dir=path.parent, suffix=".json.tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f)
         os.rename(temp_path, path)
-    except Exception:
+    except BaseException:
         if os.path.exists(temp_path):
             os.unlink(temp_path)
         raise

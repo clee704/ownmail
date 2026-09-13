@@ -404,10 +404,13 @@ class EmailArchive:
                             email_date=email_date,
                         )
 
+                        # Index the current capture's labels, even after an interrupted download.
+                        sidecar.write_labels(filepath, labels or [])
+
                         # Index the email (updates the row with parsed metadata + FTS)
                         self._index_email(email_id, filepath, raw_data, skip_delete=True)
 
-                        # Store labels in email_labels table
+                        # Store labels even when parsing failed.
                         if labels:
                             rowid_row = self._batch_conn.execute(
                                 "SELECT rowid, email_date FROM emails WHERE email_id = ?", (email_id,)
@@ -418,11 +421,6 @@ class EmailArchive:
                                         "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
                                         (rowid_row[0], label, rowid_row[1]),
                                     )
-
-                        # Sidecar file is the source of truth for labels/tags
-                        # (survives even if the DB index is lost). DB stays a
-                        # derived cache, kept in sync above.
-                        sidecar.write_labels(filepath, labels or [])
 
                         # Set indexed_hash to mark as indexed
                         self._batch_conn.execute(
@@ -555,6 +553,7 @@ class EmailArchive:
             date_str=parsed["date_str"],
             body=parsed["body"],
             attachments=parsed["attachments"],
+            labels=sidecar.read_labels(filepath),
             conn=conn,
             skip_delete=True,
             email_date=email_date,
@@ -613,6 +612,10 @@ class EmailArchive:
             dest_filepath, _ = self._save_email(raw_data, provider_id, account, emails_dir)
             if not dest_filepath:
                 return "error"
+
+            metadata = sidecar.read_metadata(filepath)
+            if metadata is not None:
+                sidecar.write_metadata(dest_filepath, metadata)
 
             result = self._register_and_index(dest_filepath, raw_data, provider_id, account, conn)
 
@@ -929,6 +932,7 @@ class EmailArchive:
                 date_str=parsed["date_str"],
                 body=parsed["body"],
                 attachments=parsed["attachments"],
+                labels=sidecar.read_labels(filepath),
                 conn=conn,
                 skip_delete=skip_delete,
             )

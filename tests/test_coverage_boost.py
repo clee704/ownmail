@@ -6397,7 +6397,7 @@ class TestDatabaseIndexEmailV4:
             "2024-01-01",
             "Test body",
             "",
-            labels="INBOX,STARRED",
+            labels=["INBOX", "STARRED"],
         )
         assert db.is_indexed(_eid("test-msg-id"))
 

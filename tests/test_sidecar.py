@@ -31,10 +31,11 @@ class TestReadLabels:
         sidecar.write_labels(eml, [])
         assert sidecar.read_labels(eml) == []
 
-    def test_read_labels_corrupt_json_returns_none(self, temp_dir):
+    @pytest.mark.parametrize("raw", [b"{not valid json", b"null", b"[]", b'{"labels":"Work"}', b"\xff"])
+    def test_read_labels_corrupt_json_returns_none(self, temp_dir, raw):
         eml = temp_dir / "msg.eml"
         eml.write_bytes(b"From: a@b.com\n\nbody")
-        sidecar.sidecar_path(eml).write_text("{not valid json")
+        sidecar.sidecar_path(eml).write_bytes(raw)
         assert sidecar.read_labels(eml) is None
 
 

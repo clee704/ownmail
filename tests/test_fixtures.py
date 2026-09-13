@@ -1631,7 +1631,7 @@ class TestDatabaseSearchAdvanced:
             "Mon, 15 Jan 2024 12:00:00 +0000",
             "Body content",
             "",
-            labels="important,inbox",
+            labels=["important", "inbox"],
         )
         results = db.search("label:important")
         assert isinstance(results, list)

@@ -86,6 +86,26 @@ class TestCmdRebuild:
         captured = capsys.readouterr()
         assert "Indexed successfully" in captured.out or "Indexing" in captured.out
 
+    @pytest.mark.parametrize("single_file", [False, True])
+    @pytest.mark.parametrize("sidecar_labels", [None, [], ["Receipts, 2026", " Work "]])
+    def test_rebuild_preserves_exact_labels(self, temp_dir, sample_eml_simple, single_file, sidecar_labels):
+        archive = EmailArchive(temp_dir, {})
+        filepath = temp_dir / "test.eml"
+        filepath.write_bytes(sample_eml_simple)
+        email_id = _eid("msg1")
+        archive.db.mark_downloaded(email_id, "msg1", "test.eml")
+        existing = ["Legacy, folder", " Legacy "]
+        archive.db.index_email(email_id, "Original", "from", "to", "date", "body", "", labels=existing)
+        if sidecar_labels is not None:
+            sidecar.write_labels(filepath, sidecar_labels)
+
+        cmd_rebuild(archive, file_path=filepath if single_file else None, force=True)
+
+        expected = existing if sidecar_labels is None else sidecar_labels
+        assert sorted(archive.db.get_labels_for_email(email_id)) == sorted(expected)
+        for label in expected:
+            assert [row[0] for row in archive.db.search(f'label:"{label}"')] == [email_id]
+
     def test_rebuild_nonexistent_file(self, temp_dir, capsys):
         """Test rebuild with nonexistent file."""
         archive = EmailArchive(temp_dir, {})
@@ -464,7 +484,7 @@ class TestVerifySystemLabels:
             date_str="",
             body="",
             attachments="",
-            labels=",".join(labels),
+            labels=labels,
         )
         if trashed:
             with sqlite3.connect(archive.db.db_path) as conn:
@@ -518,7 +538,7 @@ class TestVerifySystemLabels:
             eid = _eid(f"m{i}", account)
             archive.db.mark_downloaded(eid, f"m{i}", f"2024/01/m{i}.eml", account=account)
             archive.db.index_email(
-                eid, subject="s", sender="a@b.com", recipients="", date_str="", body="", attachments="", labels=label
+                eid, subject="s", sender="a@b.com", recipients="", date_str="", body="", attachments="", labels=[label]
             )
 
         cmd_verify(archive)
