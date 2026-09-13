@@ -4,7 +4,7 @@ title: Import external .eml files (ownmail import command)
 status: Done
 assignee: []
 created_date: '2026-07-24 05:04'
-updated_date: '2026-07-24 05:53'
+updated_date: '2026-09-13 09:44'
 labels: []
 milestone: m-0
 dependencies: []

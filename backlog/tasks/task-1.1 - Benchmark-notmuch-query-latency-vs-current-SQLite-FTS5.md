@@ -4,7 +4,7 @@ title: Benchmark notmuch query latency vs current SQLite FTS5
 status: Done
 assignee: []
 created_date: '2026-07-23 18:44'
-updated_date: '2026-07-23 18:53'
+updated_date: '2026-09-13 09:41'
 labels:
   - research
   - search

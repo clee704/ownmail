@@ -4,7 +4,7 @@ title: Prototype mbsync sync path for generic IMAP sources
 status: Done
 assignee: []
 created_date: '2026-07-23 18:44'
-updated_date: '2026-07-24 22:46'
+updated_date: '2026-09-13 09:44'
 labels:
   - sync
 dependencies: []

@@ -4,7 +4,7 @@ title: Design per-email sidecar metadata files for labels/tags
 status: Done
 assignee: []
 created_date: '2026-07-23 18:44'
-updated_date: '2026-07-23 19:03'
+updated_date: '2026-09-13 09:41'
 labels:
   - storage
   - design
