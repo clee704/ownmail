@@ -1595,6 +1595,7 @@ def create_app(
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raw Email - {escape(filename)}</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
     <style>
         body {{ font-family: monospace; margin: 0; padding: 20px; background: #f5f5f5; }}
         .ownmail-filepath {{ background: #fff; padding: 10px 15px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; word-break: break-all; font-size: 13px; }}
