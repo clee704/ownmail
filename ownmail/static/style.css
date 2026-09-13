@@ -191,7 +191,7 @@ a:hover { text-decoration: underline; }
 .ownmail-search-form input[type="text"] { width: 100%; min-width: 0; min-height: 0; height: 100%; border: 0; border-radius: inherit; background: transparent; padding: 0 10px; color: var(--ownmail-text); }
 .ownmail-search-field input[type="text"] { padding-left: 32px; }
 .ownmail-search-form input::placeholder { color: var(--ownmail-muted); }
-.ownmail-search-field:focus-within { background: var(--ownmail-bg); outline: 2px solid var(--ownmail-accent-ink); outline-offset: 2px; }
+.ownmail-search-field:focus-within { background: var(--ownmail-bg); border-color: var(--ownmail-accent); }
 .ownmail-search-form input:focus { outline: none; }
 .ownmail-search-form button, .ownmail-settings-save {
     display: inline-flex; align-items: center; justify-content: center; gap: var(--ownmail-space-2);
