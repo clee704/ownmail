@@ -1,10 +1,10 @@
 ---
 id: TASK-57
 title: Repair text contrast regressions caused by message dark styles
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 06:47'
-updated_date: '2026-09-13 19:08'
+updated_date: '2026-09-13 19:10'
 labels: []
 dependencies: []
 priority: high
@@ -43,4 +43,6 @@ Independent review identified shadow, sibling-background and wrapper-selector si
 Existing media-query rewriting and TASK-56 body-selector behavior remain outside this task. Separate sanitizer dependency audit findings are tracked in TASK-67.
 
 References: [computed styles](https://developer.mozilla.org/en-US/docs/Web/API/Window/getComputedStyle), [W3C contrast test limitations](https://www.w3.org/WAI/standards-guidelines/act/rules/afw4f7/), [table background layers](https://www.w3.org/TR/CSS2/tables.html#table-layers).
+
+Implementation committed in 1763377. The full pre-push gate passed with required browser tests enabled.
 <!-- SECTION:NOTES:END -->
