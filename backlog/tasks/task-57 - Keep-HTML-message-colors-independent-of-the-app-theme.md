@@ -1,9 +1,10 @@
 ---
 id: TASK-57
-title: Keep HTML message colors independent of the app theme
+title: Add a per-message appearance override for broken dark styles
 status: To Do
 assignee: []
 created_date: '2026-09-13 06:47'
+updated_date: '2026-09-13 07:12'
 labels: []
 dependencies: []
 priority: high
@@ -14,25 +15,29 @@ ordinal: 60000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An HTML email can become unreadable when ownmail activates sender dark-mode rules that change text without a matching background. Keep HTML message rendering independent of app appearance and preserve the sender's base design.
+Preserve useful sender-authored dark styling while allowing a reader to display a broken HTML message in its base/light appearance without changing the app theme.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Changing the app or system theme leaves HTML message colors stable, including authored light and dark designs, inherited text and links.
-- [ ] #2 Theme-dependent CSS uses a fixed light preference without losing nested, combined, negated or alternative conditions, HTML media attributes, or responsive layout rules.
-- [ ] #3 Plain-text messages continue following the app theme, and HTML image controls, sizing and style scoping continue working.
-- [ ] #4 Synthetic browser regressions verify readable foreground/background pairs in both app and system themes; the full pre-push gate passes.
+- [ ] #1 HTML messages retain coordinated sender-authored dark styling by default; no blanket disabling or sender-specific exception is introduced.
+- [ ] #2 A per-message control selects the sender's base/light appearance independently of app and system themes, preserves explicit sender colors, and can return to following the app theme.
+- [ ] #3 The override preserves responsive CSS conditions, image controls, sizing and style scoping; plain-text messages continue following the app theme.
+- [ ] #4 Synthetic browser regressions cover working dark variants and white-on-white or pale-on-white failures, including both app and system themes; the full pre-push gate passes.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Research supports a fixed light preference for HTML messages, independent of the app theme. Preserve authored foreground/background colors, including permanently dark designs; keep plain text themed. The current updateEmailDarkMode function actively unwraps sender dark media rules, and the supports-dark heuristic allows app color inheritance. App link rules also reach HTML content.
+Comparisons against real messages show that authored dark variants often coordinate backgrounds, text, links and inset panels successfully. A blanket fixed-light policy would discard useful rendering. The recommendation is revised to preserve native dark support and provide a per-message base/light appearance override for broken templates.
 
-Recommended scope: remove automatic message theme synchronization, establish stable HTML defaults, exclude message content from app color rules, and normalize color-scheme conditions in the existing PostCSS sanitizer. Preserve conjunctions, negation, comma alternatives, nesting, HTML media attributes and responsive conditions. Do not assume that deleting every media block mentioning dark is correct. The existing qualified-body-selector defect remains TASK-56.
+The sample included both fully readable dark variants and partial failures within otherwise readable messages. One template used white text over an unchanged white panel; another had pale text in white callouts. These are template-specific findings, not a reason to disable dark rendering for every sender or message. A small selected sample does not establish prevalence.
 
-A plain light container does not suppress document media queries in browser experiments. A light iframe isolates document styles and worked in controlled Chromium 145 and WebKit 26.5 checks, but requires image-control, sizing and sandbox changes. These checks do not verify a deployed iPhone. WebKit documents version-dependent iframe color-scheme behavior; avoid relying on it alone for the initial fix.
+Messages were rendered through the actual Flask view, sanitizer, stylesheet and theme code at a phone-sized width in WebKit 26.5. Text/background pairs and screenshots were compared in light and dark app modes. Remote images and fonts were blocked; this checks local text/CSS behavior, not every asset or a physical iPhone. Gradient-backed sections were visually checked because background-color alone can give a misleading contrast estimate.
 
-Sources: [CSS color adjustment](https://drafts.csswg.org/css-color-adjust-1/), [media-query semantics](https://www.w3.org/TR/mediaqueries-5/), [WebKit iframe support](https://bugs.webkit.org/show_bug.cgi?id=284973). [Outlook](https://support.microsoft.com/en-us/outlook/mail/dark-mode-in-outlook) and [Apple Mail](https://support.apple.com/guide/mail/change-viewing-settings-cpmlprefview/mac) document independent light message backgrounds. Research only; implementation and acceptance checks remain outstanding.
+Implementation should retain coordinated sender dark styles by default. The override must select the sender's base/light variant without changing the app theme or recoloring explicitly styled content, and allow returning to theme-following behavior. Handle compound, nested and negated theme conditions without losing responsive layout rules. The existing regex theme rewriting and qualified-body-selector defect (TASK-56) are separate implementation concerns; avoid blanket dark-style removal or per-brand exceptions.
+
+Earlier research still applies to the override: a plain color-scheme: light container does not reliably suppress document media queries. A full iframe has broader isolation benefits but requires image-control and sizing changes, plus browser verification. Sources: [CSS color adjustment](https://drafts.csswg.org/css-color-adjust-1/), [media-query semantics](https://www.w3.org/TR/mediaqueries-5/), [WebKit iframe support](https://bugs.webkit.org/show_bug.cgi?id=284973), [Outlook message appearance](https://support.microsoft.com/en-us/outlook/mail/dark-mode-in-outlook), [Apple Mail message backgrounds](https://support.apple.com/guide/mail/change-viewing-settings-cpmlprefview/mac).
+
+Research only. Rendering code is unchanged and acceptance criteria remain unverified.
 <!-- SECTION:NOTES:END -->
