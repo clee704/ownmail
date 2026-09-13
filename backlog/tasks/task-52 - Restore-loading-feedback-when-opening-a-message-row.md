@@ -4,7 +4,7 @@ title: Restore loading feedback when opening a message row
 status: Done
 assignee: []
 created_date: '2026-09-13 05:15'
-updated_date: '2026-09-13 21:33'
+updated_date: '2026-09-13 21:45'
 labels:
   - ui
   - ux
@@ -35,6 +35,7 @@ Keep normal browser navigation and separate sender and checkbox interactions. Re
 - [x] #3 Repeated clicks on the same pending message keep one indicator without restarting its visual delay. A new message moves pending feedback; another same-tab destination clears it. Superseded timers cannot restore stale feedback.
 - [x] #4 Returning through browser history clears pending styling. Cancelling navigation must leave the message link usable for retry. Reduced motion disables spinner animation, and a polite hidden status announces loading.
 - [x] #5 Regression coverage exercises rendered message links and fails with the obsolete selector. Slow navigation checks cover repeated clicks, message-to-message navigation, and message-to-Settings navigation; the unused listener is removed.
+- [x] #6 The full-screen spinner and message-row spinner use the Search button accent in both themes.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -45,4 +46,6 @@ Implemented the approved row feedback: a 14 px spinner with a 2 px stroke using 
 Native links remain usable. Repeated message clicks keep the current feedback delay and spinner; choosing another message or destination removes stale row feedback. Checkboxes, search editing, modified clicks, and mobile long-press selection keep their separate behavior. Escape calls the browser Stop operation before clearing a pending message; Escape consumed by the mobile navigation panel only closes that panel. Page lifecycle events clear feedback for history navigation and retry.
 
 Validation: 11 Chromium tests pass against held native document requests, including message replacement, Settings, fast responses, cancellation/retry, and light/dark desktop/mobile layout. Focused tests cover the exact 200 ms delay, modifiers, mobile selection, and Escape handling. Both rendered-list regression cases fail with the obsolete selector substituted in memory. Independent review found no actionable issues. The full pre-push gate passes, including lint, formatting, dependency checks, and the complete test suite with the coverage gate.
+
+Unified the full-screen and message-row spinner colors under the shared Search button accent. Computed browser styles match in light and dark themes; the full pre-push gate passes.
 <!-- SECTION:NOTES:END -->

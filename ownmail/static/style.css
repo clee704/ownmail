@@ -362,8 +362,8 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
 
 .ownmail-loading-overlay { display: none; position: fixed; inset: 0; background: var(--ownmail-overlay); z-index: 9999; justify-content: center; align-items: center; }
 .ownmail-loading-overlay.ownmail-active { display: flex; }
-.ownmail-loading-spinner { width: 28px; height: 28px; border: 2px solid var(--ownmail-border); border-top-color: var(--ownmail-accent-ink); border-radius: 50%; animation: ownmail-spin .8s linear infinite; }
-.ownmail-email-row .ownmail-loading-spinner { display: none; position: absolute; right: 0; top: calc(50% - 7px); width: 14px; height: 14px; border-top-color: var(--ownmail-accent); }
+.ownmail-loading-spinner { width: 28px; height: 28px; border: 2px solid var(--ownmail-border); border-top-color: var(--ownmail-accent); border-radius: 50%; animation: ownmail-spin .8s linear infinite; }
+.ownmail-email-row .ownmail-loading-spinner { display: none; position: absolute; right: 0; top: calc(50% - 7px); width: 14px; height: 14px; }
 .ownmail-email-row.ownmail-loading .ownmail-loading-spinner { display: block; }
 @keyframes ownmail-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ownmail-loading-spinner { animation: none; } }
