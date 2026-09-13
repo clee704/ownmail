@@ -206,7 +206,7 @@ function page(path, reader = false, storageBlocked = false, readyState = 'intera
     return {
         click(overrides = {}) {
             const event = {
-                button: 0, defaultPrevented: false,
+                button: 0, detail: 1, defaultPrevented: false,
                 preventDefault() { this.defaultPrevented = true; },
                 target: {closest() { return row; }}, ...overrides
             };
@@ -233,18 +233,19 @@ def run_position_script(assertions):
 
 
 @pytest.mark.parametrize("ready_state", ["loading", "interactive"])
-def test_explicit_back_restores_scroll_and_focus_before_pageshow(ready_state):
+@pytest.mark.parametrize(("detail", "expected_focus"), [(0, True), (1, False)])
+def test_explicit_back_restores_scroll_and_activation_focus_before_pageshow(ready_state, detail, expected_focus):
     run_position_script(
         """
 page(listUrl).click();
 const reader = page('/email/message', true);
-const click = reader.click();
+const click = reader.click({detail: DETAIL});
 assert.equal(reader.loadingCalls, 1);
 assert.equal(reader.scrolled, null);
 assert(!click.defaultPrevented);
 const returned = page(listUrl, false, false, READY_STATE);
 assert.deepEqual(returned.scrolled, [0, 648]);
-assert.equal(returned.focused, true);
+assert.equal(returned.focused, EXPECTED_FOCUS);
 assert.equal(storage.size, 0);
 returned.show();
 assert.equal(returned.scrollCalls, 1);
@@ -252,6 +253,8 @@ const fresh = page(listUrl);
 fresh.show();
 assert.equal(fresh.scrolled, null);
 """.replace("READY_STATE", json.dumps(ready_state))
+        .replace("DETAIL", json.dumps(detail))
+        .replace("EXPECTED_FOCUS", json.dumps(expected_focus))
     )
 
 
@@ -259,7 +262,7 @@ def test_cached_list_restores_explicit_return_on_pageshow_once():
     run_position_script("""
 const cached = page(listUrl);
 cached.click();
-page('/email/message', true).click();
+page('/email/message', true).click({detail: 0});
 assert.equal(cached.scrolled, null);
 cached.show();
 assert.deepEqual(cached.scrolled, [0, 648]);
@@ -348,7 +351,7 @@ const dom = new JSDOM(PAGE, {
     beforeParse(window) {
         window.matchMedia = () => ({ matches: false, addEventListener() {} });
         window.sessionStorage.setItem('ownmail-result-position', JSON.stringify({
-            listUrl: PATH, messagePath: '/email/message', scrollY: 648, restore: true
+            listUrl: PATH, messagePath: '/email/message', scrollY: 648, restore: true, restoreFocus: true
         }));
         window.scrollTo = (x, y) => {
             const document = window.document;

@@ -49,7 +49,7 @@
             var previousLink = Array.from(links).find(function(link) {
                 return new URL(link.href).pathname === position.messagePath;
             });
-            if (previousLink) previousLink.focus({preventScroll: true});
+            if (previousLink && position.restoreFocus) previousLink.focus({preventScroll: true});
             window.scrollTo(0, position.scrollY);
         }
         window.addEventListener('pageshow', restorePosition);
@@ -64,6 +64,7 @@
             if (position && position.messagePath === location.pathname &&
                 position.listUrl === destination.pathname + destination.search) {
                 position.restore = true;
+                position.restoreFocus = event.detail === 0;
                 savePosition(position);
             }
             showLoading(event);
