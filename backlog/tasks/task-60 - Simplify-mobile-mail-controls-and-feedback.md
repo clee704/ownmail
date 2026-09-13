@@ -1,7 +1,7 @@
 ---
 id: TASK-60
 title: Simplify mobile mail controls and feedback
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 07:26'
 updated_date: '2026-09-13 07:34'
@@ -36,4 +36,6 @@ Removed the visible list heading and placed sorting in a native radio group in t
 Removed the redundant All Mail sort override so an explicit oldest-first choice is honored. The existing route regression reproduced the failure before the fix and now covers both date orders with empty and text queries, menu state, and pagination.
 
 Verified synthetic-data layouts in Chromium at 320, 390, 430, and 1280px in light and dark themes, including selection, menus, reader banner, toast expiry, and long pagination ranges. WebKit at 390px also passed selection height, menu bounds, and overflow checks. New interaction tests were checked with deliberate regressions. Independent review found no must-fix issues. Full pre-push hooks pass, including lint, dependency checks, and the full test suite with the 95% coverage gate.
+
+Implementation committed as 7ccf6ad.
 <!-- SECTION:NOTES:END -->
