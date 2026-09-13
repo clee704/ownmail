@@ -1,7 +1,7 @@
 ---
 id: TASK-55
 title: Preserve authored image sizing in HTML messages
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 06:30'
 updated_date: '2026-09-13 06:34'
@@ -29,4 +29,6 @@ The global border-box reset applies inside HTML messages. Images with explicit d
 
 <!-- SECTION:NOTES:BEGIN -->
 Confirmed against a real archive; the running server used the same stylesheet. The reset now excludes descendants of the message container and keeps zero selector specificity. WebKit checks at 390px and 1440px reproduced the squeezed image with the old reset and preserved content dimensions with the fix, including proportional fit-to-width zoom and explicit sender border-box styling. The regression compares reader and standalone computed styles; restoring the universal reset makes it fail. Independent review found no issues. Full pre-push checks passed.
+
+Implemented in the TASK-55 fix commit.
 <!-- SECTION:NOTES:END -->
