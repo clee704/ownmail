@@ -4,7 +4,7 @@ title: 'Close repository review, CI, and backlog governance gaps'
 status: In Progress
 assignee: []
 created_date: '2026-09-11 10:52'
-updated_date: '2026-09-13 18:18'
+updated_date: '2026-09-13 18:21'
 labels: []
 dependencies: []
 documentation:
@@ -32,11 +32,9 @@ Complete the governance follow-ups from doc-10. Local lint, coverage, documentat
 <!-- SECTION:NOTES:BEGIN -->
 Publication and a rewrite of unpublished history were authorized on 2026-09-13. This pass covers AC 1; the remaining governance criteria are outside the requested scope.
 
-Local validation passed Ruff lint/format, deptry, file hygiene, and 2,384 tests with one expected failure and no skips. Overall coverage including branches was 95.55%, above the 95% minimum. Gitleaks 8.30.1 and complementary review found no credentials in the tracked files or scanned history.
+Removed personal export paths, archive statistics, and a real folder hierarchy from unpublished historical task and design notes. Corrected the initial classification of TASK-27 message-ID examples: they are synthetic placeholders; only its install-specific counts needed generalization.
 
-Privacy review confirmed personal export paths and archive statistics in historical TASK-1.1, TASK-1.3, and TASK-7. Current files are sanitized; the rewrite will remove those details from unpublished versions and generalize install-specific wording in TASK-1.2 and TASK-27. A deeper check corrected the initial classification of TASK-27 message-ID examples: they are synthetic placeholders. Its observed counts still need generalization.
+Prepared the rewrite in a separate local copy. Verified all 164 outgoing commits retain their parent relationships and author/committer metadata; changes are confined to the intended documentation. The rewritten tip has the same file tree as the sanitized original, and published commit f6c86e5 remains unchanged. Independent verification found none of the identified private-data markers in the outgoing blobs or commit bodies. Gitleaks 8.30.1 found no credentials. Updated the formatting revision in .git-blame-ignore-revs for the rewritten history.
 
-Prepare the rewrite in a separate local copy, preserve published commits and the application tree, rescan the exact publication history, then push master and verify remote lint and Python 3.10-3.12 runs, including skip counts. GitHub Actions is enabled, but the workflow has not yet been published.
-
-The final privacy pass also generalized a real folder hierarchy in TASK-26 and a deleted historical design document, preserving the reproduction with a synthetic child label.
+Local validation passed Ruff lint/format, deptry, file hygiene, and 2,384 tests with one expected failure and no skips; overall coverage including branches was 95.55%, above the 95% minimum. Publish master and verify the remote lint and Python 3.10-3.12 jobs, including skip counts, before checking AC 1.
 <!-- SECTION:NOTES:END -->
