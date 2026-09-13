@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="/manifest.webmanifest">
     <title>{% block title %}{{ brand_name }}{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
     <script>
@@ -142,15 +143,24 @@
         }
     });
     syncNavigation();
+    var loadingTimer = null;
+    var loadingOverlay = document.getElementById('ownmail-loading-overlay');
     function showLoading(event) {
         // Don't show loading overlay for cmd+click or ctrl+click (new tab)
         if (event && (event.metaKey || event.ctrlKey)) {
             return;
         }
-        document.getElementById('ownmail-loading-overlay').classList.add('ownmail-active');
+        if (loadingTimer !== null || loadingOverlay.classList.contains('ownmail-active')) return;
+        // Fast navigation should finish before an overlay is painted.
+        loadingTimer = setTimeout(function() {
+            loadingTimer = null;
+            loadingOverlay.classList.add('ownmail-active');
+        }, 200);
     }
     function hideLoading() {
-        document.getElementById('ownmail-loading-overlay').classList.remove('ownmail-active');
+        clearTimeout(loadingTimer);
+        loadingTimer = null;
+        loadingOverlay.classList.remove('ownmail-active');
     }
     // Hide loading overlay when page is shown (handles back/forward navigation)
     // This fires when page is restored from bfcache (back-forward cache)

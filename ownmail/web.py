@@ -1129,6 +1129,16 @@ def create_app(
         # Redirect to search page which now shows newest emails by default
         return redirect("/search")
 
+    @app.route("/manifest.webmanifest")
+    def web_manifest():
+        return {
+            "id": "/",
+            "name": app.config["brand_name"],
+            "start_url": "/search",
+            "scope": "/",
+            "display": "standalone",
+        }, {"Content-Type": "application/manifest+json"}
+
     def get_back_to_search_url() -> str | None:
         """Recover a local results URL from the link or the previous page."""
         explicit = "return_to" in request.args

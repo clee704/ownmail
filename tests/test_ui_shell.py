@@ -67,6 +67,23 @@ def test_shell_utility_navigation_uses_sidebar(shell_app):
     assert [link.get("href") for link in footer.xpath(".//a")] == ["/settings", "/help"]
 
 
+def test_home_screen_manifest_keeps_reader_and_utility_routes_in_scope(shell_app):
+    app, _ = shell_app
+    app.config["brand_name"] = "Archive Desk"
+    client = app.test_client()
+    page = html.fromstring(client.get("/search").data)
+    manifest_link = page.xpath('/html/head/link[@rel="manifest"]')[0]
+    response = client.get(manifest_link.get("href"))
+    assert response.status_code == 200
+    assert response.mimetype == "application/manifest+json"
+    manifest = response.get_json()
+    assert manifest["name"] == "Archive Desk"
+    assert manifest["id"] == "/"
+    assert manifest["start_url"] == "/search"
+    assert manifest["display"] == "standalone"
+    assert manifest["scope"] == "/", "Reader, Trash, and Settings must share the installed app's scope"
+
+
 @pytest.fixture(scope="module")
 def shell_browser():
     if not shutil.which("node"):
@@ -216,4 +233,66 @@ system.change(false);
 assert(!document.documentElement.classList.contains('ownmail-dark'));
 """,
         path="/settings",
+    )
+
+
+@pytest.mark.parametrize("completion_event", ["load", "pageshow"])
+def test_loading_overlay_waits_for_slow_navigation_and_cancels(shell_app, shell_browser, completion_event):
+    app, _ = shell_app
+    run_shell_browser(
+        app,
+        shell_browser,
+        """
+let now = 0;
+let nextTimer = 0;
+const timers = new Map();
+window.setTimeout = (callback, delay) => {
+    timers.set(++nextTimer, { callback, deadline: now + delay });
+    return nextTimer;
+};
+window.clearTimeout = id => timers.delete(id);
+function advance(milliseconds) {
+    now += milliseconds;
+    for (const [id, timer] of timers) {
+        if (timer.deadline <= now) {
+            timers.delete(id);
+            timer.callback();
+        }
+    }
+}
+const overlay = byId('ownmail-loading-overlay');
+const visible = () => overlay.classList.contains('ownmail-active');
+window.showLoading({metaKey: true});
+window.showLoading({ctrlKey: true});
+assert.equal(timers.size, 0);
+const click = new window.MouseEvent('click', {cancelable: true});
+window.showLoading(click);
+assert(!click.defaultPrevented);
+assert(!visible());
+assert.equal(timers.size, 1);
+advance(100);
+window.showLoading();
+assert.equal(nextTimer, 1);
+advance(99);
+assert(!visible());
+advance(1);
+assert(visible());
+assert.equal(timers.size, 0);
+window.showLoading();
+assert.equal(nextTimer, 1);
+window.dispatchEvent(new window.Event(COMPLETION_EVENT));
+assert(!visible());
+window.showLoading();
+assert.equal(timers.size, 1);
+advance(100);
+window.dispatchEvent(new window.Event(COMPLETION_EVENT));
+assert.equal(timers.size, 0);
+advance(200);
+assert(!visible());
+window.showLoading();
+advance(200);
+assert(visible());
+window.hideLoading();
+assert(!visible());
+""".replace("COMPLETION_EVENT", json.dumps(completion_event)),
     )

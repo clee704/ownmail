@@ -35,7 +35,7 @@
                 restore: false
             });
         });
-        window.addEventListener('pageshow', function() {
+        function restorePosition() {
             var position = readPosition();
             if (!position || position.listUrl !== location.pathname + location.search) return;
             try {
@@ -50,7 +50,14 @@
             });
             if (previousLink) previousLink.focus({preventScroll: true});
             window.scrollTo(0, position.scrollY);
-        });
+        }
+        window.addEventListener('pageshow', restorePosition);
+        // Unrelated resources can delay pageshow after the rows are ready.
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', restorePosition, {once: true});
+        } else {
+            restorePosition();
+        }
     }
 
     if (backLink) {

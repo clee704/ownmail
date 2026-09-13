@@ -160,11 +160,12 @@ _POSITION_HARNESS = """
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const storage = new Map();
-function page(path, reader = false, storageBlocked = false) {
+function page(path, reader = false, storageBlocked = false, readyState = 'interactive') {
     const handlers = {};
     const location = new URL(path, 'http://localhost');
     let focused = false;
     let scrolled = null;
+    let scrollCalls = 0;
     let loadingCalls = 0;
     const row = {
         href: 'http://localhost/email/message?return_to=' + encodeURIComponent(path),
@@ -181,15 +182,19 @@ function page(path, reader = false, storageBlocked = false) {
     const context = {
         URL, location,
         showLoading() { loadingCalls++; },
-        document: { getElementById(id) {
-            if (id === 'ownmail-email-list' && !reader) return list;
-            if (id === 'ownmail-back-to-results' && reader) return back;
-            return null;
-        } },
+        document: {
+            readyState,
+            addEventListener(name, callback) { handlers['document:' + name] = callback; },
+            getElementById(id) {
+                if (id === 'ownmail-email-list' && !reader) return list;
+                if (id === 'ownmail-back-to-results' && reader) return back;
+                return null;
+            }
+        },
         window: {
             scrollY: 648,
             addEventListener(name, callback) { handlers[name] = callback; },
-            scrollTo(x, y) { scrolled = [x, y]; }
+            scrollTo(x, y) { scrollCalls++; scrolled = [x, y]; }
         },
         sessionStorage: {
             getItem(key) { if (storageBlocked) throw Error('blocked'); return storage.get(key) || null; },
@@ -208,9 +213,14 @@ function page(path, reader = false, storageBlocked = false) {
             handlers[reader ? 'back:click' : 'list:click'](event);
             return event;
         },
+        ready() {
+            context.document.readyState = 'interactive';
+            if (handlers['document:DOMContentLoaded']) handlers['document:DOMContentLoaded']();
+        },
         show() { handlers.pageshow(); },
         get focused() { return focused; },
         get scrolled() { return scrolled; },
+        get scrollCalls() { return scrollCalls; },
         get loadingCalls() { return loadingCalls; }
     };
 }
@@ -226,22 +236,45 @@ def run_position_script(assertions):
     subprocess.run([node, "-e", source + _POSITION_HARNESS + assertions], check=True, capture_output=True, text=True)
 
 
-def test_explicit_back_restores_scroll_and_focus_once():
-    run_position_script("""
+@pytest.mark.parametrize("ready_state", ["loading", "interactive"])
+def test_explicit_back_restores_scroll_and_focus_before_pageshow(ready_state):
+    run_position_script(
+        """
 page(listUrl).click();
 const reader = page('/email/message', true);
 const click = reader.click();
 assert.equal(reader.loadingCalls, 1);
 assert.equal(reader.scrolled, null);
 assert(!click.defaultPrevented);
-const returned = page(listUrl);
-returned.show();
+const returned = page(listUrl, false, false, READY_STATE);
+if (READY_STATE === 'loading') {
+    assert.equal(returned.scrolled, null);
+    returned.ready();
+}
 assert.deepEqual(returned.scrolled, [0, 648]);
 assert.equal(returned.focused, true);
 assert.equal(storage.size, 0);
+returned.show();
+assert.equal(returned.scrollCalls, 1);
 const fresh = page(listUrl);
 fresh.show();
 assert.equal(fresh.scrolled, null);
+""".replace("READY_STATE", json.dumps(ready_state))
+    )
+
+
+def test_cached_list_restores_explicit_return_on_pageshow_once():
+    run_position_script("""
+const cached = page(listUrl);
+cached.click();
+page('/email/message', true).click();
+assert.equal(cached.scrolled, null);
+cached.show();
+assert.deepEqual(cached.scrolled, [0, 648]);
+assert.equal(cached.focused, true);
+assert.equal(storage.size, 0);
+cached.show();
+assert.equal(cached.scrollCalls, 1);
 """)
 
 

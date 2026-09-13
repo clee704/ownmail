@@ -4,6 +4,7 @@ title: Improve the iPhone Home Screen web app experience
 status: To Do
 assignee: []
 created_date: '2026-09-13 04:50'
+updated_date: '2026-09-13 05:06'
 labels:
   - ui
   - mobile
@@ -24,9 +25,9 @@ ordinal: 53000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Make ownmail reliable and comfortable when launched from the iPhone Home Screen. Prioritize navigation, resuming after backgrounding, and validation on an actual iPhone, then add installation metadata and connection recovery.
+Make ownmail reliable and comfortable when launched from the iPhone Home Screen. Prioritize navigation, resuming after backgrounding, and validation on an actual iPhone, then complete installation metadata and connection recovery.
 
-The current UI has responsive layouts and explicit Back restoration, but lacks an app manifest, installation icons, app-managed reading-position recovery, and an offline fallback. TASK-49 simplified the mobile reader toolbar; its Home Screen transition still needs device confirmation.
+TASK-49 added a minimal manifest with root navigation scope and configured branding, prevented automatic search focus on return, and improved list restoration and loading feedback. Its standalone navigation was verified in an iPhone simulator. Remaining work includes app icons and theme colors, app-managed reading-position recovery, connection recovery, and physical-device checks.
 
 Implement this incrementally in the existing Flask UI. A cached offline fallback depends on a trusted HTTPS origin over LAN; record that dependency before selecting a service-worker strategy. Full offline mail storage is a separate product decision.
 <!-- SECTION:DESCRIPTION:END -->

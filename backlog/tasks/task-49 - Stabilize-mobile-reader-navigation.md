@@ -1,10 +1,10 @@
 ---
 id: TASK-49
 title: Stabilize mobile reader navigation
-status: Done
+status: In Progress
 assignee: []
 created_date: '2026-09-13 04:43'
-updated_date: '2026-09-13 04:48'
+updated_date: '2026-09-13 05:06'
 labels: []
 dependencies: []
 ordinal: 52000
@@ -26,5 +26,11 @@ Stabilize the mobile reader toolbar while returning to results. Hide the approve
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The user confirmed hiding the mobile branding row. The reported jump occurs in Safari launched from the iPhone Home Screen. Moved the toolbar outside the message article and replaced fixed positioning with a sticky row in normal document flow. Back now shows loading feedback immediately while preserving the result URL, scroll position, and focus. Modified and prevented clicks keep native behavior. Resizing from desktop navigation moves focus to the visible Back link. Browser checks at 320, 390, and 1440 pixels verified sticky positioning during scroll, list restoration, metadata and More access, no horizontal overflow, and unchanged desktop subject/body alignment. The specific iPhone Home Screen transition was not reproduced in the available browser and still needs device confirmation. Focused regression tests and the full pre-push checks pass; removing Back loading feedback fails the mutation check.
+Reopened after the brief Back glitch persisted. In an iOS 26.4 Home Screen simulator installation without a manifest, opening a reader displayed Safari View Controller with its own top and bottom controls. A fresh installation using the new manifest keeps list and reader navigation in the same standalone view. The manifest declares root scope, a stable app ID, the search launch URL, and configured branding. Existing Home Screen installations should be re-added from Safari to pick up the new configuration.
+
+Also removed automatic search focus, which reopened the iOS keyboard accessory bar on return and stole focus from the restored row. List restoration now runs when the DOM is ready, retaining pageshow for cached documents. A controlled delayed-resource comparison measured the old first frame at scroll zero before settling at the saved position; the fixed first frame already matched that position. Loading feedback waits 200 ms, avoiding the brief overlay recorded on fast navigation while retaining feedback for slow loads.
+
+Verified list-to-reader-to-Back in the fresh iOS simulator installation, restored row focus without keyboard chrome, and the controlled first-frame comparison. Focused regression tests and mutation checks cover root scope, DOM-ready restoration, cached-page restoration, and delayed-overlay cancellation. The full pre-push checks pass. Physical-device confirmation remains useful; the original no-manifest scope heuristic is not assumed to be specified behavior.
+
+Apple documents that out-of-scope links open in Safari View Controller: https://developer.apple.com/videos/play/wwdc2023/10120/
 <!-- SECTION:NOTES:END -->
