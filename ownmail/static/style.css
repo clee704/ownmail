@@ -198,7 +198,6 @@ a:hover { text-decoration: underline; }
     min-height: 30px; padding: 5px var(--ownmail-space-3); border: 1px solid transparent; border-radius: var(--ownmail-radius);
     background: var(--ownmail-accent); color: var(--ownmail-on-accent); font-weight: 500;
 }
-.ownmail-search-form button { border-color: var(--ownmail-border); }
 :is(.ownmail-search-form button, .ownmail-settings-save):hover { background: var(--ownmail-accent-hover); }
 
 /* List columns share a compact reading area. */
