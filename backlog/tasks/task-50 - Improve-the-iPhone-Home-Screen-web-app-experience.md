@@ -27,7 +27,7 @@ ordinal: 53000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Make ownmail reliable and comfortable when launched from the iPhone Home Screen. Prioritize navigation, resuming after backgrounding, and validation on an actual iPhone, then complete installation metadata and connection recovery.
 
-TASK-49 added a minimal manifest with root navigation scope and configured branding, prevented automatic search focus on return, and improved list restoration and loading feedback. Its standalone navigation was verified in an iPhone simulator. Remaining work includes app icons and theme colors, app-managed reading-position recovery, connection recovery, and physical-device checks.
+TASK-49 added a minimal manifest with root navigation scope and configured branding, prevented automatic search focus on return, and improved list restoration and loading feedback. Its standalone navigation was verified in an iPhone simulator. TASK-50.1 adds the Archive app icon through Apple touch and manifest declarations. Remaining work includes theme colors, app-managed reading-position recovery, connection recovery, and physical-device checks.
 
 Implement this incrementally in the existing Flask UI. A cached offline fallback depends on a trusted HTTPS origin over LAN; record that dependency before selecting a service-worker strategy. Full offline mail storage is a separate product decision.
 <!-- SECTION:DESCRIPTION:END -->

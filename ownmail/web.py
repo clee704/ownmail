@@ -1137,6 +1137,10 @@ def create_app(
             "start_url": "/search",
             "scope": "/",
             "display": "standalone",
+            "icons": [
+                {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            ],
         }, {"Content-Type": "application/manifest+json"}
 
     def get_back_to_search_url() -> str | None:
