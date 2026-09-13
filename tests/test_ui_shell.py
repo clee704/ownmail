@@ -383,8 +383,8 @@ assert(!menu.open);
     )
 
 
-@pytest.mark.parametrize("path", ["/search", "/trash"])
-def test_selection_replaces_list_controls_and_clear_restores_focus(shell_app, shell_browser, path):
+@pytest.fixture
+def shell_list_app(shell_app):
     app, archive = shell_app
     rows = [
         (identifier, "message.eml", "Annual review", "sender@example.com", "2024-01-15", "Message body")
@@ -392,8 +392,13 @@ def test_selection_replaces_list_controls_and_clear_restores_focus(shell_app, sh
     ]
     archive.search.return_value = [(*row, 0) for row in rows]
     archive.db.get_trashed_emails.return_value = [(*row, "2024-01-16", "message.eml", 0) for row in rows]
+    return app
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
+def test_selection_replaces_list_controls_and_clear_restores_focus(shell_list_app, shell_browser, path):
     run_shell_browser(
-        app,
+        shell_list_app,
         shell_browser,
         """
 const checkboxes = document.querySelectorAll('.ownmail-email-checkbox input');
@@ -401,6 +406,8 @@ const actions = byId('ownmail-toolbar-actions');
 const controls = byId('ownmail-list-controls');
 const selectAll = byId('ownmail-select-all');
 const count = byId('ownmail-selection-count');
+const list = byId('ownmail-email-list');
+assert(!list.classList.contains('ownmail-selecting'));
 assert(actions.hidden);
 assert(!controls.hidden);
 checkboxes[0].click();
@@ -410,6 +417,7 @@ assert(!actions.hidden);
 assert(controls.hidden);
 assert(byId('ownmail-refresh-results').hidden);
 assert(selectAll.indeterminate);
+assert(list.classList.contains('ownmail-selecting'));
 selectAll.click();
 assert.equal(count.textContent, '2 selected');
 assert(Array.from(checkboxes).every(checkbox => checkbox.checked));
@@ -424,6 +432,199 @@ assert(!selectAll.checked);
 assert(!selectAll.indeterminate);
 assert(Array.from(checkboxes).every(checkbox => !checkbox.checked));
 assert.equal(document.activeElement, selectAll);
+assert(!list.classList.contains('ownmail-selecting'));
+selectAll.click();
+assert(list.classList.contains('ownmail-selecting'));
+selectAll.click();
+assert(!list.classList.contains('ownmail-selecting'));
 """,
         path=path,
+    )
+
+
+def run_list_browser(app, browser_dir, assertions, path):
+    run_shell_browser(
+        app,
+        browser_dir,
+        """
+let now = 0;
+let nextTimer = 0;
+const timers = new Map();
+window.setTimeout = (callback, delay) => {
+    timers.set(++nextTimer, {callback, deadline: now + delay});
+    return nextTimer;
+};
+window.clearTimeout = id => timers.delete(id);
+function advance(milliseconds) {
+    now += milliseconds;
+    for (const [id, timer] of timers) {
+        if (timer.deadline <= now) {
+            timers.delete(id);
+            timer.callback();
+        }
+    }
+}
+function touch(target, type, touches = [{identifier: 1, clientX: 20, clientY: 20}]) {
+    const event = new window.Event(type, {bubbles: true, cancelable: true});
+    Object.defineProperty(event, 'touches', {value: touches});
+    target.dispatchEvent(event);
+    return event;
+}
+const list = byId('ownmail-email-list');
+const rows = list.querySelectorAll('.ownmail-email-row');
+const checkboxes = list.querySelectorAll('input[type="checkbox"]');
+const mobile = mediaQueries.get('(max-width: 600px)');
+mobile.change(true);
+"""
+        + assertions,
+        path=path,
+    )
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
+@pytest.mark.parametrize("target", [".ownmail-email-sender", ".ownmail-email-row-link", ".ownmail-email-row"])
+def test_mobile_hold_selects_message_and_suppresses_navigation(shell_list_app, shell_browser, path, target):
+    run_list_browser(
+        shell_list_app,
+        shell_browser,
+        """
+const target = list.querySelector(TARGET);
+let clicks = 0;
+target.addEventListener('click', event => { clicks++; event.preventDefault(); });
+touch(target, 'touchstart');
+advance(499);
+assert(!checkboxes[0].checked);
+const menu = new window.MouseEvent('contextmenu', {bubbles: true, cancelable: true});
+target.dispatchEvent(menu);
+assert(menu.defaultPrevented);
+touch(target, 'touchmove', [{identifier: 1, clientX: 23, clientY: 24}]);
+advance(1);
+assert(checkboxes[0].checked);
+assert(!checkboxes[1].checked);
+assert(list.classList.contains('ownmail-selecting'));
+assert.equal(byId('ownmail-selected-count').textContent, '1');
+assert(touch(target, 'touchend', []).defaultPrevented);
+const click = new window.MouseEvent('click', {bubbles: true, cancelable: true});
+target.dispatchEvent(click);
+assert(click.defaultPrevented);
+assert.equal(clicks, 0);
+assert(!byId('ownmail-loading-overlay').classList.contains('ownmail-active'));
+checkboxes[0].click();
+assert(!list.classList.contains('ownmail-selecting'));
+""".replace("TARGET", json.dumps(target)),
+        path,
+    )
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
+@pytest.mark.parametrize("mobile", [True, False])
+def test_short_taps_and_desktop_holds_preserve_links(shell_list_app, shell_browser, path, mobile):
+    run_list_browser(
+        shell_list_app,
+        shell_browser,
+        """
+mobile.change(MOBILE);
+for (const target of rows[0].querySelectorAll('a')) {
+    let followed = false;
+    target.addEventListener('click', event => {
+        followed = !event.defaultPrevented;
+        event.preventDefault();
+    });
+    touch(target, 'touchstart');
+    advance(MOBILE ? 499 : 600);
+    assert(!touch(target, 'touchend', []).defaultPrevented);
+    target.dispatchEvent(new window.MouseEvent('click', {bubbles: true, cancelable: true}));
+    assert(followed);
+    assert(!checkboxes[0].checked);
+}
+assert(!list.classList.contains('ownmail-selecting'));
+if (!MOBILE) {
+    const menu = new window.MouseEvent('contextmenu', {bubbles: true, cancelable: true});
+    rows[0].dispatchEvent(menu);
+    assert(!menu.defaultPrevented);
+}
+""".replace("MOBILE", json.dumps(mobile)),
+        path,
+    )
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
+@pytest.mark.parametrize(
+    "cancel",
+    [
+        "touch(target, 'touchmove', [{identifier: 1, clientX: 31, clientY: 20}]);",
+        "touch(target, 'touchcancel', []);",
+        "target.dispatchEvent(new window.Event('pointercancel', {bubbles: true}));",
+        "list.dispatchEvent(new window.Event('scroll'));",
+        "touch(document.body, 'touchstart', [{identifier: 1}, {identifier: 2}]);",
+        "window.dispatchEvent(new window.Event('blur'));",
+        "mobile.change(false);",
+    ],
+    ids=["movement", "touchcancel", "pointercancel", "scroll", "multitouch", "blur", "resize"],
+)
+def test_interrupted_mobile_hold_does_not_select(shell_list_app, shell_browser, path, cancel):
+    run_list_browser(
+        shell_list_app,
+        shell_browser,
+        """
+const target = rows[0].querySelector('.ownmail-email-row-link');
+touch(target, 'touchstart');
+advance(400);
+CANCEL
+advance(200);
+assert(!checkboxes[0].checked);
+assert(!list.classList.contains('ownmail-selecting'));
+assert(!touch(target, 'touchend', []).defaultPrevented);
+""".replace("CANCEL", cancel),
+        path,
+    )
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
+@pytest.mark.parametrize("ending", ["touchend", "touchcancel", "pointercancel"])
+def test_finished_mobile_hold_does_not_cancel_other_taps(shell_list_app, shell_browser, path, ending):
+    run_list_browser(
+        shell_list_app,
+        shell_browser,
+        """
+const target = rows[0].querySelector('.ownmail-email-row-link');
+touch(target, 'touchstart');
+advance(500);
+touch(target, ENDING, []);
+assert(checkboxes[0].checked);
+assert(!touch(byId('ownmail-select-all'), 'touchend', []).defaultPrevented);
+if (ENDING === 'touchend') {
+    touch(target, 'touchstart');
+    advance(100);
+    assert(!touch(target, 'touchend', []).defaultPrevented);
+}
+let followed = false;
+target.addEventListener('click', event => {
+    followed = !event.defaultPrevented;
+    event.preventDefault();
+});
+target.dispatchEvent(new window.MouseEvent('click', {bubbles: true, cancelable: true}));
+assert(followed);
+""".replace("ENDING", json.dumps(ending)),
+        path,
+    )
+
+
+@pytest.mark.parametrize("path", ["/search", "/trash"])
+@pytest.mark.parametrize("disable_before_hold", [True, False])
+def test_mobile_hold_respects_pending_message_actions(shell_list_app, shell_browser, path, disable_before_hold):
+    run_list_browser(
+        shell_list_app,
+        shell_browser,
+        """
+checkboxes[0].disabled = DISABLE_BEFORE_HOLD;
+touch(rows[0], 'touchstart');
+advance(400);
+checkboxes[0].disabled = true;
+advance(100);
+assert(!checkboxes[0].checked);
+assert(!list.classList.contains('ownmail-selecting'));
+assert(!touch(rows[0], 'touchend', []).defaultPrevented);
+""".replace("DISABLE_BEFORE_HOLD", json.dumps(disable_before_hold)),
+        path,
     )

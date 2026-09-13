@@ -79,53 +79,7 @@
     {% elif results %}
             {% include '_email_list.html' %}
             <script>
-            var lastCheckedIdx = null;
-            var allCheckboxes = Array.from(document.querySelectorAll('.ownmail-email-checkbox input'));
-
-            function getChecked() {
-                return allCheckboxes.filter(function(cb) { return cb.checked; });
-            }
-            function updateToolbar() {
-                var checked = getChecked();
-                var actions = document.getElementById('ownmail-toolbar-actions');
-                var count = document.getElementById('ownmail-selected-count');
-                count.textContent = checked.length;
-                var selecting = checked.length > 0;
-                actions.hidden = !selecting;
-                document.getElementById('ownmail-selection-count').hidden = !selecting;
-                document.getElementById('ownmail-list-controls').hidden = selecting;
-                document.getElementById('ownmail-refresh-results').hidden = selecting;
-                document.getElementById('ownmail-toolbar').classList.toggle('ownmail-selecting', selecting);
-                var selectAll = document.getElementById('ownmail-select-all');
-                if (selectAll) {
-                    selectAll.checked = checked.length === allCheckboxes.length;
-                    selectAll.indeterminate = checked.length > 0 && checked.length < allCheckboxes.length;
-                }
-            }
-            function onCheckboxChange(event, cb) {
-                var idx = allCheckboxes.indexOf(cb);
-                if (event.shiftKey && lastCheckedIdx !== null && idx !== lastCheckedIdx) {
-                    var start = Math.min(lastCheckedIdx, idx);
-                    var end = Math.max(lastCheckedIdx, idx);
-                    for (var i = start; i <= end; i++) {
-                        allCheckboxes[i].checked = cb.checked;
-                    }
-                }
-                lastCheckedIdx = idx;
-                updateToolbar();
-            }
-            function toggleSelectAll(selectAllCb) {
-                allCheckboxes.forEach(function(cb) { cb.checked = selectAllCb.checked; });
-                updateToolbar();
-            }
-            function clearSelection() {
-                allCheckboxes.forEach(function(cb) { cb.checked = false; });
-                var selectAll = document.getElementById('ownmail-select-all');
-                if (selectAll) selectAll.checked = false;
-                lastCheckedIdx = null;
-                updateToolbar();
-                if (selectAll) selectAll.focus();
-            }
+            {% include '_list_selection.html' %}
             function trashSelected() {
                 var ids = getChecked().map(function(cb) { return cb.value; }).join(',');
                 if (!ids || !confirm('Move ' + getChecked().length + ' email(s) to trash?')) return;
