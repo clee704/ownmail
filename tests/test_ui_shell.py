@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import struct
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -82,6 +83,29 @@ def test_home_screen_manifest_keeps_reader_and_utility_routes_in_scope(shell_app
     assert manifest["start_url"] == "/search"
     assert manifest["display"] == "standalone"
     assert manifest["scope"] == "/", "Reader, Trash, and Settings must share the installed app's scope"
+
+
+@pytest.mark.parametrize("path", ["/help", "/raw/message"])
+def test_desktop_favicon_is_served_at_tab_sizes(shell_app, path):
+    app, archive = shell_app
+    (archive.archive_dir / "message.eml").write_text("Subject: Example\n\nExample message.")
+    archive.db.get_email_by_id.return_value = ("message", "message.eml")
+    client = app.test_client()
+    page = html.fromstring(client.get(path).data)
+    icon = page.xpath('/html/head/link[@rel="icon"]')[0]
+    response = client.get(icon.get("href"))
+    assert response.status_code == 200
+    assert response.mimetype == "image/vnd.microsoft.icon"
+    assert client.get("/favicon.ico").data == response.data
+    assert struct.unpack_from("<HHH", response.data) == (0, 1, 3)
+    sizes = set()
+    for index in range(3):
+        width, height, _, _, _, _, length, offset = struct.unpack_from("<BBBBHHII", response.data, 6 + 16 * index)
+        png = response.data[offset : offset + length]
+        assert png.startswith(b"\x89PNG\r\n\x1a\n")
+        assert struct.unpack_from(">II", png, 16) == (width, height)
+        sizes.add(f"{width}x{height}")
+    assert sizes == set(icon.get("sizes").split()) == {"16x16", "32x32", "48x48"}
 
 
 @pytest.mark.parametrize("path", ["/", "/search?q=annual", "/trash"])
