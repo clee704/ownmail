@@ -1,352 +1,174 @@
 # ownmail
 
-**Own your mail.** Back up your email to plain files. Search and read them offline. Own them forever.
+**Your email archive, with a web interface for desktop and mobile.**
 
-```
-$ ownmail download
+Keep your mail as standard `.eml` files on your own drive. Search across accounts,
+browse labels, read HTML messages, and preview attachments in your browser.
+The command line handles downloads, imports, and archive maintenance.
 
-ownmail - Download
-==================================================
+> **Development version:** This README describes `0.4.0-dev` on `master`.
+> [PyPI currently provides 0.3.0](https://pypi.org/project/ownmail/), which has an
+> older interface. Use the GitHub installation below for the features described here.
 
-✓ Authenticated with Gmail API
-Archive location: /path/to/archive
-Previously downloaded: 10,000 emails
+## Browse your archive
 
-Checking for new emails...
+- **Search and navigate:** Full-text search, sender links, labels, attachment
+  indicators, sorting, and pagination across your saved mail.
+- **Read on desktop or phone:** A collapsible sidebar becomes a navigation drawer
+  on smaller screens. Add the site to your phone's Home Screen for app-style access.
+- **Read messages and attachments:** View sanitized HTML, expand message details,
+  and preview supported attachment formats or download the originals.
+- **Choose your appearance:** Light, dark, or system theme, with adjustable dates,
+  time zone, and page size.
+- **Control remote images:** Load images for a message or remember a trusted
+  sender. Image blocking is enabled by default, with [limitations](#privacy-and-security).
+- **Manage saved mail:** Select messages, move them to the archive's Trash, and
+  restore them. Mobile selection supports a long press.
 
-✓ No new emails to download. Archive is up to date!
-```
+Your `.eml` files and JSON label sidecars preserve the archive; SQLite provides
+its rebuildable search index. Downloads are incremental and resumable with Ctrl-C.
+You can also import `.eml` exports from other mail tools.
 
 ## Install
 
+### Development version from GitHub
+
+Requires **Python 3.10+**, **Git**, and [pipx](https://pipx.pypa.io/stable/).
+For the web interface, also install a supported
+[Node.js LTS release](https://nodejs.org/en/download) with npm. Connecting a mail
+provider requires a working system keychain.
+
 ```bash
-pip install ownmail
-# or
-pipx install ownmail
+pipx install "git+https://github.com/clee704/ownmail.git@master"
 ```
 
-## Quick Start
+`master` follows ongoing development and can change between installations.
+To switch an existing pipx installation from PyPI to this version:
 
 ```bash
-# 1. Set up credentials (one-time)
+pipx install --force "git+https://github.com/clee704/ownmail.git@master"
+```
+
+To refresh an installation made from GitHub:
+
+```bash
+pipx reinstall ownmail
+```
+
+Reinstallation uses the original source and resolves dependencies again. It also
+picks up new commits when the development version number has not changed.
+For a source checkout or editable installation, see [Contributing](CONTRIBUTING.md).
+
+### Published version from PyPI
+
+To use the published 0.3.0 release with its web dependencies:
+
+```bash
+pipx install "ownmail[web]==0.3.0"
+```
+
+Follow the [0.3.0 README](https://github.com/clee704/ownmail/blob/v0.3.0/README.md)
+for that version's behavior and requirements.
+
+## Quick start
+
+Run these commands from a directory where you want to keep `config.yaml`:
+
+```bash
+# Connect a mail provider and choose where to store the archive
 ownmail setup
 
-# 2. Download your emails
+# Download eligible mail
 ownmail download
 
-# 3. Search
-ownmail search "invoice from:amazon"
-
-# 4. Browse your archive in the browser
+# Open the archive in your browser
 ownmail serve
 ```
 
-## Philosophy
+Setup creates the configuration and stores credentials in your system keychain.
+Choose IMAP for a provider that accepts an app password, or Gmail API with OAuth
+for read-only Gmail access. See [provider setup and configuration](docs/setup.md).
 
-- 📁 **Files as source of truth** — Your emails are stored as standard `.eml` files. No proprietary database, no lock-in.
-- 🔐 **You own your data** — Everything stays on your drive. Put it on an encrypted volume and you're done.
-- ⚡ **Fast & incremental** — Only downloads new emails. Resume anytime with Ctrl-C.
-- 🔍 **Full-text search** — SQLite FTS5-backed search. Fast, local, private.
-- 🌐 **Built-in viewer** — Browse and read your archive in any browser. Dark mode, sanitized HTML, attachment downloads.
-
-## Why ownmail?
-
-Tools like `mbsync` + `notmuch` can accomplish similar goals — `mbsync` syncs IMAP to a local Maildir, and `notmuch` indexes it for fast tag-based search. They're powerful and battle-tested. Here's how ownmail differs:
-
-| | mbsync + notmuch | ownmail |
-|---|---|---|
-| **What it is** | Two separate tools (sync + index) | Single tool: backup, search, browse |
-| **Setup** | Configure `mbsync` and `notmuch` separately | `pip install ownmail && ownmail setup` |
-| **Credentials** | Plaintext in `~/.mbsyncrc` | System keychain (macOS/Windows/Linux) |
-| **Storage format** | Maildir (flags in filenames) | `.eml` files organized by date |
-| **Search engine** | Xapian (tag-based, very fast) | SQLite FTS5 (good enough for most archives) |
-| **Reading email** | Emacs, Vim, mutt, or other frontends | Built-in web UI |
-| **Providers** | IMAP only | IMAP + Gmail API (OAuth, batch downloads) |
-| **Integrity checking** | — | Detects corrupted or missing files |
-| **Philosophy** | Power-user toolkit, compose your workflow | Opinionated single tool — backup, search, done |
-
-**Choose mbsync + notmuch** if you already live in Emacs/mutt and want maximum flexibility.
-
-**Choose ownmail** if you want a simple, self-contained email backup that stores plain files and lets you search and read them in a browser.
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `setup` | Set up email source credentials (App Password or OAuth) |
-| `download` | Download new emails (with content-hash dedup) |
-| `search "query"` | Full-text search |
-| `serve` | Browse and read your archive in the browser |
-| `import <path>` | Import external `.eml` files (Tuta, Thunderbird, any export) |
-| `scan` | Register `.eml` files already in the archive but untracked |
-| `stats` | Show archive statistics |
-| `verify` | Check file integrity (hashes, moved files, orphans, DB health) |
-| `sync-check` | Compare local archive with server to find missing emails |
-| `trash` | View and manage trashed emails |
-| `update-labels` | Update labels on existing emails |
-| `relabel` | Repair IMAP folder labels on archived mail by rescanning the server |
-| `reconcile` | Find archived mail the current download filter would now reject |
-| `rebuild` | Rebuild search index and populate metadata |
-| `reset-sync` | Reset sync state to force full re-download |
-| `list-unknown` | List emails with unparseable dates |
-| `sources list` | List configured email sources |
-
-Run `ownmail <command> --help` for the full options on any of these.
-
-## Setup
-
-ownmail supports two methods for connecting to your email:
-
-### Option A: IMAP with App Password (recommended)
-
-The simplest way to get started. Works with Gmail, Outlook, Fastmail, and any IMAP server.
-
-**For Gmail:**
-
-1. Enable [2-Step Verification](https://myaccount.google.com/signinoptions/two-step-verification) (if not already)
-2. Go to [App Passwords](https://myaccount.google.com/apppasswords)
-3. Create an App Password (name it "ownmail")
-4. Run setup:
-
-```bash
-ownmail setup
-# Choose [1] IMAP with App Password
-# Enter your Gmail address and the 16-character App Password
-```
-
-That's it. Credentials are stored in your system keychain.
-
-> **"The setting you are looking for is not available for your account"?**
-> This means 2-Step Verification isn't enabled yet (step 1 above), or your Google Workspace admin has disabled App Passwords. For Workspace accounts where App Passwords are blocked, use [Option B (OAuth)](#option-b-gmail-api-with-oauth-advanced) instead.
-
-**For other IMAP servers** (Fastmail, company mail, etc.), the same flow works — you'll be prompted for the IMAP hostname.
-
-### Option B: Gmail API with OAuth (advanced)
-
-Uses the Gmail API with read-only OAuth scope. Faster batch downloads and native Gmail labels, but requires creating a Google Cloud project.
-
-```bash
-ownmail setup --method oauth
-```
-
-<details>
-<summary>Detailed steps</summary>
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or select existing)
-3. APIs & Services → Library → search "Gmail API" → Enable
-4. APIs & Services → Credentials → Create Credentials → OAuth client ID
-5. Application type: Desktop app → Create
-6. Download the JSON file
-7. Run: `ownmail setup --method oauth`
-8. When prompted, enter the path to the downloaded JSON file (or paste its contents)
-
-</details>
-
-### Comparison
-
-| | IMAP + App Password | Gmail API + OAuth |
-|---|---|---|
-| **Setup time** | 30 seconds | ~15 minutes |
-| **Requires** | 2FA enabled | Google Cloud project |
-| **Access scope** | Full account | Read-only |
-| **Revocable** | Yes (App Passwords page) | Yes (Google Account) |
-| **Speed** | Sequential (one at a time) | Batch downloads |
-| **Gmail labels** | Mapped from IMAP folders | Native labels |
-| **Works with** | Gmail, Outlook, Fastmail, any IMAP | Gmail only |
-| **Credentials stored in** | System keychain | System keychain |
-
-## Config File
-
-Create `config.yaml` in your working directory:
-
-```yaml
-archive_root: /path/to/archive
-
-sources:
-  # Option A: IMAP with App Password (recommended)
-  - name: gmail_personal
-    type: imap
-    host: imap.gmail.com
-    account: you@gmail.com
-    auth:
-      secret_ref: keychain:imap-password/you@gmail.com
-
-  # Option B: Gmail API with OAuth
-  # - name: gmail_personal
-  #   type: gmail_api
-  #   account: you@gmail.com
-  #   auth:
-  #     secret_ref: keychain:oauth-token/you@gmail.com
-  #   include_labels: true
-
-  # Other IMAP servers
-  # - name: work_imap
-  #   type: imap
-  #   host: imap.company.com
-  #   account: you@company.com
-  #   auth:
-  #     secret_ref: keychain:imap-password/you@company.com
-  #   exclude_roles: [inbox]    # optional — see below
-  #   exclude_folders:          # optional — see below
-  #     - Newsletters
-```
+The browser opens at <http://127.0.0.1:8080>. The first launch installs the HTML
+sanitizer's Node.js dependencies and needs internet access. Once installed, local
+reading and search work without internet; keep `ownmail serve` running while you
+browse. A phone also needs a connection to that server. See
+[browser and mobile access](docs/setup.md#browser-and-mobile-access).
 
 ### What gets archived
 
-ownmail archives mail you have finished with, not everything on the server.
-A message is downloaded once it is out of the **inbox**, **drafts**,
-**trash** and **spam** — whatever your provider calls those folders, since
-ownmail asks the server (IMAP SPECIAL-USE) rather than matching names.
+By default, ownmail downloads mail outside **Inbox**, **Drafts**, **Trash**, and
+**Spam**. Sent mail is eligible. Mail you later file out of the inbox or rescue
+from spam can be picked up by subsequent downloads.
 
-The idea is that your mail client owns triage. Inbox means you haven't
-decided yet; drafts means the message isn't finished; trash and spam mean a
-decision was made that it isn't worth keeping. **Sent mail is archived** —
-there's no triage step for your own outgoing mail, so waiting for one would
-mean never archiving it.
-
-Nothing is written off. Every run re-checks where a message is now, so mail
-you rescue from spam, file out of the inbox, or send from a draft is picked
-up on the next run.
-
-`exclude_roles` relaxes the first two — `[inbox]` archives your drafts,
-`[]` archives both as they arrive. Trash and spam are always excluded and
-naming them is a config error. `exclude_folders` skips extra folders by
-name, on top of the roles rather than instead of them.
-
-### Reconciling what is already archived
-
-The filter decides what comes *in*. Narrowing it — or upgrading from a
-version that couldn't recognize your server's trash folder — leaves mail in
-the archive the filter would reject today. `reconcile` finds it:
-
-```bash
-# Report what the current filter would no longer admit
-ownmail reconcile
-
-# Move it to ownmail's bin, where it stays restorable until you empty it
-ownmail reconcile --apply
-```
-
-It reads the filter from your config, so editing `exclude_roles` or
-`exclude_folders` changes what it reports. Mail carrying a real label
-alongside the rejected one was filed somewhere, so it is listed separately
-and left alone. Nothing moves without `--apply`, and nothing is deleted.
+You can include inbox mail and drafts with `exclude_roles` in your source
+configuration. Trash and spam remain excluded. See
+[download filters](docs/archive.md#download-filters) before your first download
+if you want to change these defaults.
 
 ## Search
 
+Use the search box in the web interface or the same query syntax in the terminal:
+
 ```bash
 ownmail search "invoice"
-ownmail search "from:amazon"
+ownmail search "from:example.com"
 ownmail search "subject:receipt"
 ownmail search "attachment:pdf"
+ownmail search 'label:"Receipts, 2026"'
 ```
 
-## Security
+The web interface includes search help with supported operators and examples.
 
-| What | Where |
-|------|-------|
-| App Passwords & OAuth tokens | System keychain (macOS/Windows/Linux) |
-| Emails & search index | Your chosen directory |
+## Commands
 
-Nothing sensitive on the filesystem. Put your archive on an encrypted volume.
+| Command | Purpose |
+|---|---|
+| `setup` | Connect a mail source and store credentials |
+| `download` | Download new eligible mail |
+| `serve` | Open the web interface |
+| `search "query"` | Search from the terminal |
+| `import <path>` | Import external `.eml` files |
+| `scan` | Index `.eml` files already in the archive |
+| `stats` | Show archive statistics |
+| `verify` | Check hashes, files, and index integrity |
+| `sync-check` | Compare the archive with its mail sources |
+| `trash` | View and manage the archive's Trash |
+| `update-labels` | Backfill missing labels |
+| `relabel` | Repair IMAP folder labels from the server |
+| `reconcile` | Review archived mail against the current download filter |
+| `rebuild` | Rebuild the index or selected metadata |
+| `reset-sync` | Reset download progress for a rescan |
+| `list-unknown` | List messages with unparseable dates |
+| `sources list` | List configured mail sources |
 
-## Advanced
+Run `ownmail <command> --help` for options. See
+[archive storage, verification, and repairs](docs/archive.md) for maintenance.
 
-### Storage Layout
+## Privacy and security
 
-```
-/path/to/archive/
-├── ownmail.db              # SQLite (tracking + search index)
-└── sources/
-    └── gmail_personal/
-        ├── 2024/
-        │   ├── 01/
-        │   │   ├── 20240115_143022_a1b2c3d4e5f6.eml
-        │   │   └── ...
-        │   └── 02/
-        └── 2025/
-            └── ...
-```
+Credentials are stored in the system keychain. Messages, attachments, label
+sidecars, the search index, and account configuration remain on your filesystem
+and can contain sensitive information. Use encrypted storage and protect your
+backups; ownmail does not encrypt the archive itself.
 
-- **Emails**: Standard `.eml` format, organized by account and date
-- **Database**: Stores metadata (message IDs, filenames, hashes, subjects, senders) and a full-text search index — the `.eml` files are the source of truth
+The web interface sanitizes message HTML with
+[DOMPurify](https://github.com/cure53/DOMPurify). Image blocking is enabled by
+default, but does not suppress every remote resource. Some CSS images and
+responsive image sources can still contact remote servers. Loading images
+explicitly can also reveal your request to the sender's servers.
 
-### Integrity Verification
-
-```bash
-# Verify file hashes, detect moved files, check for orphans and DB health
-ownmail verify
-
-# Auto-fix: update moved file paths, remove stale entries, rebuild FTS
-ownmail verify --fix
-
-# Check if local archive matches server
-ownmail sync-check
-```
-
-### Repairing Legacy Labels
-
-Older releases could append message IDs from a folded `References` header to
-the `SENT` label. From a source checkout, preview the affected metadata with:
-
-```bash
-python scripts/repair_labels.py --archive /path/to/archive
-```
-
-Add `--database /path/to/ownmail.db` if the index is stored separately. Stop
-downloads and other archive maintenance before applying a repair, and provide
-a directory for the original metadata backups:
-
-```bash
-python scripts/repair_labels.py --archive /path/to/archive \
-  --apply --backup-dir /path/to/label-repair-backup
-```
-
-The repair requires an exact match to the message's folded header and a valid
-recorded file hash. It updates the JSON sidecar and database labels, preserves
-other sidecar fields, and leaves `.eml` files unchanged. Interrupted repairs can
-be rerun with the same backup directory. Values without matching evidence are
-left for inspection; long names and names containing angle brackets are not
-rejected on appearance alone.
-
-Labels retain commas and whitespace during capture, indexing, and rebuilding.
-For example, `label:"Receipts, 2026"` searches for one label. Rebuilding uses
-sidecar labels when available and preserves indexed labels otherwise. Labels
-already split by older code can be restored from an intact sidecar with
-`ownmail rebuild --only sidecars`. Without the original sidecar, the intended
-label boundaries cannot be recovered reliably from the index alone.
-
-### Resumable Downloads
-
-Press **Ctrl-C** anytime to pause:
-
-```
-  [1,000/10,000]   45KB - indexing...
-^C
-
-⏸ Stopping after current email...
---------------------------------------------------
-Download Paused!
-  Downloaded: 1,000 emails
-  Remaining: 9,000 emails
-
-  Run 'download' again to resume.
-```
-
-### HTML Sanitization
-
-When using `ownmail serve`, email HTML is sanitized server-side using [DOMPurify](https://github.com/cure53/DOMPurify) running in a Node.js sidecar process. This strips `<script>` tags, event handlers, dangerous CSS (`@import`, `expression()`), and other XSS vectors before the content reaches your browser.
-
-**Requires [Node.js](https://nodejs.org) (v18+).** Dependencies are installed automatically on first run.
+The server listens on localhost by default and has no built-in login. If you
+make it reachable from other devices, control access through a trusted network
+or an authenticated proxy. Home Screen access uses the same server; it does not
+store an offline archive on the phone.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup and repo conventions, and
-[AGENTS.md](AGENTS.md) if you're pointing an AI coding agent at this repo.
-Planned and in-flight work lives in [`backlog/`](backlog/tasks) — browse it with
-the [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and repository rules,
+and [AGENTS.md](AGENTS.md) for AI-agent instructions. Planned and in-flight work
+lives in [the backlog](backlog/tasks).
 
 ## License
 
-MIT
+[MIT](LICENSE)
