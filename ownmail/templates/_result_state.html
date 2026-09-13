@@ -1,3 +1,4 @@
+<script>
 (function() {
     var storageKey = 'ownmail-result-position';
     var list = document.getElementById('ownmail-email-list');
@@ -52,12 +53,7 @@
             window.scrollTo(0, position.scrollY);
         }
         window.addEventListener('pageshow', restorePosition);
-        // Unrelated resources can delay pageshow after the rows are ready.
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', restorePosition, {once: true});
-        } else {
-            restorePosition();
-        }
+        restorePosition();
     }
 
     if (backLink) {
@@ -74,3 +70,4 @@
         });
     }
 })();
+</script>

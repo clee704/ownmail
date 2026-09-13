@@ -155,7 +155,7 @@ def test_toolbar_exposes_trash_or_restore_and_keeps_permanent_delete_in_more(rea
     assert bool(permanent_delete) is trashed
 
 
-_POSITION_SCRIPT = Path(__file__).parents[1] / "ownmail" / "static" / "result-state.js"
+_POSITION_TEMPLATE = Path(__file__).parents[1] / "ownmail" / "templates" / "_result_state.html"
 _POSITION_HARNESS = """
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
@@ -213,10 +213,6 @@ function page(path, reader = false, storageBlocked = false, readyState = 'intera
             handlers[reader ? 'back:click' : 'list:click'](event);
             return event;
         },
-        ready() {
-            context.document.readyState = 'interactive';
-            if (handlers['document:DOMContentLoaded']) handlers['document:DOMContentLoaded']();
-        },
         show() { handlers.pageshow(); },
         get focused() { return focused; },
         get scrolled() { return scrolled; },
@@ -232,7 +228,7 @@ def run_position_script(assertions):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js not available")
-    source = "const SOURCE = " + json.dumps(_POSITION_SCRIPT.read_text()) + ";\n"
+    source = "const SOURCE = " + json.dumps(html.fragment_fromstring(_POSITION_TEMPLATE.read_text()).text) + ";\n"
     subprocess.run([node, "-e", source + _POSITION_HARNESS + assertions], check=True, capture_output=True, text=True)
 
 
@@ -247,10 +243,6 @@ assert.equal(reader.loadingCalls, 1);
 assert.equal(reader.scrolled, null);
 assert(!click.defaultPrevented);
 const returned = page(listUrl, false, false, READY_STATE);
-if (READY_STATE === 'loading') {
-    assert.equal(returned.scrolled, null);
-    returned.ready();
-}
 assert.deepEqual(returned.scrolled, [0, 648]);
 assert.equal(returned.focused, true);
 assert.equal(storage.size, 0);
@@ -327,6 +319,62 @@ assert.equal(reader.loadingCalls, 1);
 page(listUrl, false, true).show();
 assert.equal(storage.size, 0);
 """)
+
+
+def test_returned_list_restores_while_parsing_without_external_resources(reader, shell_browser):
+    client, archive = reader
+    client.application.config["page_size"] = 2
+    archive.search.return_value = [
+        (identifier, "message.eml", "Annual review", "alex@example.com", "2024-01-15", "Message body")
+        for identifier in ["other", "message", "next"]
+    ]
+    path = "/search?q=annual&sort=date_asc&page=3"
+    page = client.get(path).data.decode()
+    script = """
+const assert = require('node:assert/strict');
+const { JSDOM, ResourceLoader, VirtualConsole } = require('jsdom');
+const scrolls = [];
+const scriptErrors = [];
+const virtualConsole = new VirtualConsole();
+virtualConsole.on('jsdomError', error => scriptErrors.push(error.message));
+class UnavailableResources extends ResourceLoader {
+    fetch() { return null; }
+}
+const dom = new JSDOM(PAGE, {
+    url: 'http://localhost' + PATH,
+    runScripts: 'dangerously',
+    resources: new UnavailableResources(),
+    virtualConsole,
+    beforeParse(window) {
+        window.matchMedia = () => ({ matches: false, addEventListener() {} });
+        window.sessionStorage.setItem('ownmail-result-position', JSON.stringify({
+            listUrl: PATH, messagePath: '/email/message', scrollY: 648, restore: true
+        }));
+        window.scrollTo = (x, y) => {
+            const document = window.document;
+            scrolls.push({
+                x, y,
+                readyState: document.readyState,
+                rows: document.querySelectorAll('.ownmail-email-row').length,
+                footerPresent: !!document.querySelector('.ownmail-toolbar-bottom'),
+                focusedPath: new URL(document.activeElement.href).pathname
+            });
+        };
+    }
+});
+assert.deepEqual(scriptErrors, []);
+assert.deepEqual(scrolls, [{
+    x: 0, y: 648, readyState: 'loading', rows: 2,
+    footerPresent: true, focusedPath: '/email/message'
+}]);
+assert.equal(dom.window.sessionStorage.getItem('ownmail-result-position'), null);
+dom.window.dispatchEvent(new dom.window.Event('pageshow'));
+assert.equal(scrolls.length, 1);
+dom.window.close();
+"""
+    script = script.replace("PAGE", json.dumps(page)).replace("PATH", json.dumps(path))
+    result = subprocess.run(["node", "-e", script], cwd=shell_browser, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
 
 
 def run_fit_browser(reader, browser_dir, auto_scale, width, assertions):
