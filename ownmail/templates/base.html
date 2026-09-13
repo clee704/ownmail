@@ -36,21 +36,6 @@
                 <button type="submit">Search</button>
             </form>
             {% endblock %}</div>
-        <div class="ownmail-hamburger" id="ownmail-hamburger">
-            <button type="button" class="ownmail-hamburger-btn ownmail-icon-button" id="ownmail-hamburger-btn" onclick="toggleHamburger(event)" aria-label="Application menu" aria-haspopup="menu" aria-controls="ownmail-hamburger-dropdown" aria-expanded="false" title="Application menu">{{ icon('more', 18) }}</button>
-            <div class="ownmail-hamburger-dropdown" id="ownmail-hamburger-dropdown" role="menu" aria-label="Application" hidden>
-                <span class="ownmail-hamburger-info" role="presentation">{{ stats.total_emails | default(0) | int }} emails archived</span>
-                <hr class="ownmail-hamburger-divider" role="separator">
-                <button type="button" class="ownmail-hamburger-theme" role="menuitem" tabindex="-1" onclick="toggleTheme()">
-                    <span id="ownmail-theme-sun">{{ icon('sun') }}</span>
-                    <span id="ownmail-theme-moon" hidden>{{ icon('moon') }}</span>
-                    <span id="ownmail-hamburger-theme-label">Switch to light mode</span>
-                </button>
-                <hr class="ownmail-hamburger-divider" role="separator">
-                <a href="/settings" role="menuitem" tabindex="-1">{{ icon('settings') }}Settings</a>
-                <a href="/help" role="menuitem" tabindex="-1">{{ icon('help') }}Search help</a>
-            </div>
-        </div>
     </header>
     <div class="ownmail-nav-backdrop" id="ownmail-nav-backdrop" onclick="closeMobileNavigation()" hidden></div>
     <div class="ownmail-layout">
@@ -90,61 +75,10 @@
     function applyTheme() {
         var dark = isDarkMode();
         document.documentElement.classList.toggle('ownmail-dark', dark);
-        document.getElementById('ownmail-theme-sun').hidden = !dark;
-        document.getElementById('ownmail-theme-moon').hidden = dark;
-        document.getElementById('ownmail-hamburger-theme-label').textContent = dark ? 'Switch to light mode' : 'Switch to dark mode';
         if (typeof updateEmailDarkMode === 'function') updateEmailDarkMode(dark);
-    }
-    function toggleTheme() {
-        localStorage.setItem('ownmail-theme', isDarkMode() ? 'light' : 'dark');
-        applyTheme();
-        closeHamburger(true);
     }
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     applyTheme();
-
-    var appMenu = document.getElementById('ownmail-hamburger-dropdown');
-    var appMenuButton = document.getElementById('ownmail-hamburger-btn');
-    function closeHamburger(returnFocus) {
-        appMenu.hidden = true;
-        appMenu.classList.remove('ownmail-show');
-        appMenuButton.setAttribute('aria-expanded', 'false');
-        if (returnFocus) appMenuButton.focus();
-    }
-    function openHamburger(lastItem) {
-        appMenu.hidden = false;
-        appMenu.classList.add('ownmail-show');
-        appMenuButton.setAttribute('aria-expanded', 'true');
-        var items = appMenu.querySelectorAll('[role="menuitem"]');
-        items[lastItem ? items.length - 1 : 0].focus();
-    }
-    function toggleHamburger(event) {
-        event.stopPropagation();
-        if (appMenu.hidden) openHamburger(false);
-        else closeHamburger(true);
-    }
-    appMenuButton.addEventListener('keydown', function(event) {
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            openHamburger(event.key === 'ArrowUp');
-        }
-    });
-    appMenu.addEventListener('keydown', function(event) {
-        var items = Array.from(appMenu.querySelectorAll('[role="menuitem"]'));
-        var index = items.indexOf(document.activeElement);
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
-        } else if (event.key === 'Home' || event.key === 'End') {
-            event.preventDefault();
-            items[event.key === 'Home' ? 0 : items.length - 1].focus();
-        } else if (event.key === 'Tab') {
-            closeHamburger(true);
-        }
-    });
-    document.addEventListener('click', function(event) {
-        if (!document.getElementById('ownmail-hamburger').contains(event.target)) closeHamburger(false);
-    });
 
     var sidebar = document.getElementById('ownmail-sidebar');
     var sidebarToggle = document.getElementById('ownmail-sidebar-toggle');
@@ -161,7 +95,6 @@
         document.getElementById('ownmail-nav-backdrop').hidden = !open;
         document.getElementById('ownmail-main').inert = open;
         document.querySelector('.ownmail-header-search').inert = open;
-        document.getElementById('ownmail-hamburger').inert = open;
         sidebarToggle.setAttribute('aria-expanded', String(mobile ? open : !collapsed));
         var label = mobile ? (open ? 'Close navigation' : 'Open navigation') : (collapsed ? 'Expand navigation' : 'Collapse navigation');
         sidebarToggle.setAttribute('aria-label', label);
@@ -175,7 +108,6 @@
     function toggleSidebar() {
         if (navigationBreakpoint.matches) {
             var open = document.body.classList.toggle('ownmail-nav-open');
-            closeHamburger(false);
             syncNavigation();
             if (open) (sidebar.querySelector('[aria-current="page"]') || sidebar.querySelector('a')).focus();
         } else {
@@ -190,14 +122,9 @@
         if (navigationBreakpoint.matches && focusWasInSidebar) sidebarToggle.focus();
     });
     document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            if (!appMenu.hidden) {
-                event.preventDefault();
-                closeHamburger(true);
-            } else if (document.body.classList.contains('ownmail-nav-open')) {
-                event.preventDefault();
-                closeMobileNavigation();
-            }
+        if (event.key === 'Escape' && document.body.classList.contains('ownmail-nav-open')) {
+            event.preventDefault();
+            closeMobileNavigation();
         }
         if (event.key === 'Tab' && navigationBreakpoint.matches && document.body.classList.contains('ownmail-nav-open')) {
             var links = Array.from(sidebar.querySelectorAll('a'));
