@@ -1,7 +1,7 @@
 ---
 id: TASK-49
 title: Stabilize mobile reader navigation
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 04:43'
 updated_date: '2026-09-13 04:48'
