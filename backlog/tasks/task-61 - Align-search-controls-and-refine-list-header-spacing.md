@@ -1,10 +1,10 @@
 ---
 id: TASK-61
 title: Align search controls and refine list header spacing
-status: Done
+status: In Progress
 assignee: []
 created_date: '2026-09-13 07:39'
-updated_date: '2026-09-13 07:55'
+updated_date: '2026-09-13 07:59'
 labels:
   - ui
   - mobile
@@ -35,4 +35,8 @@ Search controls share explicit 32px desktop and 44px phone heights with native a
 Reopened after a phone screenshot showed a remaining visible height mismatch. Recheck painted edges as well as CSS dimensions.
 
 Follow-up: moved the search field border and background to its label wrapper, sharing the button height. The inner input is transparent and borderless, with native margins and shadows reset. Both phone controls use 16px text; focus remains visible on the field wrapper. Passed 60 synthetic browser cases in Chromium and WebKit across 320, 390, 600, 768, and 1280px, both themes, populated and empty Search, and the shared Help header. Checked outer bounds, overflow, focus, and keyboard submission; inspected phone screenshots. The original stylesheet also had equal measured outer bounds. The supplied JPEG does not establish a geometric defect, so physical iPhone appearance remains unverified. Independent review found no actionable issues. Full pre-push checks passed.
+
+Reopened after a magnified phone screenshot showed the visual mismatch persists. The active server serves the current stylesheet. Compare interior fill edges and border painting before changing dimensions again.
+
+The close-up exposed a paint difference: the button background covered its transparent border, making its fill two CSS pixels taller than the field interior. Set the search button border to the field border color. Pixel checks reproduced unequal fill edges before the change and equal edges afterward in Chromium and WebKit, both themes. All 60 layout, focus, and submission cases passed, as did the full pre-push checks. Inspected the updated phone rendering.
 <!-- SECTION:NOTES:END -->
