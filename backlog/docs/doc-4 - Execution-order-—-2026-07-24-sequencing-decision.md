@@ -78,17 +78,18 @@ rather than trying to recover it from the CLI.
 |---|------|-------|----------|
 | 1 | ~~TASK-17~~ | no | **Done.** Gmail history watermark race. Loses mail today, and 14.3 makes incremental sync the *only* capture path — fix it while the two failure modes are still separable |
 | 2 | ~~TASK-18~~ | no | **Done.** `includeSpamTrash`. Cheap, same file, done first so the filter is built over one exclusion mechanism. The drafts mechanism it was also carrying went back to TASK-14.1 — see below |
-| 3 | TASK-14.3 | no | Eligibility-driven capture. The large half, and the precondition for any filter — without it a filter turns a working archive into one with silent holes |
-| 4 | TASK-14.1 | no | The download filter config surface. The small half that was originally mistaken for the whole |
-| 5 | TASK-25 | no | Reconcile: sweep the *existing* archive against the filter |
-| 6 | TASK-38 | no | Thread protection for server cleanup. Eligible messages archive immediately; server copies stay while the message or thread is Active |
-| 7 | TASK-14.2 | **yes** | Purge. Deletes user email, widens the OAuth scope — sign-off, then PR |
-| 8 | ~~TASK-33~~ | no | **Done as a historical decision record.** Its capture deferral is superseded by the ownership philosophy and revised TASK-38 |
+| 3 | ~~TASK-14.3~~ | no | **Done.** Reconsider messages that become eligible after arrival |
+| 4 | ~~TASK-14.1~~ | no | **Done.** Configure capture filters using canonical roles |
+| 5 | ~~TASK-25~~ | no | **Done.** Reconcile existing archived mail against the filter |
+| 6 | TASK-90 | no | Keep required label lookup failures retryable before finalizing capture |
+| 7 | TASK-28 | if schema changes | Add Active reading and search, preserve existing archives, and define compatibility for old capture settings |
+| 8 | TASK-38 | no | Protect live threads from server cleanup without delaying capture |
+| 9 | TASK-14.2 | **yes** | Verify complete owned copies and server identity before moving inactive server copies to Trash |
+| 10 | ~~TASK-33~~ | no | **Done as a historical decision record.** Capture deferral is superseded by the ownership philosophy and revised TASK-38 |
 
 ### Why this order
 
-**Steps 1–5 are the minimum set to get an existing archive into good shape.**
-That was the driving question on 2026-07-31: an archive holding server-side
+**Steps 1–5 addressed the archive problems identified on 2026-07-31:** an archive holding server-side
 inbox and trash mail. Steps 1–4 stop it getting worse; step 5 cleans up what
 is already on disk. Purge is not part of that — it serves the separate goal
 of leaving no mail on third-party servers.
@@ -123,9 +124,14 @@ path, nothing decorative on top. Phase 5's order is unaffected.
 **Updated 2026-09-14:** [Ownership philosophy](../../docs/philosophy.md)
 separates Active downloads, archive capture, and server cleanup. TASK-38 now
 protects live threads from cleanup while eligible messages archive immediately.
-It remains before TASK-14.2, which depends on that protection. The old evidence
-gate and capture deferral described below are historical. The table's order
-is otherwise unchanged.
+TASK-89's coverage audit adds TASK-90 for the existing label-failure capture
+gap, then schedules TASK-28 before thread protection and cleanup. TASK-28 needs
+the capture fix; TASK-14.2 depends on TASK-90, TASK-38, and TASK-28 so its
+integration checks exercise the complete lifecycle. Active viewing and
+thread protection share provider state rules, but neither needs the other's UI
+to exist. Their listed order is a delivery choice, not a hard dependency.
+
+The old evidence gate and capture deferral described below are historical.
 
 **Historical changes on 2026-08-06**, after the user's question about what the
 clean split actually needs:
@@ -144,13 +150,16 @@ clean split actually needs:
   purge would mean purging server copies of exactly the mid-conversation mail
   the rule exists to hold back.
 
-### Not in this phase
+### Independent work
 
-TASK-28 (Active messages) depends on TASK-14.3 and supplies the consolidated
-reading and search view in the [ownership philosophy](../../docs/philosophy.md).
-It is product direction, with implementation still unscheduled. Its revised
-scope includes Active contents and replaces the older default-off and
-headers/snippet-only proposal; enablement and cadence remain to be decided.
+TASK-5.4 supplies local archive label editing and can proceed independently of
+Active viewing and cleanup. Its existing milestone and ordinal are unchanged.
+TASK-36's optional provenance investigation is not a dependency: captured labels
+are owned locally regardless of their origin.
+
+TASK-28 now has a delivery slot. Enablement defaults, refresh cadence, count
+semantics, and provider support for unfinished outgoing mail remain decisions
+within that task, with documented compatibility and failure behavior required.
 
 ## UI redesign (filed 2026-09-12)
 

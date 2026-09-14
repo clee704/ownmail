@@ -4,15 +4,17 @@ title: Optional purge — trash archived mail on the server once verified
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-14 08:53'
+updated_date: '2026-09-14 09:09'
 labels: []
 milestone: m-5
 dependencies:
   - TASK-14.1
+  - TASK-28
   - TASK-38
+  - TASK-90
 parent_task_id: TASK-14
 priority: high
-ordinal: 7
+ordinal: 9
 ---
 
 ## Description
@@ -27,8 +29,14 @@ repository's existing rules.
 
 Cleanup moves a server copy to the provider's Trash only when all of these hold:
 
-- Ownmail owns a successfully captured archive copy, and a fresh content-hash
-  check verifies the local `.eml`. An Active cached copy is insufficient.
+- Ownmail owns a complete archive copy, with a fresh content-hash check of
+  its local `.eml` and readable, durable metadata for the required labels.
+  Incomplete capture, an Active cache, local Trash, and expired or deleted
+  local copies cannot qualify. Required label retrieval must have succeeded;
+  TASK-90 closes the current failure-to-empty-labels path.
+- The current server candidate demonstrably corresponds to that owned copy
+  within the correct source and account. A stored provider ID or Message-ID
+  alone is insufficient where the provider cannot guarantee its identity.
 - Current server state shows the message is outside Inbox, unfinished outgoing
   state, Trash, and Spam. Earlier capture does not override present activity.
 - The thread is no longer Active, as verified by TASK-38. Unknown or incomplete
@@ -39,20 +47,47 @@ Reading current server roles for these checks never changes the archived copy
 or its labels. Sent and filed mail follow the same rules: either may be archived
 immediately while its server copy stays available during a live conversation.
 
+Plain IMAP identity checks must handle folder moves, UIDVALIDITY changes,
+reused UIDs, and duplicate Message-IDs. Use content correspondence where stable
+provider identity cannot establish the match; skip uncertain candidates. This
+does not require downloading every message again when provider guarantees
+already establish the correspondence.
+
+Revalidate local eligibility, server identity, and message/thread activity as
+late as the provider supports before each mutation. Detected changes postpone
+cleanup. Test activity arriving during a sweep and local Trash or deletion
+after candidate selection. Document any remaining provider race; do not claim
+an atomic check unless the provider supplies one.
+
 Downloading Inbox or draft content for the Active view (TASK-28) must never
 permit cleanup. The previous coupling of download filters to deletion safety
 is superseded: ownership and current activity supply that boundary. Existing
 capture configuration remains separate from these cleanup preconditions.
 
 Purge is opt-in and dry-run by default. It means moving to provider Trash,
-never hard deletion; final removal follows the provider's retention policy.
-Verify each provider's move and retention behavior before enabling its path.
+never hard deletion. Verify and document each provider's actual Trash move
+and retention behavior before enabling its path, including whether and when
+Trash is emptied. A successful move does not guarantee permanent removal.
 Preserve read-only access for users who do not enable cleanup.
 
-TASK-14 holds the acceptance criteria. TASK-38 supplies thread protection before
-cleanup is enabled. Earlier comments below are historical; their proposal to
-accept incomplete client threads is superseded by this design.
+[TASK-14's cleanup acceptance criteria](<task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md#acceptance-criteria>)
+apply in full. TASK-38 supplies thread protection before cleanup is enabled.
+The integration criteria below verify that the Active view, capture, local
+management, and cleanup preserve the same ownership boundary. TASK-28 is a
+dependency for those checks. Local label changes can use the existing sidecar
+representation; the label editor UI is not a prerequisite. Earlier comments
+below are historical; their proposal to accept incomplete client threads is
+superseded by this design.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 TASK-14's cleanup acceptance criteria are verified by this implementation; its existing capture-filter criteria remain fulfilled by TASK-14.1
+- [ ] #2 Synthetic provider integration covers Active reading and search, successful capture of contents and labels, local label edits, and eligible server cleanup while preserving the owned contents and labels
+- [ ] #3 Synthetic provider integration rejects cleanup for Active-only caches, live messages or threads, local Trash or deleted copies, incomplete capture, failed local verification, and ambiguous or incomplete server state
+- [ ] #4 Provider-specific tests cover account/source ID collisions, plain IMAP UIDVALIDITY changes and reused UIDs, folder moves, duplicate Message-IDs, and content that differs from the owned copy
+- [ ] #5 Tests introduce new activity and local Trash or deletion after candidate selection, verify the supported final revalidation postpones cleanup, and cover retry after a partial cleanup result
+<!-- AC:END -->
 
 ## Comments
 

@@ -4,13 +4,13 @@ title: Thread-aware server cleanup — retain copies while a thread is active
 status: To Do
 assignee: []
 created_date: '2026-08-06 19:51'
-updated_date: '2026-09-14 08:53'
+updated_date: '2026-09-14 09:07'
 labels: []
 milestone: m-5
 dependencies:
   - TASK-14.1
 priority: medium
-ordinal: 6
+ordinal: 8
 ---
 
 ## Description
@@ -37,7 +37,16 @@ present, without restoring copies already removed.
 Reuse existing provider enumeration and thread identity support where possible.
 Use provider thread identifiers when available; validate the plain IMAP approach
 against its available headers and identity guarantees. Do not assume that a
-partial header match proves a thread is inactive.
+partial header match proves a thread is inactive. Thread identifiers and
+lookups must remain scoped to the source and account; capture filters must
+not hide Active members from the protection check. Enumeration failures must
+remain distinguishable from an empty result.
+
+Expose enough freshness and completeness information for TASK-14.2 to
+revalidate protection before mutation as far as each provider supports. Test
+new active members and role changes after the initial scan, including between
+cleanup batches. Document provider limits instead of promising an atomic
+check where none exists.
 
 Build and verify this protection before enabling TASK-14.2 cleanup. The old
 evidence gate for implementing capture deferral no longer applies: preserving
@@ -54,4 +63,6 @@ server data by itself; TASK-14.2 retains its existing approval requirements.
 - [ ] #5 Archived contents and labels remain unchanged when the server copy becomes Active again
 - [ ] #6 Configuration documentation explains that a thread left Active retains its server copies indefinitely, while eligible messages still enter the archive
 - [ ] #7 A later reply protects server copies still present and does not restore previously removed copies
+- [ ] #8 Thread checks remain scoped to the source and account and include Active members regardless of capture filters; failed enumeration cannot establish an empty or inactive thread
+- [ ] #9 Provider-specific tests introduce new Active members and role changes after enumeration; supported revalidation updates protection before cleanup, and remaining provider race limits are documented
 <!-- AC:END -->
