@@ -1,10 +1,10 @@
 ---
 id: TASK-90
 title: Keep capture retryable when required labels cannot be fetched
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-14 09:05'
-updated_date: '2026-09-14 21:15'
+updated_date: '2026-09-14 21:17'
 labels: []
 milestone: m-5
 dependencies: []
@@ -44,4 +44,6 @@ Review base: 04da9bf. Reject failed required Gmail label retrieval in single and
 Implemented required-label failure handling in Gmail single and batch-fallback downloads. Confirmed empty batch labels bypass fallback; include_labels: false still omits labels. Archive regression covers both download modes, unaffected captures, unchanged retry cursor, a later successful retry, and frozen existing files and sidecars. Focused validation: 201 tests passed. Mutation validation: restoring the pre-fix provider causes both retry regressions and the empty-batch regression to fail. Independent review found no actionable defects.
 
 Full suite: 2627 passed, 1 expected failure; branch coverage 95.83%. All lint and dependency hooks passed. The first pre-push command reported file changes because task notes were updated while the suite ran; rerun with the working tree held stable before closing.
+
+Committed implementation and regression evidence. Full pre-push rerun passed with the working tree held stable; 2627 passed, 1 expected failure, 95.83% branch coverage. No historical resnapshot, schema, credentials, OAuth, or server mutation changes.
 <!-- SECTION:NOTES:END -->
