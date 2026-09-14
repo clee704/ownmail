@@ -14,6 +14,7 @@ from ownmail.config import (
     parse_secret_ref,
     validate_config,
 )
+from ownmail.download_lock import DownloadInProgress, DownloadLock
 from ownmail.keychain import KeychainStorage
 from ownmail.providers.gmail import GmailProvider
 from ownmail.providers.imap import discover_role_folders
@@ -400,7 +401,7 @@ def cmd_download(
     since: str | None = None,
     until: str | None = None,
     verbose: bool = False,
-) -> None:
+) -> bool:
     """Run download for one or all sources.
 
     Args:
@@ -410,6 +411,9 @@ def cmd_download(
         since: Only download emails after this date (YYYY-MM-DD)
         until: Only download emails before this date (YYYY-MM-DD)
         verbose: Show detailed progress output
+
+    Returns:
+        Whether all requested sources finished without errors or interruption.
     """
     print("\n" + "=" * 50)
     print("ownmail - Download")
@@ -443,6 +447,7 @@ def cmd_download(
     total_downloaded = 0
     total_errors = 0
     interrupted = False
+    skipped_source = False
 
     for source in sources:
         name = source["name"]
@@ -458,12 +463,14 @@ def cmd_download(
 
             if not secret_ref:
                 print(f"❌ Error: Source '{name}' missing auth.secret_ref")
+                skipped_source = True
                 continue
 
             try:
                 parse_secret_ref(secret_ref)  # Validate format
             except ValueError as e:
                 print(f"❌ Error: {e}")
+                skipped_source = True
                 continue
 
             # Create provider
@@ -570,6 +577,7 @@ def cmd_download(
 
         else:
             print(f"  Unknown source type: {source_type}")
+            skipped_source = True
             continue
 
         total_downloaded += result["success_count"]
@@ -584,6 +592,7 @@ def cmd_download(
     if interrupted:
         print("\n  Run 'download' again to resume.")
     print("=" * 50 + "\n")
+    return total_errors == 0 and not interrupted and not skipped_source
 
 
 def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
@@ -1030,12 +1039,14 @@ Examples:
             sys.exit(1)
 
     # Determine config file path for potential updates
-    config_path = args.config
+    config_path = args.config.resolve() if args.config else None
     if not config_path:
         # Check default locations
         cwd_config = Path.cwd() / "config.yaml"
         if cwd_config.exists():
             config_path = cwd_config
+        elif (SCRIPT_DIR / "config.yaml").exists():
+            config_path = SCRIPT_DIR / "config.yaml"
 
     # Determine archive_root
     if args.archive_root:
@@ -1054,12 +1065,16 @@ Examples:
             else:
                 sources_parser.print_help()
 
+        elif args.command == "download":
+            with DownloadLock(archive_root):
+                archive = EmailArchive(archive_root, config)
+                if not cmd_download(archive, config, args.source, args.since, args.until, args.verbose):
+                    sys.exit(1)
+
         else:
             archive = EmailArchive(archive_root, config)
 
-            if args.command == "download":
-                cmd_download(archive, config, args.source, args.since, args.until, args.verbose)
-            elif args.command == "search":
+            if args.command == "search":
                 cmd_search(archive, args.query, limit=args.limit)
             elif args.command == "stats":
                 cmd_stats(archive, config, args.source)
@@ -1145,6 +1160,9 @@ Examples:
                     reload=args.reload,
                 )
 
+    except DownloadInProgress as e:
+        print(f"\n{e}")
+        sys.exit(75)
     except KeyboardInterrupt:
         print("\n\nOperation interrupted by user.")
         sys.exit(1)

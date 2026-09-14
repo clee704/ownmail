@@ -23,6 +23,7 @@ from ownmail import roles
 from ownmail.archive import EmailArchive
 from ownmail.parser import EmailParser, _validate_decoded_text, extract_attachment_filename, is_attachment
 from ownmail.query import parse_query
+from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_web_config, serialize_config_writes
 
 # Regex to find external images in HTML
 EXTERNAL_IMAGE_RE = re.compile(
@@ -1051,6 +1052,7 @@ def create_app(
     app.config["brand_name"] = brand_name
     app.config["sanitizer"] = sanitizer or _PassthroughSanitizer()
     app.config["trash_expiry_days"] = 30
+    downloads = register_downloads(app, archive, config_path)
 
     # Auto-expire old trash on startup
     try:
@@ -1735,12 +1737,15 @@ def create_app(
             saved=request.args.get("saved") == "1",
             server_timezone=server_tz_label,
             timezone_list=_get_timezone_list_with_offsets(),
+            downloads=downloads.snapshot(),
+            download_intervals=DOWNLOAD_INTERVALS,
         )
 
     @app.route("/settings", methods=["POST"])
+    @serialize_config_writes
     def save_settings():
         """Save settings to config.yaml and update in-memory config."""
-        from ownmail.yaml_util import load_yaml, save_yaml
+        from ownmail.yaml_util import load_yaml
 
         config_path = app.config.get("config_path")
         if not config_path:
@@ -1803,7 +1808,7 @@ def create_app(
         app.config["trusted_senders"] = set(trusted_list)
 
         try:
-            save_yaml(config_data, config_path)
+            save_web_config(config_data, config_path)
         except Exception as e:
             if verbose:
                 print(f"[verbose] Error saving settings: {e}", flush=True)
@@ -1918,6 +1923,7 @@ def create_app(
         return redirect("/trash")
 
     @app.route("/trust-sender", methods=["POST"])
+    @serialize_config_writes
     def trust_sender():
         """Add a sender to the trusted senders list in config.yaml."""
         sender_email = request.form.get("email", "").strip().lower()
@@ -1936,7 +1942,7 @@ def create_app(
 
         try:
             # Read current config
-            from ownmail.yaml_util import load_yaml, save_yaml
+            from ownmail.yaml_util import load_yaml
 
             config_data = load_yaml(config_path)
 
@@ -1947,7 +1953,7 @@ def create_app(
                 trusted_list.append(sender_email)
 
                 # Write back
-                save_yaml(config_data, config_path)
+                save_web_config(config_data, config_path)
 
                 # Update in-memory set
                 app.config["trusted_senders"].add(sender_email)
@@ -1966,6 +1972,7 @@ def create_app(
         return redirect(redirect_to)
 
     @app.route("/untrust-sender", methods=["POST"])
+    @serialize_config_writes
     def untrust_sender():
         """Remove a sender from the trusted senders list."""
         sender_email = request.form.get("email", "").strip().lower()
@@ -1980,7 +1987,7 @@ def create_app(
         if config_path:
             try:
                 # Read current config
-                from ownmail.yaml_util import load_yaml, save_yaml
+                from ownmail.yaml_util import load_yaml
 
                 config_data = load_yaml(config_path)
 
@@ -1991,7 +1998,7 @@ def create_app(
                     trusted_list.remove(sender_email)
 
                     # Write back
-                    save_yaml(config_data, config_path)
+                    save_web_config(config_data, config_path)
 
                     if verbose:
                         print(f"[verbose] Removed trusted sender: {sender_email}", flush=True)
@@ -2105,6 +2112,8 @@ def run_server(
         reload: Reload Python source and templates without enabling debug mode
     """
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
+    import signal
+
     from ownmail.sanitizer import HtmlSanitizer
 
     sanitizer = HtmlSanitizer(verbose=verbose)
@@ -2158,7 +2167,25 @@ def run_server(
         browser_host = "localhost" if host in ("0.0.0.0", "::") else host
         threading.Timer(1.0, lambda: webbrowser.open(f"http://{browser_host}:{port}")).start()
 
+    previous_sigterm = None
+    if threading.current_thread() is threading.main_thread():
+
+        def stop_server(signum, frame):
+            raise SystemExit(0)
+
+        # Detached downloads need the same cleanup on SIGTERM as on Ctrl-C.
+        previous_sigterm = signal.signal(signal.SIGTERM, stop_server)
+
     try:
+        if not (reload or debug) or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            app.extensions["downloads"].start_scheduler()
         app.run(host=host, port=port, debug=debug, use_reloader=reload or debug)
     finally:
-        sanitizer.stop()
+        try:
+            app.extensions["downloads"].stop()
+        finally:
+            try:
+                sanitizer.stop()
+            finally:
+                if previous_sigterm is not None:
+                    signal.signal(signal.SIGTERM, previous_sigterm)

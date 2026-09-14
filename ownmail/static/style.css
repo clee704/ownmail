@@ -358,6 +358,16 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
 .ownmail-settings-theme-options { display: flex; flex-wrap: wrap; gap: var(--ownmail-space-4); margin-top: var(--ownmail-space-2); }
 .ownmail-settings-actions { display: flex; align-items: center; gap: var(--ownmail-space-3); }
 .ownmail-settings-saved { display: flex; align-items: center; gap: var(--ownmail-space-2); color: var(--ownmail-success); background: var(--ownmail-success-soft); border: 1px solid var(--ownmail-border); border-radius: var(--ownmail-radius); padding: var(--ownmail-space-2) var(--ownmail-space-3); margin-bottom: var(--ownmail-space-4); }
+.ownmail-download-form { margin-bottom: var(--ownmail-space-5); }
+.ownmail-download-description { margin: 0 0 var(--ownmail-space-3); }
+.ownmail-download-times { display: grid; grid-template-columns: auto 1fr; gap: var(--ownmail-space-1) var(--ownmail-space-3); margin: 0 0 var(--ownmail-space-4); color: var(--ownmail-secondary); font-size: var(--ownmail-text-xs); }
+.ownmail-download-times dd { margin: 0; overflow-wrap: anywhere; }
+.ownmail-download-schedule { display: flex; flex-wrap: wrap; gap: var(--ownmail-space-2); }
+.ownmail-download-schedule select { flex: 1 1 160px; width: auto; }
+.ownmail-download-schedule button { flex: none; }
+.ownmail-download-saved { color: var(--ownmail-success); }
+.ownmail-download-error, #ownmail-download-status[data-state="failed"] { color: var(--ownmail-danger); }
+.ownmail-download-schedule select:disabled { cursor: default; opacity: .45; }
 .ownmail-help, .ownmail-stats { color: var(--ownmail-muted); font-size: var(--ownmail-text-xs); }
 
 .ownmail-loading-overlay { display: none; position: fixed; inset: 0; background: var(--ownmail-overlay); z-index: 9999; justify-content: center; align-items: center; }

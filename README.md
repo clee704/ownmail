@@ -4,7 +4,8 @@
 
 Keep your mail as standard `.eml` files on your own drive. Search across accounts,
 browse labels, read HTML messages, and preview attachments in your browser.
-The command line handles downloads, imports, and archive maintenance.
+Start or schedule downloads in the web interface. The command line also handles
+downloads, imports, and archive maintenance.
 
 > **Development version:** This README describes `0.4.0-dev` on `master`.
 > [PyPI currently provides 0.3.0](https://pypi.org/project/ownmail/), which has an
@@ -94,6 +95,26 @@ sanitizer's Node.js dependencies and needs internet access. Once installed, loca
 reading and search work without internet; keep `ownmail serve` running while you
 browse. A phone also needs a connection to that server. See
 [browser and mobile access](docs/setup.md#browser-and-mobile-access).
+
+### Download from the browser
+
+Open **Settings → Downloads** and choose **Download now** to run the same download
+as `ownmail download`, using all configured sources and their existing filters.
+The page shows whether the download is running, finished, or failed, with its
+last and next run times. Command-line and web downloads cannot overlap for the
+same archive.
+
+For automatic downloads, choose an interval and **Save schedule**. Available
+intervals are 15 minutes, 30 minutes, 1 hour, 6 hours, and 1 day; **Off** disables
+the schedule. The default is Off, and the saved interval survives server restarts.
+Each interval starts after a download finishes or the server restarts.
+Keep `ownmail serve` running for scheduled downloads; the browser can be closed.
+The interval is stored as `web.download_interval_minutes` in `config.yaml` and
+applies to everyone using the server.
+
+Configure credentials with `ownmail setup` first. Download output stays in the
+server console. If Gmail needs renewed authorization, complete the existing
+sign-in flow on the server.
 
 ### What gets archived
 

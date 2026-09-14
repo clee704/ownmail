@@ -1242,7 +1242,9 @@ sources:
             mock_provider_class.return_value = mock_provider
 
             with patch.object(sys, "argv", ["ownmail", "download"]):
-                main()
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+                assert exc_info.value.code == 1
 
         captured = capsys.readouterr()
         assert "Error" in captured.out or "Download" in captured.out
@@ -1570,7 +1572,7 @@ class TestCmdDownloadSources:
         provider = MagicMock()
         with patch("ownmail.cli.GmailProvider", return_value=provider):
             with patch.object(archive, "backup", return_value=self._result(success=success)) as mock_backup:
-                cmd_download(archive, self._gmail_config())
+                assert cmd_download(archive, self._gmail_config()) is True
 
         provider.authenticate.assert_called_once()
         mock_backup.assert_called_once()
@@ -1616,7 +1618,7 @@ class TestCmdDownloadSources:
                 return_value=MagicMock(account=imap["account"], source_name="work"),
             ):
                 with patch.object(archive, "backup", side_effect=backup):
-                    cmd_download(archive, config)
+                    assert cmd_download(archive, config) is False
 
         per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
         assert per_source.count("Download Complete!") == 2
@@ -1636,7 +1638,7 @@ class TestCmdDownloadSources:
 
         archive = self._archive(temp_dir)
         with patch("ownmail.cli.GmailProvider") as mock_provider:
-            cmd_download(archive, self._gmail_config(auth={}))
+            assert cmd_download(archive, self._gmail_config(auth={})) is False
 
         mock_provider.assert_not_called()
         per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
@@ -1651,7 +1653,7 @@ class TestCmdDownloadSources:
         archive = self._archive(temp_dir)
         with patch("ownmail.cli.GmailProvider") as mock_provider:
             with patch("ownmail.cli.parse_secret_ref", side_effect=ValueError("bad ref")):
-                cmd_download(archive, self._gmail_config())
+                assert cmd_download(archive, self._gmail_config()) is False
 
         mock_provider.assert_not_called()
         per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
@@ -1671,7 +1673,7 @@ class TestCmdDownloadSources:
         with patch("ownmail.cli.GmailProvider"):
             with patch("ownmail.providers.imap.ImapProvider"):
                 with patch.object(archive, "backup", side_effect=results):
-                    cmd_download(archive, config)
+                    assert cmd_download(archive, config) is False
 
         per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
         assert "Download Paused!" in per_source
@@ -1686,7 +1688,7 @@ class TestCmdDownloadSources:
         archive = self._archive(temp_dir)
         with patch("ownmail.cli.GmailProvider"):
             with patch.object(archive, "backup", return_value=self._result(errors=3)):
-                cmd_download(archive, self._gmail_config())
+                assert cmd_download(archive, self._gmail_config()) is False
 
         assert "Errors: 3" in capsys.readouterr().out
 
@@ -1726,7 +1728,7 @@ class TestCmdDownloadSources:
         provider = MagicMock()
         with patch("ownmail.providers.imap.ImapProvider", return_value=provider) as mock_cls:
             with patch.object(archive, "backup", return_value=self._result()):
-                cmd_download(archive, self._imap_config(port=1993, exclude_folders=["Spam"]))
+                assert cmd_download(archive, self._imap_config(port=1993, exclude_folders=["Spam"])) is True
 
         kwargs = mock_cls.call_args.kwargs
         assert kwargs["host"] == "imap.example.com"
@@ -1756,7 +1758,7 @@ class TestCmdDownloadSources:
         from ownmail.cli import cmd_download
 
         archive = self._archive(temp_dir)
-        cmd_download(archive, {"sources": [{"name": "x", "type": "pop3", "account": "a@example.com"}]})
+        assert cmd_download(archive, {"sources": [{"name": "x", "type": "pop3", "account": "a@example.com"}]}) is False
 
         per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
         assert "Unknown source type: pop3" in per_source
