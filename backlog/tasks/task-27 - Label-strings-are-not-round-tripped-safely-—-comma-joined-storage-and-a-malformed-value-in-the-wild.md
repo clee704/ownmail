@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-07-26 05:31'
-updated_date: '2026-09-13 08:05'
+updated_date: '2026-09-14 03:55'
 labels:
   - bug
 dependencies: []
@@ -49,4 +49,6 @@ Full pre-push hooks passed, including the complete test suite and 95% branch-cov
 Applied the bounded metadata repair to a real archive after an exact dry-run match and a consistent database backup. Verified original sidecar backups, unchanged email bytes and email records, only the expected normalized-label row replacements, database integrity, a clean rerun, and corrected navigation in the running web application. No unrelated label discrepancies required repair.
 
 The maintainer approved landing the reviewed fix locally on master without a PR. The complete pre-push gate passed on an isolated snapshot containing the reviewed changes and the current master base; the integrated suite passed with 95.55% branch coverage. Independent integration review confirmed that later UI changes were preserved. All acceptance criteria are verified. No branch or base history was pushed.
+
+Privacy audit follow-up: `fix/label-round-trip` is a stale TASK-27 branch whose ancestry retains private data removed from published history. Do not push or merge it. The fix is already on cleaned `master`; TASK-27 remains Done. Start further work from current `master`, transplanting only reviewed, sanitized changes if needed. The old branch and worktree remain local.
 <!-- SECTION:NOTES:END -->
