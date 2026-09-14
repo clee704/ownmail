@@ -4,7 +4,7 @@ title: Thread-aware server cleanup — retain copies while a thread is active
 status: In Progress
 assignee: []
 created_date: '2026-08-06 19:51'
-updated_date: '2026-09-14 21:25'
+updated_date: '2026-09-14 21:39'
 labels: []
 milestone: m-5
 dependencies:
@@ -81,4 +81,6 @@ TASK-90 is complete. TASK-28 awaits explicit approval of the external Active-cac
 Partial implementation checkpoint: Gmail reads current candidate and thread state without capture filters; the base provider holds unsupported IMAP checks. Synthetic archive integration passes for Sent and filed candidates: capture proceeds while a sibling is Active, and later server activity preserves owned bytes and labels. Blocking AC #2: current public provider contracts do not prove finished state for all filed/received Gmail members (Scheduled differs from Draft), and IMAP does not establish complete account-wide thread visibility. The implementation holds those cases instead of claiming full cleanup eligibility. Next action: establish supported provider evidence for those states or obtain an explicit scope decision on unavailable cleanup paths; keep TASK-38 open and TASK-14.2 dependent. Continue the independent TASK-5.4 after a reviewed, committed checkpoint.
 
 Reviewed partial checkpoint against 4deb404. Provider regression suite and archive integration pass; checks cover read-only queries, source/account isolation, fresh activity changes, malformed and failed requests, Ctrl-C propagation, and unsupported IMAP state. Two isolated mutations (ignoring Active protection and ignoring unknown finished state) were rejected by the tests. Known candidate activity survives a failed thread read. Sent copies with otherwise unknown labels require a fresh user-label catalog entry; unknown system labels remain held. Review raised a hypothetical Scheduled-member omission but found no reproducing evidence; completeness follows the documented Thread.messages member-list contract, with unfinished-state limits still recorded above. ACs #2, #3, and #9 remain open for broader clearance and cleanup integration. Full repository checks will run before the session ends.
+
+Checkpoint commit: b18454c. Final pre-commit run -a --hook-stage pre-push passed with OWNMAIL_REQUIRE_BROWSER_TESTS=1; total branch coverage 95.97%. Remaining ACs #2, #3, and #9 are not waived. No cleanup mutation is enabled; resume from the provider-evidence blocker above.
 <!-- SECTION:NOTES:END -->

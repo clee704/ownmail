@@ -4,7 +4,7 @@ title: Optional purge — trash archived mail on the server once verified
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-14 21:14'
+updated_date: '2026-09-14 21:32'
 labels: []
 milestone: m-5
 dependencies:
@@ -93,6 +93,8 @@ superseded by this design.
 
 <!-- SECTION:NOTES:BEGIN -->
 Approval checkpoint, 2026-09-14: implementation still requires explicit server-cleanup sign-off, plus separate Gmail OAuth sign-off if enabled. Proposed boundary: opt-in command, dry-run by default, fresh archive hash/sidecar and source/account identity verification, fresh candidate/thread checks, provider Trash only, no hard deletion or local archive deletion. Keep Gmail read-only credentials for non-cleanup users; request gmail.modify only through an explicit cleanup authorization/re-consent path. IMAP mutation must remain unavailable wherever complete thread state or safe Trash semantics cannot be verified. Next action: finish TASK-28/TASK-38, obtain these sign-offs, then implement and deliver through a PR; do not run cleanup on a real account as part of implementation.
+
+Legacy metadata qualification must be explicit: existing sidecars do not distinguish deliberately omitted/empty labels from captures finalized before TASK-90 after label failure. Cleanup cannot infer complete required-label acquisition from an empty legacy sidecar or resnapshot owned labels automatically. Establish durable capture-completeness evidence for qualifying copies, and retain ambiguous legacy copies until their eligibility can be proved.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

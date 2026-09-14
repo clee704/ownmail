@@ -4,7 +4,7 @@ title: Keep capture retryable when required labels cannot be fetched
 status: Done
 assignee: []
 created_date: '2026-09-14 09:05'
-updated_date: '2026-09-14 21:17'
+updated_date: '2026-09-14 21:39'
 labels: []
 milestone: m-5
 dependencies: []
@@ -46,4 +46,6 @@ Implemented required-label failure handling in Gmail single and batch-fallback d
 Full suite: 2627 passed, 1 expected failure; branch coverage 95.83%. All lint and dependency hooks passed. The first pre-push command reported file changes because task notes were updated while the suite ran; rerun with the working tree held stable before closing.
 
 Committed implementation and regression evidence. Full pre-push rerun passed with the working tree held stable; 2627 passed, 1 expected failure, 95.83% branch coverage. No historical resnapshot, schema, credentials, OAuth, or server mutation changes.
+
+Implementation commit: 4d25a77. Included in the final successful full pre-push gate with required browser tests.
 <!-- SECTION:NOTES:END -->

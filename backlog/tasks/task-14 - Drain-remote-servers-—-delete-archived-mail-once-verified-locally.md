@@ -4,7 +4,7 @@ title: Mail ownership workstream
 status: In Progress
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-14 21:11'
+updated_date: '2026-09-14 21:39'
 labels: []
 milestone: m-5
 dependencies:
@@ -112,8 +112,8 @@ implementation changes.
 - [ ] #3 Cleanup requires an owned archive copy whose local .eml is re-hashed at cleanup time and matches its recorded content hash; an Active cached copy never qualifies
 - [ ] #4 Cleanup sweeps eligible server copies of previously captured messages as well as messages captured in the current run
 - [ ] #5 Current server state and TASK-38 thread protection prevent cleanup of Active messages and live threads, including a previously captured message returned to Inbox
-- [ ] #6 The existing capture filter uses canonical system roles rather than raw provider folder strings (TASK-14.1)
-- [ ] #7 Provider capture filtering uses the shared role mechanism (TASK-14.1)
+- [x] #6 The existing capture filter uses canonical system roles rather than raw provider folder strings (TASK-14.1)
+- [x] #7 Provider capture filtering uses the shared role mechanism (TASK-14.1)
 - [ ] #8 Active Inbox and unfinished outgoing mail stay protected from cleanup regardless of whether their contents have been downloaded
 - [ ] #9 Dry-run is the default for cleanup: reports what would be trashed, per account, and changes nothing
 - [ ] #10 Verification failure, missing archive files, or incomplete server/thread state skips affected messages and reports the reason without aborting the run
@@ -154,4 +154,6 @@ TASK-17 and TASK-18 were pulled out as standalone because they are defects in to
 Full hole audit — eight findings with file:line — is in TASK-14.1's Implementation Notes.
 
 2026-09-14: Established Mail ownership as a named workstream with fixed remaining membership, task-local progress, and a repository-level continuation route. Setup changes no feature status or implementation acceptance evidence.
+
+2026-09-14 checkpoint: TASK-90 is Done (4d25a77). TASK-38 has a tested, reviewed read-only protection checkpoint (b18454c), with broad provider clearance still blocked. TASK-5.4 has a tested, reviewed owned-label editor (371855b), with Active/cleanup integration ACs still open. TASK-28 awaits explicit approval for its separate Active-cache schema and disposable cache-file replacement/removal. TASK-14.2 awaits its dependencies and separate server-cleanup/OAuth approvals. Approval requests were presented and have not been answered; no dependent implementation or real-account cleanup was performed. Existing canonical capture-role filtering remains verified. Final full pre-push checks passed with required browser tests and 95.97% branch coverage. No member is currently eligible for further implementation without the recorded approvals or provider-state evidence; resume from those task-local next actions. The workstream remains incomplete.
 <!-- SECTION:NOTES:END -->
