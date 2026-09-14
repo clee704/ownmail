@@ -1,10 +1,10 @@
 ---
 id: TASK-81
 title: Run downloads and configure a schedule from the web interface
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-14 06:59'
-updated_date: '2026-09-14 07:11'
+updated_date: '2026-09-14 07:12'
 labels: []
 dependencies: []
 type: feature
@@ -39,4 +39,6 @@ User-directed feature; the unrelated repository-governance task remains In Progr
 CLI outcomes and archive locking, server scheduling, and web routes are implemented. Targeted tests verify real competing CLI processes, config persistence across app recreation, interval disabling, failure responses, same-origin request checks, and reloader ownership. Browser verification, independent review, and the full pre-push gate remain pending.
 
 Full pre-push checks pass with browser tests required. Real Chromium tests cover download feedback, duplicate clicks, polling recovery, unsaved settings, schedule saves and failures, and phone layout; desktop and phone screenshots were inspected. Independent review identified config-write races and detached children surviving SIGTERM. Shared config locking and atomic replacement fix the races; scoped signal handling stops and reaps downloads on server shutdown. Both fixes have concurrency or real-process regressions. Mutation checks confirmed the tests detect missing persistence, locking, UI draft protection, and shutdown handling. No runtime dependencies, credential or OAuth behavior, database schema, or archive deletion behavior changed.
+
+Implementation committed as ab95996 after all acceptance criteria and full pre-push checks passed.
 <!-- SECTION:NOTES:END -->
