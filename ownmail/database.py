@@ -10,6 +10,16 @@ from ownmail import roles
 from ownmail.query import parse_query
 
 
+def set_db_labels(conn: sqlite3.Connection, rowid: int, labels: list[str], email_date) -> None:
+    """Replace an email's derived label rows."""
+    conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
+    for label in labels:
+        conn.execute(
+            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
+            (rowid, label, email_date),
+        )
+
+
 class ArchiveDatabase:
     """SQLite database for tracking emails and full-text search.
 
@@ -507,6 +517,14 @@ class ArchiveDatabase:
             ).fetchall()
             return [row[0] for row in rows]
 
+    def set_labels_for_email(self, email_id: str, labels: list[str]) -> None:
+        """Update the label index after the authoritative sidecar is saved."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute("SELECT rowid, email_date FROM emails WHERE email_id = ?", (email_id,)).fetchone()
+            if row is None:
+                raise sqlite3.IntegrityError("Archived message is no longer indexed.")
+            set_db_labels(conn, row[0], labels, row[1])
+
     def get_label_counts(self) -> dict[str, int]:
         """Count searchable emails per label, for the sidebar.
 
@@ -868,13 +886,8 @@ class ArchiveDatabase:
                 labels = [
                     row[0] for row in conn.execute("SELECT label FROM email_labels WHERE email_rowid = ?", (rowid,))
                 ]
-            conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
             label_date = email_date or existing_email_date
-            for label in labels:
-                conn.execute(
-                    "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                    (rowid, label, label_date),
-                )
+            set_db_labels(conn, rowid, labels, label_date)
 
             # Update FTS (contentless mode - we manage manually)
             if was_indexed:

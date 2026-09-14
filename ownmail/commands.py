@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ownmail import reconcile, roles, sidecar
 from ownmail.archive import EmailArchive
-from ownmail.database import ArchiveDatabase
+from ownmail.database import ArchiveDatabase, set_db_labels
 from ownmail.parser import EmailParser
 
 
@@ -499,12 +499,7 @@ def _reconcile_label_sidecars(
 
             if sorted(sidecar_labels) != sorted(db_labels):
                 # Sidecar wins - rewrite the DB to match it.
-                conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
-                for label in sidecar_labels:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                        (rowid, label, email_date),
-                    )
+                set_db_labels(conn, rowid, sidecar_labels, email_date)
                 reconciled += 1
                 changed = True
                 if debug:
@@ -681,12 +676,7 @@ def _index_email_for_rebuild(
             email_date_row = conn.execute("SELECT email_date FROM emails WHERE rowid = ?", (rowid,)).fetchone()
             email_date = email_date_row[0] if email_date_row else None
 
-            conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
-            for label in labels_list:
-                conn.execute(
-                    "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-                    (rowid, label, email_date),
-                )
+            set_db_labels(conn, rowid, labels_list, email_date)
 
         return True
     except Exception as e:
@@ -1308,16 +1298,6 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
         print(f"update-labels is not supported for source type '{source_type}'")
 
 
-def _set_db_labels(conn, rowid: int, labels: list[str], email_date) -> None:
-    """Replace an email's rows in email_labels with ``labels``."""
-    conn.execute("DELETE FROM email_labels WHERE email_rowid = ?", (rowid,))
-    for label in labels:
-        conn.execute(
-            "INSERT OR IGNORE INTO email_labels (email_rowid, label, email_date) VALUES (?, ?, ?)",
-            (rowid, label, email_date),
-        )
-
-
 def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> None:
     """Backfill labels for IMAP emails from the folder in their provider_id.
 
@@ -1360,11 +1340,11 @@ def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> No
             if sidecar_labels is not None:
                 # Files are the source of truth — rebuild the DB from disk
                 # rather than flattening disk to one folder name.
-                _set_db_labels(conn, rowid, sidecar_labels, email_date)
+                set_db_labels(conn, rowid, sidecar_labels, email_date)
                 restored_count += 1
                 continue
 
-            _set_db_labels(conn, rowid, [folder], email_date)
+            set_db_labels(conn, rowid, [folder], email_date)
             sidecar.write_labels(filepath, [folder])
             success_count += 1
 
@@ -1446,7 +1426,7 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> N
                         continue
                     rowid, email_date = row
 
-                    _set_db_labels(conn, rowid, labels, email_date)
+                    set_db_labels(conn, rowid, labels, email_date)
 
                     if sidecar_labels is None:
                         sidecar.write_labels(filepath, labels)
@@ -1647,7 +1627,7 @@ def _relabel_source(
                     # interrupt between the two writes leaves the repair on
                     # disk and only the rebuildable index behind.
                     sidecar.write_labels(filepath, new_labels)
-                    _set_db_labels(conn, rowid, new_labels, email_date)
+                    set_db_labels(conn, rowid, new_labels, email_date)
                     if len(changed) % 500 == 0:
                         conn.commit()
                         print(f"  Rewritten {len(changed)}...\033[K", end="\r", flush=True)

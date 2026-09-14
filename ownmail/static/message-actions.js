@@ -49,7 +49,7 @@
                 } catch (error) {}
                 action.navigate();
             } else if (action.onSuccess) {
-                action.onSuccess();
+                await action.onSuccess(response);
             }
             return true;
         } catch (error) {

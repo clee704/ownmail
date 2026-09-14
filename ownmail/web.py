@@ -1575,6 +1575,24 @@ def create_app(
             is_trashed=email_data.get("is_trashed", False),
         )
 
+    @app.route("/labels/<email_id>", methods=["GET", "POST"])
+    def local_labels(email_id: str):
+        """Read or replace the labels owned by an archived copy."""
+        try:
+            if request.method == "GET":
+                return {"labels": archive.get_local_labels(email_id)}
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict) or "labels" not in data:
+                return {"error": "Provide a list of labels."}, 400
+            indexed = archive.set_local_labels(email_id, data["labels"])
+            return {"indexed": indexed}
+        except FileNotFoundError:
+            return {"error": "Archived message file is unavailable."}, 404
+        except ValueError as error:
+            return {"error": str(error)}, 400
+        except (OSError, sqlite3.Error):
+            return {"error": "Labels could not be read or saved. Please try again."}, 503
+
     @app.route("/raw/<email_id>")
     def view_raw(email_id: str):
         """Show the original .eml file with filepath."""

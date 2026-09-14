@@ -65,10 +65,11 @@ already removed. A thread left active indefinitely stays on the server.
 ## Current implementation
 
 Ownmail already archives eligible mail, preserves message files and label
-sidecars, and supports local reading, search, and Trash. Downloads currently
-exclude Inbox and Drafts by default; allowing them captures permanent copies,
+sidecars, and supports local reading, search, Trash, and label editing. Downloads
+currently exclude Inbox and Drafts by default; allowing them captures permanent copies,
 without the Active ownership distinction.
 
 The [Mail ownership workstream](<../backlog/tasks/task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md>)
-tracks the remaining implementation: reliable label capture, the Active view,
-local label editing, and server cleanup with thread protection.
+tracks the remaining Active view, server cleanup with thread protection, and
+their integration with local label editing. Gmail capture retries failed
+required label retrieval without finalizing an empty snapshot.

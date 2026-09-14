@@ -9,6 +9,7 @@ import hashlib
 import os
 import signal
 import sqlite3
+import stat
 import sys
 import tempfile
 import time
@@ -18,7 +19,7 @@ from email.utils import parsedate_to_datetime as _parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
-from ownmail import sidecar
+from ownmail import roles, sidecar
 from ownmail.config import get_db_dir
 from ownmail.database import ArchiveDatabase
 from ownmail.download_progress import DownloadProgress
@@ -67,6 +68,61 @@ class EmailArchive:
             Path to emails directory
         """
         return self.archive_dir / "sources" / source_name
+
+    def _local_label_metadata(self, email_id: str) -> tuple[Path, dict]:
+        """Read owned metadata without replacing an unreadable sidecar."""
+        row = self.db.get_email_by_id(email_id)
+        if not row or not isinstance(row[1], str):
+            raise FileNotFoundError("Archived message file is unavailable.")
+        filepath = self.archive_dir / row[1]
+        try:
+            resolved = filepath.resolve(strict=True)
+        except (OSError, RuntimeError) as error:
+            raise FileNotFoundError("Archived message file is unavailable.") from error
+        archive_root = self.archive_dir.resolve()
+        if (
+            not resolved.is_relative_to(archive_root)
+            or not resolved.is_file()
+            or not filepath.parent.resolve().is_relative_to(archive_root)
+        ):
+            raise FileNotFoundError("Archived message file is unavailable.")
+
+        # Scan and rebuild associate metadata with the tracked path, including aliases.
+        metadata_path = sidecar.sidecar_path(filepath)
+        try:
+            metadata_stat = metadata_path.lstat()
+        except FileNotFoundError:
+            metadata = {"version": sidecar.SIDECAR_VERSION, "labels": self.db.get_labels_for_email(email_id)}
+        else:
+            if not stat.S_ISREG(metadata_stat.st_mode):
+                raise ValueError("Label metadata must be a regular file in the archive.")
+            metadata = sidecar.read_metadata(filepath)
+            if metadata is None or not isinstance(metadata.get("labels"), list):
+                raise ValueError("Label metadata is unreadable or malformed.")
+        if any(not isinstance(label, str) or not label.strip() for label in metadata["labels"]):
+            raise ValueError("Label metadata is unreadable or malformed.")
+        return filepath, metadata
+
+    def get_local_labels(self, email_id: str) -> list[str]:
+        """Return an owned message's exact labels, preferring its sidecar."""
+        _filepath, metadata = self._local_label_metadata(email_id)
+        return list(dict.fromkeys(metadata["labels"]))
+
+    def set_local_labels(self, email_id: str, labels: list[str]) -> bool:
+        """Save owned labels; return False if their index needs rebuilding."""
+        if not isinstance(labels, list) or any(not isinstance(label, str) or not label.strip() for label in labels):
+            raise ValueError("Labels must be a list of nonblank strings.")
+        if any(label in roles.EPHEMERAL_LABELS for label in labels):
+            raise ValueError("The label 'UNREAD' is not supported.")
+
+        filepath, metadata = self._local_label_metadata(email_id)
+        metadata["labels"] = list(dict.fromkeys(labels))
+        sidecar.write_metadata(filepath, metadata)
+        try:
+            self.db.set_labels_for_email(email_id, metadata["labels"])
+        except sqlite3.Error:
+            return False
+        return True
 
     @property
     def trash_dir(self) -> Path:

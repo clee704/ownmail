@@ -13,6 +13,7 @@
             <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
                 <a href="/raw/{{ email_id }}" title="Show original message">{{ icon('file') }}<span>Original</span></a>
                 <a href="/download/{{ email_id }}" title="Download message">{{ icon('download') }}<span>Download</span></a>
+                <button type="button" id="ownmail-edit-labels" data-message-action aria-expanded="false" aria-controls="ownmail-label-editor">{{ icon('label') }}<span>Edit labels</span></button>
                 {% if body_html %}
                 <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-content" hidden>Show actual size</button>
                 {% endif %}
@@ -64,6 +65,27 @@
                 {% endif %}
             </dl>
         </header>
+
+        <section class="ownmail-label-editor" id="ownmail-label-editor" aria-labelledby="ownmail-label-editor-title" data-url="{{ url_for('local_labels', email_id=email_id) }}" hidden>
+            <h3 id="ownmail-label-editor-title">Edit labels</h3>
+            <p>These labels belong to your archived copy. Server labels stay unchanged.</p>
+            <p id="ownmail-label-status" role="status" aria-live="polite"></p>
+            <ul id="ownmail-label-items" aria-label="Saved labels"></ul>
+            <p id="ownmail-label-empty" hidden>No labels.</p>
+            <p>System labels may appear under a shared name in navigation.</p>
+            <p id="ownmail-label-history" hidden></p>
+            <form id="ownmail-label-form">
+                <label for="ownmail-label-input">Add a label</label>
+                <div class="ownmail-label-add">
+                    <input type="text" id="ownmail-label-input" autocomplete="off" data-message-action disabled>
+                    <button type="button" class="ownmail-button" id="ownmail-label-add" data-message-action disabled>Add</button>
+                </div>
+                <div class="ownmail-label-editor-actions">
+                    <button type="submit" class="ownmail-button" id="ownmail-label-save" data-message-action disabled>Save labels</button>
+                    <button type="button" class="ownmail-button" id="ownmail-label-close" data-message-action>Close</button>
+                </div>
+            </form>
+        </section>
 
         <div class="ownmail-email-content-area" data-supports-dark="{{ 'true' if supports_dark else 'false' }}">
         {% if images_blocked and has_external_images %}
@@ -351,4 +373,5 @@ function deleteForever(emailId) {
     });
 }
 </script>
+<script src="{{ url_for('static', filename='label-editor.js') }}"></script>
 {% endblock %}

@@ -25,6 +25,24 @@ as well. These files can contain sensitive information; ownmail does not encrypt
 them. A separate `db_dir` can place the index on a faster drive while the archive
 stays on external storage.
 
+## Editing labels
+
+Open a message, choose **More message actions → Edit labels**, add or remove
+individual labels, and select **Save labels**. Removing every label saves an
+intentional empty set. Label names retain punctuation and whitespace.
+
+Edits apply to the owned copy and never update a server label. The editor shows
+the exact saved names, including historical `INBOX` and `DRAFT` labels that
+navigation hides. Exact `UNREAD` is reserved for mail-client state and must be
+removed before saving. Other system labels may be grouped in navigation.
+
+The sidecar is saved atomically before the search index is updated. If the
+editor reports that labels were saved but search could not be updated, save
+again to retry indexing. `ownmail rebuild --only sidecars` also restores the
+index from saved sidecars. Downloads, `update-labels`, and rebuilds preserve
+edited labels, including an empty set. An unreadable existing sidecar blocks
+editing so its other metadata cannot be discarded.
+
 ## Download filters
 
 By default, messages in **Inbox**, **Drafts**, **Trash**, or **Spam** are not
