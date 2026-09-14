@@ -50,5 +50,5 @@ Applied the bounded metadata repair to a real archive after an exact dry-run mat
 
 The maintainer approved landing the reviewed fix locally on master without a PR. The complete pre-push gate passed on an isolated snapshot containing the reviewed changes and the current master base; the integrated suite passed with 95.55% branch coverage. Independent integration review confirmed that later UI changes were preserved. All acceptance criteria are verified. No branch or base history was pushed.
 
-Privacy audit follow-up: `fix/label-round-trip` is a stale TASK-27 branch whose ancestry retains private data removed from published history. Do not push or merge it. The fix is already on cleaned `master`; TASK-27 remains Done. Start further work from current `master`, transplanting only reviewed, sanitized changes if needed. The old branch and worktree remain local.
+Privacy audit follow-up: the fix is already on cleaned `master`; TASK-27 remains Done. With maintainer approval, the stale `fix/label-round-trip` branch and its clean worktree were deleted because their ancestry retained private data removed from published history. Start further work from current `master`; do not restore, push, or merge the old branch.
 <!-- SECTION:NOTES:END -->
