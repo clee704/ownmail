@@ -440,6 +440,10 @@ def cmd_download(
     except Exception:
         pass
 
+    total_downloaded = 0
+    total_errors = 0
+    interrupted = False
+
     for source in sources:
         name = source["name"]
         source_type = source["type"]
@@ -567,6 +571,19 @@ def cmd_download(
         else:
             print(f"  Unknown source type: {source_type}")
             continue
+
+        total_downloaded += result["success_count"]
+        total_errors += result["error_count"]
+        interrupted = interrupted or result["interrupted"]
+
+    print("\n" + "=" * 50)
+    print("Overall Download Summary")
+    print(f"  Downloaded: {total_downloaded:,} emails")
+    print(f"  Errors: {total_errors:,}")
+    print(f"  Total archived: {archive.db.get_email_count():,} emails")
+    if interrupted:
+        print("\n  Run 'download' again to resume.")
+    print("=" * 50 + "\n")
 
 
 def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:

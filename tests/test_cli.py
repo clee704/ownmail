@@ -1561,21 +1561,74 @@ class TestCmdDownloadSources:
         source.update(overrides)
         return {"sources": [source]}
 
-    def test_gmail_source_downloads(self, temp_dir, capsys):
+    @pytest.mark.parametrize("success", [0, 2])
+    def test_gmail_source_downloads(self, temp_dir, capsys, success):
         """A gmail_api source should authenticate and back up."""
         from ownmail.cli import cmd_download
 
         archive = self._archive(temp_dir)
         provider = MagicMock()
         with patch("ownmail.cli.GmailProvider", return_value=provider):
-            with patch.object(archive, "backup", return_value=self._result()) as mock_backup:
+            with patch.object(archive, "backup", return_value=self._result(success=success)) as mock_backup:
                 cmd_download(archive, self._gmail_config())
 
         provider.authenticate.assert_called_once()
         mock_backup.assert_called_once()
-        out = capsys.readouterr().out
-        assert "Download Complete!" in out
-        assert "Downloaded: 2 emails" in out
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert "Download Complete!" in per_source
+        assert f"Downloaded: {success} emails" in per_source
+        assert f"Downloaded: {success} emails" in overall
+        assert "Errors: 0" in overall
+        assert "Total archived: 0 emails" in overall
+        assert "resume" not in overall
+
+    @pytest.mark.parametrize("same_account", [False, True])
+    def test_overall_summary_sums_downloads_and_counts_archive(self, temp_dir, capsys, same_account):
+        """Run totals include both providers; archive counts include each row once."""
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        gmail = self._gmail_config()["sources"][0]
+        imap = self._imap_config(account=gmail["account"] if same_account else "alice@example.com")["sources"][0]
+        config = {"sources": [gmail, imap]}
+        for provider_id, account in [
+            ("old-personal", gmail["account"]),
+            ("old-work", imap["account"]),
+            ("old-import", "import@example.com"),
+        ]:
+            archive.db.mark_downloaded(_eid(provider_id, account), provider_id, f"{provider_id}.eml", account=account)
+
+        results = iter([self._result(success=1234, errors=2), self._result(success=567, errors=1000)])
+
+        def backup(provider, **kwargs):
+            provider_id = f"new-{provider.source_name}"
+            archive.db.mark_downloaded(
+                _eid(provider_id, provider.account), provider_id, f"{provider_id}.eml", account=provider.account
+            )
+            # Successful content-dedup skips do not add archive rows.
+            return next(results)
+
+        with patch(
+            "ownmail.cli.GmailProvider", return_value=MagicMock(account=gmail["account"], source_name="personal")
+        ):
+            with patch(
+                "ownmail.providers.imap.ImapProvider",
+                return_value=MagicMock(account=imap["account"], source_name="work"),
+            ):
+                with patch.object(archive, "backup", side_effect=backup):
+                    cmd_download(archive, config)
+
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert per_source.count("Download Complete!") == 2
+        assert "Downloaded: 1234 emails" in per_source
+        assert "Downloaded: 567 emails" in per_source
+        assert "Errors: 2" in per_source
+        assert "Errors: 1000" in per_source
+        assert "Downloaded: 1,801 emails" in overall
+        assert "Errors: 1,002" in overall
+        assert "Total archived: 5 emails" in overall
+        assert "Source:" not in overall
+        assert "Download Complete!" not in overall
 
     def test_gmail_missing_secret_ref_is_skipped(self, temp_dir, capsys):
         """A source without auth.secret_ref should be skipped with a message."""
@@ -1586,7 +1639,10 @@ class TestCmdDownloadSources:
             cmd_download(archive, self._gmail_config(auth={}))
 
         mock_provider.assert_not_called()
-        assert "missing auth.secret_ref" in capsys.readouterr().out
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert "missing auth.secret_ref" in per_source
+        assert "Downloaded: 0 emails" in overall
+        assert "Errors: 0" in overall
 
     def test_gmail_malformed_secret_ref_is_skipped(self, temp_dir, capsys):
         """An unparseable secret_ref should be reported and skipped."""
@@ -1598,20 +1654,30 @@ class TestCmdDownloadSources:
                 cmd_download(archive, self._gmail_config())
 
         mock_provider.assert_not_called()
-        assert "bad ref" in capsys.readouterr().out
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert "bad ref" in per_source
+        assert "Downloaded: 0 emails" in overall
+        assert "Errors: 0" in overall
 
-    def test_interrupted_download_reports_resume(self, temp_dir, capsys):
+    @pytest.mark.parametrize("interrupted_source", [0, 1])
+    def test_interrupted_download_reports_resume(self, temp_dir, capsys, interrupted_source):
         """An interrupted run should tell the user how to resume."""
         from ownmail.cli import cmd_download
 
         archive = self._archive(temp_dir)
+        config = {"sources": self._gmail_config()["sources"] + self._imap_config()["sources"]}
+        results = [self._result(success=1), self._result(success=2)]
+        results[interrupted_source]["interrupted"] = True
         with patch("ownmail.cli.GmailProvider"):
-            with patch.object(archive, "backup", return_value=self._result(success=1, interrupted=True)):
-                cmd_download(archive, self._gmail_config())
+            with patch("ownmail.providers.imap.ImapProvider"):
+                with patch.object(archive, "backup", side_effect=results):
+                    cmd_download(archive, config)
 
-        out = capsys.readouterr().out
-        assert "Download Paused!" in out
-        assert "Run 'download' again to resume" in out
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert "Download Paused!" in per_source
+        assert "Run 'download' again to resume" in per_source
+        assert "Downloaded: 3 emails" in overall
+        assert "Run 'download' again to resume" in overall
 
     def test_errors_are_reported(self, temp_dir, capsys):
         """A run with errors should surface the error count."""
@@ -1692,7 +1758,11 @@ class TestCmdDownloadSources:
         archive = self._archive(temp_dir)
         cmd_download(archive, {"sources": [{"name": "x", "type": "pop3", "account": "a@example.com"}]})
 
-        assert "Unknown source type: pop3" in capsys.readouterr().out
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert "Unknown source type: pop3" in per_source
+        assert "Downloaded: 0 emails" in overall
+        assert "Errors: 0" in overall
+        assert "Total archived: 0 emails" in overall
 
     def test_named_source_selects_one(self, temp_dir, capsys):
         """--source should restrict the run to that source."""
@@ -1700,13 +1770,21 @@ class TestCmdDownloadSources:
 
         archive = self._archive(temp_dir)
         config = {"sources": self._gmail_config()["sources"] + self._imap_config()["sources"]}
+        other_account = config["sources"][0]["account"]
+        archive.db.mark_downloaded(_eid("old", other_account), "old", "old.eml", account=other_account)
         with patch("ownmail.providers.imap.ImapProvider"):
             with patch("ownmail.cli.GmailProvider") as mock_gmail:
-                with patch.object(archive, "backup", return_value=self._result()):
+                with patch.object(archive, "backup", return_value=self._result(errors=3)) as mock_backup:
                     cmd_download(archive, config, source_name="work")
 
         mock_gmail.assert_not_called()
-        assert "Source: work" in capsys.readouterr().out
+        mock_backup.assert_called_once()
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert "Source: work" in per_source
+        assert "Source: personal" not in per_source
+        assert "Downloaded: 2 emails" in overall
+        assert "Errors: 3" in overall
+        assert "Total archived: 1 emails" in overall
 
     def test_unknown_source_name_exits(self, temp_dir, capsys):
         """An unknown --source name should exit with an error."""

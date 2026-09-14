@@ -145,6 +145,10 @@ The web interface includes search help with supported operators and examples.
 Run `ownmail <command> --help` for options. See
 [archive storage, verification, and repairs](docs/archive.md) for maintenance.
 
+`download` ends with an overall summary of downloaded emails, errors, and the
+current archive size. With `--source`, download and error counts cover that
+source; the archived total still covers the whole archive.
+
 ## Privacy and security
 
 Credentials are stored in the system keychain. Messages, attachments, label
