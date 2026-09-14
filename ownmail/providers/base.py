@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 
+from ownmail.thread_protection import ThreadProtection
+
 
 class EmailProvider(ABC):
     """Abstract base class for email providers.
@@ -113,3 +115,16 @@ class EmailProvider(ABC):
             Provider-specific sync state string, or None if not available
         """
         ...
+
+    def check_thread_protection(self, message_id: str) -> ThreadProtection:
+        """Hold cleanup when complete current thread state is unavailable.
+
+        Capture filters and header matches cannot establish that a server
+        thread is inactive. Providers override this only with fresh evidence.
+        """
+        return ThreadProtection(
+            source_name=self.source_name,
+            account=self.account,
+            message_id=message_id,
+            reason="Provider cannot establish complete thread state",
+        )

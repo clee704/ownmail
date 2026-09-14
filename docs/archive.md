@@ -52,6 +52,48 @@ finish. A confirmed empty label set is valid. Setting `include_labels: false`
 explicitly omits Gmail labels and saves an empty label sidecar. Downloads never
 refresh the labels of an already archived copy.
 
+### Thread protection for server cleanup
+
+Eligible messages enter the archive immediately, including replies in an ongoing
+conversation. The provider's read-only thread check is separate from capture.
+It holds cleanup eligibility while the candidate or another thread member is in
+Inbox or unfinished outgoing state. Trash and Spam members do not hold the
+thread. An active thread has no expiry or age override. A later reply protects
+copies still present; the check never restores removed copies or updates an
+archived message's contents or labels.
+
+Cleanup is not enabled yet. The thread check supplies current identity, roles,
+observation time, completeness, and a revision when available for the planned
+cleanup command. That command
+must repeat the check before each mutation, including across batches. Capture
+filters and configured label omission never hide members from this check.
+
+Provider limits:
+
+- **Gmail API:** re-read the candidate and its complete thread with the existing
+  read-only authorization. Changed, malformed, missing, or failed responses hold
+  cleanup. Inbox and Draft labels prove activity; Sent proves completion.
+  Google's public API documentation does not establish a reliable Scheduled-mail
+  state, so other members without a confirmed finished state keep cleanup held.
+  This also holds ordinary received/filed threads; broad cleanup of those
+  threads remains unavailable. See Google's [label behavior](https://developers.google.com/workspace/gmail/api/guides/labels)
+  and [Scheduled mail](https://support.google.com/mail/answer/9214606?hl=en).
+- **Gmail over IMAP:** cleanup stays held. Native thread identifiers establish
+  grouping, but configurable folder-size limits can hide members. A successful
+  visible-folder scan cannot prove an inactive account-wide thread. See the
+  [IMAP extensions](https://developers.google.com/workspace/gmail/imap/imap-extensions)
+  and [visibility settings](https://developers.google.com/workspace/gmail/api/reference/rest/v1/ImapSettings).
+- **Standard IMAP, including mailbox.org:** cleanup stays held. Message-ID and
+  References headers cannot establish complete account-wide thread membership;
+  the [IMAP THREAD extension](https://www.rfc-editor.org/rfc/rfc5256.html) operates
+  within a selected mailbox. Missing or partial results never establish that a
+  thread has cleared.
+
+Even a complete Gmail response is an observation, not a lock. The
+[Trash API](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/trash)
+has no conditional thread-revision parameter; activity can change after a final
+check and before a future Trash request. No atomic cleanup guarantee is made.
+
 ### Reconciling existing mail
 
 Changing a download filter does not remove already archived messages. Review

@@ -3,6 +3,8 @@
 import base64
 import json
 import time
+from dataclasses import replace
+from datetime import datetime, timezone
 
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -12,6 +14,7 @@ from googleapiclient.errors import HttpError
 
 from ownmail import capture, roles
 from ownmail.providers.base import EmailProvider
+from ownmail.thread_protection import ThreadProtection
 
 # Gmail API scopes - readonly access
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -24,6 +27,39 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 # Conservative settings to avoid 429 concurrent request errors
 BATCH_SIZE = 10  # Messages per batch request (Gmail API limit)
 BATCH_DELAY = 0.2  # Seconds between batches
+
+_FINISHED_STATE_LABELS = frozenset(
+    {
+        "SENT",
+        "UNREAD",
+        "STARRED",
+        "IMPORTANT",
+        "CATEGORY_PERSONAL",
+        "CATEGORY_SOCIAL",
+        "CATEGORY_PROMOTIONS",
+        "CATEGORY_UPDATES",
+        "CATEGORY_FORUMS",
+    }
+)
+
+
+class _InvalidThreadState(ValueError):
+    """A provider response cannot establish current thread state."""
+
+
+def _thread_message_roles(message: dict, thread_id: str | None = None) -> frozenset[str]:
+    """Validate a thread member before interpreting optional label IDs."""
+    if not isinstance(message, dict):
+        raise _InvalidThreadState("Malformed thread member")
+    for key in ("id", "threadId"):
+        if not isinstance(message.get(key), str) or not message[key].strip():
+            raise _InvalidThreadState("Missing message or thread identity")
+    if thread_id is not None and message["threadId"] != thread_id:
+        raise _InvalidThreadState("Thread member identity changed")
+    labels = message.get("labelIds", [])
+    if not isinstance(labels, list) or any(not isinstance(label, str) or not label.strip() for label in labels):
+        raise _InvalidThreadState("Malformed message labels")
+    return frozenset(role for label in labels if (role := roles.role_for_gmail_label(label)))
 
 
 class GmailProvider(EmailProvider):
@@ -78,6 +114,107 @@ class GmailProvider(EmailProvider):
     def download_batch_size(self) -> int:
         """Number of messages to download per batch."""
         return BATCH_SIZE
+
+    def check_thread_protection(self, message_id: str) -> ThreadProtection:
+        """Read current candidate and thread state without capture filters.
+
+        DRAFT does not establish the absence of scheduled outgoing mail.
+        Until finished state can be established for other messages, a member
+        outside Trash/Spam without SENT or an Active role keeps state unknown.
+        Gmail supplies no atomic condition connecting this read to trashing.
+        """
+        result = ThreadProtection(self.source_name, self.account, message_id)
+        try:
+            if not isinstance(message_id, str) or not message_id.strip():
+                raise _InvalidThreadState("Missing candidate identity")
+            candidate = (
+                self._service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="minimal", fields="id,threadId,labelIds")
+                .execute()
+            )
+            candidate_roles = _thread_message_roles(candidate)
+            if candidate["id"] != message_id:
+                raise _InvalidThreadState("Candidate identity changed")
+            thread_id = candidate["threadId"]
+            result = replace(
+                result,
+                thread_id=thread_id,
+                candidate_roles=candidate_roles,
+                active=bool(candidate_roles.intersection({roles.INBOX, roles.DRAFTS}))
+                and not candidate_roles.intersection({roles.TRASH, roles.SPAM}),
+            )
+            thread = (
+                self._service.users()
+                .threads()
+                .get(
+                    userId="me",
+                    id=thread_id,
+                    format="minimal",
+                    fields="id,historyId,messages(id,threadId,labelIds)",
+                )
+                .execute()
+            )
+            if not isinstance(thread, dict) or thread.get("id") != thread_id:
+                raise _InvalidThreadState("Thread identity changed")
+            revision = thread.get("historyId")
+            if revision is not None and (not isinstance(revision, str) or not revision.strip()):
+                raise _InvalidThreadState("Malformed thread revision")
+            result = replace(result, revision=revision)
+            members = thread.get("messages")
+            if not isinstance(members, list) or not members:
+                raise _InvalidThreadState("Thread membership is unavailable")
+            seen = set()
+            unknown = False
+            unverified_labels = set()
+            for member in members:
+                member_roles = _thread_message_roles(member, thread_id)
+                member_id = member["id"]
+                if member_id in seen:
+                    raise _InvalidThreadState("Duplicate thread member")
+                seen.add(member_id)
+                discarded = member_roles.intersection({roles.TRASH, roles.SPAM})
+                if not discarded and member_roles.intersection({roles.INBOX, roles.DRAFTS}):
+                    result = replace(result, active=True)
+                if member_id == message_id and member_roles != candidate_roles:
+                    raise _InvalidThreadState("Candidate roles changed during the check")
+                if discarded:
+                    continue
+                if not member_roles.intersection({roles.INBOX, roles.DRAFTS}):
+                    if roles.SENT not in member_roles:
+                        unknown = True
+                    else:
+                        unverified_labels.update(set(member.get("labelIds", [])) - _FINISHED_STATE_LABELS)
+            if message_id not in seen:
+                raise _InvalidThreadState("Candidate is missing from its thread")
+            if unverified_labels and not unknown:
+                catalog = self._service.users().labels().list(userId="me").execute()
+                if not isinstance(catalog, dict) or not isinstance(catalog.get("labels", []), list):
+                    raise _InvalidThreadState("Malformed label catalog")
+                label_types = {}
+                for label in catalog.get("labels", []):
+                    if (
+                        not isinstance(label, dict)
+                        or not isinstance(label.get("id"), str)
+                        or label.get("type") not in {"system", "user"}
+                        or label["id"] in label_types
+                    ):
+                        raise _InvalidThreadState("Malformed label catalog")
+                    label_types[label["id"]] = label["type"]
+                unknown = any(label_types.get(label) != "user" for label in unverified_labels)
+            if unknown:
+                result = replace(result, reason="Thread contains a message whose finished state is unknown")
+            else:
+                result = replace(
+                    result,
+                    complete=True,
+                    reason="Thread has Active mail" if result.active else None,
+                )
+        except _InvalidThreadState as error:
+            result = replace(result, reason=str(error))
+        except Exception:
+            result = replace(result, reason="Gmail thread lookup failed")
+        return replace(result, checked_at=datetime.now(timezone.utc))
 
     def authenticate(self) -> None:
         """Authenticate with Gmail API using OAuth2."""

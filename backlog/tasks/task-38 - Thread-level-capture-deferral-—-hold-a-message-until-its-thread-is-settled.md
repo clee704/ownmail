@@ -1,10 +1,10 @@
 ---
 id: TASK-38
 title: Thread-aware server cleanup — retain copies while a thread is active
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-06 19:51'
-updated_date: '2026-09-14 09:07'
+updated_date: '2026-09-14 21:25'
 labels: []
 milestone: m-5
 dependencies:
@@ -56,13 +56,29 @@ server data by itself; TASK-14.2 retains its existing approval requirements.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An eligible message is captured immediately even when its thread contains Inbox or unfinished outgoing mail
+- [x] #1 An eligible message is captured immediately even when its thread contains Inbox or unfinished outgoing mail
 - [ ] #2 Server cleanup is held while the candidate or any thread member is Active, and becomes eligible after the thread clears
 - [ ] #3 Trash and Spam thread members do not hold cleanup; sent and filed messages use the same protection rule
-- [ ] #4 Incomplete or uncertain server/thread state skips cleanup, with provider-specific tests including plain IMAP
-- [ ] #5 Archived contents and labels remain unchanged when the server copy becomes Active again
-- [ ] #6 Configuration documentation explains that a thread left Active retains its server copies indefinitely, while eligible messages still enter the archive
-- [ ] #7 A later reply protects server copies still present and does not restore previously removed copies
-- [ ] #8 Thread checks remain scoped to the source and account and include Active members regardless of capture filters; failed enumeration cannot establish an empty or inactive thread
+- [x] #4 Incomplete or uncertain server/thread state skips cleanup, with provider-specific tests including plain IMAP
+- [x] #5 Archived contents and labels remain unchanged when the server copy becomes Active again
+- [x] #6 Configuration documentation explains that a thread left Active retains its server copies indefinitely, while eligible messages still enter the archive
+- [x] #7 A later reply protects server copies still present and does not restore previously removed copies
+- [x] #8 Thread checks remain scoped to the source and account and include Active members regardless of capture filters; failed enumeration cannot establish an empty or inactive thread
 - [ ] #9 Provider-specific tests introduce new Active members and role changes after enumeration; supported revalidation updates protection before cleanup, and remaining provider race limits are documented
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement a fresh read-only provider thread-protection check, scoped by source/account and message identity. Gmail API checks current candidate and full thread state independently of capture filters; incomplete or unknown unfinished state holds cleanup. IMAP remains held where complete account-wide membership cannot be established. Add provider and archive integration tests for activity changes, immediate capture, and frozen ownership; document provider limits and repeat checks before future cleanup mutations. No server mutation, OAuth, schema, or archive-file movement changes.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+TASK-90 is complete. TASK-28 awaits explicit approval of the external Active-cache schema and disposable cache file replacement. Continuing TASK-38 under the documented workstream fallback. Public Gmail API docs do not establish a reliable Scheduled-mail state; treat unfinished state as unknown where it cannot be established, and do not present an Inbox/Draft-only check as complete protection.
+
+Partial implementation checkpoint: Gmail reads current candidate and thread state without capture filters; the base provider holds unsupported IMAP checks. Synthetic archive integration passes for Sent and filed candidates: capture proceeds while a sibling is Active, and later server activity preserves owned bytes and labels. Blocking AC #2: current public provider contracts do not prove finished state for all filed/received Gmail members (Scheduled differs from Draft), and IMAP does not establish complete account-wide thread visibility. The implementation holds those cases instead of claiming full cleanup eligibility. Next action: establish supported provider evidence for those states or obtain an explicit scope decision on unavailable cleanup paths; keep TASK-38 open and TASK-14.2 dependent. Continue the independent TASK-5.4 after a reviewed, committed checkpoint.
+
+Reviewed partial checkpoint against 4deb404. Provider regression suite and archive integration pass; checks cover read-only queries, source/account isolation, fresh activity changes, malformed and failed requests, Ctrl-C propagation, and unsupported IMAP state. Two isolated mutations (ignoring Active protection and ignoring unknown finished state) were rejected by the tests. Known candidate activity survives a failed thread read. Sent copies with otherwise unknown labels require a fresh user-label catalog entry; unknown system labels remain held. Review raised a hypothetical Scheduled-member omission but found no reproducing evidence; completeness follows the documented Thread.messages member-list contract, with unfinished-state limits still recorded above. ACs #2, #3, and #9 remain open for broader clearance and cleanup integration. Full repository checks will run before the session ends.
+<!-- SECTION:NOTES:END -->
