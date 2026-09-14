@@ -1,7 +1,7 @@
 ---
 id: TASK-76
 title: Match message label borders to their highlighted state
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-14 03:16'
 updated_date: '2026-09-14 03:19'
