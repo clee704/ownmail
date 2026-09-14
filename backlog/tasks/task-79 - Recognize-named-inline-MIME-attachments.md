@@ -1,7 +1,7 @@
 ---
 id: TASK-79
 title: Recognize named inline MIME attachments
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-14 04:06'
 updated_date: '2026-09-14 04:11'
@@ -38,4 +38,6 @@ The parser and both web routes share attachment classification for explicit atta
 Synthetic detection regressions produced 10 failures against the previous code. Parser and web tests pass (488 passed, 1 expected failure). Isolated in-memory mutations made the three new body/CID preservation cases fail as intended while the unnamed CID control passed. Independent review verified mixed attachment ordering, exact download payloads, preview security headers, and malformed filename tolerance.
 
 Full pre-push hooks passed, including ruff, deptry, and the complete test suite with the coverage gate.
+
+Fix committed as f4c6d98.
 <!-- SECTION:NOTES:END -->
