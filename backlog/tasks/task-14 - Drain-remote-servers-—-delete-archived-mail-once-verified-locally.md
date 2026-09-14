@@ -1,10 +1,10 @@
 ---
 id: TASK-14
 title: Mail ownership workstream
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-14 20:58'
+updated_date: '2026-09-14 21:11'
 labels: []
 milestone: m-5
 dependencies:

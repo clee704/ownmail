@@ -1248,6 +1248,78 @@ class TestGmailBatchDownload(_GmailFixture):
             mock_fetch.assert_called_once_with("m1")
             assert results["m1"][1] == ["INBOX"]
 
+    @pytest.mark.parametrize("batch", [False, True])
+    @pytest.mark.parametrize("include_labels", [False, True])
+    def test_empty_or_omitted_labels_are_successful(self, batch, include_labels):
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build, include_labels=include_labels)
+            response = {"raw": base64.urlsafe_b64encode(b"body").decode(), "labelIds": []}
+            service.users.return_value.messages.return_value.get.return_value.execute.return_value = response
+            self._batch(service, {"m1": (response, None)})
+
+            with patch.object(provider, "_get_labels_for_message", return_value=[]) as fetch, patch("time.sleep"):
+                if batch:
+                    assert provider.download_messages_batch(["m1"])["m1"] == (b"body", [], None)
+                else:
+                    assert provider.download_message("m1") == (b"body", [])
+
+            assert fetch.call_count == int(include_labels and not batch)
+
+    @pytest.mark.parametrize("batch_size", [1, 50])
+    def test_required_label_failure_retries_capture_once(self, tmp_path, batch_size, capsys):
+        """Real provider downloads preserve the archive cursor until labels succeed."""
+        from ownmail import sidecar
+        from ownmail.archive import EmailArchive
+
+        with patch("ownmail.providers.gmail.build") as mock_build:
+            provider, service, _ = self._provider(mock_build)
+            archive = EmailArchive(tmp_path, {})
+            archive.db.set_sync_state(provider.account, "history_id", "old")
+            responses = {
+                mid: {"raw": base64.urlsafe_b64encode(f"Subject: {mid}\r\n\r\nBody".encode()).decode()}
+                for mid in ("good", "retry")
+            }
+            self._batch(service, {mid: (response, None) for mid, response in responses.items()})
+            service.users.return_value.messages.return_value.get.side_effect = lambda **kw: MagicMock(
+                execute=MagicMock(return_value=responses[kw["id"]])
+            )
+            label_results = {"good": ["Original"], "retry": None}
+            with (
+                patch.object(provider, "get_new_message_ids", return_value=(["good", "retry"], "new")) as enumerate_ids,
+                patch.object(provider, "_get_labels_for_message", side_effect=lambda mid: label_results[mid]) as fetch,
+                patch("ownmail.providers.gmail.BATCH_SIZE", batch_size),
+                patch("time.sleep"),
+            ):
+                result = archive.backup(provider)
+                assert result == {"success_count": 1, "error_count": 1, "interrupted": False, "failed_ids": ["retry"]}
+                assert "Required Gmail labels unavailable; retry capture" in capsys.readouterr().out
+                assert archive.db.get_sync_state(provider.account, "history_id") == "old"
+                assert archive.db.get_downloaded_ids(provider.account) == {"good"}
+                files = list(tmp_path.rglob("*.eml"))
+                assert len(files) == 1
+                owned = files[0]
+                original = (owned.read_bytes(), sidecar.sidecar_path(owned).read_bytes())
+                assert sidecar.read_labels(owned) == ["Original"]
+
+                label_results.update(good=["Server change"], retry=["Recovered"])
+                fetch.reset_mock()
+                result = archive.backup(provider)
+                assert result == {"success_count": 1, "error_count": 0, "interrupted": False, "failed_ids": []}
+                enumerate_ids.assert_called_with("old", since=None, until=None)
+                fetch.assert_called_once_with("retry")
+                assert archive.db.get_sync_state(provider.account, "history_id") == "new"
+                assert archive.db.get_downloaded_ids(provider.account) == {"good", "retry"}
+                files = list(tmp_path.rglob("*.eml"))
+                assert len(files) == 2
+                recovered = next(path for path in files if path != owned)
+                assert sidecar.read_labels(recovered) == ["Recovered"]
+
+                fetch.reset_mock()
+                assert archive.backup(provider)["success_count"] == 0
+                fetch.assert_not_called()
+                assert (owned.read_bytes(), sidecar.sidecar_path(owned).read_bytes()) == original
+                assert sidecar.read_labels(recovered) == ["Recovered"]
+
     def test_label_preload_error_is_survivable(self):
         """A failing label preload should not abort the batch."""
         with patch("ownmail.providers.gmail.build") as mock_build:

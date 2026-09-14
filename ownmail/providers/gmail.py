@@ -398,9 +398,9 @@ class GmailProvider(EmailProvider):
         # Fetch labels if enabled (stored in DB, not injected into .eml)
         labels = []
         if self._include_labels:
-            # A failed label lookup shouldn't fail the download — see the
-            # None contract on get_labels_for_message.
-            labels = self._get_labels_for_message(msg_id) or []
+            labels = self._get_labels_for_message(msg_id)
+            if labels is None:
+                raise RuntimeError("Required Gmail labels unavailable; retry capture")
 
         return raw_data, labels
 
@@ -435,12 +435,13 @@ class GmailProvider(EmailProvider):
                     labels = []
 
                     if self._include_labels:
-                        label_ids = response.get("labelIds", [])
-                        if label_ids:
-                            labels = self._resolve_label_names(label_ids)
+                        if "labelIds" in response:
+                            labels = self._resolve_label_names(response["labelIds"])
                         else:
                             # Fallback: fetch labels individually if not in batch response
-                            labels = self._get_labels_for_message(request_id) or []
+                            labels = self._get_labels_for_message(request_id)
+                            if labels is None:
+                                raise RuntimeError("Required Gmail labels unavailable; retry capture")
 
                     results[request_id] = (raw_data, labels, None)
                 except Exception as e:

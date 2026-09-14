@@ -46,6 +46,12 @@ configuration error. `exclude_folders` adds exclusions for specific IMAP folder
 names. See [config.example.yaml](../config.example.yaml) for examples and rescan
 behavior after filter changes.
 
+Gmail captures labels by default. If a required label lookup fails, the message
+remains uncaptured and a later download retries it; other messages can still
+finish. A confirmed empty label set is valid. Setting `include_labels: false`
+explicitly omits Gmail labels and saves an empty label sidecar. Downloads never
+refresh the labels of an already archived copy.
+
 ### Reconciling existing mail
 
 Changing a download filter does not remove already archived messages. Review
