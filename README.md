@@ -7,6 +7,10 @@ browse labels, read HTML messages, and preview attachments in your browser.
 Start or schedule downloads in the web interface. The command line also handles
 downloads, imports, and archive maintenance.
 
+The goal is to own your mail and remove server copies once they are no longer
+needed by your mail clients. Read [Owning your mail](docs/philosophy.md) for the
+product philosophy, ownership rules, and planned Active view and server cleanup.
+
 > **Development version:** This README describes `0.4.0-dev` on `master`.
 > [PyPI currently provides 0.3.0](https://pypi.org/project/ownmail/), which has an
 > older interface. Use the GitHub installation below for the features described here.

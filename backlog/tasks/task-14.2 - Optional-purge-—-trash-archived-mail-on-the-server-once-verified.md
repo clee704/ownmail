@@ -4,11 +4,12 @@ title: Optional purge — trash archived mail on the server once verified
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-07-31 22:55'
+updated_date: '2026-09-14 08:53'
 labels: []
 milestone: m-5
 dependencies:
   - TASK-14.1
+  - TASK-38
 parent_task_id: TASK-14
 priority: high
 ordinal: 7
@@ -17,29 +18,40 @@ ordinal: 7
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Knob 1 of doc-6, split out of TASK-14. Keeps ALL of TASK-14's STOP-item weight: it deletes user email and needs an OAuth scope widening from gmail.readonly to gmail.modify. Requires explicit human sign-off and lands via PR, not straight to master.
+Implement optional server cleanup under
+[Ownership philosophy](../../docs/philosophy.md). This retains TASK-14's
+verification, dry-run, resumability, and provider-specific deletion safeguards.
+Server cleanup deletes user mail and may require wider OAuth scopes: obtain
+explicit sign-off before implementation and land through a PR under the
+repository's existing rules.
 
-Depends on TASK-14.1 because purge requires download: anything the filter excludes is automatically never purged, and that coupling is what keeps the inbox safe without a dedicated inbox rule.
+Cleanup moves a server copy to the provider's Trash only when all of these hold:
 
-PURGE HAS NO EXEMPTIONS, INCLUDING SENT (settled 2026-07-26, after proposing a sent exemption and rejecting it).
+- Ownmail owns a successfully captured archive copy, and a fresh content-hash
+  check verifies the local `.eml`. An Active cached copy is insufficient.
+- Current server state shows the message is outside Inbox, unfinished outgoing
+  state, Trash, and Spam. Earlier capture does not override present activity.
+- The thread is no longer Active, as verified by TASK-38. Unknown or incomplete
+  state postpones cleanup.
 
-THE PROPOSAL was: purge never touches role sent, because outgoing mail has no triage step. Received mail is protected by the inbox exclusion — it sits on the server through its whole active period and only becomes eligible once triaged, so purge arrives after the exchange is over. Sent mail is eligible the instant it exists, so purge trashes a reply while the conversation is live and the user's own half of the thread vanishes from clients rendering it.
+Cleanup sweeps previously captured messages as well as this run's captures.
+Reading current server roles for these checks never changes the archived copy
+or its labels. Sent and filed mail follow the same rules: either may be archived
+immediately while its server copy stays available during a live conversation.
 
-WHY THAT IS WRONG, three reasons, any one sufficient:
+Downloading Inbox or draft content for the Active view (TASK-28) must never
+permit cleanup. The previous coupling of download filters to deletion safety
+is superseded: ownership and current activity supply that boundary. Existing
+capture configuration remains separate from these cleanup preconditions.
 
-1. IT SOLVES A GENERAL PROBLEM WITH A SPECIFIC RULE. A purged message disappears from client thread views. That is true of every purged message, not just sent ones — archive a received message while its thread is still active and the same gap appears. Sent merely hits it more often, because it has no triage delay. Carving out sent treats a symptom and leaves the general case untouched.
+Purge is opt-in and dry-run by default. It means moving to provider Trash,
+never hard deletion; final removal follows the provider's retention policy.
+Verify each provider's move and retention behavior before enabling its path.
+Preserve read-only access for users who do not enable cleanup.
 
-2. IT LEAVES A SECOND AUTHORITY IN PLACE PERMANENTLY. doc-8: purge "completes the handoff: the server copy is trashed and reaped under the provider's own retention policy, so no second authority survives". Exempt sent and its server copy lives forever, so a user who later trashes or re-labels a sent message diverges from the archive with nothing to reconcile it — doc-8's accepted staleness cost, normally bounded by purge, made permanent for one category.
-
-3. IT CONTRADICTS THE REASON THE TOOL EXISTS. doc-6's driving requirement is no mail left on third-party servers, and privacy is the motive. Sent mail is what the user wrote; it is not the category to leave behind. An exemption that grows without bound on the provider inverts the priority the product is built on.
-
-RESOLUTION: purge treats sent like everything else. The thread gap is real, and it is recorded once as a general property of purge rather than worked around per-role.
-
-MITIGATION IS OWNMAIL'S OWN THREAD VIEW (TASK-6), not server retention. Once purge is on, the provider is not where threads are read — ownmail is. That is the consistent answer and it needs no special case. Worth noting as a soft sequencing preference: enabling purge before TASK-6 exists means no good thread view anywhere.
-
-LEFT OPEN, if the annoyance turns out to be real in practice: defer purge for any message whose thread still has a message in the inbox. Note this is general, not sent-specific, which is what makes it the right shape. It needs threading (TASK-6.1), so it is not a blocker — and it should only be built on evidence, not on the anticipation recorded above.
-
-Scope, ACs and hazards are otherwise unchanged from TASK-14 - see that task and doc-6. In particular: purge means move to provider Trash (never hard delete), confirmation is a per-message content-hash re-check at purge time, sweep semantics rather than download-time-only, dry-run by default, and the hazard that narrowing the filter makes the next purge run delete more.
+TASK-14 holds the acceptance criteria. TASK-38 supplies thread protection before
+cleanup is enabled. Earlier comments below are historical; their proposal to
+accept incomplete client threads is superseded by this design.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Comments

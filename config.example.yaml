@@ -68,9 +68,9 @@ sources:
     #
     # NARROWING IT (adding a role) does not remove anything already archived
     # — 'ownmail reconcile' reports what the new setting would reject and can
-    # move it to ownmail's bin, reversibly. But if you have purge enabled,
-    # the next purge run deletes more from the server, because purge deletes
-    # what the current filter admits.
+    # move it to ownmail's bin, reversibly. Planned server cleanup also
+    # requires a verified archive copy and an inactive thread; downloading
+    # alone never authorizes cleanup. See docs/philosophy.md.
     # exclude_roles:
     #   - inbox
     #   - drafts

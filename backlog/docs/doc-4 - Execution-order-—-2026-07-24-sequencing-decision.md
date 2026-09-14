@@ -67,7 +67,7 @@ behind the order, tracked mechanically via each task's `milestone` and
 - **Ongoing — no fixed slot** (TASK-3): coverage push, independent of the
   phases, no urgency.
 
-## Phase 5 order (settled 2026-07-31)
+## Phase 5 order (updated 2026-09-14)
 
 Work these one at a time, in this order. **This table is the authority.**
 Each task's `ordinal` matches it, but neither `backlog task list --plain`
@@ -81,9 +81,9 @@ rather than trying to recover it from the CLI.
 | 3 | TASK-14.3 | no | Eligibility-driven capture. The large half, and the precondition for any filter — without it a filter turns a working archive into one with silent holes |
 | 4 | TASK-14.1 | no | The download filter config surface. The small half that was originally mistaken for the whole |
 | 5 | TASK-25 | no | Reconcile: sweep the *existing* archive against the filter |
-| 6 | TASK-38 | no | Thread-level capture deferral. Shape settled in TASK-33; build gated on the gap being observed, which capture-without-purge already produces |
+| 6 | TASK-38 | no | Thread protection for server cleanup. Eligible messages archive immediately; server copies stay while the message or thread is Active |
 | 7 | TASK-14.2 | **yes** | Purge. Deletes user email, widens the OAuth scope — sign-off, then PR |
-| 8 | ~~TASK-33~~ | no | **Done as a decision record**, 2026-08-06. Superseded its own evidence gate — see below |
+| 8 | ~~TASK-33~~ | no | **Done as a historical decision record.** Its capture deferral is superseded by the ownership philosophy and revised TASK-38 |
 
 ### Why this order
 
@@ -120,7 +120,14 @@ default-behaviour change doc-6 attributes to TASK-14, or shipping a role
 nothing selects. TASK-18 stayed what its row says: one visible mechanism per
 path, nothing decorative on top. Phase 5's order is unaffected.
 
-**Two rows changed on 2026-08-06**, after the user's question about what the
+**Updated 2026-09-14:** [Ownership philosophy](../../docs/philosophy.md)
+separates Active downloads, archive capture, and server cleanup. TASK-38 now
+protects live threads from cleanup while eligible messages archive immediately.
+It remains before TASK-14.2, which depends on that protection. The old evidence
+gate and capture deferral described below are historical. The table's order
+is otherwise unchanged.
+
+**Historical changes on 2026-08-06**, after the user's question about what the
 clean split actually needs:
 
 - **TASK-33 closed as a decision record**, and TASK-38 was filed to carry the
@@ -139,9 +146,11 @@ clean split actually needs:
 
 ### Not in this phase
 
-TASK-28 (active messages) depends on TASK-14.3 but is a pure addition — a
-read-only window onto the pre-capture set. It is not required for the archive
-to be correct, and it is deliberately left unscheduled.
+TASK-28 (Active messages) depends on TASK-14.3 and supplies the consolidated
+reading and search view in the [ownership philosophy](../../docs/philosophy.md).
+It is product direction, with implementation still unscheduled. Its revised
+scope includes Active contents and replaces the older default-off and
+headers/snippet-only proposal; enablement and cadence remain to be decided.
 
 ## UI redesign (filed 2026-09-12)
 

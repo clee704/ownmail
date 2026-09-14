@@ -5,6 +5,13 @@ type: specification
 created_date: '2026-07-24 22:44'
 ---
 
+> **Superseded product design, 2026-09-14:** [Owning your mail](../../docs/philosophy.md)
+> defines the current direction. Ownmail downloads Active mail under server
+> authority, archives eligible messages immediately, and separately removes
+> verified server copies once their threads are inactive. Download filters alone
+> no longer define cleanup safety. The design and alternatives below are retained
+> as history; their implementation status and configurable Trash policy are stale.
+
 ## Goal
 
 Fix where ownmail sits in the overall email stack, and record what was

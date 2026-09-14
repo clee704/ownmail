@@ -1,10 +1,10 @@
 ---
 id: TASK-14
-title: Optional purge + configurable download filter
+title: Archive capture and optional server cleanup
 status: To Do
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-07-25 05:54'
+updated_date: '2026-09-14 08:53'
 labels: []
 milestone: m-5
 dependencies:
@@ -20,54 +20,61 @@ ordinal: 1
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Two orthogonal knobs that compose to give 'no mail left on third-party servers', without changing any of ownmail's current default behaviour.
+Deliver archive capture and optional server cleanup under
+[Ownership philosophy](../../docs/philosophy.md). Ownmail owns successfully
+archived copies; servers retain authority over live mail. Downloading content
+for the Active view is independent of both archival and server cleanup.
 
-KNOB 1 - PURGE (opt-in, default off)
-Default stays exactly as today: ownmail reads, never deletes. When enabled, ownmail deletes a message from the server once it has confirmed the local copy is correct.
+TASK-14.3 supplies eligibility-driven capture and TASK-14.1 supplies the existing
+canonical-role filter. Their completed implementation remains the current
+behavior: permitting Inbox or Drafts through that filter creates permanent
+archive copies. TASK-28 adds the planned Active distinction; it must not be
+implemented by simply relaxing the current filter.
 
-- Purge means MOVE TO TRASH, not hard delete. This is what makes 'servers own the grace period' actually work - Gmail's 30-day Trash retention is the grace period, and ownmail implements no time logic at all. It also composes with knob 2: the default filter excludes trash, so a message ownmail just trashed is not re-downloaded.
-- Confirmation is a per-message content-hash re-check of the local .eml at purge time, via the existing verify/sync-check machinery (cli.py:809,818). Not 'synced recently, probably fine'.
-- SWEEP semantics, not download-time-only. Purge considers every message on the server that passes the current filter and has a verified local copy - not just messages downloaded in this run. Download-time-only cannot meet the goal, because mail archived before purge was enabled would sit on the server forever. Consequence: the filter is evaluated LIVE against current server state at purge time, so a message downloaded a year ago while it sat in the inbox becomes purgeable the moment it is archived.
-- OAuth scope: gmail.py:16 currently requests gmail.readonly. Trash needs gmail.modify (hard delete would need full https://mail.google.com/, another reason to prefer trash). Scope changes are a STOP item and force every existing token to re-consent - so readonly must remain the default and only purge users take the wider scope.
+TASK-14.2 supplies optional server cleanup. It may move a server copy to Trash
+only after verifying the owned archive copy and confirming that the message and
+its thread are no longer Active. TASK-38 supplies thread protection. Cleanup
+uses current server state solely to decide whether to remove the server copy;
+server changes never update the archive's contents or labels.
 
-KNOB 2 - DOWNLOAD FILTER (configurable)
-Which messages get downloaded at all. Purge requires download, so anything filtered out is automatically never purged - that coupling is what makes the inbox safe without a dedicated rule.
+Cleanup sweeps all previously captured messages as well as new captures, is
+opt-in and dry-run by default, and never hard-deletes. Final removal follows
+each provider's Trash policy. Active cached copies never qualify as verified
+archive copies, and changing a download filter cannot authorize cleanup of
+Inbox or unfinished outgoing mail.
 
-- Not new machinery: the filter already exists in three inconsistent places and none are exposed in config. imap.py:27 DEFAULT_EXCLUDE_FOLDERS is configurable but defaults to Gmail-specific folder names; gmail.py:130 hardcodes '-in:trash -in:spam'; gmail.py:224 re-checks TRASH/SPAM on labelIds. This task unifies and exposes them.
-- Filter terms are CANONICAL system-label names, which is why this depends on TASK-5.2. Providers spell the same concept differently - TRASH vs Trash vs [Gmail]/Trash vs 'Deleted Items', plus IMAP SPECIAL-USE flags. A filter config cannot be written against raw provider strings.
-- Default filter: exclude trash, spam, and DRAFTS. Drafts matter because they are live working state - purging them would yank an in-progress draft out from under a mail client mid-compose. This is the only default behaviour change in the task.
-- Target config for the intended setup is then just: filter excludes inbox + trash (+ spam, drafts), purge on. Everything else is downloaded and trashed on the server.
+This replaces the original two-knob premise that anything downloadable is
+purgeable. Historical implementation notes below describe the earlier split;
+the current philosophy governs future work.
 
-HAZARD: under sweep semantics, editing the filter is a destructive action. Removing 'inbox' from the exclude list means the next purge run trashes the entire inbox. Dry-run-by-default covers most of this, but it should be called out in the config docs.
-
-SUPERSEDES TASK-15: 'should client-side deletions reach the archive' is now just the default filter value, i.e. config rather than a code decision.
-
-STOP ITEM: deletes user email and changes OAuth scopes. Needs explicit human sign-off before implementation and lands via PR, not straight to master.
+Server deletion and OAuth changes retain the repository's existing sign-off
+and PR requirements. Documentation of the design does not approve those
+implementation changes.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Purge is opt-in and off by default; with it off, ownmail's behaviour is byte-for-byte what it is today
-- [ ] #2 Purge moves messages to the provider's Trash rather than hard-deleting, so the provider's own retention is the only grace period; ownmail implements no time logic
-- [ ] #3 A message is purged only after its local .eml is re-hashed at purge time and matches the recorded content hash
-- [ ] #4 Purge sweeps all server messages passing the current filter, not only those downloaded in the current run
-- [ ] #5 The filter is evaluated live against server state at purge time, so triage changes take effect on the next run
-- [ ] #6 Download filter is configured with canonical system-label names (per TASK-5.2), not raw provider folder strings
-- [ ] #7 The three existing filter sites (imap.py:27, gmail.py:130, gmail.py:224) are unified into one mechanism, with no provider-specific defaults left hardcoded
-- [ ] #8 Default filter excludes trash, spam and drafts; drafts exclusion is verified to leave in-progress drafts untouched on the server
-- [ ] #9 Dry-run is the default for purge: reports what would be trashed, per account, and changes nothing
-- [ ] #10 Verification failure or a missing local file skips that message and reports it; it never aborts the run
-- [ ] #11 Purge is resumable and batch-committed - Ctrl-C leaves consistent state (invariant 3)
-- [ ] #12 config.example.yaml documents both knobs, and warns that narrowing the filter makes the next purge run delete more
-- [ ] #13 Confirmed whether mailbox.org offers a Trash retention window like Gmail's 30 days; documented either way
-- [ ] #14 OAuth scope change from gmail.readonly signed off separately, with a documented re-consent path for existing tokens
-- [ ] #15 Human sign-off recorded and the work landed via PR, not direct to master
+- [ ] #1 Server cleanup is opt-in and off by default; with it off, ownmail makes no server deletions
+- [ ] #2 Cleanup moves messages to the provider's Trash rather than hard-deleting; final removal follows the provider's retention policy
+- [ ] #3 Cleanup requires an owned archive copy whose local .eml is re-hashed at cleanup time and matches its recorded content hash; an Active cached copy never qualifies
+- [ ] #4 Cleanup sweeps eligible server copies of previously captured messages as well as messages captured in the current run
+- [ ] #5 Current server state and TASK-38 thread protection prevent cleanup of Active messages and live threads, including a previously captured message returned to Inbox
+- [ ] #6 The existing capture filter uses canonical system roles rather than raw provider folder strings (TASK-14.1)
+- [ ] #7 Provider capture filtering uses the shared role mechanism (TASK-14.1)
+- [ ] #8 Active Inbox and unfinished outgoing mail stay protected from cleanup regardless of whether their contents have been downloaded
+- [ ] #9 Dry-run is the default for cleanup: reports what would be trashed, per account, and changes nothing
+- [ ] #10 Verification failure, missing archive files, or incomplete server/thread state skips affected messages and reports the reason without aborting the run
+- [ ] #11 Cleanup is resumable and batch-committed; Ctrl-C leaves consistent state
+- [ ] #12 Configuration documentation distinguishes Active download, archive capture, and optional server cleanup, including their eligibility rules
+- [ ] #13 Provider-specific Trash behavior and retention, including mailbox.org, are verified and documented
+- [ ] #14 Any required Gmail OAuth scope widening is signed off separately, with a documented re-consent path that preserves read-only access for users without cleanup
+- [ ] #15 Human sign-off is recorded and server cleanup work lands via PR
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Split 2026-07-25 into four tasks.** TASK-14 remains the parent holding the design; doc-6 is still the reference.
+**Historical split, 2026-07-25.** The current description and [Ownership philosophy](../../docs/philosophy.md) supersede the original filter-to-purge coupling recorded below.
 
 Sequence within milestone m-5:
 

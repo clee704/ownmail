@@ -5,6 +5,14 @@ type: specification
 created_date: '2026-07-25 06:57'
 ---
 
+> **Superseded product design, 2026-09-14:** [Owning your mail](../../docs/philosophy.md)
+> is the authority for ownership and capture timing. Active downloads follow the
+> server; successful archival freezes the owned copy. Thread activity delays
+> server cleanup, never capture. Reading current server state for Active views
+> or cleanup must not change archived content or labels. Earlier decisions,
+> implementation notes, and repair exceptions below are historical context,
+> not the specification for routine downloads.
+
 ## The rule
 
 > **Capture is a transfer of ownership.** Until a message is captured, the

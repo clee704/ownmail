@@ -4,7 +4,7 @@ title: Decide whether purge defers for threads still live in the inbox
 status: Done
 assignee: []
 created_date: '2026-07-31 22:54'
-updated_date: '2026-08-06 19:52'
+updated_date: '2026-09-14 08:53'
 labels: []
 milestone: m-5
 dependencies:
@@ -17,6 +17,12 @@ ordinal: 8
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**Superseded 2026-09-14.** [Ownership philosophy](../../docs/philosophy.md)
+now defines capture per message and defers server cleanup while a thread is
+active. TASK-38 carries that implementation. The discussion and completed
+criteria below record the earlier decision; they no longer prescribe capture
+deferral. TASK-28 supplies the consolidated view of Active and Archived mail.
+
 Promoted 2026-07-31 from a LEFT OPEN paragraph inside TASK-14.2, where it was invisible. It is the one part of the drain design that was never settled.
 
 ## The problem
