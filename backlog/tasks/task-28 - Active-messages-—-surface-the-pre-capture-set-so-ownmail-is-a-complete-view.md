@@ -4,7 +4,7 @@ title: Active messages — surface the pre-capture set so ownmail is a complete 
 status: To Do
 assignee: []
 created_date: '2026-07-26 07:01'
-updated_date: '2026-09-14 09:07'
+updated_date: '2026-09-14 21:14'
 labels: []
 milestone: m-5
 dependencies:
@@ -103,3 +103,15 @@ ownmail are outside this task.
 - [ ] #14 Upgrade preserves existing archived contents, labels, and local Trash, including copies carrying historical INBOX or DRAFT labels; current Active state is established separately without duplicate ordinary results
 - [ ] #15 CLI downloads and manual or scheduled web downloads apply the same lifecycle, with scheduled runs reusing the existing scheduler; status distinguishes capture from Active refresh and never presents a failed or partial refresh as current
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Proposed storage: preserve the existing ownmail.db schema and archive files. Add an external disposable Active cache with atomic message files and JSON metadata, plus a rebuildable SQLite index. Tables cover source refresh attempts/completeness and source/account-scoped remote messages, observed roles, content timestamps, stable identity or UIDVALIDITY, archive links, and parsed search fields with FTS. Archive matching requires source/account provenance and stable identity or content correspondence; ambiguous matches remain separate. Ordinary results consolidate verified archive/live matches. Refresh uses the existing download scheduler. Per-source Active downloads default on; exclude_roles becomes a deprecated download preference and cannot permit Inbox or unfinished mail capture. Failed or partial refresh retains prior cache and reports stale state. Existing archives and local Trash remain owned and unchanged.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Approval checkpoint, 2026-09-14: the proposed new cache schema and replacement/removal of disposable cached .eml files require explicit sign-off under AGENTS.md. No ownmail.db migration is required by the proposal. Next action: obtain approval for that bounded storage behavior, implement TASK-28 on a feature branch, and deliver through a PR. Credential/OAuth changes and server mutations remain outside this approval.
+<!-- SECTION:NOTES:END -->
