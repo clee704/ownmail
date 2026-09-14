@@ -1,4 +1,4 @@
-"""Browser regressions for the desktop message-list density preference."""
+"""Browser regressions for the desktop display density preference."""
 
 import json
 import subprocess
@@ -56,6 +56,9 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         const density = () => page.locator('html').getAttribute('data-list-density');
         const rowHeight = () => page.locator('.ownmail-email-row').first().evaluate(
             row => row.getBoundingClientRect().height);
+        const sidebarHeights = () => page.locator('#ownmail-sidebar .ownmail-sidebar-scroll a').evaluateAll(
+            links => Object.fromEntries(links.map(link => [link.getAttribute('aria-label'),
+                link.getBoundingClientRect().height])));
         __ASSERTIONS__
         assert.deepEqual(errors, []);
     } finally {
@@ -75,33 +78,40 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 
 
 @pytest.mark.parametrize("preference", [None, "invalid-density"])
-def test_missing_or_invalid_preference_defaults_to_comfortable(shell_list_app, contrast_browser, preference):
+def test_missing_or_invalid_preference_defaults_to_standard(shell_list_app, contrast_browser, preference):
     run_density_browser(
         shell_list_app,
         contrast_browser,
         """
         await visit('/settings');
-        assert.equal(await density(), 'comfortable');
-        assert.equal(await page.getByLabel('Message list density', {exact: true}).inputValue(), 'comfortable');
+        assert.equal(await density(), 'standard');
+        assert.equal(await page.getByLabel('Display density', {exact: true}).inputValue(), 'standard');
         """,
         preference,
     )
 
 
-def test_density_setting_persists_and_changes_search_and_trash_spacing(shell_list_app, contrast_browser):
+def test_density_setting_persists_and_changes_message_and_sidebar_spacing(shell_list_app, contrast_browser):
     run_density_browser(
         shell_list_app,
         contrast_browser,
         """
         const heights = {};
+        const navigationHeights = {};
         for (const preference of ['comfortable', 'standard', 'compact']) {
             await visit('/settings');
-            const selector = page.getByLabel('Message list density', {exact: true});
+            const selector = page.getByLabel('Display density', {exact: true});
             await selector.selectOption(preference);
             assert.equal(await density(), preference);
             assert.equal(await page.evaluate(() => localStorage.getItem('ownmail-list-density')), preference);
+            navigationHeights[preference] = await sidebarHeights();
+            await page.locator('#ownmail-sidebar-toggle').click();
+            assert(await page.locator('.ownmail-sidebar-labels .ownmail-sidebar-label').first().isVisible());
+            assert.deepEqual(await sidebarHeights(), navigationHeights[preference]);
+            await page.locator('#ownmail-sidebar-toggle').click();
             await page.reload();
             assert.equal(await selector.inputValue(), preference);
+            assert.deepEqual(await sidebarHeights(), navigationHeights[preference]);
             await visit('/search?q=annual');
             assert.equal(await density(), preference);
             heights[preference] = await rowHeight();
@@ -109,6 +119,7 @@ def test_density_setting_persists_and_changes_search_and_trash_spacing(shell_lis
                 await visit(path);
                 assert.equal(await density(), preference);
                 assert.equal(await rowHeight(), heights[preference]);
+                assert.deepEqual(await sidebarHeights(), navigationHeights[preference]);
                 const checkbox = page.locator('.ownmail-email-checkbox input').first();
                 await checkbox.check();
                 assert(await checkbox.isChecked());
@@ -118,12 +129,18 @@ def test_density_setting_persists_and_changes_search_and_trash_spacing(shell_lis
         }
         assert(heights.comfortable > heights.standard, JSON.stringify(heights));
         assert(heights.standard > heights.compact, JSON.stringify(heights));
+        assert(navigationHeights.standard['All Mail'] > 0);
+        assert(navigationHeights.standard.Work > 0);
+        for (const name of Object.keys(navigationHeights.standard)) {
+            const sizes = ['comfortable', 'standard', 'compact'].map(preference => navigationHeights[preference][name]);
+            assert(sizes[0] > sizes[1] && sizes[1] > sizes[2], name + ': ' + sizes.join(', '));
+        }
         """,
     )
 
 
 @pytest.mark.parametrize("width", [430, 900])
-def test_density_keeps_mobile_row_spacing(shell_list_app, contrast_browser, width):
+def test_density_keeps_mobile_row_and_drawer_spacing(shell_list_app, contrast_browser, width):
     run_density_browser(
         shell_list_app,
         contrast_browser,
@@ -136,11 +153,17 @@ def test_density_keeps_mobile_row_spacing(shell_list_app, contrast_browser, widt
             senderPadding: getComputedStyle(row.querySelector('.ownmail-email-sender')).padding
         }));
         const baseline = await spacing();
-        for (const preference of ['standard', 'compact']) {
+        await page.locator('#ownmail-sidebar-toggle').click();
+        const drawerBaseline = await sidebarHeights();
+        assert(drawerBaseline['All Mail'] > 0);
+        assert(drawerBaseline.Work > 0);
+        for (const preference of ['comfortable', 'compact']) {
             await page.evaluate(value => localStorage.setItem('ownmail-list-density', value), preference);
             await page.reload();
             assert.equal(await density(), preference);
             assert.deepEqual(await spacing(), baseline);
+            await page.locator('#ownmail-sidebar-toggle').click();
+            assert.deepEqual(await sidebarHeights(), drawerBaseline);
         }
         """.replace("WIDTH", str(width)),
     )
@@ -152,13 +175,13 @@ def test_cached_list_restores_density_on_pageshow(shell_list_app, contrast_brows
         contrast_browser,
         """
         await visit('/search?q=annual');
-        const comfortableHeight = await rowHeight();
+        const standardHeight = await rowHeight();
         await page.evaluate(() => {
             localStorage.setItem('ownmail-list-density', 'compact');
             window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}));
         });
         assert.equal(await density(), 'compact');
-        assert(await rowHeight() < comfortableHeight);
+        assert(await rowHeight() < standardHeight);
         """,
     )
 
@@ -169,23 +192,22 @@ def test_open_lists_and_settings_follow_preferences_from_another_tab(shell_list_
         contrast_browser,
         """
         await visit('/search?q=annual');
-        const comfortableHeight = await rowHeight();
+        const standardHeight = await rowHeight();
 
         const settings = await context.newPage();
         await settings.goto('http://ownmail.test/settings');
-        const selector = settings.getByLabel('Message list density', {exact: true});
-        assert.equal(await selector.inputValue(), 'comfortable');
+        const selector = settings.getByLabel('Display density', {exact: true});
+        assert.equal(await selector.inputValue(), 'standard');
         await selector.selectOption('compact');
         await page.waitForFunction(() => document.documentElement.dataset.listDensity === 'compact');
         const compactHeight = await rowHeight();
-        assert(compactHeight < comfortableHeight);
-        await selector.selectOption('standard');
-        await page.waitForFunction(() => document.documentElement.dataset.listDensity === 'standard');
-        const standardHeight = await rowHeight();
-        assert(standardHeight > compactHeight && standardHeight < comfortableHeight);
+        assert(compactHeight < standardHeight);
+        await selector.selectOption('comfortable');
+        await page.waitForFunction(() => document.documentElement.dataset.listDensity === 'comfortable');
+        assert(await rowHeight() > standardHeight);
 
-        await page.evaluate(() => localStorage.setItem('ownmail-list-density', 'comfortable'));
-        await settings.waitForFunction(() => document.getElementById('ownmail-list-density').value === 'comfortable');
+        await page.evaluate(() => localStorage.setItem('ownmail-list-density', 'standard'));
+        await settings.waitForFunction(() => document.getElementById('ownmail-list-density').value === 'standard');
         await settings.close();
         """,
     )

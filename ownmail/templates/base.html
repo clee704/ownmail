@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="/static/style.css">
     <script>
     function applyListDensity(density) {
-        if (!['comfortable', 'standard', 'compact'].includes(density)) density = 'comfortable';
+        if (!['comfortable', 'standard', 'compact'].includes(density)) density = 'standard';
         document.documentElement.dataset.listDensity = density;
         var control = document.getElementById('ownmail-list-density');
         if (control) control.value = density;

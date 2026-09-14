@@ -388,11 +388,13 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     }
 }
 @media (min-width: 901px) {
-    .ownmail-email-list { --ownmail-row-height: 51px; --ownmail-row-padding: 15px; }
-    html[data-list-density="standard"] .ownmail-email-list { --ownmail-row-height: 43px; --ownmail-row-padding: 11px; }
-    html[data-list-density="compact"] .ownmail-email-list { --ownmail-row-height: 35px; --ownmail-row-padding: 7px; }
+    :root { --ownmail-row-height: 39px; --ownmail-row-padding: 9px; --ownmail-nav-padding: 7px; --ownmail-label-gap: 20px; }
+    html[data-list-density="comfortable"] { --ownmail-row-height: 47px; --ownmail-row-padding: 13px; --ownmail-nav-padding: 9px; --ownmail-label-gap: 24px; }
+    html[data-list-density="compact"] { --ownmail-row-height: 35px; --ownmail-row-padding: 7px; --ownmail-nav-padding: 5px; --ownmail-label-gap: 18px; }
     .ownmail-email-row-link { min-height: var(--ownmail-row-height); }
     .ownmail-email-row-link, .ownmail-email-sender { padding-block: var(--ownmail-row-padding); }
+    .ownmail-sidebar-nav li a { min-height: calc(20px + 2 * var(--ownmail-nav-padding)); padding-block: var(--ownmail-nav-padding); }
+    .ownmail-sidebar-heading { padding-top: var(--ownmail-label-gap); }
 }
 @media (max-width: 900px) {
     .ownmail-app-shell { --ownmail-sidebar-width: 176px; }
