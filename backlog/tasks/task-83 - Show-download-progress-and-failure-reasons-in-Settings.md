@@ -1,10 +1,10 @@
 ---
 id: TASK-83
 title: Show download progress and failure reasons in Settings
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-14 07:23'
-updated_date: '2026-09-14 07:38'
+updated_date: '2026-09-14 07:39'
 labels: []
 dependencies: []
 type: enhancement
@@ -41,4 +41,6 @@ The Settings copy is now one paragraph. Browser regressions verify changing coun
 A real CLI subprocess regression verifies live cumulative counts through the web API across two synthetic sources, duplicate and deleted-message skips, a partial failure, final snapshot retention, and configuration/setup failures with zero attempted-message errors. Suppressing downloaded increments deliberately makes the live-count assertion fail. Failure details remain hidden during later sources and appear once at completion.
 
 All pre-push checks pass with browser tests required, including the full suite and coverage gate. Independent review verified the producer and manager, then drove regressions for duplicate terminal wording and stale reasons beside a later source. Mutation checks reject lost final counts, leaked exception text, miscounted duplicates, and stale or repeated UI reasons. Existing indexing-result and retry behavior remains documented in TASK-84.
+
+Implemented in commit 08445e0. Full checks passed with 95.83% branch-inclusive coverage.
 <!-- SECTION:NOTES:END -->
