@@ -1,10 +1,10 @@
 ---
 id: TASK-14
-title: Archive capture and optional server cleanup
+title: Mail ownership workstream
 status: To Do
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-14 09:08'
+updated_date: '2026-09-14 20:58'
 labels: []
 milestone: m-5
 dependencies:
@@ -18,6 +18,55 @@ ordinal: 1
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+## Workstream
+
+Make ownmail a consolidated view of live mail and an owned archive whose server
+copies can be removed, following the [ownership philosophy](../../docs/philosophy.md).
+This task is the workstream container. Its remaining scope is these five tasks:
+
+| Task | Outcome |
+|---|---|
+| [TASK-90](<task-90 - Keep-capture-retryable-when-required-labels-cannot-be-fetched.md>) | Retry capture when required labels cannot be fetched |
+| [TASK-28](<task-28 - Active-messages-—-surface-the-pre-capture-set-so-ownmail-is-a-complete-view.md>) | Include live mail through a server-authoritative Active view |
+| [TASK-38](<task-38 - Thread-level-capture-deferral-—-hold-a-message-until-its-thread-is-settled.md>) | Protect active threads from server cleanup |
+| [TASK-14.2](<task-14.2 - Optional-purge-—-trash-archived-mail-on-the-server-once-verified.md>) | Safely remove eligible server copies through optional cleanup |
+| [TASK-5.4](<task-5.4 - Local-label-editing-in-the-web-UI.md>) | Edit owned labels locally without changing server labels |
+
+Individual tasks hold their status, acceptance evidence, blockers, and next
+action. [Execution order](<../docs/doc-4 - Execution-order-—-2026-07-24-sequencing-decision.md#phase-5-order-updated-2026-09-14>)
+is the ordering authority. Completed foundations and other backlog tasks are
+outside this remaining scope; discovered work is filed separately and does not
+automatically join the workstream.
+
+## Resume
+
+“Continue the work” and “continue Mail ownership” mean:
+
+1. Read the repository rules, working tree, and current member tasks, including
+   their dependencies and implementation notes. Account for existing edits and
+   running work before making changes.
+2. Resume an eligible member already in progress; otherwise select the next
+   eligible member using the execution order, including its TASK-5.4 fallback.
+   TASK-14 is a container. Unrelated in-progress tasks do not take priority.
+3. Complete one member through its acceptance criteria, required checks, and
+   commit. A request to continue until complete repeats this process within the
+   same five-task scope. Existing approval and PR requirements still apply.
+4. If a member is blocked, record the reason and exact next action in that task,
+   leave any changes at a safe checkpoint, and try another eligible member. If
+   none is ready, report what is needed to continue. Do not bypass dependencies
+   or approvals to keep the workstream moving.
+5. Before ending, update the member task with verified progress, relevant commit
+   or PR, and any remaining blocker or next action. Report what finished and what
+   comes next so a later session can resume from the repository alone.
+
+Set this container to `In Progress` when member implementation starts. Mark it
+`Done` only when all five members are `Done` and the cleanup acceptance criteria
+below have been verified. If only that final verification remains, complete it
+before closing the container. Once complete, report completion and stop; do not
+select unrelated backlog work.
+
+## Cleanup contract
+
 Deliver archive capture and optional server cleanup under
 [Ownership philosophy](../../docs/philosophy.md). Ownmail owns successfully
 archived copies; servers retain authority over live mail. Downloading content
@@ -103,4 +152,6 @@ Two reasons for the shape.
 TASK-17 and TASK-18 were pulled out as standalone because they are defects in today's code rather than new capability, and they are independently verifiable. TASK-17 loses mail right now; TASK-18 makes one of the filter's intended values unreachable. Both sit directly under the filter, so fixing them first keeps failure modes separable.
 
 Full hole audit — eight findings with file:line — is in TASK-14.1's Implementation Notes.
+
+2026-09-14: Established Mail ownership as a named workstream with fixed remaining membership, task-local progress, and a repository-level continuation route. Setup changes no feature status or implementation acceptance evidence.
 <!-- SECTION:NOTES:END -->

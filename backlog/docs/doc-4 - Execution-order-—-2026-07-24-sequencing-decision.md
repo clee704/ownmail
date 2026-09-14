@@ -69,7 +69,7 @@ behind the order, tracked mechanically via each task's `milestone` and
 
 ## Phase 5 order (updated 2026-09-14)
 
-Work these one at a time, in this order. **This table is the authority.**
+Work these one at a time, in this order among eligible tasks. **This table is the authority.**
 Each task's `ordinal` matches it, but neither `backlog task list --plain`
 (sorts by priority) nor `backlog board` renders that order, so read it here
 rather than trying to recover it from the CLI.
@@ -87,6 +87,16 @@ rather than trying to recover it from the CLI.
 | 9 | TASK-14.2 | **yes** | Verify complete owned copies and server identity before moving inactive server copies to Trash |
 | 10 | ~~TASK-33~~ | no | **Done as a historical decision record.** Capture deferral is superseded by the ownership philosophy and revised TASK-38 |
 
+[Mail ownership (TASK-14)](<../tasks/task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md#resume>)
+defines the bounded workstream and continuation rule. For that workstream,
+resume an eligible member already in progress; otherwise select the first
+eligible unfinished member in this table. A pending approval or other recorded
+blocker may be skipped without waiving it: TASK-38 may proceed while TASK-28
+waits because it has no dependency on TASK-28. If this path has no eligible
+member, select the independent TASK-5.4. After the path finishes, TASK-5.4 must
+also finish before the workstream is complete. Its earlier milestone does not
+move it ahead of the main path for a workstream continuation.
+
 ### Why this order
 
 **Steps 1–5 addressed the archive problems identified on 2026-07-31:** an archive holding server-side
@@ -94,7 +104,7 @@ inbox and trash mail. Steps 1–4 stop it getting worse; step 5 cleans up what
 is already on disk. Purge is not part of that — it serves the separate goal
 of leaving no mail on third-party servers.
 
-**Reconcile before purge (5 before 7), and this matters.** TASK-25 depends
+**Reconcile before purge (5 before 9), and this matters.** TASK-25 depends
 only on TASK-14.1, so it *can* run before purge, and it *should*: reconcile
 moves wrongly-archived mail to ownmail's bin, which un-verifies its local
 copy, which takes it out of purge's sweep set. Run purge first and it trashes

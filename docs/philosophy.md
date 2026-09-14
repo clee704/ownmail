@@ -69,8 +69,6 @@ sidecars, and supports local reading, search, and Trash. Downloads currently
 exclude Inbox and Drafts by default; allowing them captures permanent copies,
 without the Active ownership distinction.
 
-The remaining work is [reliable label capture](<../backlog/tasks/task-90 - Keep-capture-retryable-when-required-labels-cannot-be-fetched.md>),
-the [Active view](<../backlog/tasks/task-28 - Active-messages-—-surface-the-pre-capture-set-so-ownmail-is-a-complete-view.md>),
-[local label editing](<../backlog/tasks/task-5.4 - Local-label-editing-in-the-web-UI.md>),
-[server cleanup](<../backlog/tasks/task-14.2 - Optional-purge-—-trash-archived-mail-on-the-server-once-verified.md>),
-and [thread protection for cleanup](<../backlog/tasks/task-38 - Thread-level-capture-deferral-—-hold-a-message-until-its-thread-is-settled.md>).
+The [Mail ownership workstream](<../backlog/tasks/task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md>)
+tracks the remaining implementation: reliable label capture, the Active view,
+local label editing, and server cleanup with thread protection.
