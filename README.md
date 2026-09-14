@@ -19,8 +19,9 @@ downloads, imports, and archive maintenance.
   on smaller screens. Add the site to your phone's Home Screen for app-style access.
 - **Read messages and attachments:** View sanitized HTML, expand message details,
   and preview supported attachment formats or download the originals.
-- **Choose your appearance:** Light, dark, or system theme, with adjustable dates,
-  time zone, and page size.
+- **Choose your appearance:** Light, dark, or system theme, with adjustable desktop
+  list density, dates, time zone, and page size. In Settings, choose Comfortable,
+  Standard, or Compact row spacing; density is saved automatically in your browser.
 - **Control remote images:** Load images for a message or remember a trusted
   sender. Image blocking is enabled by default, with [limitations](#privacy-and-security).
 - **Manage saved mail:** Select messages, move them to the archive's Trash, and

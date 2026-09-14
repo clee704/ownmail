@@ -387,6 +387,13 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
         .ownmail-email-row-link { grid-template-columns: subgrid; grid-column: 2 / -1; }
     }
 }
+@media (min-width: 901px) {
+    .ownmail-email-list { --ownmail-row-height: 51px; --ownmail-row-padding: 15px; }
+    html[data-list-density="standard"] .ownmail-email-list { --ownmail-row-height: 43px; --ownmail-row-padding: 11px; }
+    html[data-list-density="compact"] .ownmail-email-list { --ownmail-row-height: 35px; --ownmail-row-padding: 7px; }
+    .ownmail-email-row-link { min-height: var(--ownmail-row-height); }
+    .ownmail-email-row-link, .ownmail-email-sender { padding-block: var(--ownmail-row-padding); }
+}
 @media (max-width: 900px) {
     .ownmail-app-shell { --ownmail-sidebar-width: 176px; }
     /* Keep the header outside Safari's sticky-position restoration during swipe Back. */
