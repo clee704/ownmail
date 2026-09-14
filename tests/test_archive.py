@@ -953,7 +953,10 @@ class TestBackupContentDedup:
     def test_content_dedup_skips_duplicates(self, temp_dir, capsys):
         """Emails with same content but different provider_id are skipped."""
         import hashlib
+        import json
         from unittest.mock import MagicMock
+
+        from ownmail.download_progress import DownloadProgress
 
         archive = EmailArchive(temp_dir, {})
 
@@ -977,11 +980,18 @@ class TestBackupContentDedup:
         # Same content under a different provider_id
         provider.download_message.return_value = (raw, ["INBOX"])
 
-        result = archive.backup(provider)
+        progress_path = temp_dir / "progress.json"
+        progress = DownloadProgress(progress_path)
+        result = archive.backup(provider, progress=progress)
+        progress.flush()
 
         # Should count as success (skipped, not error)
         assert result["success_count"] == 1
         assert result["error_count"] == 0
+        status = json.loads(progress_path.read_text())
+        assert status["downloaded"] == 0
+        assert status["skipped"] == 1
+        assert status["errors"] == 0
         captured = capsys.readouterr()
         assert "already downloaded" in captured.out.lower()
 

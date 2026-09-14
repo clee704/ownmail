@@ -15,6 +15,7 @@ from ownmail.config import (
     validate_config,
 )
 from ownmail.download_lock import DownloadInProgress, DownloadLock
+from ownmail.download_progress import DownloadProgress
 from ownmail.keychain import KeychainStorage
 from ownmail.providers.gmail import GmailProvider
 from ownmail.providers.imap import discover_role_folders
@@ -401,6 +402,7 @@ def cmd_download(
     since: str | None = None,
     until: str | None = None,
     verbose: bool = False,
+    progress: DownloadProgress | None = None,
 ) -> bool:
     """Run download for one or all sources.
 
@@ -411,6 +413,7 @@ def cmd_download(
         since: Only download emails after this date (YYYY-MM-DD)
         until: Only download emails before this date (YYYY-MM-DD)
         verbose: Show detailed progress output
+        progress: Optional reporter for web download status
 
     Returns:
         Whether all requested sources finished without errors or interruption.
@@ -426,6 +429,8 @@ def cmd_download(
         # No sources configured - use legacy single-account mode
         print("No sources configured in config.yaml.")
         print("Run 'ownmail setup' first, then add sources to config.yaml")
+        if progress:
+            progress.fail("setup")
         sys.exit(1)
 
     # Filter to specific source if requested
@@ -433,6 +438,8 @@ def cmd_download(
         source = get_source_by_name(config, source_name)
         if not source:
             print(f"❌ Error: Source '{source_name}' not found in config")
+            if progress:
+                progress.fail("setup")
             sys.exit(1)
         sources = [source]
 
@@ -448,11 +455,14 @@ def cmd_download(
     total_errors = 0
     interrupted = False
     skipped_source = False
+    progress_options = {"progress": progress} if progress else {}
 
     for source in sources:
         name = source["name"]
         source_type = source["type"]
         account = source["account"]
+        if progress:
+            progress.set_phase("starting", name)
 
         print(f"Source: {name} ({account})")
 
@@ -464,6 +474,8 @@ def cmd_download(
             if not secret_ref:
                 print(f"❌ Error: Source '{name}' missing auth.secret_ref")
                 skipped_source = True
+                if progress:
+                    progress.fail("setup")
                 continue
 
             try:
@@ -471,6 +483,8 @@ def cmd_download(
             except ValueError as e:
                 print(f"❌ Error: {e}")
                 skipped_source = True
+                if progress:
+                    progress.fail("setup")
                 continue
 
             # Create provider
@@ -487,6 +501,8 @@ def cmd_download(
             # Authenticate
             if verbose:
                 print("[verbose] Authenticating...", flush=True)
+            if progress:
+                progress.set_phase("authenticating")
             provider.authenticate()
 
             # Get email count (fast query)
@@ -508,7 +524,7 @@ def cmd_download(
             # Run download
             if verbose:
                 print("[verbose] Starting download...", flush=True)
-            result = archive.backup(provider, since=since, until=until, verbose=verbose)
+            result = archive.backup(provider, since=since, until=until, verbose=verbose, **progress_options)
 
             # Print summary
             total = email_count + result["success_count"]
@@ -542,6 +558,8 @@ def cmd_download(
                 exclude_roles=source.get("exclude_roles"),
             )
 
+            if progress:
+                progress.set_phase("authenticating")
             provider.authenticate()
 
             email_count = archive.db.get_email_count(account)
@@ -556,7 +574,7 @@ def cmd_download(
                     date_range.append(f"until {until}")
                 print(f"Date filter: {' '.join(date_range)}", flush=True)
 
-            result = archive.backup(provider, since=since, until=until, verbose=verbose)
+            result = archive.backup(provider, since=since, until=until, verbose=verbose, **progress_options)
 
             total = email_count + result["success_count"]
             print("\n" + "-" * 50)
@@ -578,11 +596,17 @@ def cmd_download(
         else:
             print(f"  Unknown source type: {source_type}")
             skipped_source = True
+            if progress:
+                progress.fail("setup")
             continue
 
         total_downloaded += result["success_count"]
         total_errors += result["error_count"]
         interrupted = interrupted or result["interrupted"]
+        if progress:
+            if result["interrupted"]:
+                progress.fail("interrupted")
+            progress.flush()
 
     print("\n" + "=" * 50)
     print("Overall Download Summary")
@@ -592,7 +616,7 @@ def cmd_download(
     if interrupted:
         print("\n  Run 'download' again to resume.")
     print("=" * 50 + "\n")
-    return total_errors == 0 and not interrupted and not skipped_source
+    return total_errors == 0 and not interrupted and not skipped_source and not (progress and progress.errors)
 
 
 def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
@@ -813,6 +837,7 @@ Examples:
         description="Download new emails and index them for search.",
     )
     download_parser.add_argument("--source", type=str, help="Source name to operate on (default: all sources)")
+    download_parser.add_argument("--progress-file", type=Path, help=argparse.SUPPRESS)
     download_parser.add_argument(
         "--since",
         type=str,
@@ -1026,35 +1051,40 @@ Examples:
         parser.print_help()
         sys.exit(1)
 
-    # Load config
-    config = load_config(args.config, SCRIPT_DIR)
-
-    # Validate config (skip for setup, which may create it)
-    if args.command != "setup":
-        errors = validate_config(config)
-        if errors:
-            print("❌ Configuration errors:")
-            for error in errors:
-                print(f"   - {error}")
-            sys.exit(1)
-
-    # Determine config file path for potential updates
-    config_path = args.config.resolve() if args.config else None
-    if not config_path:
-        # Check default locations
-        cwd_config = Path.cwd() / "config.yaml"
-        if cwd_config.exists():
-            config_path = cwd_config
-        elif (SCRIPT_DIR / "config.yaml").exists():
-            config_path = SCRIPT_DIR / "config.yaml"
-
-    # Determine archive_root
-    if args.archive_root:
-        archive_root = args.archive_root
-    else:
-        archive_root = get_archive_root(config, DEFAULT_ARCHIVE_DIR)
-
+    progress = DownloadProgress(args.progress_file) if args.command == "download" and args.progress_file else None
+    operation = "config"
     try:
+        # Load config
+        config = load_config(args.config, SCRIPT_DIR)
+
+        # Validate config (skip for setup, which may create it)
+        if args.command != "setup":
+            errors = validate_config(config)
+            if errors:
+                print("❌ Configuration errors:")
+                for error in errors:
+                    print(f"   - {error}")
+                if progress:
+                    progress.fail("config")
+                sys.exit(1)
+
+        # Determine config file path for potential updates
+        config_path = args.config.resolve() if args.config else None
+        if not config_path:
+            # Check default locations
+            cwd_config = Path.cwd() / "config.yaml"
+            if cwd_config.exists():
+                config_path = cwd_config
+            elif (SCRIPT_DIR / "config.yaml").exists():
+                config_path = SCRIPT_DIR / "config.yaml"
+
+        # Determine archive_root
+        if args.archive_root:
+            archive_root = args.archive_root
+        else:
+            archive_root = get_archive_root(config, DEFAULT_ARCHIVE_DIR)
+
+        operation = None
         if args.command == "setup":
             keychain = KeychainStorage()
             cmd_setup(keychain, config, config_path, method=getattr(args, "method", None))
@@ -1066,9 +1096,14 @@ Examples:
                 sources_parser.print_help()
 
         elif args.command == "download":
+            operation = "archive"
             with DownloadLock(archive_root):
                 archive = EmailArchive(archive_root, config)
-                if not cmd_download(archive, config, args.source, args.since, args.until, args.verbose):
+                operation = None
+                progress_options = {"progress": progress} if progress else {}
+                if not cmd_download(
+                    archive, config, args.source, args.since, args.until, args.verbose, **progress_options
+                ):
                     sys.exit(1)
 
         else:
@@ -1161,16 +1196,31 @@ Examples:
                 )
 
     except DownloadInProgress as e:
+        if progress:
+            progress.fail("busy")
         print(f"\n{e}")
         sys.exit(75)
     except KeyboardInterrupt:
+        if progress:
+            progress.fail("interrupted")
         print("\n\nOperation interrupted by user.")
         sys.exit(1)
+    except SystemExit as e:
+        if progress and e.code and not progress.failure_reason:
+            progress.fail("failed")
+        raise
     except Exception as e:
+        if operation == "config" and progress is None:
+            raise
+        if progress:
+            progress.fail_exception(e, context=operation)
         print(f"\n❌ Error: {e}")
         if args.verbose:
             raise
         sys.exit(1)
+    finally:
+        if progress:
+            progress.finish()
 
 
 if __name__ == "__main__":

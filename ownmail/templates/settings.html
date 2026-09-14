@@ -14,11 +14,14 @@
         <form class="ownmail-settings-form ownmail-download-form" id="ownmail-download-form">
             <fieldset class="ownmail-settings-section">
                 <legend>Downloads</legend>
-                <p class="ownmail-download-description">Download eligible mail from all configured sources, using the same filters as <code>ownmail download</code>.</p>
+                <p class="ownmail-download-description">Download eligible mail from all configured sources.</p>
                 <div class="ownmail-settings-actions">
                     <button type="button" class="ownmail-settings-save" id="ownmail-download-now" disabled>Download now</button>
                 </div>
-                <p id="ownmail-download-status" role="status" aria-live="polite" aria-atomic="true">Checking download status…</p>
+                <p id="ownmail-download-status" role="status" aria-live="polite" aria-atomic="true">
+                    <span id="ownmail-download-message">Checking download status…</span>
+                    <span id="ownmail-download-progress" hidden><br><span id="ownmail-download-counts"></span></span>
+                </p>
                 <dl class="ownmail-download-times">
                     <dt>Last started</dt><dd id="ownmail-download-started">—</dd>
                     <dt>Last finished</dt><dd id="ownmail-download-finished">—</dd>
@@ -35,9 +38,7 @@
                         <button type="submit" class="ownmail-settings-save" id="ownmail-download-save" disabled>Save schedule</button>
                     </div>
                     <p class="ownmail-settings-hint" id="ownmail-download-current"></p>
-                    <p class="ownmail-settings-hint" id="ownmail-download-schedule-hint">Keep <code>ownmail serve</code> running for periodic downloads. You can close your browser. The schedule is off by default and saved across server restarts.</p>
-                    <p class="ownmail-settings-hint">The schedule applies to everyone using this server.</p>
-                    <p class="ownmail-settings-hint">Set up your mail sources first. If a provider needs you to sign in again, check the server console.</p>
+                    <p class="ownmail-settings-hint" id="ownmail-download-schedule-hint">Keep <code>ownmail serve</code> running to download on this schedule, even with your browser closed. Your chosen interval is saved across restarts.</p>
                 </div>
                 <p id="ownmail-download-saved" class="ownmail-download-saved" role="status" aria-live="polite" hidden></p>
                 <p id="ownmail-download-error" class="ownmail-download-error" role="alert" hidden></p>

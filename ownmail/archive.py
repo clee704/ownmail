@@ -21,6 +21,7 @@ from typing import Any
 from ownmail import sidecar
 from ownmail.config import get_db_dir
 from ownmail.database import ArchiveDatabase
+from ownmail.download_progress import DownloadProgress
 from ownmail.keychain import KeychainStorage
 from ownmail.parser import EmailParser
 from ownmail.providers.base import EmailProvider
@@ -198,6 +199,7 @@ class EmailArchive:
         since: str | None = None,
         until: str | None = None,
         verbose: bool = False,
+        progress: DownloadProgress | None = None,
     ) -> dict:
         """Backup emails from a provider.
 
@@ -206,11 +208,14 @@ class EmailArchive:
             since: Only backup emails after this date (YYYY-MM-DD)
             until: Only backup emails before this date (YYYY-MM-DD)
             verbose: Show detailed progress output
+            progress: Optional reporter for web download status
 
         Returns:
             Dictionary with success_count, error_count, interrupted
         """
         account = provider.account
+        if progress:
+            progress.set_phase("checking", provider.source_name)
         emails_dir = self.get_emails_dir(provider.source_name)
         emails_dir.mkdir(parents=True, exist_ok=True)
 
@@ -240,6 +245,8 @@ class EmailArchive:
             new_ids, new_state = provider.get_new_message_ids(sync_state, since=since, until=until)
         except KeyboardInterrupt:
             print("\nBackup cancelled.")
+            if progress:
+                progress.fail("interrupted")
             return {"success_count": 0, "error_count": 0, "interrupted": True, "failed_ids": []}
         if verbose:
             print(f"[verbose] Provider returned {len(new_ids)} message IDs", flush=True)
@@ -301,6 +308,8 @@ class EmailArchive:
         # Track failed message IDs for reporting
         failed_ids: list[str] = []
 
+        if progress:
+            progress.set_phase("downloading")
         try:
             i = 0
             while i < len(new_ids) and not interrupted:
@@ -319,6 +328,7 @@ class EmailArchive:
 
                 # Download batch with error handling
                 batch_results = {}
+                batch_errors = {}
                 if has_batch and len(batch_ids) > 1:
                     try:
                         batch_results = provider.download_messages_batch(batch_ids)
@@ -330,6 +340,8 @@ class EmailArchive:
                             batch_results[msg_id] = (None, [], error_msg)
                             failed_ids.append(msg_id)
                         error_count += len(batch_ids)
+                        if progress:
+                            progress.fail_exception(e, errors=len(batch_ids))
                         i += len(batch_ids)
                         continue
                 else:
@@ -340,6 +352,7 @@ class EmailArchive:
                             batch_results[msg_id] = (raw_data, labels, None)
                         except Exception as e:
                             batch_results[msg_id] = (None, [], str(e))
+                            batch_errors[msg_id] = e
 
                 # Process batch results
                 for j, msg_id in enumerate(batch_ids):
@@ -358,11 +371,18 @@ class EmailArchive:
                                 end="",
                                 flush=True,
                             )
+                            if progress:
+                                progress.advance(skipped=1)
                             continue
                         print(f"\n  Error downloading {msg_id}: {error_msg}")
                         if msg_id not in failed_ids:
                             failed_ids.append(msg_id)
                         error_count += 1
+                        if progress:
+                            if msg_id in batch_errors:
+                                progress.fail_exception(batch_errors[msg_id], errors=1)
+                            else:
+                                progress.fail("download", errors=1)
                         continue
 
                     raw_data, labels, _ = result
@@ -372,6 +392,8 @@ class EmailArchive:
                     content_hash = hashlib.sha256(raw_data).hexdigest()
                     if content_hash in downloaded_hashes:
                         success_count += 1
+                        if progress:
+                            progress.advance(skipped=1)
                         i_skipped = i + j + 1
                         if success_count > 0:
                             elapsed = time.time() - start_time
@@ -408,7 +430,7 @@ class EmailArchive:
                         sidecar.write_labels(filepath, labels or [])
 
                         # Index the email (updates the row with parsed metadata + FTS)
-                        self._index_email(email_id, filepath, raw_data, skip_delete=True)
+                        indexed = self._index_email(email_id, filepath, raw_data, skip_delete=True)
 
                         # Store labels even when parsing failed.
                         if labels:
@@ -435,6 +457,12 @@ class EmailArchive:
                             self._batch_conn.commit()
                             last_commit_count = success_count
 
+                        if progress:
+                            if indexed:
+                                progress.advance(downloaded=1)
+                            else:
+                                progress.fail("message_index", errors=1)
+
                         # Update progress stats
                         elapsed = time.time() - start_time
                         last_rate = success_count / elapsed if elapsed > 0 else 0
@@ -449,14 +477,23 @@ class EmailArchive:
                         )
                     else:
                         error_count += 1
+                        if progress:
+                            progress.fail("storage", errors=1)
 
                 i += len(batch_ids)
 
+        except Exception as error:
+            if progress:
+                progress.fail_exception(error, context="archive", errors=1)
+            raise
         finally:
             self._batch_conn.commit()
             self._batch_conn.close()
             self._batch_conn = None
             signal.signal(signal.SIGINT, original_handler)
+
+        if interrupted and progress:
+            progress.fail("interrupted")
 
         # Update sync state only when ALL conditions are met:
         # 1. Not interrupted

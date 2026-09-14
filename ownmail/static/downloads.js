@@ -4,6 +4,9 @@
     var interval = document.getElementById('ownmail-download-interval');
     var save = document.getElementById('ownmail-download-save');
     var status = document.getElementById('ownmail-download-status');
+    var message = document.getElementById('ownmail-download-message');
+    var progress = document.getElementById('ownmail-download-progress');
+    var counts = document.getElementById('ownmail-download-counts');
     var saved = document.getElementById('ownmail-download-saved');
     var error = document.getElementById('ownmail-download-error');
     var snapshot = JSON.parse(document.getElementById('ownmail-download-initial').textContent);
@@ -33,15 +36,33 @@
         document.getElementById('ownmail-download-current').textContent =
             'Current schedule: ' + (currentInterval ? currentInterval.textContent : 'Off') + '.';
         var messages = {
-            idle: 'No download has run in this server session.',
-            running: 'Download in progress. Output is available in the server console.',
+            idle: 'Ready to download.',
+            running: 'Download in progress.',
             succeeded: 'Download finished.',
-            failed: 'Download failed. Check the server console, then try again.',
-            busy: 'Another download is already running. Try again after it finishes.'
+            failed: 'Download failed.',
+            busy: 'Another download is already running.'
         };
         var text = snapshot.available ? messages[snapshot.state] :
-            'Downloads are unavailable. Start ownmail serve with a configured mail source.';
-        if (status.textContent !== text) status.textContent = text;
+            'Downloads are unavailable.';
+        if (snapshot.running) {
+            var phases = {
+                starting: 'Starting download…',
+                authenticating: snapshot.source ? 'Signing in to ' + snapshot.source + '…' : 'Signing in…',
+                checking: snapshot.source ? 'Checking ' + snapshot.source + ' for new mail…' : 'Checking for new mail…',
+                downloading: snapshot.source ? 'Downloading from ' + snapshot.source + '…' : 'Downloading…',
+                finished: 'Finishing download…'
+            };
+            text = phases[snapshot.phase] || text;
+        } else if (snapshot.failure_reason) {
+            text = snapshot.failure_reason;
+        } else if (snapshot.state === 'succeeded' && snapshot.has_progress && snapshot.downloaded === 0) {
+            text = 'No new mail.';
+        }
+        if (message.textContent !== text) message.textContent = text;
+        var totals = snapshot.has_progress ? snapshot.downloaded + ' downloaded · ' +
+            snapshot.skipped + ' skipped · ' + snapshot.errors + ' failed' : '';
+        if (counts.textContent !== totals) counts.textContent = totals;
+        progress.hidden = !snapshot.has_progress;
         status.dataset.state = snapshot.state;
         showDate('ownmail-download-started', snapshot.started_at);
         showDate('ownmail-download-finished', snapshot.finished_at);
@@ -108,7 +129,7 @@
             if (typeof data.available === 'boolean') snapshot = data;
             if (!response.ok && !(response.status === 409 && !isSchedule)) {
                 actionError = data.error || (isSchedule ? 'Could not save the download schedule.' :
-                    'Could not start the download. Check the server console.');
+                    typeof data.available === 'boolean' ? '' : 'Could not start the download.');
             } else if (isSchedule) {
                 scheduleDirty = false;
                 saved.textContent = 'Download schedule saved.';

@@ -4,6 +4,7 @@ import json
 import subprocess
 from unittest.mock import patch
 
+import pytest
 from lxml import html
 
 from tests import test_email_contrast, test_ui_shell
@@ -21,6 +22,13 @@ def run_download_browser(app, node, assertions, *, viewport=(1100, 900)):
         "started_at": None,
         "finished_at": None,
         "next_run": None,
+        "has_progress": False,
+        "phase": None,
+        "source": None,
+        "downloaded": 0,
+        "skipped": 0,
+        "errors": 0,
+        "failure_reason": None,
     }
     client = app.test_client()
     with patch.object(app.extensions["downloads"], "snapshot", return_value=snapshot):
@@ -56,7 +64,6 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         let startStatus = 202;
         let scheduleStatus = 200;
         let startGate = null;
-        let getCount = 0;
         let settingsLoads = 0;
         const starts = [];
         const schedules = [];
@@ -70,7 +77,6 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
             }
             if (input.files[url.pathname]) return route.fulfill(input.files[url.pathname]);
             if (url.pathname === '/downloads' && request.method() === 'GET') {
-                getCount++;
                 if (offline) return route.abort();
                 return route.fulfill({json: state});
             }
@@ -78,7 +84,9 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
                 starts.push(request.postDataJSON());
                 if (startGate) await startGate;
                 state = {...state, running: startStatus !== 503,
-                    state: startStatus === 503 ? 'failed' : 'running', started_at: '2026-01-01T10:00:00Z'};
+                    state: startStatus === 503 ? 'failed' : 'running', started_at: '2026-01-01T10:00:00Z',
+                    phase: 'starting', source: null, has_progress: false, downloaded: 0, skipped: 0, errors: 0,
+                    failure_reason: startStatus === 503 ? 'Download process could not be started.' : null};
                 return route.fulfill({status: startStatus, json: state});
             }
             if (url.pathname === '/downloads/schedule' && request.method() === 'POST') {
@@ -99,15 +107,17 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         const save = page.locator('#ownmail-download-save');
         const error = page.locator('#ownmail-download-error');
         const saved = page.locator('#ownmail-download-saved');
+        const progress = page.locator('#ownmail-download-progress');
+        const counts = page.locator('#ownmail-download-counts');
         const waitStatus = text => page.waitForFunction(text =>
             document.getElementById('ownmail-download-status').textContent.includes(text), text);
         const refresh = async () => {
-            const previous = getCount;
+            const response = page.waitForResponse(response => new URL(response.url()).pathname === '/downloads' &&
+                response.request().method() === 'GET');
             await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-            await page.waitForFunction(() => !document.getElementById('ownmail-download-now').disabled);
-            assert.ok(getCount > previous);
+            await response;
         };
-        await waitStatus('No download');
+        await waitStatus('Ready to download');
         __ASSERTIONS__
         assert.deepEqual(errors, []);
     } finally {
@@ -140,24 +150,103 @@ def test_manual_download_prevents_duplicates_and_polls_completion_and_failure(sh
         await page.waitForTimeout(100);
         assert.deepEqual(starts, [{}]);
         releaseStart();
-        await waitStatus('Download in progress');
+        await waitStatus('Starting download');
         assert.ok(await start.isDisabled());
+        assert.equal(await progress.isVisible(), false);
         assert.equal(await page.locator('#ownmail-download-status').getAttribute('aria-live'), 'polite');
+        state = {...state, has_progress: true, phase: 'checking', source: 'Primary'};
+        await refresh();
+        await waitStatus('Checking Primary for new mail');
+        assert.equal(await counts.textContent(), '0 downloaded · 0 skipped · 0 failed');
+        state = {...state, phase: 'downloading', downloaded: 7, skipped: 2};
+        await refresh();
+        await waitStatus('7 downloaded');
+        assert.equal(await counts.textContent(), '7 downloaded · 2 skipped · 0 failed');
+        assert.match(await page.locator('#ownmail-download-message').textContent(), /Downloading from Primary/);
+        state = {...state, downloaded: 42, skipped: 3};
+        await refresh();
+        await waitStatus('42 downloaded');
         state = {...state, running: false, state: 'succeeded', finished_at: '2026-01-01T10:05:00Z'};
         await waitStatus('Download finished');
         assert.ok(await start.isEnabled());
+        assert.equal(await counts.textContent(), '42 downloaded · 3 skipped · 0 failed');
         assert.equal(await page.locator('#ownmail-download-finished').textContent(),
             await page.evaluate(() => new Date('2026-01-01T10:05:00Z').toLocaleString()));
         startStatus = 503;
         await start.click();
-        await waitStatus('Download failed');
-        await error.waitFor({state: 'visible'});
-        assert.match(await error.textContent(), /server console/);
+        await waitStatus('Download process could not be started');
+        assert.equal(await page.locator('#ownmail-download-message').textContent(), 'Download process could not be started.');
+        assert.equal(await progress.isVisible(), false);
+        assert.equal(await counts.textContent(), '');
+        assert.equal(await error.isVisible(), false);
         assert.ok(await start.isEnabled());
         assert.equal(starts.length, 2);
         assert.equal(await page.locator('#brand_name').inputValue(), 'Unsaved appearance');
         assert.equal(settingsLoads, 1);
         assert.equal(await page.locator('#ownmail-loading-overlay').isVisible(), false);
+        """,
+    )
+
+
+@pytest.mark.parametrize("has_progress", [True, False])
+def test_finished_run_distinguishes_zero_new_mail_from_missing_progress(shell_app, download_browser, has_progress):
+    app, _ = shell_app
+    run_download_browser(
+        app,
+        download_browser,
+        """
+        state = {...state, state: 'succeeded', phase: 'finished', has_progress: __HAS_PROGRESS__};
+        await refresh();
+        await waitStatus(__HAS_PROGRESS__ ? 'No new mail.' : 'Download finished.');
+        assert.equal(await progress.isVisible(), __HAS_PROGRESS__);
+        assert.equal(await counts.textContent(), __HAS_PROGRESS__ ? '0 downloaded · 0 skipped · 0 failed' : '');
+        """.replace("__HAS_PROGRESS__", json.dumps(has_progress)),
+    )
+
+
+def test_failure_reason_and_source_are_plain_text_and_clear_on_next_run(shell_app, download_browser):
+    app, _ = shell_app
+    run_download_browser(
+        app,
+        download_browser,
+        """
+        const source = '<img src=x onerror="window.unsafeSource = true">';
+        const reason = 'Cannot sign in to <b>Primary</b>. Run ownmail setup to reconnect it.';
+        state = {...state, state: 'running', running: true, has_progress: true, phase: 'authenticating',
+            source, downloaded: 12, skipped: 1, errors: 0};
+        await refresh();
+        await waitStatus('Signing in to ' + source);
+        assert.equal(await page.locator('#ownmail-download-status img').count(), 0);
+        state = {...state, source: 'Secondary', errors: 1, failure_reason: reason};
+        await refresh();
+        await waitStatus('Signing in to Secondary');
+        assert.equal(await page.locator('#ownmail-download-message').textContent(), 'Signing in to Secondary…');
+        assert.equal(await counts.textContent(), '12 downloaded · 1 skipped · 1 failed');
+        state = {...state, state: 'failed', running: false, phase: 'finished', errors: 1, failure_reason: reason};
+        await refresh();
+        await waitStatus(reason);
+        assert.equal(await page.locator('#ownmail-download-message').textContent(), reason);
+        assert.equal(await counts.textContent(), '12 downloaded · 1 skipped · 1 failed');
+        assert.equal(await page.locator('#ownmail-download-status b').count(), 0);
+        for (const [outcome, terminalReason] of [
+            ['failed', 'Download failed. Check the server console.'],
+            ['busy', 'Another download is already running.']
+        ]) {
+            state = {...state, state: outcome, failure_reason: terminalReason};
+            await refresh();
+            await waitStatus(terminalReason);
+            assert.equal(await page.locator('#ownmail-download-message').textContent(), terminalReason);
+        }
+        await start.click();
+        await waitStatus('Starting download');
+        assert.equal(await counts.textContent(), '');
+        assert.equal(await progress.isVisible(), false);
+        assert.doesNotMatch(await page.locator('#ownmail-download-message').textContent(), /Cannot sign in/);
+        state = {...state, has_progress: true, phase: 'checking', source: 'Primary'};
+        await refresh();
+        await waitStatus('Checking Primary');
+        assert.equal(await counts.textContent(), '0 downloaded · 0 skipped · 0 failed');
+        assert.equal(await page.evaluate(() => window.unsafeSource), undefined);
         """,
     )
 
@@ -214,6 +303,11 @@ def test_download_controls_fit_phone_viewport(shell_app, download_browser):
         app,
         download_browser,
         """
+        state = {...state, running: true, state: 'running', phase: 'downloading', source: 'Personal archive',
+            has_progress: true, downloaded: 42, skipped: 3, errors: 1,
+            failure_reason: 'One message could not be downloaded.'};
+        await refresh();
+        await waitStatus('42 downloaded');
         const bounds = await page.evaluate(() => ({
             viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth,
             controls: Array.from(document.querySelectorAll('#ownmail-download-form button, #ownmail-download-form select'))

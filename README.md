@@ -100,21 +100,16 @@ browse. A phone also needs a connection to that server. See
 
 Open **Settings → Downloads** and choose **Download now** to run the same download
 as `ownmail download`, using all configured sources and their existing filters.
-The page shows whether the download is running, finished, or failed, with its
-last and next run times. Command-line and web downloads cannot overlap for the
-same archive.
+The page shows the current source, downloaded and skipped message counts, and
+failures with a brief reason. Counts cover the current run across all sources.
+Command-line and web downloads cannot overlap for the same archive.
 
 For automatic downloads, choose an interval and **Save schedule**. Available
 intervals are 15 minutes, 30 minutes, 1 hour, 6 hours, and 1 day; **Off** disables
 the schedule. The default is Off, and the saved interval survives server restarts.
 Each interval starts after a download finishes or the server restarts.
 Keep `ownmail serve` running for scheduled downloads; the browser can be closed.
-The interval is stored as `web.download_interval_minutes` in `config.yaml` and
-applies to everyone using the server.
-
-Configure credentials with `ownmail setup` first. Download output stays in the
-server console. If Gmail needs renewed authorization, complete the existing
-sign-in flow on the server.
+The interval is stored as `web.download_interval_minutes` in `config.yaml`.
 
 ### What gets archived
 
