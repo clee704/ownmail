@@ -284,7 +284,7 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-clickable-header { color: var(--ownmail-accent-ink); }
 .ownmail-labels { display: flex; flex-wrap: wrap; gap: var(--ownmail-space-1); margin-top: var(--ownmail-space-3); }
 .ownmail-label { display: inline-block; color: var(--ownmail-secondary); background: var(--ownmail-sidebar); border: 1px solid var(--ownmail-border); border-radius: var(--ownmail-radius); padding: 1px 6px; font-size: var(--ownmail-text-xs); overflow-wrap: anywhere; max-width: 100%; }
-.ownmail-label:hover { background: var(--ownmail-selected); text-decoration: none; }
+.ownmail-label:is(:hover, :focus-visible) { background: var(--ownmail-selected); border-color: var(--ownmail-accent); text-decoration: none; }
 .ownmail-email-menu { position: relative; flex: none; }
 .ownmail-email-menu-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: var(--ownmail-radius); background: transparent; color: var(--ownmail-secondary); }
 .ownmail-email-menu-btn:hover { background: var(--ownmail-hover); }
