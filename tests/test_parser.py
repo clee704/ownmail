@@ -4,6 +4,8 @@ import email
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -422,29 +424,26 @@ PDF content here
         result = EmailParser.parse_file(content=content)
         assert "document.pdf" in result["attachments"]
 
-    def test_parse_email_inline_image(self):
-        """Test parsing email with inline image."""
-        content = b"""From: sender@example.com
-Subject: With Image
-MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="bound1"
-
---bound1
-Content-Type: text/plain
-
-See image below.
-
---bound1
-Content-Type: image/png
-Content-Disposition: inline; filename="image.png"
-
-PNG data here
-
---bound1--
-"""
+    @pytest.mark.parametrize(
+        ("part_headers", "filename"),
+        [
+            (b'Content-Type: image/png\r\nContent-Disposition: inline; filename="image.png"', "image.png"),
+            (b'Content-Type: application/pdf\r\nContent-Disposition: inline; filename="report.pdf"', "report.pdf"),
+            (b'Content-Type: application/pdf; name="report.pdf"', "report.pdf"),
+        ],
+        ids=["inline-image", "inline-pdf", "content-type-name"],
+    )
+    def test_parse_named_parts_as_attachments(self, part_headers, filename):
+        """Named MIME parts remain discoverable without attachment disposition."""
+        content = (
+            b"From: sender@example.com\r\nSubject: Named part\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="bound1"\r\n\r\n'
+            b"--bound1\r\nContent-Type: text/plain\r\n\r\nSee attached.\r\n"
+            b"--bound1\r\n" + part_headers + b"\r\n\r\nFile data\r\n--bound1--\r\n"
+        )
         result = EmailParser.parse_file(content=content)
-        # May or may not capture inline as attachment
-        assert isinstance(result["attachments"], str)
+        assert result["attachments"] == filename
+        assert result["body"] == "See attached."
 
     def test_parse_multiple_attachments(self):
         """Test parsing email with multiple attachments."""

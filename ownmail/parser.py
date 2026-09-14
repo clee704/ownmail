@@ -704,10 +704,9 @@ class EmailParser:
                 for part in msg.walk():
                     try:
                         content_type = part.get_content_type()
-                        content_disposition = str(part.get("Content-Disposition", ""))
 
                         # Get attachment filenames
-                        if "attachment" in content_disposition:
+                        if is_attachment(part):
                             try:
                                 # Not get_filename(): it returns None for the
                                 # malformed parameters this recovers by hand
@@ -748,6 +747,16 @@ class EmailParser:
             "body": "\n".join(body_parts),
             "attachments": ", ".join(attachments),
         }
+
+
+def is_attachment(part) -> bool:
+    """Recognize explicit attachments and named inline MIME parts."""
+    if part.get_content_disposition() == "attachment":
+        return True
+    try:
+        return bool(part.get_filename())
+    except Exception:
+        return False
 
 
 # Joins a folded header back onto one line, per RFC 5322 unfolding

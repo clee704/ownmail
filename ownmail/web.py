@@ -21,7 +21,7 @@ from flask import Flask, abort, g, redirect, render_template, request, send_file
 
 from ownmail import roles
 from ownmail.archive import EmailArchive
-from ownmail.parser import EmailParser, _validate_decoded_text, extract_attachment_filename
+from ownmail.parser import EmailParser, _validate_decoded_text, extract_attachment_filename, is_attachment
 from ownmail.query import parse_query
 
 # Regex to find external images in HTML
@@ -1370,7 +1370,6 @@ def create_app(
 
             for part in msg.walk():
                 content_type = part.get_content_type()
-                content_disposition = str(part.get("Content-Disposition", ""))
 
                 # Handle embedded message/rfc822 parts (digest entries)
                 if content_type == "message/rfc822":
@@ -1389,10 +1388,9 @@ def create_app(
                             emb_body = ""
                             for sub in embedded.walk():
                                 sub_ct = sub.get_content_type()
-                                sub_disp = str(sub.get("Content-Disposition", ""))
 
                                 # Check for attachments inside embedded message
-                                if "attachment" in sub_disp or sub.get_filename():
+                                if is_attachment(sub):
                                     attachments.append(_attachment_entry(sub))
                                 elif sub_ct == "text/plain" and not emb_body:
                                     payload = sub.get_payload(decode=True)
@@ -1427,9 +1425,13 @@ def create_app(
                 if inside_message_rfc822 > 0:
                     continue
 
-                if "attachment" in content_disposition:
+                if is_attachment(part):
                     attachments.append(_attachment_entry(part))
-                elif content_type == "text/plain":
+
+                # Named inline text remains part of the displayed message.
+                if part.get_content_disposition() == "attachment":
+                    continue
+                if content_type == "text/plain":
                     payload = part.get_payload(decode=True)
                     if payload:
                         # Collect text/plain parts from main message
@@ -1665,8 +1667,7 @@ def create_app(
 
         attachment_idx = 0
         for part in msg.walk():
-            content_disposition = str(part.get("Content-Disposition", ""))
-            if "attachment" in content_disposition:
+            if is_attachment(part):
                 if attachment_idx == index:
                     # Extract filename with proper charset handling
                     att_filename = extract_attachment_filename(part)

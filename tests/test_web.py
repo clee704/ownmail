@@ -622,14 +622,25 @@ class TestAttachmentDisposition:
         archive.db = mock_archive_db(get_email_by_id=("msg1", "m.eml", None, None, None, None))
         return create_app(archive).test_client()
 
-    def test_pdf_is_served_inline_and_sandboxed(self, tmp_path):
+    @pytest.mark.parametrize(
+        "part_headers",
+        [
+            b'Content-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"',
+            b'Content-Type: application/pdf\r\nContent-Disposition: inline; filename="a.pdf"',
+            b'Content-Type: application/pdf; name="a.pdf"',
+        ],
+        ids=["attachment", "inline", "content-type-name"],
+    )
+    def test_pdf_is_served_inline_and_sandboxed(self, tmp_path, part_headers):
         """A safelisted type renders in the browser, boxed in by headers."""
         client = self._client(
             tmp_path,
-            b'Content-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"',
+            part_headers + b"\r\nContent-Transfer-Encoding: base64",
+            payload=b"JVBERi0xLjQKAAEC/w==",
         )
         r = client.get("/attachment/msg1/0")
         assert r.status_code == 200
+        assert r.data == b"%PDF-1.4\n\x00\x01\x02\xff"
         assert r.headers["Content-Type"] == "application/pdf"
         assert r.headers["Content-Disposition"].startswith("inline")
         assert r.headers["Content-Security-Policy"] == "default-src 'none'; sandbox"
@@ -657,13 +668,25 @@ class TestAttachmentDisposition:
         assert r.headers["Content-Disposition"].startswith("attachment")
         assert r.headers["Content-Type"] == "application/octet-stream"
 
-    def test_download_query_forces_attachment(self, tmp_path):
+    @pytest.mark.parametrize(
+        "part_headers",
+        [
+            b'Content-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"',
+            b'Content-Type: application/pdf\r\nContent-Disposition: inline; filename="a.pdf"',
+            b'Content-Type: application/pdf; name="a.pdf"',
+        ],
+        ids=["attachment", "inline", "content-type-name"],
+    )
+    def test_download_query_forces_attachment(self, tmp_path, part_headers):
         """?download saves a previewable type instead of rendering it."""
         client = self._client(
             tmp_path,
-            b'Content-Type: application/pdf\r\nContent-Disposition: attachment; filename="a.pdf"',
+            part_headers + b"\r\nContent-Transfer-Encoding: base64",
+            payload=b"JVBERi0xLjQKAAEC/w==",
         )
         r = client.get("/attachment/msg1/0?download")
+        assert r.status_code == 200
+        assert r.data == b"%PDF-1.4\n\x00\x01\x02\xff"
         assert r.headers["Content-Disposition"].startswith("attachment")
         assert r.headers["Content-Type"] == "application/octet-stream"
         assert "Content-Security-Policy" not in r.headers
@@ -2299,22 +2322,85 @@ class TestViewEmailRendering:
             response = client.get("/email/id1")
         assert b"html version" in response.data
 
-    def test_attachments_are_listed(self, archive):
+    @pytest.mark.parametrize(
+        "part_headers",
+        [
+            b'Content-Type: application/pdf\r\nContent-Disposition: attachment; filename="report.pdf"',
+            b'Content-Type: application/pdf\r\nContent-Disposition: inline; filename="report.pdf"',
+            b'Content-Type: application/pdf; name="report.pdf"',
+        ],
+        ids=["attachment", "inline", "content-type-name"],
+    )
+    def test_attachments_are_listed(self, archive, part_headers):
         """An attachment part should appear with its name and size."""
         raw = (
             b"From: a@example.com\r\nSubject: With attachment\r\n"
             b"Date: Mon, 1 Jan 2024 10:00:00 +0000\r\n"
             b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
             b"--b1\r\nContent-Type: text/plain\r\n\r\nsee attached\r\n"
-            b"--b1\r\nContent-Type: application/pdf\r\n"
-            b'Content-Disposition: attachment; filename="report.pdf"\r\n\r\n'
-            b"PDFDATA\r\n--b1--\r\n"
+            b"--b1\r\n" + part_headers + b"\r\n\r\nPDFDATA\r\n--b1--\r\n"
         )
         self._store(archive, raw)
         app = create_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
-        assert b"report.pdf" in response.data
+        assert response.status_code == 200
+        document = html.fromstring(response.data)
+        names = document.find_class("ownmail-attachment-name")
+        assert [(name.text_content().strip(), name.get("href")) for name in names] == [
+            ("report.pdf", "/attachment/id1/0/report.pdf")
+        ]
+        assert document.find_class("ownmail-attachment-meta")[0].text_content() == "PDF · 7 B"
+        assert b"see attached" in response.data
+
+    def test_mixed_attachment_links_select_the_listed_parts(self, archive):
+        """Detail links select the same parts when dispositions differ."""
+        raw = (
+            b"From: a@example.com\r\nSubject: Mixed attachments\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nsee both attached\r\n"
+            b"--b1\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: inline; filename="first.pdf"\r\n\r\nFIRST PDF\r\n'
+            b"--b1\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="second.pdf"\r\n\r\nSECOND PDF\r\n'
+            b"--b1--\r\n"
+        )
+        self._store(archive, raw)
+        with create_app(archive).test_client() as client:
+            response = client.get("/email/id1")
+            assert response.status_code == 200
+            document = html.fromstring(response.data)
+            links = document.find_class("ownmail-attachment-name")
+            assert [(link.text_content().strip(), link.get("href")) for link in links] == [
+                ("first.pdf", "/attachment/id1/0/first.pdf"),
+                ("second.pdf", "/attachment/id1/1/second.pdf"),
+            ]
+            for link, payload in zip(links, [b"FIRST PDF", b"SECOND PDF"]):
+                preview = client.get(link.get("href"))
+                assert preview.status_code == 200
+                assert preview.data == payload
+            assert client.get("/attachment/id1/2").status_code == 404
+        assert b"see both attached" in response.data
+
+    @pytest.mark.parametrize(
+        ("content_type", "payload"),
+        [(b"text/plain", b"Visible body"), (b"text/html", b"<p>Visible body</p>")],
+        ids=["plain", "html"],
+    )
+    def test_named_inline_text_remains_in_body(self, archive, content_type, payload):
+        """A filename on an inline text part must not hide the message body."""
+        raw = (
+            b"From: a@example.com\r\nSubject: Named body\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: " + content_type + b"\r\n"
+            b'Content-Disposition: inline; filename="body.txt"\r\n\r\n' + payload + b"\r\n--b1--\r\n"
+        )
+        self._store(archive, raw)
+        with create_app(archive).test_client() as client:
+            response = client.get("/email/id1")
+        assert response.status_code == 200
+        document = html.fromstring(response.data)
+        assert document.get_element_by_id("ownmail-email-content").text_content().strip() == "Visible body"
 
     def test_embedded_digest_message_is_rendered(self, archive):
         """A message/rfc822 part should be surfaced as a digest entry."""
@@ -2913,14 +2999,23 @@ class TestInlineImagesAndSanitizer:
         b"--b1--\r\n"
     )
 
-    def test_cid_reference_becomes_data_uri(self, archive):
+    @pytest.mark.parametrize("named", [False, True], ids=["unnamed", "named-inline"])
+    def test_cid_reference_becomes_data_uri(self, archive, named):
         """A cid: image reference should be replaced with an inline data URI."""
-        self._store(archive, self.CID_EML)
+        raw = self.CID_EML
+        if named:
+            raw = raw.replace(
+                b"Content-ID: <logo123>\r\n",
+                b'Content-ID: <logo123>\r\nContent-Disposition: inline; filename="logo.gif"\r\n',
+            )
+        self._store(archive, raw)
         app = create_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"cid:logo123" not in response.data
         assert b"data:image/gif;base64," in response.data
+        names = html.fromstring(response.data).find_class("ownmail-attachment-name")
+        assert [name.text_content().strip() for name in names] == (["logo.gif"] if named else [])
 
     def test_sanitizer_is_applied_to_html_bodies(self, archive):
         """The configured sanitizer should receive the HTML body."""
