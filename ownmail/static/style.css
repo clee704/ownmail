@@ -350,6 +350,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
 .ownmail-settings-field:last-child { margin-bottom: 0; }
 .ownmail-settings-field > label { display: block; font-weight: 500; margin-bottom: var(--ownmail-space-1); }
 .ownmail-settings-field :is(input[type="text"], input[type="number"], textarea, select) { width: 100%; min-width: 0; padding: 6px var(--ownmail-space-2); border: 1px solid var(--ownmail-input-border); border-radius: var(--ownmail-radius); background: var(--ownmail-bg); color: var(--ownmail-text); }
+.ownmail-settings-field :is(input[type="text"], input[type="number"], textarea, select):focus { border-color: var(--ownmail-accent); outline: none; }
 .ownmail-settings-field input[type="number"] { width: 88px; }
 .ownmail-settings-field textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: var(--ownmail-text-xs); line-height: 1.7; }
 .ownmail-settings-hint { color: var(--ownmail-muted); font-size: var(--ownmail-text-xs); margin: var(--ownmail-space-1) 0 0; }
