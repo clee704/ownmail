@@ -1097,10 +1097,52 @@ def create_app(
 
     def get_stats():
         """Get email count stats."""
+        count = archive.active_count() if hasattr(type(archive), "active_count") else 0
         return {
-            "total_emails": archive.db.get_email_count(),
+            "total_emails": archive.consolidated_count()
+            if hasattr(type(archive), "consolidated_count")
+            else archive.db.get_email_count(),
             "trash_count": archive.db.get_trash_count(),
+            "active_count": count,
         }
+
+    def get_active_info(email_id):
+        if not hasattr(type(archive), "active_info"):
+            return None
+        if hasattr(type(archive), "active_infos"):
+            if not hasattr(g, "active_infos"):
+                g.active_infos = archive.active_infos()
+            info = g.active_infos.get(email_id)
+        else:
+            info = archive.active_info(email_id)
+        if info is None:
+            return None
+        info = dict(info)
+        for field in ("checked_at", "content_at"):
+            value = info.get(field)
+            try:
+                local_dt = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(app.config.get("timezone"))
+            except (AttributeError, ValueError):
+                local_dt = None
+            info[field + "_display"] = local_dt.strftime("%b %d, %Y %H:%M %Z") if local_dt else "unknown"
+        info["cached_view"] = info["cache_id"] == email_id
+        return info
+
+    def readable_email(email_id):
+        if hasattr(type(archive), "get_readable_email"):
+            row = archive.get_readable_email(email_id)
+        else:
+            row = archive.db.get_email_by_id(email_id)
+        if not row:
+            abort(404)
+        filepath = (archive.archive_dir / row[1]).resolve()
+        if not filepath.is_relative_to(archive.archive_dir.resolve()):
+            active = get_active_info(email_id)
+            if not active or not active["cached_view"]:
+                abort(404)
+        if not filepath.is_file():
+            abort(404)
+        return row, filepath
 
     def get_label_nav():
         """Build the sidebar's label sections for the current request.
@@ -1198,6 +1240,7 @@ def create_app(
         for pattern in [
             r"\b(?:before|after):\d{4}-?\d{2}-?\d{2}\b",
             r'\b(?:label|tag):(?:"[^"]*"|\S+)\b',
+            r"\b(?:is):(?:active|archived)\b",
         ]:
             query_without_filters = re.sub(pattern, "", query_without_filters)
         # Also remove orphaned AND
@@ -1293,6 +1336,7 @@ def create_app(
                     "date_short": date_short,
                     "snippet": snippet,
                     "has_attachments": bool(has_attachments),
+                    "active": get_active_info(msg_id),
                 }
             )
 
@@ -1324,21 +1368,15 @@ def create_app(
         if verbose:
             print(f"[verbose] Looking up email {email_id}...", flush=True)
             start = time.time()
-        email_info = archive.db.get_email_by_id(email_id)
+        email_info, filepath = readable_email(email_id)
         if verbose:
             print(f"[verbose] DB lookup took {time.time() - start:.2f}s", flush=True)
-        if not email_info:
-            abort(404)
-
-        filename = email_info[1]  # filename is second column
         is_trashed = email_info[5] is not None  # trashed_at
-        filepath = archive.archive_dir / filename
-
-        if not filepath.exists():
-            abort(404)
+        active = get_active_info(email_id)
+        cached_view = active is not None and active["cached_view"]
 
         # Get labels from email_labels table, named canonically for display
-        labels = _label_chips(archive.db.get_labels_for_email(email_id))
+        labels = [] if cached_view else _label_chips(archive.db.get_labels_for_email(email_id))
 
         # Parse email using EmailParser for proper Korean charset handling
         if verbose:
@@ -1583,6 +1621,8 @@ def create_app(
             auto_scale=app.config["auto_scale"],
             back_url=back_url,
             is_trashed=email_data.get("is_trashed", False),
+            active=active,
+            cached_view=cached_view,
         )
 
     @app.route("/labels/<email_id>", methods=["GET", "POST"])
@@ -1606,17 +1646,8 @@ def create_app(
     @app.route("/raw/<email_id>")
     def view_raw(email_id: str):
         """Show the original .eml file with filepath."""
-        email_info = archive.db.get_email_by_id(email_id)
-        if not email_info:
-            abort(404)
-
+        email_info, filepath = readable_email(email_id)
         filename = email_info[1]
-        filepath = (archive.archive_dir / filename).resolve()
-        if not filepath.is_relative_to(archive.archive_dir.resolve()):
-            abort(404)
-
-        if not filepath.exists():
-            abort(404)
 
         # Read file content
         with open(filepath, "rb") as f:
@@ -1656,17 +1687,7 @@ def create_app(
     @app.route("/download/<email_id>")
     def download_eml(email_id: str):
         """Download the original .eml file."""
-        email_info = archive.db.get_email_by_id(email_id)
-        if not email_info:
-            abort(404)
-
-        filename = email_info[1]
-        filepath = (archive.archive_dir / filename).resolve()
-        if not filepath.is_relative_to(archive.archive_dir.resolve()):
-            abort(404)
-
-        if not filepath.exists():
-            abort(404)
+        _, filepath = readable_email(email_id)
 
         # Use the original filename or generate one from email_id
         download_name = filepath.name
@@ -1679,17 +1700,7 @@ def create_app(
     @app.route("/attachment/<email_id>/<int:index>/<path:name>")
     def download_attachment(email_id: str, index: int, name: str = None):
         # Get email file path
-        email_info = archive.db.get_email_by_id(email_id)
-        if not email_info:
-            abort(404)
-
-        filename = email_info[1]
-        filepath = (archive.archive_dir / filename).resolve()
-        if not filepath.is_relative_to(archive.archive_dir.resolve()):
-            abort(404)
-
-        if not filepath.exists():
-            abort(404)
+        _, filepath = readable_email(email_id)
 
         # Parse email and find attachment
         with open(filepath, "rb") as f:

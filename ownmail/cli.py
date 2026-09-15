@@ -149,9 +149,10 @@ def _update_or_create_config(
 
 
 _FILTER_SNIPPET = """\
-    # Not downloaded: inbox, drafts, trash and spam. Mail is archived once
-    # you have filed it, so your mail client stays in charge of triage.
-    # 'exclude_roles' relaxes the first two; see config.example.yaml.
+    # Inbox, drafts, and unconfirmed mail use a separate Active cache.
+    # Filed and Sent mail can be archived after current checks and a safe save.
+    # active_downloads defaults to true; exclude_roles is deprecated.
+    # Trash and spam stay excluded. See config.example.yaml for provider limits.
 """
 
 
@@ -524,7 +525,14 @@ def cmd_download(
             # Run download
             if verbose:
                 print("[verbose] Starting download...", flush=True)
-            result = archive.backup(provider, since=since, until=until, verbose=verbose, **progress_options)
+            result = archive.backup(
+                provider,
+                since=since,
+                until=until,
+                verbose=verbose,
+                active_downloads=source.get("active_downloads", True),
+                **progress_options,
+            )
 
             # Print summary
             total = email_count + result["success_count"]
@@ -574,7 +582,14 @@ def cmd_download(
                     date_range.append(f"until {until}")
                 print(f"Date filter: {' '.join(date_range)}", flush=True)
 
-            result = archive.backup(provider, since=since, until=until, verbose=verbose, **progress_options)
+            result = archive.backup(
+                provider,
+                since=since,
+                until=until,
+                verbose=verbose,
+                active_downloads=source.get("active_downloads", True),
+                **progress_options,
+            )
 
             total = email_count + result["success_count"]
             print("\n" + "-" * 50)
@@ -620,7 +635,7 @@ def cmd_download(
 
 
 def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
-    """Search archived emails."""
+    """Search cached Active and archived messages."""
     print(f"\nSearching for: {query}\n")
 
     # A parse error comes back from search() as zero rows, which looks like
@@ -638,8 +653,13 @@ def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
 
     print(f"Found {len(results)} results:\n")
 
-    for _msg_id, filename, subject, sender, date_str, snippet, _has_attachments in results:
+    active_info = archive.active_infos()
+    for msg_id, filename, subject, sender, date_str, snippet, _has_attachments in results:
         print(f"  {date_str}")
+        if info := active_info.get(msg_id):
+            state = "Archived; Active server copy" if info["archived"] else "Active (server-owned)"
+            freshness = "" if info["complete"] else "; refresh incomplete, server state unconfirmed"
+            print(f"  {state}; last checked: {info.get('checked_at') or 'unknown'}{freshness}")
         print(f"  From: {sender}")
         print(f"  Subject: {subject}")
         print(f"  {snippet}")

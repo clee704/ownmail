@@ -50,17 +50,26 @@
                 authenticating: snapshot.source ? 'Signing in to ' + snapshot.source + '…' : 'Signing in…',
                 checking: snapshot.source ? 'Checking ' + snapshot.source + ' for new mail…' : 'Checking for new mail…',
                 downloading: snapshot.source ? 'Downloading from ' + snapshot.source + '…' : 'Downloading…',
+                refreshing: snapshot.source ? 'Refreshing live mail from ' + snapshot.source + '…' : 'Refreshing live mail…',
                 finished: 'Finishing download…'
             };
             text = phases[snapshot.phase] || text;
         } else if (snapshot.failure_reason) {
             text = snapshot.failure_reason;
+        } else if (snapshot.active_complete === false) {
+            text = 'Active refresh incomplete. Previously saved copies remain available.';
+        } else if (snapshot.active_complete === true) {
+            text = 'Capture finished. Active mail refreshed.';
         } else if (snapshot.state === 'succeeded' && snapshot.has_progress && snapshot.downloaded === 0) {
             text = 'No new mail.';
         }
         if (message.textContent !== text) message.textContent = text;
         var totals = snapshot.has_progress ? snapshot.downloaded + ' downloaded · ' +
             snapshot.skipped + ' skipped · ' + snapshot.errors + ' failed' : '';
+        if (snapshot.has_progress && (typeof snapshot.active_complete === 'boolean' || snapshot.phase === 'refreshing')) {
+            totals = snapshot.downloaded + ' archived · ' + (snapshot.active_refreshed || 0) +
+                ' Active refreshed · ' + snapshot.errors + ' failed';
+        }
         if (counts.textContent !== totals) counts.textContent = totals;
         progress.hidden = !snapshot.has_progress;
         status.dataset.state = snapshot.state;

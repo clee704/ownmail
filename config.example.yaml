@@ -13,32 +13,31 @@ archive_root: /path/to/emails
 # Default: same as archive_root
 # db_dir: /path/to/fast/local/storage
 
+# Optional: place disposable Active mail in another directory.
+# Default: a sibling named .<archive-name>-active; /path/to/emails uses
+# /path/to/.emails-active. Relative paths use the working directory.
+# The cache and archive must be separate: neither may contain the other.
+# Choose an empty directory or this archive's existing ownmail Active cache.
+# active_cache_dir: /path/to/live-cache
+
 # ─── Email Sources ────────────────────────────────────────────
 #
-# THE DOWNLOAD FILTER
+# Inbox, Drafts, other observed unfinished mail, and unconfirmed states use
+# the Active cache.
+# Confirmed server edits replace cached contents; confirmed deletion, Trash,
+# or Spam retires cached copies after a complete listing without message errors.
+# Failed refreshes keep prior copies and show stale or unconfirmed state.
 #
-# ownmail does not archive everything on the server. It archives mail you
-# have finished with. A message is downloaded once it is no longer in any of
-# these roles, whatever your provider happens to call them:
+# Ordinary filed and Sent mail is eligible outside Active or discarded states.
+# Unknown states and failed checks hold affected messages for a later run.
+# Capture follows visible provider state; hidden or unadvertised unfinished
+# states may be unavailable. See docs/archive.md for provider limits.
 #
-#   inbox   — you have not decided about it yet. It is still live in your
-#             mail client, and adverts and one-time codes that you would have
-#             deleted there would otherwise sit in the archive forever.
-#   drafts  — the message is not finished. Capturing one freezes half a
-#             sentence into the archive permanently.
-#   trash   — you decided it was not worth keeping.
-#   spam    — your provider decided for you.
-#
-# Sent mail IS archived. There is no triage step for outgoing mail — nobody
-# files their Sent folder — so waiting for one would mean never archiving
-# your own mail. Sending is the decision.
-#
-# FILTERING IS NOT PERMANENT EXCLUSION. Every run re-checks where a message
-# is now, so mail you rescue from spam, or move out of the inbox, or send
-# from a draft, is picked up on the next run. Nothing is written off.
-#
-# 'exclude_roles' below relaxes the first two. Trash and spam are not
-# configurable and are always excluded — see the note under exclude_roles.
+# Every download checks metadata for all mail visible to the provider.
+# Date filters constrain capture while Active checks still cover visible mail.
+# A fresh candidate read must confirm eligibility and supply contents and labels
+# that save successfully. Unrelated source failures need not block that capture.
+# Existing archive contents, labels, and local Trash remain unchanged.
 
 sources:
   # Gmail via API (recommended)
@@ -49,28 +48,16 @@ sources:
       secret_ref: keychain:oauth-token/you@gmail.com  # required
     include_labels: true                   # fetch Gmail labels (default: true)
 
-    # Roles to keep out of the archive.
-    # Default: [inbox, drafts]
-    #
-    # The only two values you can set. Trash and spam are ALWAYS excluded and
-    # naming them here is a config error, because a purge run (once you turn
-    # one on) moves mail to trash — a trash-inclusive archive would keep
-    # re-purging everything it ever purged and never settle.
-    #
-    # Set it to [] to archive your inbox as it arrives, and drafts with it.
-    # Set it to [inbox] to archive drafts but not inbox mail, [drafts] for
-    # the reverse.
-    #
-    # WIDENING THIS (removing a role) makes the next run rescan from scratch,
-    # because mail the old setting skipped sits behind ownmail's bookmark and
-    # would otherwise stay skipped forever, silently. The rescan re-reads the
-    # server; it does not re-download anything already archived.
-    #
-    # NARROWING IT (adding a role) does not remove anything already archived
-    # — 'ownmail reconcile' reports what the new setting would reject and can
-    # move it to ownmail's bin, reversibly. Planned server cleanup also
-    # requires a verified archive copy and an inactive thread; downloading
-    # alone never authorizes cleanup. See docs/philosophy.md.
+    # Fetch Active contents for reading and search (default: true).
+    # false stops Active content fetching while eligible capture continues.
+    # Existing cache entries remain stale until confirmed capture or removal;
+    # disabling this setting never makes Inbox or Drafts owned.
+    active_downloads: true
+
+    # Deprecated for downloads. Existing combinations of inbox and drafts
+    # remain accepted, but none permits their capture. Trash and spam are
+    # always excluded, and naming them here remains a configuration error.
+    # Legacy reconcile still uses these settings when reviewing owned mail.
     # exclude_roles:
     #   - inbox
     #   - drafts
@@ -91,39 +78,12 @@ sources:
   #   auth:
   #     secret_ref: keychain:imap-password/you@company.com
   #
-  #   # Extra folders to skip, BY NAME. The escape hatch for folders no role
-  #   # describes — a mailing list you don't want kept, a shared folder.
-  #   #
-  #   # This ADDS to the role exclusion above; it does not replace it. Trash
-  #   # and spam are skipped whether or not you name them, identified by what
-  #   # the server says they are (IMAP SPECIAL-USE) rather than by spelling,
-  #   # so it works whether yours are called 'Trash', 'Deleted Items',
-  #   # 'INBOX.Trash' or a localized name. Names here must match the server
-  #   # exactly.
-  #   #
-  #   # Excluding a folder by name stops mail being DOWNLOADED from it. It
-  #   # does not stop the folder describing mail archived from elsewhere: a
-  #   # message held in both Newsletters and Projects is downloaded from
-  #   # Projects and keeps Newsletters as a label. Role-excluded folders are
-  #   # different — they are not label sources either, so a deleted copy
-  #   # never relabels the message you actually filed, and a healthy archive
-  #   # carries no 'INBOX' label.
-  #   #
-  #   # Mail already archived from a folder you add here stays put — run
-  #   # 'ownmail reconcile' to review it and move it to the bin.
-  #   #
-  #   # Editing this list changes what gets captured, so the next sync
-  #   # rescans from scratch rather than resuming from where it left off —
-  #   # otherwise mail the old setting skipped would stay skipped forever,
-  #   # silently. The rescan re-reads folders; it does not re-download
-  #   # anything already in the archive.
-  #   #
-  #   # What a rescan does NOT do is notice mail you MOVED OUT of a
-  #   # NAME-excluded folder without changing this list. Such a message is
-  #   # picked up once it lands somewhere ownmail is watching, which is the
-  #   # normal case — moving it to another folder is enough. It stays
-  #   # invisible only if it moves between two name-excluded folders. (The
-  #   # roles are re-read every run, so they do not have this gap.)
+  #   active_downloads: true
+  #
+  #   # Skip contents from these exact folder names. Metadata checks still
+  #   # inspect visible folders, and exclusions mark the view incomplete.
+  #   # Folder moves are reconsidered on later downloads. Owned messages
+  #   # and their saved labels stay unchanged.
   #   exclude_folders:
   #     - Newsletters
   #     - '[Gmail]/Important'
@@ -131,6 +91,11 @@ sources:
 # ─── Web Interface ────────────────────────────────────────────
 
 web:
+  # Automatic downloads use the same Active refresh and capture lifecycle.
+  # Keep ownmail serve running. Off by default (0); supported intervals:
+  # 15, 30, 60, 360, or 1440 minutes after the previous run finishes.
+  # download_interval_minutes: 0
+
   # Number of search results per page (1-500).
   # Default: 20
   page_size: 50

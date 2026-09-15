@@ -10,7 +10,7 @@ from ownmail import roles
 class ThreadProtection:
     """A scoped observation, which must be refreshed before server cleanup.
 
-    ``complete`` requires known membership and known finished or Active state
+    ``complete`` requires known membership and interpretable reported state
     for every relevant member. A revision is evidence of the observed state,
     not a guarantee that it remains unchanged after this check.
     """

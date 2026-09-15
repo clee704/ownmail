@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 
+from ownmail.live import LiveLookupError, LiveMessage, LiveSnapshot
 from ownmail.thread_protection import ThreadProtection
 
 
@@ -115,6 +116,14 @@ class EmailProvider(ABC):
             Provider-specific sync state string, or None if not available
         """
         ...
+
+    def list_live_messages(self) -> LiveSnapshot | None:
+        """Return current lifecycle observations, or None when unsupported."""
+        return None
+
+    def read_live_message(self, message_id: str) -> LiveMessage | None:
+        """Read current state and content; None means confirmed absence."""
+        raise LiveLookupError("Provider does not support live message lookup")
 
     def check_thread_protection(self, message_id: str) -> ThreadProtection:
         """Hold cleanup when complete current thread state is unavailable.

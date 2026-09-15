@@ -11,10 +11,27 @@ from ownmail.cli import (
     cmd_stats,
 )
 from ownmail.database import ArchiveDatabase
+from ownmail.live import LiveMessage, LiveSnapshot
 
 
 def _eid(provider_id, account=""):
     return ArchiveDatabase.make_email_id(account, provider_id)
+
+
+def _configure_live_download(provider, source_name, ids=(), state="eligible"):
+    provider.source_name = source_name
+    provider.list_live_messages.return_value = LiveSnapshot(
+        source_name,
+        provider.account,
+        [LiveMessage(message_id, identity_token=message_id, state=state) for message_id in ids],
+        complete=True,
+    )
+
+    def read(message_id):
+        raw, labels = provider.download_message(message_id)
+        return LiveMessage(message_id, labels=tuple(labels or ()), identity_token=message_id, state=state, raw=raw)
+
+    provider.read_live_message.side_effect = read
 
 
 class TestCmdSearch:
@@ -51,6 +68,26 @@ class TestCmdSearch:
         captured = capsys.readouterr()
         assert "Found" in captured.out
         assert "invoice" in captured.out.lower()
+        assert "Active" not in captured.out
+
+    @pytest.mark.parametrize(
+        "archived, complete, checked_at",
+        [(False, True, "2026-09-14T12:00:00+00:00"), (True, False, "2026-09-13T12:00:00+00:00"), (False, False, None)],
+    )
+    def test_search_prints_active_ownership_and_freshness(self, capsys, archived, complete, checked_at):
+        from ownmail.archive import EmailArchive
+
+        archive = MagicMock(spec=EmailArchive)
+        archive.search.return_value = [("message", "message.eml", "Subject", "sender@example.test", "", "Body", 0)]
+        archive.active_infos.return_value = {
+            "message": {"archived": archived, "complete": complete, "checked_at": checked_at}
+        }
+        cmd_search(archive, "Body")
+
+        output = capsys.readouterr().out
+        state = "Archived; Active server copy" if archived else "Active (server-owned)"
+        assert f"{state}; last checked: {checked_at or 'unknown'}" in output
+        assert ("refresh incomplete, server state unconfirmed" in output) is not complete
 
     def test_search_reports_a_malformed_query(self, temp_dir, capsys):
         """A parse error came back as zero rows, printed as 'No results found'."""
@@ -288,8 +325,7 @@ class TestCmdDownload:
             mock_provider = MagicMock()
             mock_provider.account = "test@gmail.com"
             mock_provider.name = "imap"
-            mock_provider.get_new_message_ids.return_value = ([], None)
-            mock_provider.get_current_sync_state.return_value = None
+            _configure_live_download(mock_provider, "test")
             mock_provider_cls.return_value = mock_provider
 
             cmd_download(archive, config)
@@ -1119,8 +1155,7 @@ sources:
         with patch("ownmail.cli.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.account = "test@gmail.com"
-            mock_provider.get_new_message_ids.return_value = ([], None)
-            mock_provider.get_current_sync_state.return_value = "12345"
+            _configure_live_download(mock_provider, "test_gmail")
             mock_provider_class.return_value = mock_provider
 
             with patch.object(sys, "argv", ["ownmail", "download"]):
@@ -1149,8 +1184,7 @@ sources:
         with patch("ownmail.cli.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.account = "test@gmail.com"
-            mock_provider.get_new_message_ids.return_value = ([], None)
-            mock_provider.get_current_sync_state.return_value = "12345"
+            _configure_live_download(mock_provider, "test_gmail")
             mock_provider_class.return_value = mock_provider
 
             with patch.object(sys, "argv", ["ownmail", "download", "--source", "test_gmail"]):
@@ -1202,16 +1236,17 @@ sources:
         with patch("ownmail.cli.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.account = "test@gmail.com"
-            mock_provider.get_new_message_ids.return_value = (["msg1", "msg2"], None)
-            mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider.download_message.return_value = (
                 b"From: test@example.com\nDate: Mon, 15 Jan 2024 10:00:00 +0000\n\nBody",
                 ["INBOX"],
             )
+            _configure_live_download(mock_provider, "test_gmail", ["msg1", "msg2"], state="active")
             mock_provider_class.return_value = mock_provider
 
             with patch.object(sys, "argv", ["ownmail", "download"]):
                 main()
+
+        assert [call.args[0] for call in mock_provider.read_live_message.call_args_list] == ["msg1", "msg2"]
 
         captured = capsys.readouterr()
         assert "Downloaded" in captured.out or "Download" in captured.out
@@ -1236,15 +1271,16 @@ sources:
         with patch("ownmail.cli.GmailProvider") as mock_provider_class:
             mock_provider = MagicMock()
             mock_provider.account = "test@gmail.com"
-            mock_provider.get_new_message_ids.return_value = (["msg1"], None)
-            mock_provider.get_current_sync_state.return_value = "12345"
             mock_provider.download_message.return_value = (None, None)  # Download fails
+            _configure_live_download(mock_provider, "test_gmail", ["msg1"])
             mock_provider_class.return_value = mock_provider
 
             with patch.object(sys, "argv", ["ownmail", "download"]):
                 with pytest.raises(SystemExit) as exc_info:
                     main()
                 assert exc_info.value.code == 1
+
+        mock_provider.read_live_message.assert_called_once_with("msg1")
 
         captured = capsys.readouterr()
         assert "Error" in captured.out or "Download" in captured.out

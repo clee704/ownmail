@@ -110,9 +110,12 @@ def test_discarded_candidate_is_never_cleared():
     assert not result.allows_cleanup
 
 
-@pytest.mark.parametrize("labels", [[], ["Label_1"], ["SCHEDULED"], ["UNREAD", "IMPORTANT"]])
-def test_unverified_finished_state_holds_the_thread(labels):
+@pytest.mark.parametrize("labels", [["SCHEDULED"], ["FUTURE_STATE"]])
+def test_unrecognized_system_state_holds_the_thread(labels):
     provider = _provider([_message(), _message("reply", labels)])
+    provider._service.users().labels().list().execute.return_value = {
+        "labels": [{"id": label, "type": "system"} for label in labels]
+    }
     result = provider.check_thread_protection("candidate")
     assert not result.complete
     assert not result.active
@@ -120,42 +123,55 @@ def test_unverified_finished_state_holds_the_thread(labels):
     assert "finished state is unknown" in result.reason
 
 
+@pytest.mark.parametrize("labels", [[], ["UNREAD", "IMPORTANT"]])
+def test_filed_members_without_active_state_clear_the_thread(labels):
+    provider = _provider([_message(labels=labels), _message("reply", labels)])
+    result = provider.check_thread_protection("candidate")
+    assert result.complete
+    assert not result.active
+    assert result.allows_cleanup
+
+
 def test_known_activity_survives_another_members_unknown_state():
-    provider = _provider([_message(), _message("active", ["INBOX"]), _message("unknown", [])])
+    provider = _provider([_message(), _message("active", ["INBOX"]), _message("unknown", ["FUTURE_STATE"])])
+    provider._service.users().labels().list().execute.return_value = {"labels": []}
     result = provider.check_thread_protection("candidate")
     assert result.active
     assert not result.complete
     assert not result.allows_cleanup
 
 
-def test_omitted_labels_mean_empty_but_do_not_prove_finished_state():
+def test_omitted_labels_mean_empty_reported_state():
     member = _message()
     del member["labelIds"]
     provider = _provider([member])
     result = provider.check_thread_protection("candidate")
     assert result.candidate_roles == frozenset()
-    assert "finished state is unknown" in result.reason
-    assert not result.allows_cleanup
+    assert result.complete
+    assert result.allows_cleanup
 
 
-def test_new_reply_and_later_role_changes_are_seen_after_enumeration():
-    provider = _provider()
-    provider._list_message_ids = MagicMock(return_value=["candidate"])
+@pytest.mark.parametrize("active_label", ["INBOX", "DRAFT"])
+def test_new_reply_and_later_role_changes_protect_next_candidate_after_enumeration(active_label):
+    provider = _provider([_message(), _message("next", [])])
+    provider._list_message_ids = MagicMock(return_value=["candidate", "next"])
     provider._enumerate_excluded = MagicMock(return_value=frozenset())
-    assert provider.get_all_message_ids(since="2000-01-01", until="2001-01-01") == ["candidate"]
+    assert provider.get_all_message_ids(since="2000-01-01", until="2001-01-01") == ["candidate", "next"]
     assert provider.check_thread_protection("candidate").allows_cleanup
 
     thread = provider._service.users().threads().get().execute.return_value
-    thread["messages"].append(_message("reply", ["INBOX"]))
+    thread["messages"].append(_message("reply", [active_label]))
     thread["historyId"] = "101"
-    active = provider.check_thread_protection("candidate")
+    provider._service.users().messages().get().execute.return_value = deepcopy(thread["messages"][1])
+    active = provider.check_thread_protection("next")
     assert active.active
     assert not active.allows_cleanup
+    assert active.message_id == "next"
     assert active.revision == "101"
 
-    thread["messages"][1]["labelIds"] = ["SENT"]
+    thread["messages"][2]["labelIds"] = []
     thread["historyId"] = "102"
-    cleared = provider.check_thread_protection("candidate")
+    cleared = provider.check_thread_protection("next")
     assert cleared.allows_cleanup
     assert cleared.revision == "102"
     assert cleared.checked_at >= active.checked_at
@@ -189,8 +205,9 @@ def test_failed_thread_read_preserves_known_candidate_activity():
     assert not result.allows_cleanup
 
 
-def test_sent_custom_labels_require_a_fresh_user_type_in_the_catalog():
-    provider = _provider([_message(labels=["SENT", "custom"])], include_labels=False)
+@pytest.mark.parametrize("prefix", [[], ["SENT"]])
+def test_custom_labels_require_a_fresh_user_type_in_the_catalog(prefix):
+    provider = _provider([_message(labels=prefix + ["custom"])], include_labels=False)
     catalog = {"labels": [{"id": "custom", "type": "user"}]}
     provider._service.users().labels().list().execute.return_value = catalog
     assert provider.check_thread_protection("candidate").allows_cleanup

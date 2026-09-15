@@ -9,6 +9,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=2">
     <title>{% block title %}{{ brand_name }}{% endblock %}</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/active.css">
     <script>
     function applyListDensity(density) {
         if (!['comfortable', 'standard', 'compact'].includes(density)) density = 'standard';
@@ -65,6 +66,8 @@
                 <ul class="ownmail-sidebar-nav">
                     {% set all_mail_active = request.path == '/' or (request.path.startswith('/search') and not request.args.get('q')) %}
                     <li><a href="/" class="{% if all_mail_active %}active{% endif %}"{% if all_mail_active %} aria-current="page"{% endif %} title="All Mail" aria-label="All Mail">{{ icon('mail') }}<span class="ownmail-sidebar-label">All Mail</span></a></li>
+                    {% set active_mail_selected = request.path == '/search' and request.args.get('q', '').strip() == 'is:active' %}
+                    <li><a href="/search?q=is%3Aactive" class="{% if active_mail_selected %}active{% endif %}"{% if active_mail_selected %} aria-current="page"{% endif %} title="Active messages on the mail server" aria-label="Active" onclick="showLoading(event)">{{ icon('inbox') }}<span class="ownmail-sidebar-label">Active</span><span class="ownmail-sidebar-badge">{{ stats.active_count }}</span></a></li>
                     {% for entry in label_nav.system %}
                     <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}"{% if entry.active %} aria-current="page"{% endif %} title="{{ entry.name }} — {{ entry.count }}" aria-label="{{ entry.name }}" onclick="showLoading(event)">{{ icon(entry.icon) }}<span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
                     {% endfor %}

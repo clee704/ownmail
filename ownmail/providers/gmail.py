@@ -13,6 +13,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from ownmail import capture, roles
+from ownmail.providers import live_gmail
 from ownmail.providers.base import EmailProvider
 from ownmail.thread_protection import ThreadProtection
 
@@ -27,20 +28,6 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 # Conservative settings to avoid 429 concurrent request errors
 BATCH_SIZE = 10  # Messages per batch request (Gmail API limit)
 BATCH_DELAY = 0.2  # Seconds between batches
-
-_FINISHED_STATE_LABELS = frozenset(
-    {
-        "SENT",
-        "UNREAD",
-        "STARRED",
-        "IMPORTANT",
-        "CATEGORY_PERSONAL",
-        "CATEGORY_SOCIAL",
-        "CATEGORY_PROMOTIONS",
-        "CATEGORY_UPDATES",
-        "CATEGORY_FORUMS",
-    }
-)
 
 
 class _InvalidThreadState(ValueError):
@@ -115,12 +102,19 @@ class GmailProvider(EmailProvider):
         """Number of messages to download per batch."""
         return BATCH_SIZE
 
+    def list_live_messages(self):
+        """Enumerate current state independently of capture preferences."""
+        return live_gmail.list_messages(self)
+
+    def read_live_message(self, message_id):
+        """Read current roles and contents without changing server mail."""
+        return live_gmail.read_message(self, message_id)
+
     def check_thread_protection(self, message_id: str) -> ThreadProtection:
         """Read current candidate and thread state without capture filters.
 
-        DRAFT does not establish the absence of scheduled outgoing mail.
-        Until finished state can be established for other messages, a member
-        outside Trash/Spam without SENT or an Active role keeps state unknown.
+        Sent and filed members use their current reported roles. Unrecognized
+        system labels cannot establish clearance, and failed reads remain held.
         Gmail supplies no atomic condition connecting this read to trashing.
         """
         result = ThreadProtection(self.source_name, self.account, message_id)
@@ -181,13 +175,10 @@ class GmailProvider(EmailProvider):
                 if discarded:
                     continue
                 if not member_roles.intersection({roles.INBOX, roles.DRAFTS}):
-                    if roles.SENT not in member_roles:
-                        unknown = True
-                    else:
-                        unverified_labels.update(set(member.get("labelIds", [])) - _FINISHED_STATE_LABELS)
+                    unverified_labels.update(set(member.get("labelIds", [])) - live_gmail.KNOWN_SYSTEM_LABELS)
             if message_id not in seen:
                 raise _InvalidThreadState("Candidate is missing from its thread")
-            if unverified_labels and not unknown:
+            if unverified_labels:
                 catalog = self._service.users().labels().list(userId="me").execute()
                 if not isinstance(catalog, dict) or not isinstance(catalog.get("labels", []), list):
                     raise _InvalidThreadState("Malformed label catalog")

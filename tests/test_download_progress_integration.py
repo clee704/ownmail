@@ -43,6 +43,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
 
         from ownmail.cli import main
         from ownmail.keychain import KeychainStorage
+        from ownmail.live import LiveMessage, LiveSnapshot
         from ownmail.providers.imap import ImapProvider
 
         release = Path(sys.argv.pop(1))
@@ -59,7 +60,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
                     time.sleep(0.02)
                 if not release.exists():
                     raise RuntimeError("Test did not release the synthetic download")
-                raise RuntimeError("404 Not Found")
+                return None
             if message_id == "broken":
                 raise RuntimeError("Synthetic private diagnostic: token=do-not-expose")
             raw = (
@@ -69,16 +70,18 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
                 f"Message-ID: <{self.source_name}@example.com>\\r\\n"
                 "\\r\\nSynthetic body.\\r\\n"
             ).encode()
-            return raw, []
+            return LiveMessage(message_id, identity_token=message_id, state="eligible", raw=raw)
+
+        def listing(self):
+            ids = ["saved", "duplicate", "deleted", "broken"] if self.source_name == "First" else ["saved"]
+            return LiveSnapshot(self.source_name, self.account,
+                [LiveMessage(message_id, identity_token=message_id, state="eligible") for message_id in ids],
+                complete=True)
 
         KeychainStorage.load_imap_password = forbid_credentials
         ImapProvider.authenticate = lambda self: None
-        ImapProvider.get_new_message_ids = lambda self, *args, **kwargs: (
-            ["saved", "duplicate", "deleted", "broken"] if self.source_name == "First" else ["saved"], None
-        )
-        ImapProvider.get_current_sync_state = lambda self: None
-        ImapProvider.download_batch_size = property(lambda self: 1)
-        ImapProvider.download_message = message
+        ImapProvider.list_live_messages = listing
+        ImapProvider.read_live_message = message
         ImapProvider.close = lambda self: None
         main()
         """)
@@ -99,12 +102,13 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
             assert live["has_progress"] is True
             assert (live["downloaded"], live["skipped"], live["errors"]) == (1, 1, 0)
             assert live["source"] == "First"
-            assert live["phase"] == "downloading"
+            assert live["phase"] == "refreshing"
 
             release.touch()
             final = wait_for_status(client, lambda s: not s["running"])
             assert final["state"] == "failed"
             assert final["has_progress"] is True
+            assert final["active_complete"] is False
             assert (final["downloaded"], final["skipped"], final["errors"]) == (2, 2, 1)
             assert final["source"] == "Second"
             assert final["failure_reason"]

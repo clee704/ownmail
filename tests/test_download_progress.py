@@ -14,6 +14,7 @@ from ownmail.archive import EmailArchive
 from ownmail.cli import cmd_download, main
 from ownmail.download_lock import DownloadLock
 from ownmail.download_progress import FAILURE_REASONS, DownloadProgress
+from ownmail.live import LiveMessage, LiveSnapshot
 
 PRIVATE_DETAIL = "private@example.com token=secret-value message-body"
 
@@ -37,6 +38,22 @@ def provider(ids=(), source="Synthetic"):
         b"From: private@example.com\r\nDate: Mon, 1 Jan 2024 10:00:00 +0000\r\n\r\nmessage-body",
         [],
     )
+
+    def list_live():
+        ids, _ = result.get_new_message_ids()
+        return LiveSnapshot(
+            source,
+            result.account,
+            [LiveMessage(message_id, identity_token=message_id, state="eligible") for message_id in ids],
+            complete=True,
+        )
+
+    def read_live(message_id):
+        raw, labels = result.download_message(message_id)
+        return LiveMessage(message_id, labels=tuple(labels), identity_token=message_id, state="eligible", raw=raw)
+
+    result.list_live_messages.side_effect = list_live
+    result.read_live_message.side_effect = read_live
     return result
 
 
@@ -239,7 +256,7 @@ def test_zero_mail_run_finishes_successfully(cli_download):
     mock_provider = provider()
 
     def check(*args, **kwargs):
-        assert snapshot(path)["phase"] == "checking"
+        assert snapshot(path)["phase"] == "refreshing"
         return [], None
 
     mock_provider.get_new_message_ids.side_effect = check
@@ -317,14 +334,16 @@ def test_write_failure_counts_one_failed_message(tmp_path):
 def test_index_failure_is_not_counted_as_a_completed_download(cli_download, tmp_path):
     _, path = cli_download
     with patch("ownmail.providers.imap.ImapProvider", return_value=provider(["saved"])):
-        with patch("ownmail.archive.EmailArchive._index_email", return_value=False):
+        with patch(
+            "ownmail.database.ArchiveDatabase.index_email", side_effect=sqlite3.OperationalError(PRIVATE_DETAIL)
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
     assert exc_info.value.code == 1
     final = snapshot(path)
     assert final["downloaded"] == 0
     assert final["errors"] == 1
-    assert final["failure_reason"] == FAILURE_REASONS["message_index"]
+    assert final["failure_reason"] == FAILURE_REASONS["index"]
     assert len(list((tmp_path / "archive").rglob("*.eml"))) == 1
 
 
@@ -332,7 +351,7 @@ def test_index_failure_is_not_counted_as_a_completed_download(cli_download, tmp_
 def test_fatal_message_storage_exception_is_counted_once(cli_download, error):
     _, path = cli_download
     with patch("ownmail.providers.imap.ImapProvider", return_value=provider(["saved"])):
-        with patch("ownmail.archive.sidecar.write_labels", side_effect=error):
+        with patch("ownmail.live_sync.sidecar.write_metadata", side_effect=error):
             with pytest.raises(SystemExit):
                 main()
     final = snapshot(path)

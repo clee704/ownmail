@@ -4,7 +4,7 @@ title: Thread-aware server cleanup — retain copies while a thread is active
 status: In Progress
 assignee: []
 created_date: '2026-08-06 19:51'
-updated_date: '2026-09-14 21:39'
+updated_date: '2026-09-15 04:04'
 labels: []
 milestone: m-5
 dependencies:
@@ -57,14 +57,14 @@ server data by itself; TASK-14.2 retains its existing approval requirements.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 An eligible message is captured immediately even when its thread contains Inbox or unfinished outgoing mail
-- [ ] #2 Server cleanup is held while the candidate or any thread member is Active, and becomes eligible after the thread clears
-- [ ] #3 Trash and Spam thread members do not hold cleanup; sent and filed messages use the same protection rule
+- [x] #2 Server cleanup is held while the candidate or any thread member is Active, and becomes eligible after the thread clears
+- [x] #3 Trash and Spam thread members do not hold cleanup; sent and filed messages use the same protection rule
 - [x] #4 Incomplete or uncertain server/thread state skips cleanup, with provider-specific tests including plain IMAP
 - [x] #5 Archived contents and labels remain unchanged when the server copy becomes Active again
 - [x] #6 Configuration documentation explains that a thread left Active retains its server copies indefinitely, while eligible messages still enter the archive
 - [x] #7 A later reply protects server copies still present and does not restore previously removed copies
 - [x] #8 Thread checks remain scoped to the source and account and include Active members regardless of capture filters; failed enumeration cannot establish an empty or inactive thread
-- [ ] #9 Provider-specific tests introduce new Active members and role changes after enumeration; supported revalidation updates protection before cleanup, and remaining provider race limits are documented
+- [x] #9 Provider-specific tests introduce new Active members and role changes after enumeration; supported revalidation updates protection before cleanup, and remaining provider race limits are documented
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -83,4 +83,8 @@ Partial implementation checkpoint: Gmail reads current candidate and thread stat
 Reviewed partial checkpoint against 4deb404. Provider regression suite and archive integration pass; checks cover read-only queries, source/account isolation, fresh activity changes, malformed and failed requests, Ctrl-C propagation, and unsupported IMAP state. Two isolated mutations (ignoring Active protection and ignoring unknown finished state) were rejected by the tests. Known candidate activity survives a failed thread read. Sent copies with otherwise unknown labels require a fresh user-label catalog entry; unknown system labels remain held. Review raised a hypothetical Scheduled-member omission but found no reproducing evidence; completeness follows the documented Thread.messages member-list contract, with unfinished-state limits still recorded above. ACs #2, #3, and #9 remain open for broader clearance and cleanup integration. Full repository checks will run before the session ends.
 
 Checkpoint commit: b18454c. Final pre-commit run -a --hook-stage pre-push passed with OWNMAIL_REQUIRE_BROWSER_TESTS=1; total branch coverage 95.97%. Remaining ACs #2, #3, and #9 are not waived. No cleanup mutation is enabled; resume from the provider-evidence blocker above.
+
+The authorized observed-state policy removes the former blanket Sent-only blocker. Gmail now applies the same protection rule to ordinary filed and Sent members; current Inbox/Draft activity holds, Trash/Spam members do not hold, and unrecognized system state or failed reads retain protection. The task contract explicitly permits incomplete-state holds: Gmail IMAP and standard IMAP remain unavailable for cleanup clearance because account-wide thread membership cannot be established. This documents the existing required hold behavior and does not authorize server cleanup or OAuth changes. Focused provider and capture tests pass. Final provider revalidation acceptance and the integrated gate remain pending; actual cleanup sweep and mutation integration belongs to TASK-14.2.
+
+Final read-only acceptance evidence extends the existing freshness regression across successive Sent and filed candidates: newly arriving Inbox or Draft activity after enumeration protects the next candidate, and filing the new reply permits fresh clearance. Both cases reject a deliberately stale observation. All 85 focused thread/capture tests pass. Complete now explicitly means known membership and interpretable reported state, not an atomic or hidden-state guarantee. All TASK-38 criteria are verified for the provider capabilities and required unknown-state holds; full checks and commit remain pending. TASK-14.2 still owns actual sweep revalidation, mutation integration, and its separate sign-off.
 <!-- SECTION:NOTES:END -->

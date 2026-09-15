@@ -1,5 +1,5 @@
 var lastCheckedIdx = null;
-var allCheckboxes = Array.from(document.querySelectorAll('.ownmail-email-checkbox input'));
+var allCheckboxes = Array.from(document.querySelectorAll('.ownmail-email-checkbox input:not(:disabled)'));
 
 function getChecked() {
     return allCheckboxes.filter(function(cb) { return cb.checked; });
@@ -18,7 +18,7 @@ function updateToolbar() {
     document.getElementById('ownmail-email-list').classList.toggle('ownmail-selecting', selecting);
     var selectAll = document.getElementById('ownmail-select-all');
     if (selectAll) {
-        selectAll.checked = checked.length === allCheckboxes.length;
+        selectAll.checked = allCheckboxes.length > 0 && checked.length === allCheckboxes.length;
         selectAll.indeterminate = checked.length > 0 && checked.length < allCheckboxes.length;
     }
 }

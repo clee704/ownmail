@@ -112,6 +112,8 @@ def test_unavailable_without_config(tmp_path):
         "errors": 0,
         "failure_reason": None,
         "has_progress": False,
+        "active_refreshed": 0,
+        "active_complete": None,
     }
     assert not manager.start_download()
     manager.stop()

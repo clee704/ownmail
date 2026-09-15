@@ -21,6 +21,7 @@ def test_capture_freezes_owned_copy_while_server_thread_activity_changes(tmp_pat
         candidate
     )
     provider._service.users.return_value.threads.return_value.get.return_value.execute.side_effect = lambda: thread
+    provider._service.users().labels().list().execute.return_value = {"labels": [{"id": "Label_filed", "type": "user"}]}
     provider.get_new_message_ids = MagicMock(return_value=(["sent"], "cursor"))
     provider.download_message = MagicMock(
         return_value=(
@@ -38,10 +39,10 @@ def test_capture_freezes_owned_copy_while_server_thread_activity_changes(tmp_pat
     original = (owned.read_bytes(), sidecar.sidecar_path(owned).read_bytes())
     assert sidecar.read_labels(owned) == [candidate_label, "Owned label"]
 
-    # A discarded member no longer holds the sent reply's server copy.
+    # A discarded member no longer holds either sent or filed copies.
     sibling["labelIds"] = ["TRASH", active_label]
     thread["historyId"] = "2"
-    assert provider.check_thread_protection("sent").allows_cleanup == (candidate_label == "SENT")
+    assert provider.check_thread_protection("sent").allows_cleanup
 
     candidate["labelIds"] = [candidate_label, "INBOX", "Label_changed_on_server"]
     thread["historyId"] = "3"
