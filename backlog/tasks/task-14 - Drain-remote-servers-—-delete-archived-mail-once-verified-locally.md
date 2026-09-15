@@ -4,7 +4,7 @@ title: Mail ownership workstream
 status: In Progress
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-15 04:09'
+updated_date: '2026-09-15 04:38'
 labels: []
 milestone: m-5
 dependencies:
@@ -164,4 +164,6 @@ Active-cache approval was granted after a single bounded storage explanation. TA
 2026-09-14 workflow correction: the user requested closing PR #1 after clarifying that this disposable cache does not require the archive-data PR exception. The PR is confirmed CLOSED. Feature commit 43c6c0f remains on feat/active-mail-cache. Continue the normal direct-to-master workflow for this change once its remaining capture behavior and checks are complete; do not recreate the PR. The user requested a fuller explanation of the filed-mail capture question and has not approved changing its finished-state rule. Separate cleanup/OAuth approvals remain pending.
 
 Current checkpoint: TASK-90, TASK-28, and TASK-38 are Done. Active cache, ordinary filed/Sent capture, and supported read-only thread clearance are committed directly on master in 8657a68; PR #1 remains closed. TASK-5.4 has verified Active integration and awaits cleanup integration only. TASK-14.2 now has its dependencies satisfied and a concrete preview/verification/Trash plan, but server-cleanup implementation and Gmail OAuth changes still require the recorded explicit sign-offs. No real-account cleanup has run. Resume at that one approval boundary; do not re-ask cache approval or reintroduce blanket Sent-only capture. TASK-91, TASK-95, and TASK-96 remain separate discoveries rather than added workstream members.
+
+Current implementation route: continue feat/server-cleanup, based on d660e9d, before selecting another member. The user approved optional Gmail server cleanup with preview default, explicit apply, and IMAP accounts held. That behavior is committed in 50190ad and passes the full gate with 3,318 tests and 96.19% branch coverage. TASK-5.4 is Done in that branch after cleanup integration. The separate Gmail cleanup OAuth/keychain proposal is the next single approval and remains unanswered; do not ask again for cache storage or cleanup behavior approval. TASK-90/TASK-28/TASK-38 are Done on master, and the Active delivery at d660e9d passed GitHub CI on Python 3.10-3.12. PR #1 remains closed; no new PR or real-account cleanup has run.
 <!-- SECTION:NOTES:END -->
