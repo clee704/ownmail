@@ -60,18 +60,21 @@ def run_contrast_browser(
     viewport=(900, 1400),
     is_mobile=False,
     attachments=(),
+    rendered_page=None,
 ):
-    with app.test_request_context("/email/synthetic"):
-        page = render_template(
-            "email.html",
-            email_id="synthetic",
-            subject="Synthetic message",
-            sender="sender@example.com",
-            body_html=f"<style>{css}</style>{body}",
-            supports_dark=True,
-            auto_scale=auto_scale,
-            attachments=attachments,
-        )
+    page = rendered_page
+    if page is None:
+        with app.test_request_context("/email/synthetic"):
+            page = render_template(
+                "email.html",
+                email_id="synthetic",
+                subject="Synthetic message",
+                sender="sender@example.com",
+                body_html=f"<style>{css}</style>{body}",
+                supports_dark=True,
+                auto_scale=auto_scale,
+                attachments=attachments,
+            )
     tree = html.fromstring(page)
     paths = tree.xpath('//script[@src]/@src | //link[@rel="stylesheet"]/@href')
     client = app.test_client()

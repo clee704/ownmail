@@ -257,7 +257,7 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-pagination-bottom { justify-content: flex-end; padding: var(--ownmail-space-3); color: var(--ownmail-muted); }
 
 /* App metadata and actions stay separate from the email's authored HTML. */
-.ownmail-email-detail { max-width: 800px; margin-inline: auto; padding: var(--ownmail-space-4) var(--ownmail-space-5) var(--ownmail-space-5); min-width: 0; }
+.ownmail-email-detail { --ownmail-reader-inset: var(--ownmail-space-5); max-width: 800px; margin-inline: auto; padding: var(--ownmail-space-4) var(--ownmail-reader-inset) var(--ownmail-space-5); min-width: 0; }
 .ownmail-reader-actions { display: flex; align-items: center; gap: var(--ownmail-space-1); max-width: 800px; margin: var(--ownmail-space-4) auto 0; padding-inline: 18px; }
 .ownmail-reader-actions .ownmail-email-menu { margin-left: auto; }
 .ownmail-back-to-results { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 30px; height: 30px; color: var(--ownmail-secondary); border-radius: var(--ownmail-radius); }
@@ -299,10 +299,11 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-sort-options label:has(input:disabled) { color: var(--ownmail-muted); cursor: default; }
 .ownmail-email-menu-divider { border: 0; border-top: 1px solid var(--ownmail-border); margin: var(--ownmail-space-1) 0; }
 .ownmail-email-content-area { background: var(--ownmail-bg); display: flow-root; min-width: 0; }
-#ownmail-email-viewport { display: flow-root; overflow: clip visible; }
+/* Let sender backgrounds reach the reader edges while app controls keep their inset. */
+#ownmail-email-viewport { display: flow-root; overflow: clip visible; margin-inline: calc(-1 * var(--ownmail-reader-inset)); }
 #ownmail-email-content { min-height: 200px; overflow: auto; overflow-wrap: break-word; font-family: var(--ownmail-font); font-size: 16px; }
 #ownmail-email-content:where(.ownmail-email-content-html) { display: flow-root; overflow: visible; }
-.ownmail-email-content-padded { padding: var(--ownmail-space-4); }
+.ownmail-email-content-padded { padding: var(--ownmail-space-4) calc(var(--ownmail-reader-inset) + var(--ownmail-space-4)); }
 .ownmail-email-content-plain { padding: var(--ownmail-space-4) 0; }
 .ownmail-email-body { font-family: inherit; margin: 0; max-width: 70ch; line-height: 1.65; }
 .ownmail-email-body a { color: var(--ownmail-accent-ink); }
@@ -445,10 +446,10 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-email-row-content { grid-area: content; }
     .ownmail-email-date { grid-area: date; }
     .ownmail-reader-actions { height: 52px; padding-inline: var(--ownmail-space-2); }
-    .ownmail-reader-page .ownmail-email-detail { padding: var(--ownmail-space-4); }
+    .ownmail-reader-page .ownmail-email-detail { --ownmail-reader-inset: var(--ownmail-space-4); padding: var(--ownmail-space-4) var(--ownmail-reader-inset); }
     .ownmail-reader-subject { font-size: 22px; }
     .ownmail-email-header { padding-bottom: var(--ownmail-space-4); }
-    .ownmail-email-content-padded { padding: var(--ownmail-space-2); }
+    .ownmail-email-content-padded { padding: var(--ownmail-space-2) calc(var(--ownmail-reader-inset) + var(--ownmail-space-2)); }
     .ownmail-email-content-plain { padding: var(--ownmail-space-3) 0; }
     #ownmail-email-content.ownmail-email-content-plain { font-size: 17px; }
     .ownmail-attachments { margin-top: var(--ownmail-space-4); padding-top: var(--ownmail-space-3); }
@@ -495,7 +496,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-header, .ownmail-sidebar, .ownmail-reader-actions, .ownmail-image-banner, .ownmail-loading-overlay, .ownmail-action-feedback, .ownmail-nav-backdrop, .ownmail-skip-link { display: none !important; }
     .ownmail-layout { display: block; max-width: none; }
     .ownmail-reader-page .ownmail-layout, .ownmail-reader-page .ownmail-main { min-height: 0; }
-    .ownmail-reader-page .ownmail-email-detail { padding: 0; max-width: none; }
+    .ownmail-reader-page .ownmail-email-detail { --ownmail-reader-inset: 0px; padding: 0; max-width: none; }
     #ownmail-email-content, html.ownmail-dark #ownmail-email-content { background: none !important; color: #222 !important; --ownmail-accent-ink: #333; }
     .ownmail-email-content-area { background: none; }
     .ownmail-labels, .ownmail-label-editor { display: none; }

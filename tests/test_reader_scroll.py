@@ -159,7 +159,8 @@ def test_late_image_load_and_resize_recalculate_fit(shell_app, contrast_browser)
         await page.waitForFunction(() => document.getElementById('late').naturalWidth === 640);
         await settle();
         assert.equal(await button.evaluate(el => el.hidden), false);
-        assert((await page.locator('#late').boundingBox()).width < 400);
+        assert(Math.abs((await page.locator('#late').boundingBox()).width -
+            (await viewport.boundingBox()).width) <= 1);
         assert.equal(await viewport.evaluate(el => {el.scrollLeft = 100; return el.scrollLeft;}), 0);
         await page.setViewportSize({width:1000, height:740});
         await settle();
@@ -168,7 +169,8 @@ def test_late_image_load_and_resize_recalculate_fit(shell_app, contrast_browser)
         await page.setViewportSize({width:430, height:740});
         await settle();
         assert.equal(await button.evaluate(el => el.hidden), false);
-        assert((await page.locator('#late').boundingBox()).width < 430);
+        assert(Math.abs((await page.locator('#late').boundingBox()).width -
+            (await viewport.boundingBox()).width) <= 1);
         assert.equal(await viewport.evaluate(el => {el.scrollTop = 100; return el.scrollTop;}), 0);
         assert.equal(await content.evaluate(el => {el.scrollTop = 100; return el.scrollTop;}), 0);
         """,
