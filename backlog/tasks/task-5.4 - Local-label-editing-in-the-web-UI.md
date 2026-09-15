@@ -4,7 +4,7 @@ title: Local label editing in the web UI
 status: In Progress
 assignee: []
 created_date: '2026-07-25 07:04'
-updated_date: '2026-09-15 03:31'
+updated_date: '2026-09-15 04:09'
 labels: []
 milestone: m-3
 dependencies: []
@@ -70,4 +70,6 @@ Implementation commit: 371855b. The alias-sidecar fix passed independent verific
 TASK-28 feature-branch integration now verifies AC #4 using actual Active-only and dual-state records: Active-only label POST is rejected; a dual-state POST changes only the owned sidecar/index and leaves cached contents/labels and provider state unchanged. Focused CLI, Active web, and local-label suites passed 167 tests. Active refresh also preserves owned labels, but AC #5 remains open until cleanup is implemented and tested. Delivery remains on feat/active-mail-cache pending review.
 
 Active integration is verified in feature commit 43c6c0f and draft PR https://github.com/clee704/ownmail/pull/1: actual Active-only label POST rejects local edits, while dual-state POST changes only the owned sidecar/index, preserving cached content/metadata and provider state. AC #4 is checked in that branch. This master checkout retains the earlier editor implementation; resume the Active feature branch for remaining integration. AC #5 remains open for cleanup.
+
+Active integration is now committed directly on master in 8657a68. Active-only label edits are rejected; dual-state edits and refresh preserve the owned contents and local labels while leaving cached/server labels independent. PR #1 is closed and is not the delivery path. AC #5 remains open only for actual cleanup integration in TASK-14.2.
 <!-- SECTION:NOTES:END -->

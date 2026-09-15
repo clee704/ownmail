@@ -1,10 +1,10 @@
 ---
 id: TASK-38
 title: Thread-aware server cleanup — retain copies while a thread is active
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-06 19:51'
-updated_date: '2026-09-15 04:04'
+updated_date: '2026-09-15 04:09'
 labels: []
 milestone: m-5
 dependencies:
@@ -87,4 +87,6 @@ Checkpoint commit: b18454c. Final pre-commit run -a --hook-stage pre-push passed
 The authorized observed-state policy removes the former blanket Sent-only blocker. Gmail now applies the same protection rule to ordinary filed and Sent members; current Inbox/Draft activity holds, Trash/Spam members do not hold, and unrecognized system state or failed reads retain protection. The task contract explicitly permits incomplete-state holds: Gmail IMAP and standard IMAP remain unavailable for cleanup clearance because account-wide thread membership cannot be established. This documents the existing required hold behavior and does not authorize server cleanup or OAuth changes. Focused provider and capture tests pass. Final provider revalidation acceptance and the integrated gate remain pending; actual cleanup sweep and mutation integration belongs to TASK-14.2.
 
 Final read-only acceptance evidence extends the existing freshness regression across successive Sent and filed candidates: newly arriving Inbox or Draft activity after enumeration protects the next candidate, and filing the new reply permits fresh clearance. Both cases reject a deliberately stale observation. All 85 focused thread/capture tests pass. Complete now explicitly means known membership and interpretable reported state, not an atomic or hidden-state guarantee. All TASK-38 criteria are verified for the provider capabilities and required unknown-state holds; full checks and commit remain pending. TASK-14.2 still owns actual sweep revalidation, mutation integration, and its separate sign-off.
+
+Completed in 8657a68 on master. All nine acceptance criteria now have provider/capture evidence, including current Sent and filed clearance, new Inbox/Draft activity between successive candidates, role changes after enumeration, unknown-state holds, and scoped identity. The final integrated suite passed 3,153 tests with one existing expected failure and 96.12% branch coverage. Gmail API observations can clear protection; both IMAP paths retain the task-required unavailable-state hold. Actual cleanup, its sweep/mutation tests, and OAuth authorization remain TASK-14.2 and have not been enabled.
 <!-- SECTION:NOTES:END -->

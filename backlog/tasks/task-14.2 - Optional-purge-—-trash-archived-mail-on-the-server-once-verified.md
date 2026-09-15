@@ -4,7 +4,7 @@ title: Optional purge — trash archived mail on the server once verified
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-14 21:32'
+updated_date: '2026-09-15 04:07'
 labels: []
 milestone: m-5
 dependencies:
@@ -89,12 +89,20 @@ superseded by this design.
 - [ ] #5 Tests introduce new activity and local Trash or deletion after candidate selection, verify the supported final revalidation postpones cleanup, and cover retry after a partial cleanup result
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Add a standalone cleanup command with a preview as the default and an explicit apply option. Keep preview separate from download, capture, cache refresh, local Trash expiry, and index initialization or migration. Read existing capture provenance and the index without changing archive files or labels. Require a regular owned message and sidecar, a freshly verified content hash, complete label metadata, and matching source/account/provider identity; hold ambiguous legacy captures and local Trash or missing copies. Query current provider state and thread protection without capture filters, report candidates and hold reasons, and repeat local and remote checks immediately before each eventual Trash request. Initially no IMAP candidate may clear because complete thread visibility is unavailable; preserve the explicit unknown-state hold. After the required server-cleanup sign-off, implement and test the provider Trash operation with synthetic providers, resumable outcomes, Ctrl-C, late activity, late local changes, and uncertain results. Gmail authorization changes require their own explicit sign-off; preserve existing read-only access for users who do not enable cleanup. Do not run cleanup on a real account as part of implementation.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Approval checkpoint, 2026-09-14: implementation still requires explicit server-cleanup sign-off, plus separate Gmail OAuth sign-off if enabled. Proposed boundary: opt-in command, dry-run by default, fresh archive hash/sidecar and source/account identity verification, fresh candidate/thread checks, provider Trash only, no hard deletion or local archive deletion. Keep Gmail read-only credentials for non-cleanup users; request gmail.modify only through an explicit cleanup authorization/re-consent path. IMAP mutation must remain unavailable wherever complete thread state or safe Trash semantics cannot be verified. Next action: finish TASK-28/TASK-38, obtain these sign-offs, then implement and deliver through a PR; do not run cleanup on a real account as part of implementation.
 
 Legacy metadata qualification must be explicit: existing sidecars do not distinguish deliberately omitted/empty labels from captures finalized before TASK-90 after label failure. Cleanup cannot infer complete required-label acquisition from an empty legacy sidecar or resnapshot owned labels automatically. Establish durable capture-completeness evidence for qualifying copies, and retain ambiguous legacy copies until their eligibility can be proved.
+
+Implementation planning is concrete, but server-cleanup and OAuth sign-offs remain pending. The consolidation helper owned_match accepts legacy identity evidence and local Trash for reading purposes, so it cannot authorize cleanup. A preview must avoid cmd_download, which expires local Trash, and ordinary archive initialization, which can create or migrate the index. Reuse validated new capture provenance where appropriate; ambiguous legacy metadata remains held. Existing Gmail authentication can refresh saved tokens or start consent, so implementation verification must use synthetic providers and must not silently introduce an authentication mode. Next decision is approval of optional server-Trash behavior; do not recreate the closed Active-cache PR.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

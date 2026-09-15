@@ -1,10 +1,10 @@
 ---
 id: TASK-28
 title: Active messages — surface the pre-capture set so ownmail is a complete view
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-26 07:01'
-updated_date: '2026-09-15 04:04'
+updated_date: '2026-09-15 04:09'
 labels: []
 milestone: m-5
 dependencies:
@@ -134,4 +134,6 @@ Evidence correction while explaining the filed-mail question: blanket Sent-only 
 The user authorized continuing after the corrected unfinished-state explanation. Work is now consolidated onto master, based on a2abeb0, preserving the completed reader-style fixes and all existing approval/correction notes. Do not recreate PR #1. Verify scheduled/queued signals and replace blanket Sent-only classification with documented state-based eligibility. Existing archive files and database schema remain preserved; cleanup and credential/OAuth changes remain separate pending approvals.
 
 Observed-state capture is implemented on master: ordinary filed and Sent mail can be captured after fresh required reads, while Inbox/Drafts, advertised IMAP Scheduled membership, and SubmitPending remain Active. Unknown state and read failures hold affected mail. Gmail catalog lookup failures now retain cached contents; a regression verifies successful capture on retry. Provider/lifecycle tests verify filed handoff, fresh draft and scheduling changes, immutable identity and UIDVALIDITY checks, frozen labels, and one-result deduplication. Independent Gmail and IMAP reviews completed, with the catalog failure finding fixed and mutation-tested. Gmail Scheduled API semantics remain unverified and hidden states remain outside provider observations. All acceptance criteria have focused evidence; the integrated required gate and direct commit remain pending.
+
+Completed in 8657a68 on master. All 15 acceptance criteria are verified. The final integrated suite passed 3,153 tests with one existing expected failure and 96.12% branch coverage, including required browser tests. Independent review and deliberate regression mutations completed. The full hook run is being repeated after concurrent ledger edits caused its file-change check to reject an otherwise passing test run. Delivery follows the approved direct-to-master workflow; PR #1 remains closed. Provider observation limits remain documented.
 <!-- SECTION:NOTES:END -->

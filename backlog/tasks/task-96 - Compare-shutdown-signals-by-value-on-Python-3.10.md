@@ -1,10 +1,10 @@
 ---
 id: TASK-96
 title: Compare shutdown signals by value on Python 3.10
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-15 03:58'
-updated_date: '2026-09-15 03:58'
+updated_date: '2026-09-15 04:09'
 labels: []
 dependencies: []
 priority: high
@@ -21,11 +21,13 @@ The detached-download shutdown test receives SIGINT correctly but fails on Pytho
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The shutdown test compares the received signal value with SIGINT without relying on enum string formatting
-- [ ] #2 Focused shutdown tests and repository checks pass
+- [x] #2 Focused shutdown tests and repository checks pass
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 CI run 34925231956 failed only at the shutdown marker assertion on Python 3.10; 3.11 and 3.12 passed. Python documents IntEnum.__str__ changing to int.__str__ in 3.11: https://docs.python.org/3/library/enum.html#enum.IntEnum. The test now parses the numeric marker before comparison. All 9 focused shutdown tests pass on Python 3.14.6. Restoring Enum.__str__ on signal.Signals reproduces the old assertion failure and passes with the corrected assertion. No local Python 3.10 interpreter was found; the supported-version CI matrix must verify that runtime after push. Full repository checks and commit remain pending. This CI compatibility fix is separate from Mail ownership.
+
+Fix committed as 8e2e6d8. The integrated suite passes 3,153 tests with one existing expected failure and 96.12% branch coverage. On-commit hygiene, Ruff, and dependency checks pass. The final pre-push gate and supported Python-version CI matrix will validate the published commit; no production behavior changed.
 <!-- SECTION:NOTES:END -->

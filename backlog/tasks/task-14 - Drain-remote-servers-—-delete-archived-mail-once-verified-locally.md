@@ -4,7 +4,7 @@ title: Mail ownership workstream
 status: In Progress
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-15 03:39'
+updated_date: '2026-09-15 04:09'
 labels: []
 milestone: m-5
 dependencies:
@@ -72,11 +72,11 @@ Deliver archive capture and optional server cleanup under
 archived copies; servers retain authority over live mail. Downloading content
 for the Active view is independent of both archival and server cleanup.
 
-TASK-14.3 supplies eligibility-driven capture and TASK-14.1 supplies the existing
-canonical-role filter. Their completed implementation remains the current
-behavior: permitting Inbox or Drafts through that filter creates permanent
-archive copies. TASK-28 adds the planned Active distinction; it must not be
-implemented by simply relaxing the current filter.
+TASK-14.3 supplies eligibility-driven capture and TASK-14.1 supplies canonical
+roles. TASK-28 separates the disposable Active cache from permanent ownership:
+current Inbox and unfinished outgoing states cannot become owned copies through
+legacy filter settings. Eligible filed and Sent mail is captured after fresh
+provider checks and successful storage of its contents and required labels.
 
 TASK-14.2 supplies optional server cleanup. It may move a server copy to Trash
 only after verifying the owned archive copy and confirming that the message and
@@ -162,4 +162,6 @@ Active-cache approval was granted after a single bounded storage explanation. TA
 2026-09-14 continuation checkpoint: Active-cache storage was explicitly approved and implemented in 43c6c0f on feat/active-mail-cache; draft PR https://github.com/clee704/ownmail/pull/1 uses fixed base abda815 because the local baseline is ahead of GitHub master. Continue on that feature branch rather than requesting storage approval again. TASK-28 broad received/filed capture remains open: provider state currently proves only Sent completion, and uncertain mail stays cached. TASK-5.4 Active-only and dual-state label editing was verified in the feature; cleanup integration remains open. TASK-38 broad provider clearance and TASK-14.2 dependencies/cleanup/OAuth approvals remain unresolved. TASK-91 (legacy sidecar retry) and TASK-95 (repeated cache-body reads) are separate discoveries outside the fixed workstream membership. Feature and main-checkout full pre-push gates passed; no feature merge or server cleanup was performed.
 
 2026-09-14 workflow correction: the user requested closing PR #1 after clarifying that this disposable cache does not require the archive-data PR exception. The PR is confirmed CLOSED. Feature commit 43c6c0f remains on feat/active-mail-cache. Continue the normal direct-to-master workflow for this change once its remaining capture behavior and checks are complete; do not recreate the PR. The user requested a fuller explanation of the filed-mail capture question and has not approved changing its finished-state rule. Separate cleanup/OAuth approvals remain pending.
+
+Current checkpoint: TASK-90, TASK-28, and TASK-38 are Done. Active cache, ordinary filed/Sent capture, and supported read-only thread clearance are committed directly on master in 8657a68; PR #1 remains closed. TASK-5.4 has verified Active integration and awaits cleanup integration only. TASK-14.2 now has its dependencies satisfied and a concrete preview/verification/Trash plan, but server-cleanup implementation and Gmail OAuth changes still require the recorded explicit sign-offs. No real-account cleanup has run. Resume at that one approval boundary; do not re-ask cache approval or reintroduce blanket Sent-only capture. TASK-91, TASK-95, and TASK-96 remain separate discoveries rather than added workstream members.
 <!-- SECTION:NOTES:END -->
