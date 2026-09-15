@@ -2,19 +2,23 @@
 {% from '_icons.html' import icon %}
 <ul class="ownmail-email-list" id="ownmail-email-list">
 {% for result in results %}
-    <li class="ownmail-email-row">
+    <li class="ownmail-email-row{% if result.active %} ownmail-email-row-active{% endif %}">
         <label class="ownmail-email-checkbox" onclick="event.stopPropagation()">
-            <input type="checkbox" aria-label="Select {{ result.subject or '(No subject)' }}" value="{{ result.email_id }}" onchange="onCheckboxChange(event, this)">
+            <input type="checkbox" aria-label="{% if result.active and result.active.cached_view %}Manage this Active message in your mail client{% else %}Select {{ result.subject or '(No subject)' }}{% endif %}" value="{{ result.email_id }}" onchange="onCheckboxChange(event, this)"{% if result.active and result.active.cached_view %} disabled{% endif %}>
         </label>
         {% if result.sender_search_url %}
         <a href="{{ result.sender_search_url }}" class="ownmail-email-sender" id="sender-{{ loop.index }}" title="Find messages from {{ result.sender_name or result.sender }}" onclick="showLoading(event)">{{ result.sender_name or result.sender }}</a>
         {% else %}
         <span class="ownmail-email-sender" id="sender-{{ loop.index }}">{{ result.sender_name or result.sender or '(Unknown)' }}</span>
         {% endif %}
-        <a href="{{ url_for('view_email', email_id=result.email_id, return_to=request.full_path.rstrip('?')) }}" class="ownmail-email-row-link" aria-labelledby="sender-{{ loop.index }} subject-{{ loop.index }} date-{{ loop.index }}"{% if result.has_attachments %} aria-describedby="attachment-{{ loop.index }}"{% endif %}>
+        <a href="{{ url_for('view_email', email_id=result.email_id, return_to=request.full_path.rstrip('?')) }}" class="ownmail-email-row-link" aria-labelledby="sender-{{ loop.index }} subject-{{ loop.index }} date-{{ loop.index }}"{% if result.has_attachments or result.active %} aria-describedby="{% if result.has_attachments %}attachment-{{ loop.index }}{% if result.active %} {% endif %}{% endif %}{% if result.active %}active-{{ loop.index }}{% endif %}"{% endif %}>
             <span class="ownmail-email-row-content">
+                {% if result.active %}<span class="ownmail-active-preview">{% endif %}
                 <span class="ownmail-email-subject" id="subject-{{ loop.index }}" title="{{ result.subject or '(No subject)' }}">{{ result.subject or '(No subject)' }}</span>
                 {% if result.snippet %}<span class="ownmail-email-snippet">{{ result.snippet }}</span>{% endif %}
+                {% if result.active %}</span>
+                <span class="ownmail-active-freshness" id="active-{{ loop.index }}">{% if result.active.active %}Active{% else %}Server state unconfirmed{% endif %} · {% if not result.active.complete %}Refresh incomplete · {% endif %}{% if result.active.checked_at %}Checked {{ result.active.checked_at_display }}{% else %}Freshness unknown{% endif %}</span>
+                {% endif %}
             </span>
             <span class="ownmail-email-date">
                 {% if result.has_attachments %}

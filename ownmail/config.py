@@ -172,6 +172,11 @@ def validate_config(config: dict[str, Any]) -> list[str]:
     """
     errors = []
 
+    if "active_cache_dir" in config and (
+        not isinstance(config["active_cache_dir"], str) or not config["active_cache_dir"].strip()
+    ):
+        errors.append("active_cache_dir must be a nonempty directory path")
+
     # Validate sources
     sources = get_sources(config)
     seen_names = set()
@@ -208,6 +213,8 @@ def validate_config(config: dict[str, Any]) -> list[str]:
                 errors.append(f"Source '{name}': {e}")
 
         errors.extend(_validate_exclude_roles(name, source))
+        if "active_downloads" in source and type(source["active_downloads"]) is not bool:
+            errors.append(f"Source '{name}': active_downloads must be true or false")
 
         # IMAP requires host
         if source_type == "imap":

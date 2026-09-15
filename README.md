@@ -9,7 +9,7 @@ downloads, imports, and archive maintenance.
 
 The goal is to own your mail and remove server copies once they are no longer
 needed by your mail clients. Read [Owning your mail](docs/philosophy.md) for the
-product philosophy, ownership rules, and planned Active view and server cleanup.
+product philosophy, Active ownership, and planned server cleanup.
 
 > **Development version:** This README describes `0.4.0-dev` on `master`.
 > [PyPI currently provides 0.3.0](https://pypi.org/project/ownmail/), which has an
@@ -106,8 +106,9 @@ browse. A phone also needs a connection to that server. See
 
 Open **Settings → Downloads** and choose **Download now** to run the same download
 as `ownmail download`, using all configured sources and their existing filters.
-The page shows the current source, downloaded and skipped message counts, and
-failures with a brief reason. Counts cover the current run across all sources.
+The page shows the current source, archived and Active-refreshed message counts,
+and failures with a brief reason. Counts cover the current run across all sources;
+incomplete Active refreshes remain marked incomplete when capture finishes.
 Command-line and web downloads cannot overlap for the same archive.
 
 For automatic downloads, choose an interval and **Save schedule**. Available
@@ -119,14 +120,18 @@ The interval is stored as `web.download_interval_minutes` in `config.yaml`.
 
 ### What gets archived
 
-By default, ownmail downloads mail outside **Inbox**, **Drafts**, **Trash**, and
-**Spam**. Sent mail is eligible. Mail you later file out of the inbox or rescue
-from spam can be picked up by subsequent downloads.
+Ownmail caches **Inbox**, **Drafts**, and mail with unconfirmed state for reading
+and search alongside your archive. These Active copies remain server-owned and
+follow confirmed server changes. Trash and Spam stay out.
 
-You can include inbox mail and drafts with `exclude_roles` in your source
-configuration. Trash and spam remain excluded. See
-[download filters](docs/archive.md#download-filters) before your first download
-if you want to change these defaults.
+**Automatic capture currently supports confirmed Sent mail only.** Received/filed
+Gmail messages and non-Sent IMAP mail stay in the cache when ownmail cannot prove
+completion. Filing a message out of Inbox does not yet reliably archive it.
+
+Active downloads default on. Set `active_downloads: false` per source to disable
+them; prior cache contents remain stale. Existing `exclude_roles` values are
+accepted but cannot allow Inbox or Drafts into the archive. See
+[download filters and capture limits](docs/archive.md#download-filters).
 
 ## Search
 
@@ -147,7 +152,7 @@ The web interface includes search help with supported operators and examples.
 | Command | Purpose |
 |---|---|
 | `setup` | Connect a mail source and store credentials |
-| `download` | Download new eligible mail |
+| `download` | Refresh Active mail and capture confirmed finished mail |
 | `serve` | Open the web interface |
 | `search "query"` | Search from the terminal |
 | `import <path>` | Import external `.eml` files |
@@ -158,7 +163,7 @@ The web interface includes search help with supported operators and examples.
 | `trash` | View and manage the archive's Trash |
 | `update-labels` | Backfill missing labels |
 | `relabel` | Repair IMAP folder labels from the server |
-| `reconcile` | Review archived mail against the current download filter |
+| `reconcile` | Review archived mail against legacy role and folder filters |
 | `rebuild` | Rebuild the index or selected metadata |
 | `reset-sync` | Reset download progress for a rescan |
 | `list-unknown` | List messages with unparseable dates |

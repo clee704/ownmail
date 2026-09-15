@@ -11,6 +11,7 @@
 
 {% block content %}
     {% set location = namespace(name='Search results' if query else 'All Mail') %}
+    {% if query == 'is:active' %}{% set location.name = 'Active' %}{% endif %}
     {% for entry in label_nav.system + label_nav.user %}{% if entry.active %}{% set location.name = entry.name %}{% endif %}{% endfor %}
     <h2 class="ownmail-sr-only">{{ location.name }}</h2>
     <div class="ownmail-toolbar" id="ownmail-toolbar">
@@ -52,6 +53,7 @@
             var terms = input.value.trim()
                 .replace(/\b(before|after):\d{4}-?\d{2}-?\d{2}\b/gi, '')
                 .replace(/\b(label|tag):\S+\b/gi, '')
+                .replace(/\bis:(active|archived)\b/gi, '')
                 .replace(/\bAND\b/gi, '').trim();
             relevance.disabled = !terms;
             if (!terms && relevance.checked) document.querySelector('input[name="sort"][value="date_desc"]').checked = true;

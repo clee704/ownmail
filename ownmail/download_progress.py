@@ -25,6 +25,7 @@ FAILURE_REASONS = {
     "storage": "Could not write to the archive. Check permissions and free space.",
     "index": "Could not update the archive index. Check the server console.",
     "message_index": "Mail was saved but could not be indexed. Check the server console.",
+    "active_refresh": "Some live mail could not be refreshed or captured. Saved copies remain available.",
     "failed": "Download failed. Check the server console.",
 }
 
@@ -61,11 +62,19 @@ class DownloadProgress:
             self._state["source"] = source
         self._write(force=True)
 
-    def advance(self, *, downloaded: int = 0, skipped: int = 0) -> None:
+    def advance(self, *, downloaded: int = 0, skipped: int = 0, active_refreshed: int | None = None) -> None:
         """Count completed messages while limiting disk writes."""
         self._state["downloaded"] += downloaded
         self._state["skipped"] += skipped
+        if active_refreshed is not None:
+            self._state["active_refreshed"] = self._state.get("active_refreshed", 0) + active_refreshed
         self._write()
+
+    def set_active_complete(self, complete: bool) -> None:
+        """A failed source keeps the combined Active refresh incomplete."""
+        self._state["active_complete"] = self._state.get("active_complete", True) and complete
+        self._state.setdefault("active_refreshed", 0)
+        self._write(force=True)
 
     def fail(self, reason: str, *, errors: int = 0) -> None:
         """Publish a reason selected from the fixed message catalog."""

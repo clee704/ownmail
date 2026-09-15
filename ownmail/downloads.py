@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-_PROGRESS_PHASES = {"starting", "authenticating", "checking", "downloading", "finished"}
+_PROGRESS_PHASES = {"starting", "authenticating", "checking", "downloading", "refreshing", "finished"}
 _MAX_PROGRESS_BYTES = 65536
 
 
@@ -185,6 +185,8 @@ class DownloadManager:
             "errors": 0,
             "failure_reason": None,
             "has_progress": False,
+            "active_refreshed": 0,
+            "active_complete": None,
         }
 
     def _read_progress(self) -> None:
@@ -210,7 +212,12 @@ class DownloadManager:
             return
         if report.get("failure_reason") is not None and not isinstance(report["failure_reason"], str):
             return
+        if type(report.get("active_refreshed", 0)) is not int or report.get("active_refreshed", 0) < 0:
+            return
+        if report.get("active_complete") is not None and type(report["active_complete"]) is not bool:
+            return
         self._progress = {key: report.get(key) for key in self._progress if key != "has_progress"}
+        self._progress["active_refreshed"] = report.get("active_refreshed", 0)
         self._progress["has_progress"] = True
 
     def _cleanup_progress(self) -> None:

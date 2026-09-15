@@ -16,7 +16,12 @@
             <tr><td><code>has:attachment</code></td><td>Emails with any attachments</td></tr>
             <tr><td><code>label:INBOX</code></td><td>Emails with this exact label or folder name</td></tr>
             <tr><td><code>role:sent</code></td><td>Emails in this system folder, whatever the provider calls it</td></tr>
+            <tr><td><code>is:active</code></td><td>Cached Inbox messages and unfinished outgoing mail still owned by the server</td></tr>
+            <tr><td><code>is:archived</code></td><td>Your owned copies with saved contents and labels</td></tr>
         </table>
+
+        <h3>Active and Archived mail</h3>
+        <p class="ownmail-help-note">Search includes cached Active messages alongside your archive. Active rows show when the server was last checked. An incomplete refresh keeps the last copy and marks its state as unconfirmed. Manage Active messages in your mail client. Archived copies keep their saved contents and labels, even if the message returns to Inbox; the reader links to the cached server copy.</p>
 
         <h3>System folder roles</h3>
         <p class="ownmail-help-note">Providers spell the same folder differently &mdash; <code>SENT</code>,

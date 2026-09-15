@@ -928,6 +928,9 @@ class ArchiveDatabase:
         sort: str = "relevance",
         include_unknown: bool = False,
         tz=None,
+        _active_ids: set[str] | None = frozenset(),
+        _archived_ids: set[str] | None = None,
+        _with_order: bool = False,
     ) -> list[tuple]:
         """Search emails.
 
@@ -990,7 +993,19 @@ class ArchiveDatabase:
             param_idx = 0
 
             for clause in parsed.where_clauses:
-                if clause == "__RECIPIENT_EMAIL__":
+                if clause in {"__STATE__", "__NOT_STATE__"}:
+                    state = parsed.params[param_idx]
+                    param_idx += 1
+                    identities = _active_ids if state == "active" else _archived_ids
+                    if identities is None:
+                        predicate = "1"
+                    else:
+                        table = "search_active_ids" if state == "active" else "search_archived_ids"
+                        conn.execute(f"CREATE TEMP TABLE IF NOT EXISTS {table} (id TEXT PRIMARY KEY)")
+                        conn.executemany(f"INSERT OR IGNORE INTO {table} VALUES (?)", ((i,) for i in identities))
+                        predicate = f"e.email_id IN (SELECT id FROM {table})"
+                    where_clauses.append(f"NOT ({predicate})" if clause == "__NOT_STATE__" else predicate)
+                elif clause == "__RECIPIENT_EMAIL__":
                     # This is a recipient email filter - needs JOIN
                     recipient_email_filter = parsed.params[param_idx]
                     param_idx += 1
@@ -1094,6 +1109,7 @@ class ArchiveDatabase:
                 print("[db.search] Using FTS path", flush=True)
                 if sort == "relevance":
                     order_by = "rank"
+                order_column = ", rank" if sort == "relevance" else ", e.email_date"
 
                 # Build additional JOINs for label/recipient filters
                 extra_joins = []
@@ -1140,7 +1156,7 @@ class ArchiveDatabase:
                             e.sender,
                             e.date_str,
                             e.snippet,
-                            e.has_attachments
+                            e.has_attachments{order_column if _with_order else ""}
                         FROM emails e
                         JOIN emails_fts f ON f.rowid = e.rowid
                         {join_sql}
@@ -1200,7 +1216,7 @@ class ArchiveDatabase:
                         e.sender,
                         e.date_str,
                         e.snippet,
-                        e.has_attachments
+                        e.has_attachments{", e.email_date" if _with_order else ""}
                     FROM emails e
                     {join_sql}
                     WHERE {where_sql}

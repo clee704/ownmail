@@ -96,6 +96,7 @@ KNOWN_FILTERS = frozenset(
         "label",
         "tag",
         "role",
+        "is",
         "before",
         "after",
         "has",
@@ -533,6 +534,13 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                 else:
                     where_clauses.append("__ROLE__")
                 params.append(slug)
+
+            elif field == "is":
+                state = value.lower()
+                if state not in {"active", "archived"}:
+                    return ParsedQuery(error=f"Unknown ownership state '{value}'. Valid states: active, archived")
+                where_clauses.append("__NOT_STATE__" if negated else "__STATE__")
+                params.append(state)
 
             elif field == "before":
                 normalized = _normalize_date(value)

@@ -13,6 +13,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from ownmail import capture, roles
+from ownmail.providers import live_gmail
 from ownmail.providers.base import EmailProvider
 from ownmail.thread_protection import ThreadProtection
 
@@ -114,6 +115,14 @@ class GmailProvider(EmailProvider):
     def download_batch_size(self) -> int:
         """Number of messages to download per batch."""
         return BATCH_SIZE
+
+    def list_live_messages(self):
+        """Enumerate current state independently of capture preferences."""
+        return live_gmail.list_messages(self)
+
+    def read_live_message(self, message_id):
+        """Read current roles and contents without changing server mail."""
+        return live_gmail.read_message(self, message_id)
 
     def check_thread_protection(self, message_id: str) -> ThreadProtection:
         """Read current candidate and thread state without capture filters.

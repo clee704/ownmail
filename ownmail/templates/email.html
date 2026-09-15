@@ -13,7 +13,7 @@
             <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
                 <a href="/raw/{{ email_id }}" title="Show original message">{{ icon('file') }}<span>Original</span></a>
                 <a href="/download/{{ email_id }}" title="Download message">{{ icon('download') }}<span>Download</span></a>
-                <button type="button" id="ownmail-edit-labels" data-message-action aria-expanded="false" aria-controls="ownmail-label-editor">{{ icon('label') }}<span>Edit labels</span></button>
+                {% if not cached_view %}<button type="button" id="ownmail-edit-labels" data-message-action aria-expanded="false" aria-controls="ownmail-label-editor">{{ icon('label') }}<span>Edit labels</span></button>{% endif %}
                 {% if body_html %}
                 <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-content" hidden>Show actual size</button>
                 {% endif %}
@@ -26,12 +26,14 @@
                 <button type="button" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="untrustSender()">Untrust this sender</button>
                 {% endif %}
                 {% endif %}
+                {% if not cached_view %}
                 <hr class="ownmail-email-menu-divider">
                 {% if is_trashed %}
                 <button type="button" data-message-action onclick="restoreEmail('{{ email_id }}')" aria-label="Restore from trash" title="Restore from trash">{{ icon('refresh') }}<span>Restore from trash</span></button>
                 <button type="button" class="ownmail-menu-danger" data-message-action onclick="deleteForever('{{ email_id }}')">Delete forever</button>
                 {% else %}
                 <button type="button" class="ownmail-menu-danger" data-message-action onclick="trashEmail('{{ email_id }}')" aria-label="Move to trash" title="Move to trash">{{ icon('trash') }}<span>Move to trash</span></button>
+                {% endif %}
                 {% endif %}
             </div>
         </details>
@@ -66,6 +68,19 @@
             </dl>
         </header>
 
+        {% if active %}
+        <section class="ownmail-active-notice" aria-label="Active message status">
+            {% if cached_view %}
+            <p><strong>{% if active.active %}Active{% else %}Server state unconfirmed{% endif %}.</strong> You are reading a cached server copy. Manage this message in your mail client. Confirmed server changes replace or remove this copy.</p>
+            {% if active.archive_id %}<p><a href="{{ url_for('view_email', email_id=active.archive_id, return_to=back_url) }}">Read your archived copy</a>. Its saved contents and labels stay unchanged.</p>{% endif %}
+            {% else %}
+            <p><strong>{% if active.active %}Also Active on the server{% else %}Server state unconfirmed{% endif %}.</strong> You are reading your archived copy. Its saved contents and labels stay unchanged. <a href="{{ url_for('view_email', email_id=active.cache_id, return_to=back_url) }}">Read the cached server copy</a>.</p>
+            {% endif %}
+            <p>{% if not active.complete %}<strong>Refresh incomplete; server state is unconfirmed.</strong> {% endif %}{% if active.checked_at %}Server state last checked {{ active.checked_at_display }}.{% else %}Server freshness is unknown.{% endif %} Contents cached {{ active.content_at_display }}.</p>
+        </section>
+        {% endif %}
+
+        {% if not cached_view %}
         <section class="ownmail-label-editor" id="ownmail-label-editor" aria-labelledby="ownmail-label-editor-title" data-url="{{ url_for('local_labels', email_id=email_id) }}" hidden>
             <h3 id="ownmail-label-editor-title">Edit labels</h3>
             <p>These labels belong to your archived copy. Server labels stay unchanged.</p>
@@ -86,6 +101,7 @@
                 </div>
             </form>
         </section>
+        {% endif %}
 
         <div class="ownmail-email-content-area" data-supports-dark="{{ 'true' if supports_dark else 'false' }}">
         {% if images_blocked and has_external_images %}

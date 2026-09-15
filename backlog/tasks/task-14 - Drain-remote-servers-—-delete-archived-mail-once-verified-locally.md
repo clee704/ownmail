@@ -4,7 +4,7 @@ title: Mail ownership workstream
 status: In Progress
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-14 21:39'
+updated_date: '2026-09-15 03:21'
 labels: []
 milestone: m-5
 dependencies:
@@ -156,4 +156,6 @@ Full hole audit — eight findings with file:line — is in TASK-14.1's Implemen
 2026-09-14: Established Mail ownership as a named workstream with fixed remaining membership, task-local progress, and a repository-level continuation route. Setup changes no feature status or implementation acceptance evidence.
 
 2026-09-14 checkpoint: TASK-90 is Done (4d25a77). TASK-38 has a tested, reviewed read-only protection checkpoint (b18454c), with broad provider clearance still blocked. TASK-5.4 has a tested, reviewed owned-label editor (371855b), with Active/cleanup integration ACs still open. TASK-28 awaits explicit approval for its separate Active-cache schema and disposable cache-file replacement/removal. TASK-14.2 awaits its dependencies and separate server-cleanup/OAuth approvals. Approval requests were presented and have not been answered; no dependent implementation or real-account cleanup was performed. Existing canonical capture-role filtering remains verified. Final full pre-push checks passed with required browser tests and 95.97% branch coverage. No member is currently eligible for further implementation without the recorded approvals or provider-state evidence; resume from those task-local next actions. The workstream remains incomplete.
+
+Active-cache approval was granted after a single bounded storage explanation. TASK-28 now has a tested feature-branch implementation with final acceptance checks and PR delivery in progress. Its broad received/filed capture AC remains open because provider state currently proves only Sent completion; uncertain mail stays readable in the disposable cache. TASK-38 broad provider clearance and TASK-14.2 cleanup remain blocked, and TASK-5.4 still needs cleanup integration. Server cleanup, OAuth changes, and narrowed cleanup support have not been approved. TASK-91 records a separate legacy sidecar-save retry defect and does not expand the five-member workstream.
 <!-- SECTION:NOTES:END -->

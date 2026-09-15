@@ -13,6 +13,7 @@ import re
 import time
 
 from ownmail import capture, roles
+from ownmail.providers import live_imap
 from ownmail.providers.base import EmailProvider
 
 # Default IMAP settings
@@ -167,6 +168,14 @@ class ImapProvider(EmailProvider):
     def download_batch_size(self) -> int:
         """Number of messages to download per batch."""
         return FETCH_BODY_BATCH_SIZE
+
+    def list_live_messages(self):
+        """Enumerate current state independently of capture preferences."""
+        return live_imap.list_messages(self)
+
+    def read_live_message(self, message_id):
+        """Read current roles and contents without changing server mail."""
+        return live_imap.read_message(self, message_id)
 
     def authenticate(self) -> None:
         """Connect and authenticate with the IMAP server."""

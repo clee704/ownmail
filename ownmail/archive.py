@@ -57,6 +57,57 @@ class EmailArchive:
 
         # Batch connection for fast writes
         self._batch_conn: sqlite3.Connection | None = None
+        self._active_cache = None
+
+    def active_cache(self, *, create: bool = False):
+        """Open the disposable cache only when it exists or a download needs it."""
+        from ownmail.active_cache import ActiveCache
+
+        root = self.archive_dir.resolve()
+        configured = self.config.get("active_cache_dir")
+        cache_dir = Path(configured) if configured else root.with_name(f".{root.name}-active")
+        if self._active_cache is None and (create or cache_dir.exists()):
+            self._active_cache = ActiveCache(self.archive_dir, cache_dir)
+        return self._active_cache
+
+    def active_info(self, email_id: str) -> dict | None:
+        """Describe the live server copy associated with a reading result."""
+        from ownmail.active_search import active_info
+
+        return active_info(self, email_id)
+
+    def active_infos(self) -> dict[str, dict]:
+        """Build status metadata for one reader page."""
+        from ownmail.active_search import active_infos
+
+        return active_infos(self)
+
+    def active_count(self) -> int:
+        """Count cached live messages, including those with an owned copy."""
+        cache = self.active_cache()
+        return len(cache.list_entries()) if cache else 0
+
+    def consolidated_count(self) -> int:
+        """Count ordinary reading results with verified live/archive matches merged."""
+        from ownmail.active_search import archive_links
+
+        with sqlite3.connect(self.db.db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM emails WHERE trashed_at IS NULL").fetchone()[0]
+        return count + self.active_count() - len(archive_links(self))
+
+    def get_readable_email(self, email_id: str) -> tuple | None:
+        """Resolve an owned or validated cached message for read-only routes."""
+        if not email_id.startswith("active-"):
+            return self.db.get_email_by_id(email_id)
+        cache = self.active_cache()
+        try:
+            entry = cache.get(email_id) if cache else None
+            if not entry:
+                return None
+            path = cache.path(email_id)
+        except (OSError, ValueError):
+            return None
+        return (email_id, str(path), entry["content_at"], entry["content_hash"], entry["account"], None)
 
     def get_emails_dir(self, source_name: str) -> Path:
         """Get emails directory for a source.
@@ -256,6 +307,7 @@ class EmailArchive:
         until: str | None = None,
         verbose: bool = False,
         progress: DownloadProgress | None = None,
+        active_downloads: bool | None = None,
     ) -> dict:
         """Backup emails from a provider.
 
@@ -269,6 +321,12 @@ class EmailArchive:
         Returns:
             Dictionary with success_count, error_count, interrupted
         """
+        if active_downloads is not None:
+            from ownmail.live_sync import sync_live
+
+            return sync_live(
+                self, provider, active_downloads=active_downloads, since=since, until=until, progress=progress
+            )
         account = provider.account
         if progress:
             progress.set_phase("checking", provider.source_name)
@@ -611,6 +669,7 @@ class EmailArchive:
         provider_id: str,
         account: str,
         conn: sqlite3.Connection,
+        fallback_date: str | None = None,
     ) -> str:
         """Register a file already at its final archive location and index it.
 
@@ -623,7 +682,7 @@ class EmailArchive:
         content_hash = hashlib.sha256(raw_data).hexdigest()
         email_msg = email.message_from_bytes(raw_data)
         msg_date_utc = self._parse_email_datetime(email_msg)
-        email_date = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00") if msg_date_utc else None
+        email_date = msg_date_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00") if msg_date_utc else fallback_date
 
         email_id = ArchiveDatabase.make_email_id(account, provider_id)
 
@@ -752,17 +811,28 @@ class EmailArchive:
             print(f"\n  Error reading {filepath}: {e}")
             return "error"
 
-        email_msg = email.message_from_bytes(raw_data)
-        provider_id = self._local_provider_id(email_msg, raw_data)
-        if not account:
-            account = self._derive_account_from_from_header(email_msg)
+        from ownmail.live_sync import capture_provenance
+
+        try:
+            provenance = capture_provenance(self, filepath, raw_data, sidecar.read_metadata(filepath))
+        except (ValueError, TypeError, OSError) as error:
+            print(f"\n  Incomplete capture: {error}")
+            return "error"
+        fallback_date = None
+        if provenance:
+            provider_id, account, fallback_date = provenance
+        else:
+            email_msg = email.message_from_bytes(raw_data)
+            provider_id = self._local_provider_id(email_msg, raw_data)
+            if not account:
+                account = self._derive_account_from_from_header(email_msg)
 
         should_close = conn is None
         if conn is None:
             conn = sqlite3.connect(self.db.db_path)
 
         try:
-            return self._register_and_index(filepath, raw_data, provider_id, account, conn)
+            return self._register_and_index(filepath, raw_data, provider_id, account, conn, fallback_date=fallback_date)
         except Exception as e:
             print(f"\n  Error registering {filepath}: {e}")
             return "error"
@@ -1041,7 +1111,14 @@ class EmailArchive:
     # -------------------------------------------------------------------------
 
     def search(
-        self, query: str, account: str = None, limit: int = 50, offset: int = 0, sort: str = "relevance", tz=None
+        self,
+        query: str,
+        account: str = None,
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "relevance",
+        tz=None,
+        include_unknown: bool = False,
     ) -> list:
         """Search emails.
 
@@ -1056,7 +1133,11 @@ class EmailArchive:
         Returns:
             List of search results
         """
-        return self.db.search(query, account=account, limit=limit, offset=offset, sort=sort, tz=tz)
+        from ownmail.active_search import search
+
+        return search(
+            self, query, account=account, limit=limit, offset=offset, sort=sort, tz=tz, include_unknown=include_unknown
+        )
 
     # -------------------------------------------------------------------------
     # Helpers
