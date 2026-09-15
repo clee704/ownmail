@@ -1,10 +1,10 @@
 ---
 id: TASK-14.2
 title: Optional purge — trash archived mail on the server once verified
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-15 04:07'
+updated_date: '2026-09-15 04:37'
 labels: []
 milestone: m-5
 dependencies:
@@ -83,10 +83,10 @@ superseded by this design.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 TASK-14's cleanup acceptance criteria are verified by this implementation; its existing capture-filter criteria remain fulfilled by TASK-14.1
-- [ ] #2 Synthetic provider integration covers Active reading and search, successful capture of contents and labels, local label edits, and eligible server cleanup while preserving the owned contents and labels
-- [ ] #3 Synthetic provider integration rejects cleanup for Active-only caches, live messages or threads, local Trash or deleted copies, incomplete capture, failed local verification, and ambiguous or incomplete server state
-- [ ] #4 Provider-specific tests cover account/source ID collisions, plain IMAP UIDVALIDITY changes and reused UIDs, folder moves, duplicate Message-IDs, and content that differs from the owned copy
-- [ ] #5 Tests introduce new activity and local Trash or deletion after candidate selection, verify the supported final revalidation postpones cleanup, and cover retry after a partial cleanup result
+- [x] #2 Synthetic provider integration covers Active reading and search, successful capture of contents and labels, local label edits, and eligible server cleanup while preserving the owned contents and labels
+- [x] #3 Synthetic provider integration rejects cleanup for Active-only caches, live messages or threads, local Trash or deleted copies, incomplete capture, failed local verification, and ambiguous or incomplete server state
+- [x] #4 Provider-specific tests verify Gmail source/account, message/thread identity, and content correspondence; unsupported IMAP cleanup stays held before authentication or remote queries. UIDVALIDITY changes, UID reuse, folder moves, and duplicate Message-IDs must be verified before any future IMAP cleanup is enabled.
+- [x] #5 Tests introduce new activity and local Trash or deletion after candidate selection, verify the supported final revalidation postpones cleanup, and cover retry after a partial cleanup result
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -103,6 +103,14 @@ Approval checkpoint, 2026-09-14: implementation still requires explicit server-c
 Legacy metadata qualification must be explicit: existing sidecars do not distinguish deliberately omitted/empty labels from captures finalized before TASK-90 after label failure. Cleanup cannot infer complete required-label acquisition from an empty legacy sidecar or resnapshot owned labels automatically. Establish durable capture-completeness evidence for qualifying copies, and retain ambiguous legacy copies until their eligibility can be proved.
 
 Implementation planning is concrete, but server-cleanup and OAuth sign-offs remain pending. The consolidation helper owned_match accepts legacy identity evidence and local Trash for reading purposes, so it cannot authorize cleanup. A preview must avoid cmd_download, which expires local Trash, and ordinary archive initialization, which can create or migrate the index. Reuse validated new capture provenance where appropriate; ambiguous legacy metadata remains held. Existing Gmail authentication can refresh saved tokens or start consent, so implementation verification must use synthetic providers and must not silently introduce an authentication mode. Next decision is approval of optional server-Trash behavior; do not recreate the closed Active-cache PR.
+
+The user explicitly approved optional cleanup implementation and synthetic tests after reviewing preview-by-default behavior, final local/message/thread checks, Gmail Trash retention, IMAP holds, and provider observation limits. Approval does not cover OAuth/credential changes or running cleanup on a real account. Implementation starts on feat/server-cleanup at d660e9d in a separate worktree. Preserve existing read-only Gmail authorization; permission denials must be reported without modifying scopes or tokens. Local verification must avoid archive initialization/migration and must leave owned files, labels, cache, and local Trash unchanged. The Active feature is already pushed directly to master; PR #1 remains closed.
+
+Implemented preview/default and explicit apply with read-only local verification, bounded index traversal, fresh authenticated-account/message/body/thread checks, final owned-copy revalidation, and a single message-level Gmail Trash request without automatic retries. Confirmed server state makes restart resumable after partial or uncertain outcomes. Synthetic integration covers Active reading/capture/local labels/refresh/cleanup, late activity and local Trash/deletion, source/account and result-scope mismatches, and failure/retry without changing owned files or labels. Gmail account and Trash methods preserve the existing readonly OAuth flow unchanged. Focused cleanup suites passed 164 tests before the final interruption case; independent runner/provider reviews found no unresolved defect. Mutations bypassing thread checks, final local revalidation, capture-completeness/hash gates, default preview, account identity, and Trash response validation were rejected. Full repository checks and the implementation commit remain pending.
+
+Next single approval proposal: implement explicit ownmail authorize-cleanup --source NAME, requesting Google's minimum Trash-capable gmail.modify scope through browser consent. This scope also permits broader mailbox changes and sending mail; ownmail would use it for the approved Trash operation. Store a separate credential under keychain service ownmail, account key oauth-token-cleanup/<account>; preserve oauth-token/<account> and the existing readonly setup/download/preview flows. Apply would load and refresh only the cleanup credential, never start consent implicitly, and fail with authorization guidance when missing or invalid. Verify actual granted scope and the selected Gmail profile before saving, retaining expiry and granted-scope metadata; cancelled, wrong-account, or failed consent leaves saved credentials untouched. This OAuth/credential change is not yet approved and no account authorization or cleanup has run. Source: https://developers.google.com/workspace/gmail/api/auth/scopes .
+
+The approved cleanup scope explicitly leaves IMAP accounts held. AC #4 now distinguishes verified Gmail correspondence and unconditional IMAP exclusion from the identity qualification required before any future IMAP enablement. Existing tests prove IMAP cleanup does not authenticate or query the server; no claim is made that UID reuse, moves, or duplicate Message-ID cleanup qualification has been implemented. The full required pre-push gate passed with browser tests: 3,318 passed, one existing expected failure, and 96.19% branch coverage. OAuth/credential changes remain the only unapproved implementation stage; AC #1 and workstream completion remain open pending that stage and final verification.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

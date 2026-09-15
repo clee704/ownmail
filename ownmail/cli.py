@@ -8,6 +8,7 @@ from ownmail import __version__, roles
 from ownmail.archive import EmailArchive
 from ownmail.config import (
     get_archive_root,
+    get_db_dir,
     get_source_by_name,
     get_sources,
     load_config,
@@ -634,6 +635,60 @@ def cmd_download(
     return total_errors == 0 and not interrupted and not skipped_source and not (progress and progress.errors)
 
 
+def cmd_cleanup(archive_root: Path, config: dict, source_name: str, *, apply: bool = False) -> bool:
+    """Preview or apply server cleanup without initializing the archive."""
+    source = get_source_by_name(config, source_name)
+    if source is None:
+        print(f"Error: Source '{source_name}' not found in config")
+        return False
+    if not archive_root.is_dir():
+        print(f"Error: Archive directory does not exist: {archive_root}")
+        return False
+
+    from ownmail.cleanup import run_cleanup
+
+    mode = "apply" if apply else "preview"
+    print(f"\nCleanup {mode}: {source['name']} ({source['account']})", flush=True)
+    provider = None
+    if source["type"] == "gmail_api":
+        provider = GmailProvider(
+            account=source["account"],
+            keychain=KeychainStorage(),
+            include_labels=source.get("include_labels", True),
+            source_name=source["name"],
+            exclude_roles=source.get("exclude_roles"),
+        )
+        provider.authenticate()
+
+    def report(event):
+        detail = f": {event['reason']}" if event.get("reason") else ""
+        target = event["email_id"] or "archive"
+        print(
+            f"  {event['status']}: {target}{detail}; checked {event.get('checked_at') or 'unknown'}",
+            flush=True,
+        )
+
+    result = run_cleanup(
+        archive_root,
+        source,
+        provider,
+        apply=apply,
+        report=report,
+        db_path=(get_db_dir(config) or archive_root) / "ownmail.db",
+    )
+    print(f"\nCleanup {mode} summary:")
+    print(f"  Checked: {result['checked']}")
+    print(f"  Eligible: {result['eligible']}")
+    print(f"  Held: {result['held']}")
+    print(f"  Moved to server Trash: {result['trashed']}")
+    print(f"  Errors: {result['errors']}")
+    if result["interrupted"]:
+        print("Cleanup interrupted. Run cleanup again to recheck remaining candidates.")
+    elif result["errors"]:
+        print("Run cleanup again to retry after resolving the reported errors.")
+    return not result["errors"] and not result["interrupted"]
+
+
 def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
     """Search cached Active and archived messages."""
     print(f"\nSearching for: {query}\n")
@@ -869,6 +924,21 @@ Examples:
         help="Only download emails before this date (YYYY-MM-DD)",
     )
     _add_global_opts(download_parser)
+
+    cleanup_parser = subparsers.add_parser(
+        "cleanup",
+        help="Preview optional server cleanup",
+        description=(
+            "Check archived copies and current server activity. Preview is the default; "
+            "--apply requests eligible Gmail messages be moved to server Trash. Applying requires "
+            "gmail.modify; the current sign-in stays read-only and does not request broader permissions."
+        ),
+    )
+    cleanup_parser.add_argument("--source", required=True, help="Configured source name to check")
+    cleanup_parser.add_argument(
+        "--apply", action="store_true", help="Move verified eligible Gmail messages to server Trash"
+    )
+    _add_global_opts(cleanup_parser)
 
     # search command
     search_parser = subparsers.add_parser(
@@ -1114,6 +1184,10 @@ Examples:
                 cmd_sources_list(config)
             else:
                 sources_parser.print_help()
+
+        elif args.command == "cleanup":
+            if not cmd_cleanup(archive_root, config, args.source, apply=args.apply):
+                sys.exit(1)
 
         elif args.command == "download":
             operation = "archive"
