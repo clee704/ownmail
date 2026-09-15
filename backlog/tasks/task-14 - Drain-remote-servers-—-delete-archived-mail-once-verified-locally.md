@@ -4,7 +4,7 @@ title: Mail ownership workstream
 status: In Progress
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-15 03:31'
+updated_date: '2026-09-15 03:39'
 labels: []
 milestone: m-5
 dependencies:
@@ -158,4 +158,6 @@ Full hole audit — eight findings with file:line — is in TASK-14.1's Implemen
 2026-09-14 checkpoint: TASK-90 is Done (4d25a77). TASK-38 has a tested, reviewed read-only protection checkpoint (b18454c), with broad provider clearance still blocked. TASK-5.4 has a tested, reviewed owned-label editor (371855b), with Active/cleanup integration ACs still open. TASK-28 awaits explicit approval for its separate Active-cache schema and disposable cache-file replacement/removal. TASK-14.2 awaits its dependencies and separate server-cleanup/OAuth approvals. Approval requests were presented and have not been answered; no dependent implementation or real-account cleanup was performed. Existing canonical capture-role filtering remains verified. Final full pre-push checks passed with required browser tests and 95.97% branch coverage. No member is currently eligible for further implementation without the recorded approvals or provider-state evidence; resume from those task-local next actions. The workstream remains incomplete.
 
 2026-09-14 continuation checkpoint: Active-cache storage was explicitly approved and implemented in 43c6c0f on feat/active-mail-cache; draft PR https://github.com/clee704/ownmail/pull/1 uses fixed base abda815 because the local baseline is ahead of GitHub master. Continue on that feature branch rather than requesting storage approval again. TASK-28 broad received/filed capture remains open: provider state currently proves only Sent completion, and uncertain mail stays cached. TASK-5.4 Active-only and dual-state label editing was verified in the feature; cleanup integration remains open. TASK-38 broad provider clearance and TASK-14.2 dependencies/cleanup/OAuth approvals remain unresolved. TASK-91 (legacy sidecar retry) and TASK-95 (repeated cache-body reads) are separate discoveries outside the fixed workstream membership. Feature and main-checkout full pre-push gates passed; no feature merge or server cleanup was performed.
+
+2026-09-14 workflow correction: the user requested closing PR #1 after clarifying that this disposable cache does not require the archive-data PR exception. The PR is confirmed CLOSED. Feature commit 43c6c0f remains on feat/active-mail-cache. Continue the normal direct-to-master workflow for this change once its remaining capture behavior and checks are complete; do not recreate the PR. The user requested a fuller explanation of the filed-mail capture question and has not approved changing its finished-state rule. Separate cleanup/OAuth approvals remain pending.
 <!-- SECTION:NOTES:END -->
