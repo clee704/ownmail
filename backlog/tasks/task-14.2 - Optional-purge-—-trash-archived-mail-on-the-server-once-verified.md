@@ -4,7 +4,7 @@ title: Optional purge — trash archived mail on the server once verified
 status: In Progress
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-15 04:37'
+updated_date: '2026-09-15 04:38'
 labels: []
 milestone: m-5
 dependencies:
@@ -111,6 +111,8 @@ Implemented preview/default and explicit apply with read-only local verification
 Next single approval proposal: implement explicit ownmail authorize-cleanup --source NAME, requesting Google's minimum Trash-capable gmail.modify scope through browser consent. This scope also permits broader mailbox changes and sending mail; ownmail would use it for the approved Trash operation. Store a separate credential under keychain service ownmail, account key oauth-token-cleanup/<account>; preserve oauth-token/<account> and the existing readonly setup/download/preview flows. Apply would load and refresh only the cleanup credential, never start consent implicitly, and fail with authorization guidance when missing or invalid. Verify actual granted scope and the selected Gmail profile before saving, retaining expiry and granted-scope metadata; cancelled, wrong-account, or failed consent leaves saved credentials untouched. This OAuth/credential change is not yet approved and no account authorization or cleanup has run. Source: https://developers.google.com/workspace/gmail/api/auth/scopes .
 
 The approved cleanup scope explicitly leaves IMAP accounts held. AC #4 now distinguishes verified Gmail correspondence and unconditional IMAP exclusion from the identity qualification required before any future IMAP enablement. Existing tests prove IMAP cleanup does not authenticate or query the server; no claim is made that UID reuse, moves, or duplicate Message-ID cleanup qualification has been implemented. The full required pre-push gate passed with browser tests: 3,318 passed, one existing expected failure, and 96.19% branch coverage. OAuth/credential changes remain the only unapproved implementation stage; AC #1 and workstream completion remain open pending that stage and final verification.
+
+Implementation checkpoint: 50190ad on feat/server-cleanup, with all required checks passing. ACs #2-#5 are verified within the approved Gmail cleanup/IMAP-held scope. Separate Gmail cleanup authorization has been presented as the next single approval and remains unanswered. Do not repeat cleanup-behavior approval or change OAuth/keychain code until that answer arrives.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
