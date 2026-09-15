@@ -165,7 +165,7 @@ def test_sigterm_reaps_real_detached_download(tmp_path):
         os.kill(server.pid, signal.SIGTERM)
         output, _ = server.communicate(timeout=15)
         assert server.returncode == 0, output
-        assert marker.read_text() == str(signal.SIGINT)
+        assert int(marker.read_text()) == signal.SIGINT
         with pytest.raises(ProcessLookupError):
             os.kill(child_pid, 0)
     finally:
