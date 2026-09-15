@@ -1,10 +1,10 @@
 ---
 id: TASK-92
 title: Remove the outer frame from HTML messages
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-15 02:39'
-updated_date: '2026-09-15 02:56'
+updated_date: '2026-09-15 03:00'
 labels:
   - ui
 dependencies: []
@@ -21,9 +21,9 @@ HTML messages inherit the reader article horizontal padding, leaving an extra ap
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sender-authored HTML reaches the reader edges on phones without adding an app-colored frame, and remains contained on desktop.
+- [x] #1 Sender-authored HTML reaches the reader edges on phones without adding an app-colored frame, and remains contained on desktop.
 - [x] #2 Plain text and simple HTML retain readable insets; sender-authored margins and padding are preserved, including explicit zero margins.
-- [ ] #3 Browser regressions cover phone and desktop layouts, both themes, and wide-message fitting; the full pre-push gate passes.
+- [x] #3 Browser regressions cover phone and desktop layouts, both themes, and wide-message fitting; the full pre-push gate passes.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,4 +42,6 @@ Implementation committed in acfa264. The full pre-push gate passed with required
 Follow-up: a real HTML message still receives fallback padding because two hidden preview blocks consume the detector limit before the visible background table. Reopened to skip non-rendered leading elements and add a regression using that structure. Existing geometry checks did not cover hidden preheaders.
 
 The follow-up fix excludes inline display:none elements from the layout sample without altering the message HTML. Both positive and inverse regressions failed before the fix and pass in Chromium and WebKit afterward. A read-only replay of the reported real message verifies that its gray canvas reaches both reader edges at three widths in both themes, with external resources blocked. Other CSS-class and deep-wrapper detection limits are tracked separately.
+
+Follow-up committed in ebd6d98. The full pre-push gate passed with required browser tests enabled. The running sanitizer was reloaded and its response for the reported message was verified without fallback padding. The real-message replay and regression checks preserve plain text and simple HTML insets.
 <!-- SECTION:NOTES:END -->
