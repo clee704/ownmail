@@ -34,6 +34,24 @@ def spacing_sanitizer(contrast_browser):
             id="newsletter",
         ),
         pytest.param(
+            '<div style="display:none !important">Hidden preview</div>'
+            '<div style="display:none">Hidden preview spacer</div>'
+            '<table id="panel" width="100%" bgcolor="#eef1f4" cellpadding="0" cellspacing="0">'
+            '<tr><td style="padding:24px"><p id="copy" style="margin:0">Newsletter copy</p>'
+            "</td></tr></table>",
+            False,
+            24,
+            id="newsletter-after-hidden-preheaders",
+        ),
+        pytest.param(
+            '<div style="display:none;background:#eef1f4">Hidden preview</div>'
+            '<div style="display:none !important;background:#eef1f4">Hidden preview spacer</div>'
+            '<p id="copy">Simple formatted message</p>',
+            True,
+            None,
+            id="simple-html-after-hidden-backgrounds",
+        ),
+        pytest.param(
             '<div id="panel" style="background:#eef1f4;margin:0;padding:0">'
             '<p id="copy" style="margin:0">Flush authored copy</p></div>',
             False,

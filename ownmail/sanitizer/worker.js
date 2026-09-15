@@ -372,9 +372,9 @@ function detectNeedsPadding(html) {
 
     // Check the first few root-level elements (skip whitespace text nodes)
     const children = Array.from(body.children);
-    // Skip <style> elements — look at actual content elements
+    // Hidden preview text must not displace the visible layout in this sample.
     const contentElements = children.filter(
-      (el) => el.tagName.toLowerCase() !== "style"
+      (el) => el.tagName.toLowerCase() !== "style" && el.style.display.toLowerCase() !== "none"
     );
     if (contentElements.length === 0) return true;
 
