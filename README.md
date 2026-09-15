@@ -148,10 +148,25 @@ Cleanup verifies the owned contents and capture metadata, the Gmail account,
 and current message and thread activity. It reports held messages and failures
 with reasons. Local contents and labels stay unchanged; IMAP cleanup remains held.
 
-`--apply` explicitly requests Gmail Trash moves. Existing Gmail sign-in stays
-read-only and supports previews. Applying requires `gmail.modify`; a separate
-cleanup consent flow is not implemented, and `--apply` does not request broader
-permissions. See [cleanup checks, retry behavior, and provider limits](docs/archive.md#server-cleanup).
+To enable apply for an existing Gmail API source, explicitly authorize cleanup:
+
+```bash
+ownmail authorize-cleanup --source personal
+```
+
+This opens Google consent for `gmail.modify`, a broad permission that allows
+reading, changing, and sending mail. Ownmail uses cleanup access to verify and
+move eligible server copies to Trash. Its credential is stored separately from
+the read-only login used for downloads and previews.
+
+Then explicitly request Trash moves:
+
+```bash
+ownmail cleanup --source personal --apply
+```
+
+Apply uses the saved cleanup credential and never opens consent automatically.
+See [cleanup checks, authorization, retry behavior, and provider limits](docs/archive.md#server-cleanup).
 
 ## Search
 
@@ -174,6 +189,7 @@ The web interface includes search help with supported operators and examples.
 | `setup` | Connect a mail source and store credentials |
 | `download` | Refresh Active mail and archive eligible filed and Sent mail |
 | `cleanup --source NAME` | Preview server cleanup; `--apply` requests eligible Gmail Trash moves |
+| `authorize-cleanup --source NAME` | Grant separate Gmail cleanup access through explicit browser consent |
 | `serve` | Open the web interface |
 | `search "query"` | Search from the terminal |
 | `import <path>` | Import external `.eml` files |

@@ -7,6 +7,7 @@ from unittest.mock import Mock
 import pytest
 
 from ownmail import cli
+from ownmail.live import LiveLookupError
 
 
 @pytest.fixture
@@ -25,7 +26,7 @@ def cleanup_cli(tmp_path, monkeypatch):
     summary = {"checked": 0, "eligible": 0, "held": 0, "trashed": 0, "errors": 0, "interrupted": False}
     actual_runner = cleanup.run_cleanup
     runner = Mock(return_value=summary)
-    provider = SimpleNamespace(authenticate=Mock())
+    provider = SimpleNamespace(authenticate=Mock(), authenticate_cleanup=Mock(), authorize_cleanup=Mock())
     factory = Mock(return_value=provider)
     keychain = Mock()
     archive_factory = Mock(side_effect=AssertionError("Cleanup must not initialize the archive"))
@@ -71,7 +72,11 @@ def test_cleanup_previews_unless_apply_is_explicit(cleanup_cli, monkeypatch, cap
         source_name="mail",
         exclude_roles=[],
     )
-    case.provider.authenticate.assert_called_once_with()
+    expected = case.provider.authenticate_cleanup if apply else case.provider.authenticate
+    unused = case.provider.authenticate if apply else case.provider.authenticate_cleanup
+    expected.assert_called_once_with()
+    unused.assert_not_called()
+    case.provider.authorize_cleanup.assert_not_called()
     call = case.runner.call_args
     assert call.args == (case.root, case.source, case.provider)
     assert call.kwargs["apply"] is apply
@@ -100,6 +105,7 @@ def test_cleanup_preserves_archive_index_cache_and_local_trash(monkeypatch, tmp_
     )
     assert archive.trash_email(trash_id)
     server.authenticate = Mock()
+    server.authenticate_cleanup = Mock(side_effect=AssertionError("Preview must use read-only access"))
     server.verify_cleanup_account = Mock()
     server.check_thread_protection = lambda message_id: ThreadProtection(
         source_name="mail", account=server.account, message_id=message_id, thread_id="thread", complete=True
@@ -130,6 +136,7 @@ def test_cleanup_preserves_archive_index_cache_and_local_trash(monkeypatch, tmp_
     assert after == before
     forbidden.assert_not_called()
     server.trash_message.assert_not_called()
+    server.authenticate_cleanup.assert_not_called()
     assert not (archive.archive_dir / ".download.lock").exists()
     output = capsys.readouterr().out
     assert "Eligible: 1" in output
@@ -199,18 +206,20 @@ def test_imap_cleanup_stays_held_without_authentication(cleanup_cli, monkeypatch
     assert "Errors: 0" in output
 
 
-def test_cleanup_requires_source_before_loading_config(cleanup_cli, monkeypatch, capsys):
+@pytest.mark.parametrize("command", ["cleanup", "authorize-cleanup"])
+def test_cleanup_requires_source_before_loading_config(cleanup_cli, monkeypatch, capsys, command):
     with pytest.raises(SystemExit) as error:
-        invoke(monkeypatch, "cleanup")
+        invoke(monkeypatch, command)
     assert error.value.code == 2
     assert "--source" in capsys.readouterr().err
     cleanup_cli.loader.assert_not_called()
     cleanup_cli.keychain.assert_not_called()
 
 
-def test_unknown_cleanup_source_does_not_authenticate(cleanup_cli, monkeypatch, capsys):
+@pytest.mark.parametrize("command", ["cleanup", "authorize-cleanup"])
+def test_unknown_cleanup_source_does_not_authenticate(cleanup_cli, monkeypatch, capsys, command):
     with pytest.raises(SystemExit) as error:
-        invoke(monkeypatch, "cleanup", "--source", "missing")
+        invoke(monkeypatch, command, "--source", "missing")
     assert error.value.code == 1
     assert "Source 'missing' not found" in capsys.readouterr().out
     cleanup_cli.keychain.assert_not_called()
@@ -282,18 +291,22 @@ def test_interrupted_cleanup_reports_partial_summary(cleanup_cli, monkeypatch, c
     assert "Cleanup interrupted. Run cleanup again to recheck remaining candidates." in output
 
 
-@pytest.mark.parametrize("error", [RuntimeError("Authentication unavailable"), KeyboardInterrupt()])
-def test_cleanup_authentication_failure_exits_safely(cleanup_cli, monkeypatch, capsys, error):
-    cleanup_cli.provider.authenticate.side_effect = error
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("error", [RuntimeError("sensitive-auth-response"), KeyboardInterrupt()])
+def test_cleanup_authentication_failure_exits_safely(cleanup_cli, monkeypatch, capsys, error, apply):
+    method = cleanup_cli.provider.authenticate_cleanup if apply else cleanup_cli.provider.authenticate
+    method.side_effect = error
     with pytest.raises(SystemExit) as result:
-        invoke(monkeypatch, "cleanup", "--source", "mail")
+        invoke(monkeypatch, "cleanup", "--source", "mail", *(["--apply"] if apply else []))
     assert result.value.code == 1
     output = capsys.readouterr().out
     assert (
         "interrupted by user" in output
         if isinstance(error, KeyboardInterrupt)
-        else "Authentication unavailable" in output
+        else "Cleanup authentication failed" in output
     )
+    assert "sensitive-auth-response" not in output
+    cleanup_cli.provider.authorize_cleanup.assert_not_called()
     cleanup_cli.runner.assert_not_called()
 
 
@@ -324,4 +337,110 @@ def test_cleanup_help_describes_preview_and_explicit_apply(cleanup_cli, monkeypa
     assert "Preview is the default" in output
     assert "--source" in output
     assert "--apply" in output
+    assert "authorize-cleanup" in output
+    cleanup_cli.keychain.assert_not_called()
+
+
+def test_download_keeps_readonly_authentication(cleanup_cli):
+    case = cleanup_cli
+    archive = SimpleNamespace(
+        archive_dir=case.root,
+        keychain=case.keychain.return_value,
+        auto_expire_trash=Mock(return_value=0),
+        db=SimpleNamespace(get_email_count=Mock(return_value=0)),
+        backup=Mock(return_value={"success_count": 0, "error_count": 0, "interrupted": False}),
+    )
+
+    assert cli.cmd_download(archive, case.config, source_name="mail")
+
+    case.provider.authenticate.assert_called_once_with()
+    case.provider.authenticate_cleanup.assert_not_called()
+    case.provider.authorize_cleanup.assert_not_called()
+    assert archive.backup.call_args.args == (case.provider,)
+
+
+def test_authorize_cleanup_needs_no_archive_and_only_requests_consent(cleanup_cli, monkeypatch, tmp_path, capsys):
+    case = cleanup_cli
+    missing = tmp_path / "uncreated-archive"
+    case.config.update(archive_root=str(missing), db_dir=str(tmp_path / "uncreated-index"))
+    before = set(tmp_path.rglob("*"))
+
+    invoke(monkeypatch, "authorize-cleanup", "--source", "mail")
+
+    case.factory.assert_called_once_with(
+        account=case.source["account"], keychain=case.keychain.return_value, source_name="mail"
+    )
+    case.provider.authorize_cleanup.assert_called_once_with()
+    case.provider.authenticate.assert_not_called()
+    case.provider.authenticate_cleanup.assert_not_called()
+    case.archive_factory.assert_not_called()
+    case.runner.assert_not_called()
+    assert set(tmp_path.rglob("*")) == before
+    assert "Cleanup authorization saved for source 'mail'" in capsys.readouterr().out
+
+
+def test_authorize_cleanup_rejects_imap_before_credentials(cleanup_cli, monkeypatch, capsys):
+    case = cleanup_cli
+    case.source.update(type="imap", host="imap.example.test")
+    with pytest.raises(SystemExit) as error:
+        invoke(monkeypatch, "authorize-cleanup", "--source", "mail")
+    assert error.value.code == 1
+    assert "requires a configured Gmail API source" in capsys.readouterr().out
+    case.keychain.assert_not_called()
+    case.factory.assert_not_called()
+
+
+@pytest.mark.parametrize("command", ["cleanup", "authorize-cleanup"])
+@pytest.mark.parametrize("field", ["account", "auth"])
+def test_invalid_cleanup_configuration_never_accesses_credentials(cleanup_cli, monkeypatch, capsys, command, field):
+    del cleanup_cli.source[field]
+    with pytest.raises(SystemExit) as error:
+        invoke(monkeypatch, command, "--source", "mail", *(["--apply"] if command == "cleanup" else []))
+    assert error.value.code == 1
+    assert "Configuration errors" in capsys.readouterr().out
+    cleanup_cli.keychain.assert_not_called()
+    cleanup_cli.factory.assert_not_called()
+
+
+@pytest.mark.parametrize("reason", ["Cleanup authorization is missing", "Cleanup authorization is invalid"])
+def test_apply_authorization_hold_never_opens_browser_or_runs_cleanup(cleanup_cli, monkeypatch, capsys, reason):
+    guidance = reason + ". Run ownmail authorize-cleanup --source mail to authorize cleanup."
+    cleanup_cli.provider.authenticate_cleanup.side_effect = LiveLookupError(guidance)
+    with pytest.raises(SystemExit) as error:
+        invoke(monkeypatch, "cleanup", "--source", "mail", "--apply")
+    assert error.value.code == 1
+    assert guidance in capsys.readouterr().out
+    cleanup_cli.provider.authenticate.assert_not_called()
+    cleanup_cli.provider.authorize_cleanup.assert_not_called()
+    cleanup_cli.runner.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        (LiveLookupError("Cleanup account could not be verified; retry authorization."), "retry authorization"),
+        (RuntimeError("sensitive-consent-response"), "Cleanup authorization failed"),
+        (KeyboardInterrupt(), "interrupted by user"),
+    ],
+)
+def test_cleanup_authorization_errors_are_safe_and_actionable(cleanup_cli, monkeypatch, capsys, error, expected):
+    cleanup_cli.provider.authorize_cleanup.side_effect = error
+    with pytest.raises(SystemExit) as result:
+        invoke(monkeypatch, "authorize-cleanup", "--source", "mail", "--verbose")
+    assert result.value.code == 1
+    output = capsys.readouterr().out
+    assert expected in output
+    assert "sensitive-consent-response" not in output
+    assert "authorization saved" not in output
+    cleanup_cli.runner.assert_not_called()
+
+
+def test_authorize_cleanup_help_explains_scope_and_separate_access(cleanup_cli, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as error:
+        invoke(monkeypatch, "authorize-cleanup", "--help")
+    assert error.value.code == 0
+    output = " ".join(capsys.readouterr().out.split())
+    assert "gmail.modify" in output
+    assert "mailbox changes and sending" in output
+    assert "stored separately from read-only download access" in output
     cleanup_cli.keychain.assert_not_called()

@@ -178,19 +178,39 @@ remain held, even if their label list is empty. Cleanup does not replace local
 labels with server labels or modify owned files. IMAP candidates remain held
 without connecting to the server because complete thread visibility is unavailable.
 
+### Authorizing cleanup
+
+Downloads and cleanup previews use the existing `gmail.readonly` login. To grant
+separate cleanup access for a configured Gmail API source, run:
+
+```bash
+ownmail authorize-cleanup --source personal
+```
+
+This command opens Google consent and requests `gmail.modify`. Google's
+[scope definition](https://developers.google.com/workspace/gmail/api/auth/scopes)
+grants broad access to read, compose, send, and modify mail. Ownmail uses that
+access to verify and move eligible copies to server Trash; it does not send mail
+or hard-delete messages.
+
+Authorization checks the granted scope and signed-in account before saving a
+separate credential under `oauth-token-cleanup/<account>` in the `ownmail`
+keychain service. The existing `oauth-token/<account>` credential remains for
+read-only downloads and previews. The command uses the configured Gmail client
+credentials, requires no archive, and does not run cleanup.
+
 ### Applying and retrying
 
-Existing Gmail sign-in requests `gmail.readonly`, which supports previews.
-Gmail's [Trash method](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/trash)
-requires `gmail.modify` or broader authorization. A separate cleanup consent
-flow is not implemented. `--apply` does not widen permissions; with the current
-read-only login, Gmail rejects the move and cleanup reports the denial.
-
-With suitable Gmail authorization, explicitly request apply:
+After cleanup authorization, explicitly request apply:
 
 ```bash
 ownmail cleanup --source personal --apply
 ```
+
+Apply loads or refreshes the saved cleanup credential and never opens browser
+consent automatically. Missing, revoked, or insufficient authorization stops
+the run with guidance to use `authorize-cleanup` again. Connection failures are
+reported separately. Neither downloads nor previews request cleanup access.
 
 Apply moves eligible Gmail messages to server Trash and never hard-deletes.
 Individual verification failures are reported while other candidates continue.

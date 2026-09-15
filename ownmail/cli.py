@@ -18,6 +18,7 @@ from ownmail.config import (
 from ownmail.download_lock import DownloadInProgress, DownloadLock
 from ownmail.download_progress import DownloadProgress
 from ownmail.keychain import KeychainStorage
+from ownmail.live import LiveLookupError
 from ownmail.providers.gmail import GmailProvider
 from ownmail.providers.imap import discover_role_folders
 from ownmail.query import parse_query
@@ -635,6 +636,34 @@ def cmd_download(
     return total_errors == 0 and not interrupted and not skipped_source and not (progress and progress.errors)
 
 
+def cmd_authorize_cleanup(config: dict, source_name: str) -> bool:
+    """Request separate Gmail cleanup consent for an existing source."""
+    source = get_source_by_name(config, source_name)
+    if source is None:
+        print(f"Error: Source '{source_name}' not found in config")
+        return False
+    if source.get("type") != "gmail_api":
+        print("Error: Cleanup authorization requires a configured Gmail API source.")
+        return False
+    print(f"Cleanup authorization: {source['name']} ({source['account']})", flush=True)
+    print(
+        "This requests permission to read and modify Gmail mail and send messages. "
+        "Ownmail uses cleanup access to verify and move eligible server copies to Trash.",
+        flush=True,
+    )
+    try:
+        provider = GmailProvider(account=source["account"], keychain=KeychainStorage(), source_name=source["name"])
+        provider.authorize_cleanup()
+    except LiveLookupError as error:
+        print(f"Error: {error}")
+        return False
+    except Exception:
+        print("Error: Cleanup authorization failed. Check the connection and retry authorize-cleanup.")
+        return False
+    print(f"Cleanup authorization saved for source '{source_name}'.")
+    return True
+
+
 def cmd_cleanup(archive_root: Path, config: dict, source_name: str, *, apply: bool = False) -> bool:
     """Preview or apply server cleanup without initializing the archive."""
     source = get_source_by_name(config, source_name)
@@ -651,14 +680,24 @@ def cmd_cleanup(archive_root: Path, config: dict, source_name: str, *, apply: bo
     print(f"\nCleanup {mode}: {source['name']} ({source['account']})", flush=True)
     provider = None
     if source["type"] == "gmail_api":
-        provider = GmailProvider(
-            account=source["account"],
-            keychain=KeychainStorage(),
-            include_labels=source.get("include_labels", True),
-            source_name=source["name"],
-            exclude_roles=source.get("exclude_roles"),
-        )
-        provider.authenticate()
+        try:
+            provider = GmailProvider(
+                account=source["account"],
+                keychain=KeychainStorage(),
+                include_labels=source.get("include_labels", True),
+                source_name=source["name"],
+                exclude_roles=source.get("exclude_roles"),
+            )
+            if apply:
+                provider.authenticate_cleanup()
+            else:
+                provider.authenticate()
+        except LiveLookupError as error:
+            print(f"Error: {error}")
+            return False
+        except Exception:
+            print("Error: Cleanup authentication failed. Check the connection and stored authorization, then retry.")
+            return False
 
     def report(event):
         detail = f": {event['reason']}" if event.get("reason") else ""
@@ -925,13 +964,25 @@ Examples:
     )
     _add_global_opts(download_parser)
 
+    authorize_cleanup_parser = subparsers.add_parser(
+        "authorize-cleanup",
+        help="Authorize separate Gmail cleanup access",
+        description=(
+            "Open explicit Gmail consent for a configured Gmail API source. The gmail.modify scope "
+            "permits mailbox changes and sending; ownmail uses this access for verified server Trash moves. "
+            "The cleanup credential is stored separately from read-only download access."
+        ),
+    )
+    authorize_cleanup_parser.add_argument("--source", required=True, help="Configured Gmail API source name")
+    _add_global_opts(authorize_cleanup_parser)
+
     cleanup_parser = subparsers.add_parser(
         "cleanup",
         help="Preview optional server cleanup",
         description=(
             "Check archived copies and current server activity. Preview is the default; "
-            "--apply requests eligible Gmail messages be moved to server Trash. Applying requires "
-            "gmail.modify; the current sign-in stays read-only and does not request broader permissions."
+            "--apply requests eligible Gmail messages be moved to server Trash using the separate "
+            "credential from authorize-cleanup. Applying never opens consent automatically."
         ),
     )
     cleanup_parser.add_argument("--source", required=True, help="Configured source name to check")
@@ -1184,6 +1235,10 @@ Examples:
                 cmd_sources_list(config)
             else:
                 sources_parser.print_help()
+
+        elif args.command == "authorize-cleanup":
+            if not cmd_authorize_cleanup(config, args.source):
+                sys.exit(1)
 
         elif args.command == "cleanup":
             if not cmd_cleanup(archive_root, config, args.source, apply=args.apply):

@@ -14,7 +14,7 @@ from googleapiclient.errors import HttpError
 
 from ownmail import capture, roles
 from ownmail.live import LiveLookupError
-from ownmail.providers import live_gmail
+from ownmail.providers import cleanup_auth, live_gmail
 from ownmail.providers.base import EmailProvider, TrashResult
 from ownmail.thread_protection import ThreadProtection
 
@@ -122,6 +122,14 @@ class GmailProvider(EmailProvider):
             raise
         except Exception as error:
             raise LiveLookupError("Gmail cleanup account lookup failed") from error
+
+    def authorize_cleanup(self) -> None:
+        """Request separate Gmail cleanup consent for the configured account."""
+        cleanup_auth.authorize(self)
+
+    def authenticate_cleanup(self) -> None:
+        """Use saved cleanup authorization without opening consent."""
+        cleanup_auth.authenticate(self)
 
     def trash_message(self, message_id: str, thread_id: str) -> TrashResult:
         """Move one freshly verified candidate to Trash without automatic retries.

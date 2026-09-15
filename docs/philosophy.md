@@ -11,8 +11,8 @@ discarded before archival stay out.
 
 The Active view and automatic capture of eligible filed and Sent mail are
 available. Capture follows the current state reported by the provider; unknown
-or failed checks keep affected messages server-owned. Cleanup previews are
-available; Gmail apply requires permissions beyond the current read-only login.
+or failed checks keep affected messages server-owned. Cleanup previews and
+separately authorized Gmail Trash moves are available.
 See [current download behavior](archive.md#download-filters) and
 [cleanup limits](archive.md#server-cleanup).
 
@@ -96,7 +96,11 @@ requests Gmail Trash moves. Each run rechecks current evidence, including after
 an interruption. Legacy captures without complete durable metadata remain held.
 IMAP cleanup remains held because account-wide thread visibility is unavailable.
 
-Existing Gmail login stays read-only. Applying requires `gmail.modify`, and a
-separate cleanup consent flow is not implemented. The
+Downloads and previews keep their read-only Gmail login. The explicit
+`authorize-cleanup --source NAME` command requests `gmail.modify` through Google
+consent and stores a separate cleanup credential. That scope includes broad
+mailbox and sending permissions; ownmail uses cleanup access to verify and move
+eligible copies to server Trash. Applying uses saved cleanup access and never
+opens consent automatically. The
 [Mail ownership workstream](<../backlog/tasks/task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md>)
-tracks remaining authorization and cleanup verification.
+records implementation progress and remaining provider limits.

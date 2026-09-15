@@ -4,7 +4,7 @@ title: Optional purge — trash archived mail on the server once verified
 status: In Progress
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-15 04:38'
+updated_date: '2026-09-15 04:48'
 labels: []
 milestone: m-5
 dependencies:
@@ -113,6 +113,10 @@ Next single approval proposal: implement explicit ownmail authorize-cleanup --so
 The approved cleanup scope explicitly leaves IMAP accounts held. AC #4 now distinguishes verified Gmail correspondence and unconditional IMAP exclusion from the identity qualification required before any future IMAP enablement. Existing tests prove IMAP cleanup does not authenticate or query the server; no claim is made that UID reuse, moves, or duplicate Message-ID cleanup qualification has been implemented. The full required pre-push gate passed with browser tests: 3,318 passed, one existing expected failure, and 96.19% branch coverage. OAuth/credential changes remain the only unapproved implementation stage; AC #1 and workstream completion remain open pending that stage and final verification.
 
 Implementation checkpoint: 50190ad on feat/server-cleanup, with all required checks passing. ACs #2-#5 are verified within the approved Gmail cleanup/IMAP-held scope. Separate Gmail cleanup authorization has been presented as the next single approval and remains unanswered. Do not repeat cleanup-behavior approval or change OAuth/keychain code until that answer arrives.
+Pause checkpoint: the user explicitly approved implementing and synthetically testing separate Gmail cleanup authorization. This supersedes the pending-approval notes above. The approved path is ownmail authorize-cleanup --source NAME, separate cleanup credentials, unchanged read-only download/preview access, and consent-free cleanup apply. This does not authorize connecting the account or running cleanup. Do not repeat either implementation approval.
+
+The user then requested a checkpoint and pause. Preserve the current OAuth draft on feat/server-cleanup; no new PR or push is part of this pause. Separate keychain serialization and CLI routing have focused tests. The provider authorization module and Gmail wrappers are a draft: authorization-specific tests, actual keychain/provider/runner integration with a fake backend, and independent review remain unfinished. Resume those checks before treating cleanup authorization as ready or marking AC #1 complete. Verify granted-scope evidence and omission semantics, refresh and expiry handling, wrong-account and failed-consent preservation, log suppression, and apply never opening consent. Correct the authorize error text that currently guarantees saved credentials were kept even when the final keychain write itself fails. Existing read-only Gmail methods and scopes were verified unchanged. No real-account authorization or cleanup has run.
+Checkpoint validation: the full pytest hook passed with required browser tests: 3,378 passed, one existing expected failure, and 95.12% branch coverage. The initial pre-push invocation returned a formatting-change result after formatting two files; tests ran successfully after those changes. The remaining file-hygiene, lint, formatting, and dependency checks are rerun at checkpoint commit. These passing existing and storage/CLI tests do not verify the new provider OAuth flow; its dedicated tests and integration remain required on resume.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
