@@ -4,7 +4,7 @@ title: Active messages — surface the pre-capture set so ownmail is a complete 
 status: In Progress
 assignee: []
 created_date: '2026-07-26 07:01'
-updated_date: '2026-09-15 03:39'
+updated_date: '2026-09-15 03:42'
 labels: []
 milestone: m-5
 dependencies:
@@ -118,4 +118,6 @@ Approval checkpoint, 2026-09-14: the proposed new cache schema and replacement/r
 2026-09-14 approved checkpoint: the user approved only separate disposable Active-cache storage, its database, and replacement/removal of cached copies. Implementation is committed as 43c6c0f on feat/active-mail-cache and reviewed in draft PR https://github.com/clee704/ownmail/pull/1, against fixed base abda815. Use the existing worktree for that branch when resuming; this master checkout does not contain the feature implementation. All feature acceptance criteria except broad capture AC #3 are verified in that branch; full required pre-push checks passed with 96.08% branch coverage and required browser tests. GitHub CI was running when the PR opened. Automatic capture currently proves only confirmed Sent completion; received/filed mail with uncertain finished state remains in the readable/searchable cache. Next action: resolve the finished-state rule for broad filed-mail capture, complete the draft and CI/review, then land through PR. Keep the task In Progress. Server cleanup, OAuth changes, and narrowed cleanup support remain unapproved.
 
 2026-09-14 workflow correction: the user requested closing PR #1 after clarifying that this disposable cache does not require the archive-data PR exception. The PR is confirmed CLOSED. Feature commit 43c6c0f remains on feat/active-mail-cache. Continue the normal direct-to-master workflow for this change once its remaining capture behavior and checks are complete; do not recreate the PR. The user requested a fuller explanation of the filed-mail capture question and has not approved changing its finished-state rule. Separate cleanup/OAuth approvals remain pending.
+
+Evidence correction while explaining the filed-mail question: blanket Sent-only capture is an implementation policy, not a provider requirement or evidence that ordinary received/filed mail is unfinished. RFC 9979 (Informational, May 2026), section 8.2, registers the Scheduled mailbox attribute; RFC 5550 section 5.10 defines $SubmitPending for messages awaiting submission. These supply explicit unfinished-state signals and must be considered. Special-use attributes remain optional, and Gmail Scheduled API representation remains unverified by the primary documentation checked. Next action: implement documented queued/scheduled exclusions and verify provider-specific Scheduled exposure before claiming comprehensive detection. The existing product goal already includes capture of ordinary filed mail; do not present a blanket premature-capture exception as a prerequisite to implementing that goal. Sources: https://www.rfc-editor.org/rfc/rfc9979.html#section-8.2 ; https://www.rfc-editor.org/rfc/rfc5550.html#section-5.10 ; https://developers.google.com/workspace/gmail/api/guides/labels .
 <!-- SECTION:NOTES:END -->
