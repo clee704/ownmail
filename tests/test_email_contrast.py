@@ -61,6 +61,7 @@ def run_contrast_browser(
     is_mobile=False,
     attachments=(),
     rendered_page=None,
+    external_stylesheets=None,
 ):
     page = rendered_page
     if page is None:
@@ -80,6 +81,8 @@ def run_contrast_browser(
     client = app.test_client()
     files = {}
     for path in paths:
+        if path.startswith(("https://", "http://", "//")):
+            continue
         response = client.get(path)
         assert response.status_code == 200, path
         files[path] = {"body": response.data.decode(), "contentType": response.mimetype}
@@ -90,6 +93,7 @@ def run_contrast_browser(
         "systemTheme": system_theme,
         "viewport": {"width": viewport[0], "height": viewport[1]},
         "isMobile": is_mobile,
+        "externalStylesheets": external_stylesheets or {},
     }
     script = r"""
 const assert = require('node:assert/strict');
@@ -114,6 +118,9 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
             }
             if (url.origin === 'http://ownmail.test' && input.files[url.pathname]) {
                 return route.fulfill(input.files[url.pathname]);
+            }
+            if (Object.hasOwn(input.externalStylesheets, url.href)) {
+                return route.fulfill({contentType: 'text/css', body: input.externalStylesheets[url.href]});
             }
             if (url.origin === 'https://fixture.test') {
                 return route.fulfill({contentType: 'image/svg+xml',

@@ -74,13 +74,18 @@ const GENERIC_FONT_FAMILIES = new Set([
  * If a font-family value doesn't end with a generic family, append sans-serif.
  */
 function ensureFontFallback(value) {
+  const priority = value.match(/\s*!\s*important\s*$/i);
+  const family = priority ? value.slice(0, priority.index) : value;
+  if (/^(inherit|initial|unset|revert|revert-layer)$/i.test(family.trim())) {
+    return value;
+  }
   // Split on commas, trim, and check the last entry
-  const parts = value.split(",").map((s) => s.trim().replace(/['"]*/g, "").toLowerCase());
+  const parts = family.split(",").map((s) => s.trim().replace(/['"]*/g, "").toLowerCase());
   const last = parts[parts.length - 1];
   if (last && GENERIC_FONT_FAMILIES.has(last)) {
     return value;
   }
-  return value + ", sans-serif";
+  return family + ", sans-serif" + (priority ? priority[0] : "");
 }
 
 /**
@@ -150,8 +155,9 @@ function scopeAndSanitizeCSS(css) {
       return;
     }
 
-    // Ensure font-family declarations end with a generic fallback
-    if (prop === "font-family" || prop === "font") {
+    // A font-face family descriptor names one font, not a fallback list.
+    const fontFace = decl.parent.type === "atrule" && decl.parent.name.toLowerCase() === "font-face";
+    if (!fontFace && (prop === "font-family" || prop === "font")) {
       decl.value = ensureFontFallback(decl.value);
     }
   });

@@ -527,10 +527,11 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "#ownmail-email-content .col" in result
 
     def test_preserves_font_face(self):
-        """Test that @font-face blocks are not scoped."""
+        """Font face descriptors retain the single family required by CSS."""
         html = '<style>@font-face { font-family: MyFont; src: local("MyFont"); } p { color: red; }</style><p>Hi</p>'
         result, *_ = self.sanitizer.sanitize(html)
         assert "@font-face" in result
+        assert "font-family: MyFont;" in result
         assert "@#ownmail-email-content" not in result
         assert "#ownmail-email-content p" in result
 
@@ -637,6 +638,26 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         html = "<style>td { font-family: Roboto; }</style><td>Hi</td>"
         result, *_ = self.sanitizer.sanitize(html)
         assert "sans-serif" in result
+
+    def test_preserves_css_wide_font_keywords(self):
+        """Inheritance and reset values must remain valid CSS values."""
+        for prop in ("font-family", "font"):
+            for keyword in ("inherit", "initial", "unset", "revert", "revert-layer"):
+                for priority in ("", " !important"):
+                    with self.subTest(prop=prop, keyword=keyword, priority=priority):
+                        declaration = f"{prop}: {keyword}{priority};"
+                        html = f'<style>p {{ {declaration} }}</style><p style="{declaration}">Hi</p>'
+                        result, *_ = self.sanitizer.sanitize(html)
+                        assert result.count(declaration) == 2
+
+    def test_font_fallback_precedes_inline_priority(self):
+        """Append a missing fallback before the declaration's priority."""
+        for family, expected in (("Roboto", "Roboto, sans-serif"), ("Arial, sans-serif", "Arial, sans-serif")):
+            for priority in (" !important", " ! IMPORTANT"):
+                with self.subTest(family=family, priority=priority):
+                    html = f'<p style="font-family: {family}{priority};">Hi</p>'
+                    result, *_ = self.sanitizer.sanitize(html)
+                    assert f"font-family: {expected}{priority};" in result
 
 
 class TestSanitizerLifecycle(unittest.TestCase):

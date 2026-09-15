@@ -278,45 +278,51 @@ def _format_date_long(dt: datetime, date_fmt: str | None = None) -> str:
     return dt.strftime(date_fmt or DETAIL_DATE_FORMAT)
 
 
-def _extract_body_content(html: str) -> str:
-    """Extract body content from a full HTML document for direct embedding.
+def _extract_body_content(html: str) -> tuple[str, dict[str, str]]:
+    """Extract sanitized message content and body styling for direct embedding.
 
     Strips <html>, <head>, <body> wrappers and extracts just the content
-    that goes inside the email container div. Preserves <style> tags
-    from <head> so scoped CSS still applies.
+    that goes inside the email container div. Preserves styles and font links
+    in their original order, plus inline styling for the message container.
 
     Args:
-        html: Full HTML document or fragment
+        html: Sanitized HTML document or fragment
 
     Returns:
-        Body content suitable for direct embedding in a div
+        Body content and the container's style and blocked-background attributes
     """
     if not html:
-        return html
+        return html, {}
 
-    # Extract <style> tags from anywhere (they may be in <head>)
+    # The sanitizer has already restricted links to trusted font stylesheets.
     styles = []
-    style_pattern = re.compile(r"<style[^>]*>[\s\S]*?</style>", re.IGNORECASE)
+    style_pattern = re.compile(r"<style\b[^>]*>[\s\S]*?</style>|<link\b[^>]*>", re.IGNORECASE)
     for match in style_pattern.finditer(html):
         styles.append(match.group())
 
     # Try to extract body content
     body_match = re.search(r"<body[^>]*>(.*)</body>", html, re.IGNORECASE | re.DOTALL)
+    body_attributes = {}
     if body_match:
+        from lxml import html as lxml_html
+
         content = body_match.group(1)
+        body = lxml_html.document_fromstring(html).find("body")
+        if body is not None:
+            body_attributes = {key: body.attrib[key] for key in ("style", "data-bg-urls") if key in body.attrib}
     else:
         # No <body> tag — might be a fragment, use as-is
         # Strip <html> and <head> wrappers if present
         content = re.sub(r"</?html[^>]*>", "", html, flags=re.IGNORECASE)
         content = re.sub(r"<head[^>]*>[\s\S]*?</head>", "", content, flags=re.IGNORECASE)
 
-    # Remove any <style> tags already in content (we'll prepend all styles)
+    # Collecting styles in one place preserves the sender's cascade order.
     content_without_styles = style_pattern.sub("", content)
 
     # Prepend all collected styles
     if styles:
-        return "\n".join(styles) + "\n" + content_without_styles
-    return content_without_styles
+        return "\n".join(styles) + "\n" + content_without_styles, body_attributes
+    return content_without_styles, body_attributes
 
 
 def decode_header(value) -> str:
@@ -738,8 +744,10 @@ def block_external_images(html: str) -> tuple[str, bool]:
     Returns:
         Tuple of (modified HTML, whether external images were found)
     """
+    from html import escape, unescape
+
     has_img = bool(EXTERNAL_IMAGE_RE.search(html))
-    has_css = bool(CSS_EXTERNAL_URL_RE.search(html))
+    has_css = bool(CSS_EXTERNAL_URL_RE.search(unescape(html)))
     if not has_img and not has_css:
         return html, False
 
@@ -765,7 +773,7 @@ def block_external_images(html: str) -> tuple[str, bool]:
         # Replace in inline style="..." attributes, preserving original in data-bg-urls
         def replace_inline_style(match):
             full = match.group(0)
-            style_val = match.group(1)
+            style_val = unescape(match.group(1))
             # Extract all external URLs from this style
             urls = CSS_EXTERNAL_URL_RE.findall(style_val)
             if not urls:
@@ -773,10 +781,10 @@ def block_external_images(html: str) -> tuple[str, bool]:
             new_style = CSS_EXTERNAL_URL_RE.sub(replace_css_url, style_val)
             # Store originals in data attribute for restoration
             url_str = " ".join(urls)
-            return f'style="{new_style}" data-bg-urls="{url_str}"'
+            return f'style="{escape(new_style, quote=True)}" data-bg-urls="{escape(url_str, quote=True)}"'
 
         blocked_html = re.sub(
-            r'style="([^"]*url\s*\([^)]*https?://[^)]*\)[^"]*)"',
+            r'(?<![\w:-])style="([^"]*)"',
             replace_inline_style,
             blocked_html,
             flags=re.IGNORECASE,
@@ -1532,7 +1540,7 @@ def create_app(
             images_blocked = False
 
         # Always detect external images so dropdown menu can show load/block actions
-        if body_html and (EXTERNAL_IMAGE_RE.search(body_html) or CSS_EXTERNAL_URL_RE.search(body_html)):
+        if body_html and (EXTERNAL_IMAGE_RE.search(body_html) or CSS_EXTERNAL_URL_RE.search(html.unescape(body_html))):
             has_external_images = True
 
         if body_html and images_blocked and has_external_images:
@@ -1540,8 +1548,9 @@ def create_app(
 
         # Extract just the body content for direct embedding
         # (strip <html>, <head>, <body> wrappers since we embed into our page)
+        body_attributes = {}
         if body_html:
-            body_html = _extract_body_content(body_html)
+            body_html, body_attributes = _extract_body_content(body_html)
 
         # Get back URL if user came from search
         back_url = get_back_to_search_url()
@@ -1564,6 +1573,7 @@ def create_app(
             labels=email_data["labels"],
             body=body_linkified,
             body_html=body_html,
+            body_attributes=body_attributes,
             attachments=email_data["attachments"],
             images_blocked=images_blocked,
             has_external_images=has_external_images,

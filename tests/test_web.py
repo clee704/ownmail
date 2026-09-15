@@ -1232,38 +1232,62 @@ class TestExtractBodyContent:
     def test_full_html_document(self):
         """Extract body from full HTML document."""
         html = "<html><head><title>Hi</title></head><body><p>Hello</p></body></html>"
-        result = _extract_body_content(html)
+        result, attributes = _extract_body_content(html)
         assert "<p>Hello</p>" in result
         assert "<html>" not in result
         assert "<head>" not in result
         assert "<body>" not in result
+        assert attributes == {}
 
     def test_preserves_style_tags(self):
         """Style tags from head should be preserved."""
         html = '<html><head><style>.red { color: red; }</style></head><body><p class="red">Hi</p></body></html>'
-        result = _extract_body_content(html)
+        result, _ = _extract_body_content(html)
         assert "<style>" in result
         assert "color: red" in result
         assert '<p class="red">Hi</p>' in result
 
+    def test_preserves_font_links_in_stylesheet_order(self):
+        source = (
+            "<html><head><style>p {color:red}</style>"
+            '<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Example">'
+            "</head><body><style>p {color:blue}</style><p>Text</p></body></html>"
+        )
+        result, _ = _extract_body_content(source)
+        assert result.count("<link ") == 1
+        assert result.index("color:red") < result.index("<link ") < result.index("color:blue")
+
+    def test_extracts_only_body_styling_and_blocked_backgrounds(self):
+        source = (
+            '<html><body class="sender" id="sender-id" onload="unsafe()" '
+            'style="background:#eef1f4;margin:0;padding:0;font-family:&quot;Example&quot;" '
+            'data-bg-urls="https://fixture.test/background.png"><p>Text</p></body></html>'
+        )
+        result, attributes = _extract_body_content(source)
+        assert result == "<p>Text</p>"
+        assert attributes == {
+            "style": 'background:#eef1f4;margin:0;padding:0;font-family:"Example"',
+            "data-bg-urls": "https://fixture.test/background.png",
+        }
+
     def test_fragment_passthrough(self):
         """HTML fragments without body tag pass through."""
         html = "<p>Just a paragraph</p>"
-        result = _extract_body_content(html)
+        result, _ = _extract_body_content(html)
         assert "<p>Just a paragraph</p>" in result
 
     def test_empty_html(self):
-        """Empty string returns empty."""
-        assert _extract_body_content("") == ""
+        """Empty content has no body attributes."""
+        assert _extract_body_content("") == ("", {})
 
     def test_none_html(self):
-        """None returns None."""
-        assert _extract_body_content(None) is None
+        """None content has no body attributes."""
+        assert _extract_body_content(None) == (None, {})
 
     def test_strips_html_wrapper(self):
         """Strip html/head wrappers from fragments without body."""
         html = "<html><head></head><p>Content</p></html>"
-        result = _extract_body_content(html)
+        result, _ = _extract_body_content(html)
         assert "<p>Content</p>" in result
         assert "<html>" not in result
 

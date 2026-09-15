@@ -121,13 +121,14 @@
 
             // Restore CSS background-image from data-bg-urls
             var bgEls = Array.from(container.querySelectorAll('[data-bg-urls]'));
+            if (container.hasAttribute('data-bg-urls')) bgEls.unshift(container);
             bgEls.forEach(function(el) {
                 var urls = el.getAttribute('data-bg-urls').split(' ');
                 var style = el.getAttribute('style') || '';
                 // Replace placeholder data URIs back with original URLs
                 urls.forEach(function(url) {
                     style = style.replace(
-                        /url\(data:image\/gif;base64,[A-Za-z0-9+\/=]+\)/,
+                        /url\(\s*["']?data:image\/gif;base64,[A-Za-z0-9+\/=]+["']?\s*\)/,
                         'url(' + url + ')'
                     );
                 });
@@ -198,7 +199,7 @@
 
         {% if body_html %}
             <div id="ownmail-email-viewport">
-                <div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}">{{ body_html | safe }}</div>
+                <div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}"{{ body_attributes | default({}) | xmlattr }}>{{ body_html | safe }}</div>
             </div>
             <script>
             (function() {
@@ -245,6 +246,7 @@
                 content.addEventListener('load', scaleToFit, true);
                 window.addEventListener('load', scaleToFit);
                 window.addEventListener('resize', scaleToFit);
+                if (document.fonts) document.fonts.ready.then(scaleToFit);
             })();
             </script>
         {% else %}
