@@ -240,8 +240,8 @@ omission never hide members from this check.
 
 Provider limits:
 
-- **Gmail API:** re-read the candidate and its complete thread with the existing
-  read-only authorization. Changed, malformed, missing, or failed responses hold
+- **Gmail API:** re-read the candidate and its complete thread through read-only
+  API requests. Changed, malformed, missing, or failed responses hold
   cleanup eligibility. Inbox and Draft labels establish observed activity;
   successfully checked filed and Sent members can clear it. Unknown system
   labels and failed required label-catalog reads keep the thread held. The

@@ -72,6 +72,7 @@ def _service_for_account(provider, creds):
 
 def authorize(provider) -> None:
     """Open desktop consent, then save a verified cleanup grant and account."""
+    provider._cleanup_credentials = None
     with _quiet_auth_logs():
         try:
             saved_client = provider._keychain.load_client_credentials("gmail")
@@ -119,16 +120,16 @@ def authorize(provider) -> None:
             service = _service_for_account(provider, creds)
             provider._keychain.save_gmail_cleanup_token(provider.account, creds)
             provider._service = service
+            provider._cleanup_credentials = creds
         except LiveLookupError:
             raise
         except Exception:
-            raise _reauthorize(
-                provider, "Cleanup authorization did not complete; saved credentials were kept"
-            ) from None
+            raise _reauthorize(provider, "Cleanup authorization could not be verified or saved") from None
 
 
 def authenticate(provider) -> None:
     """Load or refresh the cleanup credential without opening consent."""
+    provider._cleanup_credentials = None
     with _quiet_auth_logs():
         try:
             creds = provider._keychain.load_gmail_cleanup_token(provider.account)
@@ -155,9 +156,21 @@ def authenticate(provider) -> None:
             if original != (creds.token, creds.refresh_token, creds.expiry):
                 provider._keychain.save_gmail_cleanup_token(provider.account, creds)
             provider._service = service
+            provider._cleanup_credentials = creds
         except LiveLookupError:
             raise
         except Exception:
             raise LiveLookupError(
                 "Cleanup account verification or credential save failed; cleanup was not started."
             ) from None
+
+
+def mutation_headers(provider) -> dict:
+    """Use the verified grant without refreshing after final cleanup checks."""
+    creds = provider._cleanup_credentials
+    _validate_credentials(creds)
+    if not creds.valid:
+        raise ValueError("Cleanup credential has expired")
+    headers = {}
+    creds.apply(headers)
+    return headers

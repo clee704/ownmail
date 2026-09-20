@@ -345,12 +345,17 @@ def test_provider_scope_must_match_the_selected_configuration(captured, field, v
     assert server.moves == []
 
 
-def test_actual_gmail_provider_interfaces_complete_only_the_synthetic_trash_move(tmp_path):
+def test_actual_gmail_provider_interfaces_complete_only_the_synthetic_trash_move(tmp_path, monkeypatch):
+    import json
     from copy import deepcopy
+    from types import SimpleNamespace
+    from unittest.mock import Mock
 
+    from tests.test_keychain_cleanup import credentials
     from tests.test_live_providers import gmail
 
     archive, provider = EmailArchive(tmp_path / "archive"), gmail(["Label_1"])
+    provider._cleanup_credentials = credentials()
     assert sync(archive, provider)["success_count"] == 1
     current = provider._service.users().messages().get().execute.return_value
     provider._service.users().getProfile().execute.return_value = {"emailAddress": provider.account}
@@ -359,18 +364,30 @@ def test_actual_gmail_provider_interfaces_complete_only_the_synthetic_trash_move
         "messages": [deepcopy(current)],
     }
 
-    def move(**kwargs):
-        assert kwargs == {"num_retries": 0}
+    def move(method, path, *, headers):
+        assert (method, path) == ("POST", "/gmail/v1/users/me/messages/a/trash")
+        assert headers["authorization"] == f"Bearer {provider._cleanup_credentials.token}"
         current["labelIds"] = ["TRASH"]
-        return {"id": "a", "threadId": "thread", "labelIds": ["TRASH"]}
 
-    provider._service.users().messages().trash().execute.side_effect = move
+    connection = Mock()
+    connection.request.side_effect = move
+    connection.getresponse.return_value = SimpleNamespace(
+        status=200,
+        read=lambda: json.dumps({"id": "a", "threadId": "thread", "labelIds": ["TRASH"]}).encode(),
+    )
+    transport = Mock(return_value=connection)
+    monkeypatch.setattr("ownmail.providers.gmail.http.client.HTTPSConnection", transport)
+    provider._service.reset_mock()
     before = files(archive.archive_dir)
     assert run_cleanup(archive.archive_dir, source(provider), provider)["eligible"] == 1
-    provider._service.users().messages().trash().execute.assert_not_called()
+    transport.assert_not_called()
     assert run_cleanup(archive.archive_dir, source(provider), provider, apply=True)["trashed"] == 1
     assert run_cleanup(archive.archive_dir, source(provider), provider, apply=True)["held"] == 1
-    provider._service.users().messages().trash().execute.assert_called_once_with(num_retries=0)
+    transport.assert_called_once_with("gmail.googleapis.com", timeout=60)
+    connection.request.assert_called_once()
+    connection.close.assert_called_once()
+    provider._service.users().messages().trash.assert_not_called()
+    provider._service.users().messages().delete.assert_not_called()
     assert files(archive.archive_dir) == before
 
 

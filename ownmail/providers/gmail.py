@@ -1,10 +1,12 @@
 """Gmail email provider using OAuth2 and Gmail API."""
 
 import base64
+import http.client
 import json
 import time
 from dataclasses import replace
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -83,6 +85,7 @@ class GmailProvider(EmailProvider):
         self._include_labels = include_labels
         self._source_name = source_name
         self._exclude_roles = roles.resolve_exclude_roles(exclude_roles)
+        self._cleanup_credentials = None
         self._service = None
         self._label_cache = {}
 
@@ -142,21 +145,36 @@ class GmailProvider(EmailProvider):
         if any(not isinstance(value, str) or not value.strip() for value in (message_id, thread_id)):
             return replace(result, status="denied", reason="Gmail cleanup identity is unavailable")
         try:
-            response = self._service.users().messages().trash(userId="me", id=message_id).execute(num_retries=0)
-            response_roles = _thread_message_roles(response, thread_id)
-            if response["id"] != message_id or roles.TRASH not in response_roles:
-                raise _InvalidThreadState("Gmail Trash response did not confirm the requested move")
-            return replace(result, status="trashed")
-        except HttpError as error:
-            if error.resp.status in {400, 401, 403}:
+            headers = cleanup_auth.mutation_headers(self)
+        except Exception:
+            return replace(result, status="denied", reason="Gmail cleanup authorization is missing or expired")
+        connection = None
+        try:
+            # The discovery client's HTTP transport retries some failed POSTs even
+            # with num_retries=0. A mutation must get exactly one transmission.
+            connection = http.client.HTTPSConnection("gmail.googleapis.com", timeout=60)
+            connection.request(
+                "POST", f"/gmail/v1/users/me/messages/{quote(message_id, safe='')}/trash", headers=headers
+            )
+            reply = connection.getresponse()
+            if reply.status in {400, 401, 403}:
                 return replace(
                     result,
                     status="denied",
                     reason="Gmail rejected cleanup; authorization, policy, quota, or request restrictions may apply",
                 )
-            return replace(result, reason="Gmail cleanup outcome is unconfirmed; recheck before retrying")
+            if reply.status != 200:
+                return replace(result, reason="Gmail cleanup outcome is unconfirmed; recheck before retrying")
+            response = json.loads(reply.read())
+            response_roles = _thread_message_roles(response, thread_id)
+            if response["id"] != message_id or roles.TRASH not in response_roles:
+                raise _InvalidThreadState("Gmail Trash response did not confirm the requested move")
+            return replace(result, status="trashed")
         except Exception:
             return replace(result, reason="Gmail cleanup outcome is unconfirmed; recheck before retrying")
+        finally:
+            if connection is not None:
+                connection.close()
 
     def check_thread_protection(self, message_id: str) -> ThreadProtection:
         """Read current candidate and thread state without capture filters.

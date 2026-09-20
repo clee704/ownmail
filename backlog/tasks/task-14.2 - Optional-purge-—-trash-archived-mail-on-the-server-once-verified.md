@@ -4,7 +4,7 @@ title: Optional purge — trash archived mail on the server once verified
 status: In Progress
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-15 04:48'
+updated_date: '2026-09-20 15:29'
 labels: []
 milestone: m-5
 dependencies:
@@ -117,6 +117,10 @@ Pause checkpoint: the user explicitly approved implementing and synthetically te
 
 The user then requested a checkpoint and pause. Preserve the current OAuth draft on feat/server-cleanup; no new PR or push is part of this pause. Separate keychain serialization and CLI routing have focused tests. The provider authorization module and Gmail wrappers are a draft: authorization-specific tests, actual keychain/provider/runner integration with a fake backend, and independent review remain unfinished. Resume those checks before treating cleanup authorization as ready or marking AC #1 complete. Verify granted-scope evidence and omission semantics, refresh and expiry handling, wrong-account and failed-consent preservation, log suppression, and apply never opening consent. Correct the authorize error text that currently guarantees saved credentials were kept even when the final keychain write itself fails. Existing read-only Gmail methods and scopes were verified unchanged. No real-account authorization or cleanup has run.
 Checkpoint validation: the full pytest hook passed with required browser tests: 3,378 passed, one existing expected failure, and 95.12% branch coverage. The initial pre-push invocation returned a formatting-change result after formatting two files; tests ran successfully after those changes. The remaining file-hygiene, lint, formatting, and dependency checks are rerun at checkpoint commit. These passing existing and storage/CLI tests do not verify the new provider OAuth flow; its dedicated tests and integration remain required on resume.
+
+Resumed the approved cleanup and separate authorization work. Review base remains d660e9d. Finish dedicated authorization tests and actual keychain/provider/runner integration with synthetic backends, correct verified defects, run independent OpenAI and Anthropic review and required checks, then deliver a review-ready PR. Real-account authorization and cleanup remain outside this implementation task.
+
+Dedicated authorization and cross-layer fake-backend tests now pass. They cover grant omission and refresh semantics, expiry, cancellation, wrong-account and failed-save behavior, credential separation, log suppression, consent-free apply, and preserved owned contents/labels. Independent review exposed hidden HTTP POST retries beneath the Gmail client; mutation now uses one stdlib HTTPS request with no refresh, redirects, or retries. Real connection tests verify one transmission after lost responses, 401s, and redirects. Focused cleanup/authentication suites pass 302 tests, and deliberate regressions were rejected. Final full checks and PR delivery remain pending; no real-account operation ran.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
