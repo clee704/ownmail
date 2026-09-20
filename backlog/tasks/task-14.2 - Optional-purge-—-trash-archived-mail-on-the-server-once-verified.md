@@ -1,10 +1,10 @@
 ---
 id: TASK-14.2
 title: Optional purge — trash archived mail on the server once verified
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-20 15:38'
+updated_date: '2026-09-20 15:49'
 labels: []
 milestone: m-5
 dependencies:
@@ -82,7 +82,7 @@ superseded by this design.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 TASK-14's cleanup acceptance criteria are verified by this implementation; its existing capture-filter criteria remain fulfilled by TASK-14.1
+- [x] #1 TASK-14's cleanup acceptance criteria are verified by this implementation; its existing capture-filter criteria remain fulfilled by TASK-14.1
 - [x] #2 Synthetic provider integration covers Active reading and search, successful capture of contents and labels, local label edits, and eligible server cleanup while preserving the owned contents and labels
 - [x] #3 Synthetic provider integration rejects cleanup for Active-only caches, live messages or threads, local Trash or deleted copies, incomplete capture, failed local verification, and ambiguous or incomplete server state
 - [x] #4 Provider-specific tests verify Gmail source/account, message/thread identity, and content correspondence; unsupported IMAP cleanup stays held before authentication or remote queries. UIDVALIDITY changes, UID reuse, folder moves, and duplicate Message-IDs must be verified before any future IMAP cleanup is enabled.
@@ -125,6 +125,8 @@ Dedicated authorization and cross-layer fake-backend tests now pass. They cover 
 The full required pre-push gate passed after updating the older provider integration to the new single-attempt transport: 3,455 passed, one existing expected failure, and 96.30% branch coverage. Parent cleanup criteria are verified except human-reviewed PR landing. TASK-14.2 remains In Progress until that landing criterion is met. TASK-5.4 remains Done with complete cleanup integration.
 
 Review follow-ups resolve the default index path through a configured archive-root alias, while preserving the explicit linked-db_dir hold, and preserve the concrete reason when candidate enumeration is held. Focused suites pass 151 tests and reject deliberate regressions for both fixes. Draft PR #2 is the delivery path: https://github.com/clee704/ownmail/pull/2 . Final review and checks are in progress.
+
+Completed and landed through PR #2 in 60c23dd after the separately recorded cleanup and OAuth sign-offs. Final OpenAI and Anthropic review found no unresolved verified issue after the transport, archive-root, and diagnostic fixes. The full local pre-push gate passed with required browser tests: 3,457 passed, one existing expected failure, and 96.27% branch coverage. GitHub lint and Python 3.10, 3.11, and 3.12 CI passed at final PR head 2593978. All five task criteria and the parent cleanup criteria are now verified. Cleanup remains opt-in with preview default; IMAP stays held. No real-account authorization or cleanup was performed.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

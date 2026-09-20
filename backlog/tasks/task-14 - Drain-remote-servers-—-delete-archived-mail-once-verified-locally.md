@@ -1,10 +1,10 @@
 ---
 id: TASK-14
 title: Mail ownership workstream
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-20 15:33'
+updated_date: '2026-09-20 15:49'
 labels: []
 milestone: m-5
 dependencies:
@@ -121,7 +121,7 @@ implementation changes.
 - [x] #12 Configuration documentation distinguishes Active download, archive capture, and optional server cleanup, including their eligibility rules
 - [x] #13 Provider-specific Trash moves and retention, including mailbox.org, are verified and documented before enabling each path; moving to Trash does not promise permanent removal
 - [x] #14 Any required Gmail OAuth scope widening is signed off separately, with a documented re-consent path that preserves read-only access for users without cleanup
-- [ ] #15 Human sign-off is recorded and server cleanup work lands via PR
+- [x] #15 Human sign-off is recorded and server cleanup work lands via PR
 - [x] #16 Cleanup requires complete, durable capture metadata, including required labels in a readable sidecar; failed required label retrieval, missing or malformed metadata, and incomplete capture postpone cleanup
 - [x] #17 Each server candidate is matched to its owned copy within the correct source and account; ambiguous or reused identifiers and content that cannot be shown to correspond to that copy skip cleanup
 - [x] #18 Local Trash, expired or deleted local copies, and Active caches do not qualify for cleanup; local label edits never substitute for current server roles
@@ -169,4 +169,6 @@ Current implementation route: continue feat/server-cleanup, based on d660e9d, be
 Paused at the user's request after separate Gmail cleanup OAuth/keychain implementation approval. Both cleanup behavior and separate cleanup authorization are approved for implementation and synthetic tests; do not ask again. Resume feat/server-cleanup and TASK-14.2's latest checkpoint before selecting another task. Cleanup preview/verification/Trash behavior is committed and pushed through 7f4f6e3, with TASK-5.4 Done on that branch; the additional OAuth/keychain/CLI draft is being saved locally at this pause. Finish authorization-specific tests, fake-backend end-to-end integration, independent review, and final checks before delivery. TASK-90/TASK-28/TASK-38 are Done on master; TASK-14 and TASK-14.2 remain In Progress. PR #1 remains closed. No new PR, actual account authorization, or real-account cleanup is part of this checkpoint.
 
 Cleanup implementation and synthetic acceptance checks are complete on feat/server-cleanup through dffb50e. The full required pre-push gate passed with browser tests: 3,455 passed, one existing expected failure, and 96.30% branch coverage. Authorization, credential separation, late revalidation, partial results, and one-transmission Trash requests are verified. Each confirmed remote move is independently committed by Gmail; interruption leaves no local journal to reconcile, and bounded sweeps restart from freshly observed server state. IMAP remains held as approved. All implementation criteria are checked; AC #15 and TASK-14.2 AC #1 remain open for human-reviewed PR landing. Final review and PR delivery are being completed; do not repeat implementation approvals or run real-account cleanup.
+
+Mail ownership is complete. TASK-90, TASK-28, TASK-38, TASK-14.2, and TASK-5.4 are Done. The separately approved Gmail cleanup and authorization implementation landed through PR #2 in 60c23dd, following independent review, the full local pre-push gate with required browser tests (3,457 passed; one existing expected failure; 96.27% branch coverage), and green GitHub CI on Python 3.10-3.12. All 19 cleanup acceptance criteria are verified. Final checks confirmed the merged tree matches the tested PR revision. IMAP cleanup remains held under the approved scope; no real-account authorization or cleanup ran. Future continuation requests should report this workstream complete and should not select unrelated backlog tasks.
 <!-- SECTION:NOTES:END -->
