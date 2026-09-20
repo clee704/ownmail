@@ -223,6 +223,10 @@ are skipped. The Trash request has no automatic retry, and an unconfirmed
 response is not reported as a successful move. Preview results reflect their
 check time; a later apply rechecks all conditions.
 
+The single-attempt Trash request requires direct HTTPS access to
+`gmail.googleapis.com` using Python's default certificate trust. It does not use
+the Gmail discovery client's proxy or custom certificate settings.
+
 ### Thread protection for server cleanup
 
 Eligible messages enter the archive immediately, including replies in an ongoing

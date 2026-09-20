@@ -4,7 +4,7 @@ title: Mail ownership workstream
 status: In Progress
 assignee: []
 created_date: '2026-07-24 22:45'
-updated_date: '2026-09-15 04:48'
+updated_date: '2026-09-20 15:33'
 labels: []
 milestone: m-5
 dependencies:
@@ -107,25 +107,25 @@ implementation changes.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Server cleanup is opt-in and off by default; with it off, ownmail makes no server deletions
-- [ ] #2 Cleanup moves messages to the provider's Trash rather than hard-deleting; whether and when final removal occurs follows the provider's actual retention behavior
-- [ ] #3 Cleanup requires an owned archive copy whose local .eml is re-hashed at cleanup time and matches its recorded content hash; an Active cached copy never qualifies
-- [ ] #4 Cleanup sweeps eligible server copies of previously captured messages as well as messages captured in the current run
-- [ ] #5 Current server state and TASK-38 thread protection prevent cleanup of Active messages and live threads, including a previously captured message returned to Inbox
+- [x] #1 Server cleanup is opt-in and off by default; with it off, ownmail makes no server deletions
+- [x] #2 Cleanup moves messages to the provider's Trash rather than hard-deleting; whether and when final removal occurs follows the provider's actual retention behavior
+- [x] #3 Cleanup requires an owned archive copy whose local .eml is re-hashed at cleanup time and matches its recorded content hash; an Active cached copy never qualifies
+- [x] #4 Cleanup sweeps eligible server copies of previously captured messages as well as messages captured in the current run
+- [x] #5 Current server state and TASK-38 thread protection prevent cleanup of Active messages and live threads, including a previously captured message returned to Inbox
 - [x] #6 The existing capture filter uses canonical system roles rather than raw provider folder strings (TASK-14.1)
 - [x] #7 Provider capture filtering uses the shared role mechanism (TASK-14.1)
-- [ ] #8 Active Inbox and unfinished outgoing mail stay protected from cleanup regardless of whether their contents have been downloaded
-- [ ] #9 Dry-run is the default for cleanup: reports what would be trashed, per account, and changes nothing
-- [ ] #10 Verification failure, missing archive files, or incomplete server/thread state skips affected messages and reports the reason without aborting the run
-- [ ] #11 Cleanup is resumable and batch-committed; Ctrl-C leaves consistent state
-- [ ] #12 Configuration documentation distinguishes Active download, archive capture, and optional server cleanup, including their eligibility rules
-- [ ] #13 Provider-specific Trash moves and retention, including mailbox.org, are verified and documented before enabling each path; moving to Trash does not promise permanent removal
-- [ ] #14 Any required Gmail OAuth scope widening is signed off separately, with a documented re-consent path that preserves read-only access for users without cleanup
+- [x] #8 Active Inbox and unfinished outgoing mail stay protected from cleanup regardless of whether their contents have been downloaded
+- [x] #9 Dry-run is the default for cleanup: reports what would be trashed, per account, and changes nothing
+- [x] #10 Verification failure, missing archive files, or incomplete server/thread state skips affected messages and reports the reason without aborting the run
+- [x] #11 Cleanup is resumable and batch-committed; Ctrl-C leaves consistent state
+- [x] #12 Configuration documentation distinguishes Active download, archive capture, and optional server cleanup, including their eligibility rules
+- [x] #13 Provider-specific Trash moves and retention, including mailbox.org, are verified and documented before enabling each path; moving to Trash does not promise permanent removal
+- [x] #14 Any required Gmail OAuth scope widening is signed off separately, with a documented re-consent path that preserves read-only access for users without cleanup
 - [ ] #15 Human sign-off is recorded and server cleanup work lands via PR
-- [ ] #16 Cleanup requires complete, durable capture metadata, including required labels in a readable sidecar; failed required label retrieval, missing or malformed metadata, and incomplete capture postpone cleanup
-- [ ] #17 Each server candidate is matched to its owned copy within the correct source and account; ambiguous or reused identifiers and content that cannot be shown to correspond to that copy skip cleanup
-- [ ] #18 Local Trash, expired or deleted local copies, and Active caches do not qualify for cleanup; local label edits never substitute for current server roles
-- [ ] #19 Local eligibility, server identity, and message/thread activity are revalidated before mutation as far as the provider permits; detected changes postpone cleanup, and documented provider limits describe any remaining race
+- [x] #16 Cleanup requires complete, durable capture metadata, including required labels in a readable sidecar; failed required label retrieval, missing or malformed metadata, and incomplete capture postpone cleanup
+- [x] #17 Each server candidate is matched to its owned copy within the correct source and account; ambiguous or reused identifiers and content that cannot be shown to correspond to that copy skip cleanup
+- [x] #18 Local Trash, expired or deleted local copies, and Active caches do not qualify for cleanup; local label edits never substitute for current server roles
+- [x] #19 Local eligibility, server identity, and message/thread activity are revalidated before mutation as far as the provider permits; detected changes postpone cleanup, and documented provider limits describe any remaining race
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -167,4 +167,6 @@ Current checkpoint: TASK-90, TASK-28, and TASK-38 are Done. Active cache, ordina
 
 Current implementation route: continue feat/server-cleanup, based on d660e9d, before selecting another member. The user approved optional Gmail server cleanup with preview default, explicit apply, and IMAP accounts held. That behavior is committed in 50190ad and passes the full gate with 3,318 tests and 96.19% branch coverage. TASK-5.4 is Done in that branch after cleanup integration. The separate Gmail cleanup OAuth/keychain proposal is the next single approval and remains unanswered; do not ask again for cache storage or cleanup behavior approval. TASK-90/TASK-28/TASK-38 are Done on master, and the Active delivery at d660e9d passed GitHub CI on Python 3.10-3.12. PR #1 remains closed; no new PR or real-account cleanup has run.
 Paused at the user's request after separate Gmail cleanup OAuth/keychain implementation approval. Both cleanup behavior and separate cleanup authorization are approved for implementation and synthetic tests; do not ask again. Resume feat/server-cleanup and TASK-14.2's latest checkpoint before selecting another task. Cleanup preview/verification/Trash behavior is committed and pushed through 7f4f6e3, with TASK-5.4 Done on that branch; the additional OAuth/keychain/CLI draft is being saved locally at this pause. Finish authorization-specific tests, fake-backend end-to-end integration, independent review, and final checks before delivery. TASK-90/TASK-28/TASK-38 are Done on master; TASK-14 and TASK-14.2 remain In Progress. PR #1 remains closed. No new PR, actual account authorization, or real-account cleanup is part of this checkpoint.
+
+Cleanup implementation and synthetic acceptance checks are complete on feat/server-cleanup through dffb50e. The full required pre-push gate passed with browser tests: 3,455 passed, one existing expected failure, and 96.30% branch coverage. Authorization, credential separation, late revalidation, partial results, and one-transmission Trash requests are verified. Each confirmed remote move is independently committed by Gmail; interruption leaves no local journal to reconcile, and bounded sweeps restart from freshly observed server state. IMAP remains held as approved. All implementation criteria are checked; AC #15 and TASK-14.2 AC #1 remain open for human-reviewed PR landing. Final review and PR delivery are being completed; do not repeat implementation approvals or run real-account cleanup.
 <!-- SECTION:NOTES:END -->

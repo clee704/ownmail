@@ -4,7 +4,7 @@ title: Optional purge — trash archived mail on the server once verified
 status: In Progress
 assignee: []
 created_date: '2026-07-25 05:39'
-updated_date: '2026-09-20 15:29'
+updated_date: '2026-09-20 15:33'
 labels: []
 milestone: m-5
 dependencies:
@@ -121,6 +121,8 @@ Checkpoint validation: the full pytest hook passed with required browser tests: 
 Resumed the approved cleanup and separate authorization work. Review base remains d660e9d. Finish dedicated authorization tests and actual keychain/provider/runner integration with synthetic backends, correct verified defects, run independent OpenAI and Anthropic review and required checks, then deliver a review-ready PR. Real-account authorization and cleanup remain outside this implementation task.
 
 Dedicated authorization and cross-layer fake-backend tests now pass. They cover grant omission and refresh semantics, expiry, cancellation, wrong-account and failed-save behavior, credential separation, log suppression, consent-free apply, and preserved owned contents/labels. Independent review exposed hidden HTTP POST retries beneath the Gmail client; mutation now uses one stdlib HTTPS request with no refresh, redirects, or retries. Real connection tests verify one transmission after lost responses, 401s, and redirects. Focused cleanup/authentication suites pass 302 tests, and deliberate regressions were rejected. Final full checks and PR delivery remain pending; no real-account operation ran.
+
+The full required pre-push gate passed after updating the older provider integration to the new single-attempt transport: 3,455 passed, one existing expected failure, and 96.30% branch coverage. Parent cleanup criteria are verified except human-reviewed PR landing. TASK-14.2 remains In Progress until that landing criterion is met. TASK-5.4 remains Done with complete cleanup integration.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
