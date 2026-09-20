@@ -713,7 +713,7 @@ def cmd_cleanup(archive_root: Path, config: dict, source_name: str, *, apply: bo
         provider,
         apply=apply,
         report=report,
-        db_path=(get_db_dir(config) or archive_root) / "ownmail.db",
+        db_path=(get_db_dir(config) or archive_root.resolve()) / "ownmail.db",
     )
     print(f"\nCleanup {mode} summary:")
     print(f"  Checked: {result['checked']}")

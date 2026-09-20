@@ -98,6 +98,20 @@ def test_preview_then_apply_and_retry_preserve_the_owned_archive(captured):
     assert files(archive.archive_dir) == before
 
 
+def test_candidate_configuration_hold_reports_its_reason_without_rebuild_advice(captured):
+    archive, server = captured
+    events = []
+    result = run_cleanup(
+        archive.archive_dir, source(server) | {"name": "../mail"}, server, apply=True, report=events.append
+    )
+    assert result["checked"] == 0
+    assert result["errors"] == 1
+    assert [(event["email_id"], event["status"], event["reason"]) for event in events] == [
+        (None, "error", "Source name is not a safe archive directory")
+    ]
+    assert server.moves == []
+
+
 def test_active_capture_label_edit_refresh_and_cleanup_keep_local_ownership(tmp_path):
     archive = EmailArchive(tmp_path / "archive")
     server = CleanupServer()

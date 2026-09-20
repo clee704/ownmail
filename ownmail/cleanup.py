@@ -137,6 +137,9 @@ def run_cleanup(archive_root: Path, source: dict, provider, *, apply=False, repo
                 break
     except KeyboardInterrupt:
         summary["interrupted"] = True
+    except CleanupHold as error:
+        summary["errors"] += 1
+        emit(None, "error", str(error))
     except Exception:
         summary["errors"] += 1
         emit(None, "error", "Archived candidates could not be read; the index may need rebuilding")

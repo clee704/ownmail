@@ -88,7 +88,8 @@ def test_cleanup_previews_unless_apply_is_explicit(cleanup_cli, monkeypatch, cap
     assert "Moved to server Trash: 0" in output
 
 
-def test_cleanup_preserves_archive_index_cache_and_local_trash(monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("linked_root", [False, True])
+def test_cleanup_preserves_archive_index_cache_and_local_trash(monkeypatch, tmp_path, capsys, linked_root):
     from ownmail.archive import EmailArchive
     from ownmail.thread_protection import ThreadProtection
     from tests.test_live_sync import MailServer, message, owned_rows, sync
@@ -111,8 +112,12 @@ def test_cleanup_preserves_archive_index_cache_and_local_trash(monkeypatch, tmp_
         source_name="mail", account=server.account, message_id=message_id, thread_id="thread", complete=True
     )
     server.trash_message = Mock(side_effect=AssertionError("Preview must not move server mail"))
+    root = archive.archive_dir
+    if linked_root:
+        root = tmp_path / "archive-alias"
+        root.symlink_to(archive.archive_dir, target_is_directory=True)
     config = {
-        "archive_root": str(archive.archive_dir),
+        "archive_root": str(root),
         "sources": [
             {
                 "name": "mail",
@@ -173,7 +178,8 @@ def test_unavailable_index_is_reported_without_creating_it(cleanup_cli, monkeypa
     assert list(case.root.iterdir()) == []
     case.keychain.assert_not_called()
     output = capsys.readouterr().out
-    assert "error: archive: Archived candidates could not be read" in output
+    assert "error: archive: Archive index is unavailable for cleanup" in output
+    assert "rebuilding" not in output
     assert "Errors: 1" in output
 
 
