@@ -117,7 +117,7 @@ observed state and a successful save of the contents and configured label
 snapshot. An unrelated listing or folder failure can leave the Active view
 incomplete while a confirmed message is captured. Failed candidate state,
 content, label, or storage operations remain retryable. Each successful capture
-freezes the owned snapshot. Thread activity affects planned cleanup, never capture.
+freezes the owned snapshot. Thread activity affects cleanup, never capture.
 Capture sidecars retain identity and capture time so `scan` and rebuilds can
 restore the index. A newly captured message without a usable Date header uses
 its capture time for search ordering; the original message headers stay intact.
@@ -149,6 +149,84 @@ match; consolidation can produce fewer search results. Download status reports
 archived and Active-refreshed counts separately. A completed archive pass does
 not establish that the Active view is current.
 
+## Server cleanup
+
+Cleanup is a separate, optional command. Downloads and scheduled downloads never
+run it. Select one configured source; preview is the default:
+
+```bash
+ownmail cleanup --source personal
+```
+
+The sweep includes previously archived messages and reports each outcome with
+its reason and check time. It reads the existing index, including a configured
+`db_dir`, without creating or rebuilding it. Eligibility requires all of these:
+
+1. A current owned `.eml` and readable sidecar stored as regular files in the
+   selected source, with matching hashes, source/account identity, and durable evidence
+   that the required capture metadata was saved.
+2. A matching authenticated Gmail account and a fresh server message whose
+   identity and raw contents correspond to the owned copy.
+3. Current message and complete thread checks that show no Active or
+   unrecognized state. A candidate already in Trash or Spam stays held.
+4. A final local check after the server reads, confirming the owned copy still
+   qualifies immediately before an apply request.
+
+Active caches, local Trash, missing or changed copies, and incomplete capture
+metadata never qualify. Legacy sidecars without evidence of a complete capture
+remain held, even if their label list is empty. Cleanup does not replace local
+labels with server labels or modify owned files. IMAP candidates remain held
+without connecting to the server because complete thread visibility is unavailable.
+
+### Authorizing cleanup
+
+Downloads and cleanup previews use the existing `gmail.readonly` login. To grant
+separate cleanup access for a configured Gmail API source, run:
+
+```bash
+ownmail authorize-cleanup --source personal
+```
+
+This command opens Google consent and requests `gmail.modify`. Google's
+[scope definition](https://developers.google.com/workspace/gmail/api/auth/scopes)
+grants broad access to read, compose, send, and modify mail. Ownmail uses that
+access to verify and move eligible copies to server Trash; it does not send mail
+or hard-delete messages.
+
+Authorization checks the granted scope and signed-in account before saving a
+separate credential under `oauth-token-cleanup/<account>` in the `ownmail`
+keychain service. The existing `oauth-token/<account>` credential remains for
+read-only downloads and previews. The command uses the configured Gmail client
+credentials, requires no archive, and does not run cleanup.
+
+### Applying and retrying
+
+After cleanup authorization, explicitly request apply:
+
+```bash
+ownmail cleanup --source personal --apply
+```
+
+Apply loads or refreshes the saved cleanup credential and never opens browser
+consent automatically. Missing, revoked, or insufficient authorization stops
+the run with guidance to use `authorize-cleanup` again. Connection failures are
+reported separately. Neither downloads nor previews request cleanup access.
+
+Apply moves eligible Gmail messages to server Trash and never hard-deletes.
+Individual verification failures are reported while other candidates continue.
+An account-verification failure or denied apply request stops that source's run.
+The summary separates eligible, held, confirmed Trash moves, and errors.
+
+After an interruption or uncertain response, rerun the command. Each attempt
+rechecks local evidence and current remote state, so copies already in Trash
+are skipped. The Trash request has no automatic retry, and an unconfirmed
+response is not reported as a successful move. Preview results reflect their
+check time; a later apply rechecks all conditions.
+
+The single-attempt Trash request requires direct HTTPS access to
+`gmail.googleapis.com` using Python's default certificate trust. It does not use
+the Gmail discovery client's proxy or custom certificate settings.
+
 ### Thread protection for server cleanup
 
 Eligible messages enter the archive immediately, including replies in an ongoing
@@ -159,16 +237,15 @@ thread. An active thread has no expiry or age override. A later reply protects
 copies still present; the check never restores removed copies or updates an
 archived message's contents or labels.
 
-Cleanup is not enabled yet. The thread check supplies current identity, roles,
-observation time, completeness, and a revision when available for the planned
-cleanup command. That command
-must repeat the check before each mutation, including across batches. Capture
-filters and configured label omission never hide members from this check.
+The thread check supplies current identity, roles, observation time,
+completeness, and a revision when available. Cleanup repeats the check before
+each mutation, including across batches. Capture filters and configured label
+omission never hide members from this check.
 
 Provider limits:
 
-- **Gmail API:** re-read the candidate and its complete thread with the existing
-  read-only authorization. Changed, malformed, missing, or failed responses hold
+- **Gmail API:** re-read the candidate and its complete thread through read-only
+  API requests. Changed, malformed, missing, or failed responses hold
   cleanup eligibility. Inbox and Draft labels establish observed activity;
   successfully checked filed and Sent members can clear it. Unknown system
   labels and failed required label-catalog reads keep the thread held. The
@@ -191,12 +268,12 @@ Provider limits:
 Even a complete Gmail response is an observation, not a lock. The
 [Trash API](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/trash)
 has no conditional thread-revision parameter; activity can change after a final
-check and before a future Trash request. No atomic cleanup guarantee is made.
+check and before the Trash request. No atomic cleanup guarantee is made.
 
 ### Provider Trash behavior
 
 Moving a server copy to Trash does not guarantee reclaimed storage or permanent
-removal. Cleanup remains unimplemented; these policies do not enable it.
+removal. Only Gmail API has an apply path; IMAP remains held.
 
 - **Gmail:** Google documents permanent deletion after 30 days in Trash. Draft
   deletion has different recovery behavior, reinforcing the requirement to
@@ -220,7 +297,7 @@ thread eligibility or retention. Generic flag-and-expunge behavior is unsuitable
 Gmail's [IMAP settings](https://developers.google.com/workspace/gmail/api/reference/rest/v1/ImapSettings)
 can make expunging the last visible copy archive, trash, or permanently delete it.
 
-### Reconciling existing mail
+## Reconciling existing mail
 
 Changing Active settings does not remove already archived messages. The separate
 `reconcile` command reviews archived mail against legacy role and folder filters:

@@ -1,9 +1,22 @@
 """Abstract base class for email providers."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 from ownmail.live import LiveLookupError, LiveMessage, LiveSnapshot
 from ownmail.thread_protection import ThreadProtection
+
+
+@dataclass(frozen=True)
+class TrashResult:
+    """A scoped outcome: trashed, uncertain, or denied; never permanent deletion."""
+
+    source_name: str
+    account: str
+    message_id: str
+    thread_id: str | None = None
+    status: str = "uncertain"
+    reason: str | None = None
 
 
 class EmailProvider(ABC):
@@ -124,6 +137,21 @@ class EmailProvider(ABC):
     def read_live_message(self, message_id: str) -> LiveMessage | None:
         """Read current state and content; None means confirmed absence."""
         raise LiveLookupError("Provider does not support live message lookup")
+
+    def verify_cleanup_account(self) -> None:
+        """Require a provider to establish the authenticated cleanup account."""
+        raise LiveLookupError("Provider cannot verify an account for server cleanup")
+
+    def trash_message(self, message_id: str, thread_id: str) -> TrashResult:
+        """Deny mutation unless the provider has a verified Trash operation."""
+        return TrashResult(
+            self.source_name,
+            self.account,
+            message_id,
+            thread_id,
+            status="denied",
+            reason="Provider does not support server cleanup",
+        )
 
     def check_thread_protection(self, message_id: str) -> ThreadProtection:
         """Hold cleanup when complete current thread state is unavailable.

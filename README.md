@@ -9,7 +9,7 @@ downloads, imports, and archive maintenance.
 
 The goal is to own your mail and remove server copies once they are no longer
 needed by your mail clients. Read [Owning your mail](docs/philosophy.md) for the
-product philosophy, Active ownership, and planned server cleanup.
+product philosophy, Active ownership, and server-cleanup limits.
 
 > **Development version:** This README describes `0.4.0-dev` on `master`.
 > [PyPI currently provides 0.3.0](https://pypi.org/project/ownmail/), which has an
@@ -136,6 +136,38 @@ them; prior cache contents remain stale. Existing `exclude_roles` values are
 accepted but cannot allow Inbox or Drafts into the archive. See
 [download filters and provider limits](docs/archive.md#download-filters).
 
+## Server cleanup
+
+Preview which archived messages could be moved to server Trash:
+
+```bash
+ownmail cleanup --source personal
+```
+
+Cleanup verifies the owned contents and capture metadata, the Gmail account,
+and current message and thread activity. It reports held messages and failures
+with reasons. Local contents and labels stay unchanged; IMAP cleanup remains held.
+
+To enable apply for an existing Gmail API source, explicitly authorize cleanup:
+
+```bash
+ownmail authorize-cleanup --source personal
+```
+
+This opens Google consent for `gmail.modify`, a broad permission that allows
+reading, changing, and sending mail. Ownmail uses cleanup access to verify and
+move eligible server copies to Trash. Its credential is stored separately from
+the read-only login used for downloads and previews.
+
+Then explicitly request Trash moves:
+
+```bash
+ownmail cleanup --source personal --apply
+```
+
+Apply uses the saved cleanup credential and never opens consent automatically.
+See [cleanup checks, authorization, retry behavior, and provider limits](docs/archive.md#server-cleanup).
+
 ## Search
 
 Use the search box in the web interface or the same query syntax in the terminal:
@@ -156,6 +188,8 @@ The web interface includes search help with supported operators and examples.
 |---|---|
 | `setup` | Connect a mail source and store credentials |
 | `download` | Refresh Active mail and archive eligible filed and Sent mail |
+| `cleanup --source NAME` | Preview server cleanup; `--apply` requests eligible Gmail Trash moves |
+| `authorize-cleanup --source NAME` | Grant separate Gmail cleanup access through explicit browser consent |
 | `serve` | Open the web interface |
 | `search "query"` | Search from the terminal |
 | `import <path>` | Import external `.eml` files |

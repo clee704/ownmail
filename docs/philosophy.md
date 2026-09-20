@@ -11,8 +11,10 @@ discarded before archival stay out.
 
 The Active view and automatic capture of eligible filed and Sent mail are
 available. Capture follows the current state reported by the provider; unknown
-or failed checks keep affected messages server-owned. Server cleanup is planned.
-See [current download behavior](archive.md#download-filters) for provider limits.
+or failed checks keep affected messages server-owned. Cleanup previews and
+separately authorized Gmail Trash moves are available.
+See [current download behavior](archive.md#download-filters) and
+[cleanup limits](archive.md#server-cleanup).
 
 ## Ownership
 
@@ -50,10 +52,11 @@ downloads. Discarding a cached Inbox message does not make it a permanent archiv
 
 ## Removing server copies
 
-Planned server cleanup will be optional. It will move a server copy to Trash
-only after verifying its archived copy and checking that the message and its
-thread are no longer active. Whether and when Trash is permanently emptied
-depends on the provider's retention settings.
+Server cleanup is optional and previews by default. An explicit apply request
+can move a Gmail server copy to Trash after verifying its owned contents,
+capture metadata, account identity, and current message and thread activity.
+Local labels stay unchanged. Whether and when Trash is permanently emptied
+depends on the provider's retention settings; ownmail never hard-deletes server mail.
 
 Inbox and unfinished outgoing messages hold their thread's server copies in
 place; Trash and Spam do not. Uncertain thread state postpones cleanup. Eligible
@@ -88,7 +91,16 @@ SubmitPending keyword establish unfinished outgoing state. Gmail's Scheduled
 API semantics remain unverified, and hidden or unadvertised state may be
 unavailable through either provider. See the [provider details](archive.md#download-filters).
 
-The [Mail ownership workstream](<../backlog/tasks/task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md>)
-tracks the remaining server-cleanup work. Cleanup and its required
-authorization changes are unimplemented. Existing read-only thread checks do
-not remove mail from a server.
+`ownmail cleanup --source NAME` verifies and previews; `--apply` explicitly
+requests Gmail Trash moves. Each run rechecks current evidence, including after
+an interruption. Legacy captures without complete durable metadata remain held.
+IMAP cleanup remains held because account-wide thread visibility is unavailable.
+
+Downloads and previews keep their read-only Gmail login. The explicit
+`authorize-cleanup --source NAME` command requests `gmail.modify` through Google
+consent and stores a separate cleanup credential. That scope includes broad
+mailbox and sending permissions; ownmail uses cleanup access to verify and move
+eligible copies to server Trash. Applying uses saved cleanup access and never
+opens consent automatically. The
+[Mail ownership workstream](<../backlog/tasks/task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md>)
+records implementation progress and remaining provider limits.

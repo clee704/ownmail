@@ -1,12 +1,45 @@
 """Secure credential storage using system keychain."""
 
 import json
+from datetime import datetime, timezone
 
 import keyring
 from google.oauth2.credentials import Credentials
 
 # Service name for all ownmail credentials
 SERVICE = "ownmail"
+
+
+def _cleanup_credentials(data: dict) -> Credentials:
+    """Validate the separate cleanup token record before constructing credentials."""
+    if not isinstance(data, dict):
+        raise ValueError("Invalid cleanup authorization")
+    for field in ("token", "token_uri", "client_id", "client_secret"):
+        if not isinstance(data.get(field), str) or not data[field].strip():
+            raise ValueError("Invalid cleanup authorization")
+    refresh_token = data["refresh_token"]
+    if refresh_token is not None and (not isinstance(refresh_token, str) or not refresh_token.strip()):
+        raise ValueError("Invalid cleanup authorization")
+    for field in ("scopes", "granted_scopes"):
+        value = data[field]
+        if not isinstance(value, list) or any(not isinstance(scope, str) or not scope.strip() for scope in value):
+            raise ValueError("Invalid cleanup authorization")
+    if not data["granted_scopes"]:
+        raise ValueError("Cleanup authorization has no verified granted scopes")
+    expiry = datetime.fromisoformat(data["expiry"].replace("Z", "+00:00"))
+    if expiry.tzinfo is None or expiry.utcoffset() is None:
+        raise ValueError("Cleanup authorization has no verified expiry")
+    return Credentials(
+        token=data["token"],
+        refresh_token=refresh_token,
+        token_uri=data["token_uri"],
+        client_id=data["client_id"],
+        client_secret=data["client_secret"],
+        scopes=data["scopes"],
+        granted_scopes=data["granted_scopes"],
+        # google-auth compares expiry with a naive UTC clock.
+        expiry=expiry.astimezone(timezone.utc).replace(tzinfo=None),
+    )
 
 
 class KeychainStorage:
@@ -18,6 +51,7 @@ class KeychainStorage:
         - "client-credentials/gmail" - OAuth client ID for Gmail
         - "client-credentials/outlook" - OAuth client ID for Outlook
         - "oauth-token/<email>" - OAuth token per Gmail/Outlook account
+        - "oauth-token-cleanup/<email>" - Separately authorized Gmail cleanup token
         - "imap-password/<email>" - Password per IMAP account
     """
 
@@ -133,6 +167,50 @@ class KeychainStorage:
             keyring.delete_password(self.service, account_key)
         except keyring.errors.PasswordDeleteError:
             pass
+
+    def save_gmail_cleanup_token(self, account: str, creds: Credentials) -> None:
+        """Save cleanup credentials after the caller verifies the account and grant."""
+        try:
+            if not isinstance(account, str) or not account.strip():
+                raise ValueError("Missing account")
+            expiry = creds.expiry
+            if not isinstance(expiry, datetime):
+                raise ValueError("Missing expiry")
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            for scopes in (creds.scopes, creds.granted_scopes):
+                if scopes is not None and not isinstance(scopes, (list, tuple)):
+                    raise ValueError("Invalid scopes")
+            token_data = {
+                "token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_uri": creds.token_uri,
+                "client_id": creds.client_id,
+                "client_secret": creds.client_secret,
+                "scopes": list(creds.scopes) if creds.scopes is not None else [],
+                "granted_scopes": list(creds.granted_scopes) if creds.granted_scopes is not None else [],
+                "expiry": expiry.astimezone(timezone.utc).isoformat(),
+            }
+            _cleanup_credentials(token_data)
+            token_json = json.dumps(token_data)
+        except Exception:
+            raise ValueError("Invalid cleanup authorization") from None
+        try:
+            keyring.set_password(self.service, f"oauth-token-cleanup/{account}", token_json)
+        except Exception:
+            raise RuntimeError("Could not save cleanup authorization") from None
+
+    def load_gmail_cleanup_token(self, account: str) -> Credentials | None:
+        """Load a valid cleanup record without changing any stored credentials."""
+        if not isinstance(account, str) or not account.strip():
+            return None
+        try:
+            token_json = keyring.get_password(self.service, f"oauth-token-cleanup/{account}")
+            if not token_json:
+                return None
+            return _cleanup_credentials(json.loads(token_json))
+        except Exception:
+            return None
 
     # -------------------------------------------------------------------------
     # IMAP Passwords (per account)

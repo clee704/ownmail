@@ -1,10 +1,10 @@
 ---
 id: TASK-5.4
 title: Local label editing in the web UI
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-25 07:04'
-updated_date: '2026-09-15 04:09'
+updated_date: '2026-09-15 04:38'
 labels: []
 milestone: m-3
 dependencies: []
@@ -49,7 +49,7 @@ lands, explain any hidden label instead of making an edit disappear silently.
 - [x] #2 The sidecar is the atomic durable write target; the database is the derived index, and failed or interrupted edits preserve a recoverable authoritative label set.
 - [x] #3 A locally edited label set, including an intentionally empty one, survives download, update-labels, rebuild, and rebuild --only sidecars unchanged.
 - [x] #4 Active-only messages reject local label edits; a message with both an archived copy and Active server state edits only its archive copy.
-- [ ] #5 Active refresh and cleanup do not replace archived labels or restore locally removed ones, and server role or label changes do not alter them.
+- [x] #5 Active refresh and cleanup do not replace archived labels or restore locally removed ones, and server role or label changes do not alter them.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -72,4 +72,10 @@ TASK-28 feature-branch integration now verifies AC #4 using actual Active-only a
 Active integration is verified in feature commit 43c6c0f and draft PR https://github.com/clee704/ownmail/pull/1: actual Active-only label POST rejects local edits, while dual-state POST changes only the owned sidecar/index, preserving cached content/metadata and provider state. AC #4 is checked in that branch. This master checkout retains the earlier editor implementation; resume the Active feature branch for remaining integration. AC #5 remains open for cleanup.
 
 Active integration is now committed directly on master in 8657a68. Active-only label edits are rejected; dual-state edits and refresh preserve the owned contents and local labels while leaving cached/server labels independent. PR #1 is closed and is not the delivery path. AC #5 remains open only for actual cleanup integration in TASK-14.2.
+
+Cleanup integration is verified in the current feat/server-cleanup implementation: a synthetic Active message is read/searched, filed and captured, given an intentionally empty local label set, refreshed through changed server labels, and finally moved to server Trash through the actual cleanup runner. Owned contents and sidecar bytes remain unchanged, removed labels stay removed, and archived search still returns the owned copy. A local label edit during final remote checks also remains authoritative after cleanup. All acceptance criteria now have evidence; full checks and commit remain pending.
+
+Final cleanup integration passed the full required pre-push gate with required browser tests: 3,318 passed, one existing expected failure, and 96.19% branch coverage. All local-label acceptance criteria are verified; the implementation checkpoint is ready to commit.
+
+Completed in 50190ad on feat/server-cleanup. All five acceptance criteria are verified against the actual Active and cleanup implementations. Full required checks passed with browser tests, 3,318 passing tests, one existing expected failure, and 96.19% branch coverage.
 <!-- SECTION:NOTES:END -->

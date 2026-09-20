@@ -1,10 +1,12 @@
 """Gmail email provider using OAuth2 and Gmail API."""
 
 import base64
+import http.client
 import json
 import time
 from dataclasses import replace
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -13,8 +15,9 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from ownmail import capture, roles
-from ownmail.providers import live_gmail
-from ownmail.providers.base import EmailProvider
+from ownmail.live import LiveLookupError
+from ownmail.providers import cleanup_auth, live_gmail
+from ownmail.providers.base import EmailProvider, TrashResult
 from ownmail.thread_protection import ThreadProtection
 
 # Gmail API scopes - readonly access
@@ -82,6 +85,7 @@ class GmailProvider(EmailProvider):
         self._include_labels = include_labels
         self._source_name = source_name
         self._exclude_roles = roles.resolve_exclude_roles(exclude_roles)
+        self._cleanup_credentials = None
         self._service = None
         self._label_cache = {}
 
@@ -109,6 +113,68 @@ class GmailProvider(EmailProvider):
     def read_live_message(self, message_id):
         """Read current roles and contents without changing server mail."""
         return live_gmail.read_message(self, message_id)
+
+    def verify_cleanup_account(self) -> None:
+        """Verify the current account without changing credentials or consent."""
+        try:
+            profile = self._service.users().getProfile(userId="me", fields="emailAddress").execute()
+            address = profile.get("emailAddress") if isinstance(profile, dict) else None
+            if not isinstance(address, str) or not address or address.casefold() != self.account.casefold():
+                raise LiveLookupError("Gmail cleanup account could not be verified")
+        except LiveLookupError:
+            raise
+        except Exception as error:
+            raise LiveLookupError("Gmail cleanup account lookup failed") from error
+
+    def authorize_cleanup(self) -> None:
+        """Request separate Gmail cleanup consent for the configured account."""
+        cleanup_auth.authorize(self)
+
+    def authenticate_cleanup(self) -> None:
+        """Use saved cleanup authorization without opening consent."""
+        cleanup_auth.authenticate(self)
+
+    def trash_message(self, message_id: str, thread_id: str) -> TrashResult:
+        """Move one freshly verified candidate to Trash without automatic retries.
+
+        The caller must finish account, ownership, message, and thread checks
+        immediately beforehand. Gmail cannot make those checks atomic with
+        this request. An uncertain result requires fresh checks before retry.
+        """
+        result = TrashResult(self.source_name, self.account, message_id, thread_id)
+        if any(not isinstance(value, str) or not value.strip() for value in (message_id, thread_id)):
+            return replace(result, status="denied", reason="Gmail cleanup identity is unavailable")
+        try:
+            headers = cleanup_auth.mutation_headers(self)
+        except Exception:
+            return replace(result, status="denied", reason="Gmail cleanup authorization is missing or expired")
+        connection = None
+        try:
+            # The discovery client's HTTP transport retries some failed POSTs even
+            # with num_retries=0. A mutation must get exactly one transmission.
+            connection = http.client.HTTPSConnection("gmail.googleapis.com", timeout=60)
+            connection.request(
+                "POST", f"/gmail/v1/users/me/messages/{quote(message_id, safe='')}/trash", headers=headers
+            )
+            reply = connection.getresponse()
+            if reply.status in {400, 401, 403}:
+                return replace(
+                    result,
+                    status="denied",
+                    reason="Gmail rejected cleanup; authorization, policy, quota, or request restrictions may apply",
+                )
+            if reply.status != 200:
+                return replace(result, reason="Gmail cleanup outcome is unconfirmed; recheck before retrying")
+            response = json.loads(reply.read())
+            response_roles = _thread_message_roles(response, thread_id)
+            if response["id"] != message_id or roles.TRASH not in response_roles:
+                raise _InvalidThreadState("Gmail Trash response did not confirm the requested move")
+            return replace(result, status="trashed")
+        except Exception:
+            return replace(result, reason="Gmail cleanup outcome is unconfirmed; recheck before retrying")
+        finally:
+            if connection is not None:
+                connection.close()
 
     def check_thread_protection(self, message_id: str) -> ThreadProtection:
         """Read current candidate and thread state without capture filters.

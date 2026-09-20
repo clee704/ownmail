@@ -88,6 +88,22 @@ sources:
   #     - Newsletters
   #     - '[Gmail]/Important'
 
+# ─── Optional Server Cleanup ─────────────────────────────────
+#
+# Cleanup is a separate manual command; downloads never run it.
+# Preview a configured source: ownmail cleanup --source personal
+# --apply explicitly requests eligible Gmail messages be moved to server Trash.
+# Explicitly grant cleanup access: ownmail authorize-cleanup --source personal
+# This opens Google consent for gmail.modify, which permits reading, modifying,
+# and sending mail. Ownmail uses it to verify and move eligible copies to Trash.
+# The cleanup credential is separate; keep auth.secret_ref on the existing
+# read-only token used for downloads and previews. --apply loads or refreshes
+# saved cleanup access and never opens consent automatically. IMAP stays held.
+# Cleanup verifies owned contents, complete capture metadata, account identity,
+# and current message/thread activity. Local labels and files stay unchanged.
+# Legacy metadata without evidence of a complete capture remains held.
+# See docs/archive.md for retry behavior, provider limits, and Trash retention.
+
 # ─── Web Interface ────────────────────────────────────────────
 
 web:
