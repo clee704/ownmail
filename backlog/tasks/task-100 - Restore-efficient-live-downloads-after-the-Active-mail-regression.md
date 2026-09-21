@@ -1,10 +1,10 @@
 ---
 id: TASK-100
 title: Restore efficient live downloads after the Active-mail regression
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-21 05:03'
-updated_date: '2026-09-21 05:22'
+updated_date: '2026-09-21 05:23'
 labels: []
 dependencies: []
 priority: high
@@ -40,4 +40,6 @@ Implemented bounded Gmail content reads, IMAP metadata/content reads, fresh life
 Independent GPT-6 Astra and Claude Opus 5 reviews found no remaining production issues after final fixes. Updated CLI/subprocess provider fixtures for the batch interface without weakening assertions; batch boundaries now flush completed progress before the next network read. The touched IMAP parser also rejects quoted flags that could otherwise be masked into eligible state. Targeted lifecycle, ownership, Gmail, IMAP, progress and interruption tests pass. Deliberate mutations verify batching, content reuse, fresh eligible-state checks, ownership file checks and payload-write avoidance. Full gate is being rerun on the stable final tree.
 
 Final pre-push gate passed with browser tests required: all file checks, Ruff, deptry and the full coverage-gated suite. Targeted CLI/progress validation passes all 147 tests without assertion changes. Code is ready to apply to the running checkout; no schema, dependency, credential or owned-file deletion behavior changed.
+
+Completed in commit 3d1b976. The final required pre-push gate passed with 96.28% coverage and browser tests enabled. Both provider first-run/repeat workloads, lifecycle transitions, changed identities, partial failures, cache repair, ownership verification and interruption recovery are verified.
 <!-- SECTION:NOTES:END -->
