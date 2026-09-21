@@ -105,9 +105,13 @@ def test_refresh_removes_obsolete_content_labels_and_payload(cache):
 
 def test_unchanged_content_keeps_content_age_and_updates_observation(cache):
     original = put(cache)
-    refreshed = put(cache, checked_at=SECOND)
+    payload = cache.cache_dir / original["filename"]
+    before = payload.stat().st_mtime_ns
+    refreshed = put(cache, checked_at=SECOND, content_revision="2")
     assert refreshed["content_at"] == original["content_at"]
     assert refreshed["checked_at"] == SECOND
+    assert refreshed["content_revision"] == "2"
+    assert payload.stat().st_mtime_ns == before
 
 
 def test_identity_is_source_account_and_epoch_scoped_and_never_used_as_path(cache):
@@ -309,7 +313,9 @@ def test_invalid_ids_cannot_escape_entries(cache, active_id):
         cache.get(active_id)
 
 
-@pytest.mark.parametrize("change", [{"state": "owned"}, {"source_name": None}, {"labels": "INBOX"}])
+@pytest.mark.parametrize(
+    "change", [{"state": "owned"}, {"source_name": None}, {"labels": "INBOX"}, {"content_revision": ""}]
+)
 def test_invalid_put_is_rejected_before_writing(cache, change):
     with pytest.raises(ValueError):
         put(cache, **change)

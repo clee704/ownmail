@@ -12,6 +12,7 @@ from ownmail.cli import (
 )
 from ownmail.database import ArchiveDatabase
 from ownmail.live import LiveMessage, LiveSnapshot
+from ownmail.providers.base import EmailProvider
 
 
 def _eid(provider_id, account=""):
@@ -32,6 +33,8 @@ def _configure_live_download(provider, source_name, ids=(), state="eligible"):
         return LiveMessage(message_id, labels=tuple(labels or ()), identity_token=message_id, state=state, raw=raw)
 
     provider.read_live_message.side_effect = read
+    provider.live_batch_size = 1
+    provider.read_live_messages.side_effect = lambda ids: EmailProvider.read_live_messages(provider, ids)
 
 
 class TestCmdSearch:

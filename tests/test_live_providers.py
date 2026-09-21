@@ -571,7 +571,7 @@ def test_gmail_imap_all_mail_duplicate_scheduled_membership_stays_active():
     fresh = provider.read_live_message(_message_id("All Mail", "10", 1))
     assert fresh.state == "active"
     assert fresh.raw == RAW
-    assert ("search", None, "X-GM-MSGID 255") in provider._conn.commands
+    assert sum(command[0] == "search" and "X-GM-MSGID" in command[-1] for command in provider._conn.commands) == 1
 
 
 def test_gmail_imap_scheduled_membership_is_checked_again_before_capture():
@@ -607,7 +607,7 @@ def test_gmail_imap_candidate_uidvalidity_is_checked_after_folder_membership():
 
     def change_epoch(command, *args):
         result = uid(command, *args)
-        if command == "search" and args[-1] == "X-GM-MSGID 255":
+        if command == "search" and provider._conn.selected == '"Later"':
             provider._conn.validity = ("UIDVALIDITY", [b"11"])
         return result
 

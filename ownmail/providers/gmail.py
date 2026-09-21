@@ -114,6 +114,15 @@ class GmailProvider(EmailProvider):
         """Read current roles and contents without changing server mail."""
         return live_gmail.read_message(self, message_id)
 
+    @property
+    def live_batch_size(self) -> int:
+        """Maximum number of fresh content reads in one HTTP batch."""
+        return live_gmail.LIVE_BATCH_SIZE
+
+    def read_live_messages(self, message_ids):
+        """Read current roles and contents with one label catalog per batch."""
+        return live_gmail.read_messages(self, message_ids)
+
     def verify_cleanup_account(self) -> None:
         """Verify the current account without changing credentials or consent."""
         try:

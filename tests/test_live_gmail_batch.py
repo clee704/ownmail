@@ -1,5 +1,6 @@
 """Fresh Gmail scans use bounded HTTP batches without trusting partial results."""
 
+import base64
 import json
 from collections import Counter
 from email.parser import Parser
@@ -18,10 +19,27 @@ class GmailTransport:
 
     def __init__(self, count):
         self.messages = {
-            f"m{index}": {"id": f"m{index}", "threadId": f"t{index}", "labelIds": ["Label_1"]} for index in range(count)
+            f"m{index}": {
+                "id": f"m{index}",
+                "threadId": f"t{index}",
+                "labelIds": ["Label_1"],
+                "historyId": str(index + 1),
+                "raw": base64.urlsafe_b64encode(
+                    f"From: sender@example.test\r\nSubject: message {index}\r\n\r\nCurrent body".encode()
+                ).decode(),
+            }
+            for index in range(count)
+        }
+        self.catalog = {
+            "labels": [
+                {"id": label, "name": label, "type": "system"}
+                for label in ["INBOX", "DRAFT", "SENT", "TRASH", "SPAM", "SCHEDULED"]
+            ]
+            + [{"id": "Label_1", "name": "Projects", "type": "user"}]
         }
         self.requests = Counter()
         self.batch_sizes = []
+        self.batch_formats = Counter()
         self.errors = {}
         self.omitted = set()
         self.fail_batch = None
@@ -33,15 +51,7 @@ class GmailTransport:
         self.requests[method, url.path] += 1
         response_headers = {"status": "200", "content-type": "application/json"}
         if method == "GET" and url.path == "/gmail/v1/users/me/labels":
-            content = json.dumps(
-                {
-                    "labels": [
-                        {"id": label, "name": label, "type": "system"}
-                        for label in ["INBOX", "DRAFT", "SENT", "TRASH", "SPAM", "SCHEDULED"]
-                    ]
-                    + [{"id": "Label_1", "name": "Projects", "type": "user"}]
-                }
-            )
+            content = json.dumps(self.catalog)
         elif method == "GET" and url.path == "/gmail/v1/users/me/messages":
             assert query["includeSpamTrash"] == ["true"]
             assert query["maxResults"] == ["500"]
@@ -64,15 +74,24 @@ class GmailTransport:
                 path = urlsplit(path)
                 message_id = path.path.rsplit("/", 1)[-1]
                 assert verb == "GET" and path.path.startswith("/gmail/v1/users/me/messages/")
-                assert parse_qs(path.query) == {
-                    "format": ["minimal"],
-                    "fields": ["id,threadId,labelIds"],
+                part_query = parse_qs(path.query)
+                message_format = part_query["format"][0]
+                assert message_format in {"minimal", "raw"}
+                fields = "id,threadId,labelIds,historyId" + (",raw" if message_format == "raw" else "")
+                assert part_query == {
+                    "format": [message_format],
+                    "fields": [fields],
                     "alt": ["json"],
                 }
+                self.batch_formats[message_format] += 1
                 if message_id in self.omitted:
                     continue
                 status = self.errors.get(message_id, 200)
-                payload = self.messages[message_id] if status == 200 else {"error": "private remote details"}
+                payload = (
+                    {key: value for key, value in self.messages[message_id].items() if key in fields.split(",")}
+                    if status == 200
+                    else {"error": "private remote details"}
+                )
                 responses.append(
                     "--response\r\nContent-Type: application/http\r\n"
                     f"Content-ID: {part['Content-ID']}\r\n\r\n"
@@ -104,6 +123,7 @@ def test_initial_and_unchanged_scans_batch_one_thousand_fresh_observations(inclu
         assert (result.source_name, result.account) == ("source", "person@example.test")
         assert [message.message_id for message in result.messages] == list(transport.messages)
         assert all(message.state == "eligible" for message in result.messages)
+        assert [message.content_revision for message in result.messages] == [str(index + 1) for index in range(1000)]
         assert all(message.labels == (("Projects",) if include_labels else ()) for message in result.messages)
         assert transport.requests == {
             ("GET", "/gmail/v1/users/me/labels"): 1,

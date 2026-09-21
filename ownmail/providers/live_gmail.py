@@ -13,7 +13,7 @@ from ownmail import roles
 from ownmail.live import LiveLookupError, LiveMessage, LiveSnapshot, message_state
 
 # Gmail recommends no more than 50 calls per batch to limit throttling.
-METADATA_BATCH_SIZE = 50
+LIVE_BATCH_SIZE = 50
 
 KNOWN_SYSTEM_LABELS = frozenset(
     {
@@ -65,6 +65,11 @@ def _message(provider, response, message_id, catalog=None, *, raw=False):
     label_ids = response.get("labelIds", [])
     if not isinstance(label_ids, list) or any(not isinstance(label, str) or not label for label in label_ids):
         raise LiveLookupError("Gmail message labels are malformed")
+    revision = response.get("historyId")
+    if "historyId" in response and (
+        not isinstance(revision, str) or not revision.isascii() or not revision.isdecimal()
+    ):
+        raise LiveLookupError("Gmail message revision is malformed")
     if catalog is None and (provider._include_labels or set(label_ids) - KNOWN_SYSTEM_LABELS):
         catalog = _catalog(provider)
     current_roles = frozenset(role for label in label_ids if (role := roles.role_for_gmail_label(label)))
@@ -99,6 +104,7 @@ def _message(provider, response, message_id, catalog=None, *, raw=False):
         response["threadId"],
         content,
         "An unrecognized Gmail system label needs interpretation" if state == "unknown" else None,
+        content_revision=revision,
     )
 
 
@@ -120,7 +126,7 @@ def read_message(provider, message_id: str) -> LiveMessage | None:
         raise LiveLookupError("Gmail live lookup failed") from error
 
 
-def _metadata_batch(provider, message_ids):
+def _message_batch(provider, message_ids, *, raw=False):
     responses = {}
     seen = set()
     failed = False
@@ -134,6 +140,7 @@ def _metadata_batch(provider, message_ids):
         seen.add(request_id)
         if exception is not None:
             failed = True
+            responses[request_id] = exception
         else:
             responses[request_id] = response
 
@@ -143,13 +150,43 @@ def _metadata_batch(provider, message_ids):
             batch.add(
                 provider._service.users()
                 .messages()
-                .get(userId="me", id=message_id, format="minimal", fields="id,threadId,labelIds"),
+                .get(
+                    userId="me",
+                    id=message_id,
+                    format="raw" if raw else "minimal",
+                    fields="id,threadId,labelIds,historyId" + (",raw" if raw else ""),
+                ),
                 request_id=message_id,
             )
         batch.execute()
     except Exception:
         failed = True
     return responses, failed or len(responses) != len(message_ids)
+
+
+def read_messages(provider, message_ids: list[str]) -> dict[str, LiveMessage | None | Exception]:
+    """Read fresh content in bounded batches; only a member's 404 proves absence."""
+    results = {message_id: LiveLookupError("Gmail live lookup failed") for message_id in message_ids}
+    valid_ids = [message_id for message_id in results if isinstance(message_id, str) and message_id.strip()]
+    for offset in range(0, len(valid_ids), LIVE_BATCH_SIZE):
+        current_ids = valid_ids[offset : offset + LIVE_BATCH_SIZE]
+        try:
+            catalog = _catalog(provider)
+        except Exception:
+            continue
+        responses, _ = _message_batch(provider, current_ids, raw=True)
+        for message_id in current_ids:
+            response = responses.get(message_id)
+            if isinstance(response, HttpError) and response.resp.status == 404:
+                results[message_id] = None
+                continue
+            try:
+                results[message_id] = _message(provider, response, message_id, catalog, raw=True)
+            except LiveLookupError as error:
+                results[message_id] = error
+            except Exception:
+                pass
+    return results
 
 
 def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
@@ -187,9 +224,9 @@ def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
                     continue
                 seen_ids.add(message_id)
                 message_ids.append(message_id)
-            for offset in range(0, len(message_ids), METADATA_BATCH_SIZE):
-                current_ids = message_ids[offset : offset + METADATA_BATCH_SIZE]
-                messages, batch_failed = _metadata_batch(provider, current_ids)
+            for offset in range(0, len(message_ids), LIVE_BATCH_SIZE):
+                current_ids = message_ids[offset : offset + LIVE_BATCH_SIZE]
+                messages, batch_failed = _message_batch(provider, current_ids)
                 failed |= batch_failed
                 for message_id in current_ids:
                     try:

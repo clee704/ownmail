@@ -114,7 +114,7 @@ def test_imap_progress_counts_metadata_checks_including_duplicates_and_failures(
 
 
 @pytest.mark.parametrize("failure", [None, OSError("unavailable"), KeyboardInterrupt()])
-def test_imap_cross_folder_checks_advance_scan_progress(monkeypatch, failure):
+def test_imap_empty_exceptional_folder_search_keeps_scan_conservative(monkeypatch, failure):
     provider = imap("All Mail", gmail_labels=b"\\Sent")
     provider._conn.listing = ("OK", [b'(\\All) "/" "All Mail"', b'(\\Scheduled) "/" "Queue"'])
     original_select = provider._conn.select
@@ -129,10 +129,10 @@ def test_imap_cross_folder_checks_advance_scan_progress(monkeypatch, failure):
 
     def uid(command, *args):
         if command == "search" and selected == '"Queue"':
-            if args[1].startswith("X-GM-MSGID "):
-                assert counts[-1] == 1
-                if failure:
-                    raise failure
+            assert args[1] == "ALL"
+            assert counts[-1] == 1
+            if failure:
+                raise failure
             return "OK", [b""]
         return original_uid(command, *args)
 
@@ -145,5 +145,5 @@ def test_imap_cross_folder_checks_advance_scan_progress(monkeypatch, failure):
         snapshot = provider.list_live_messages(on_progress=counts.append)
         assert snapshot.complete is (failure is None)
         assert snapshot.messages[0].state == ("eligible" if failure is None else "unknown")
-    assert counts[-1] == 2
+    assert counts[-1] == 1
     assert counts == sorted(counts)

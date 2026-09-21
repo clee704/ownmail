@@ -157,6 +157,9 @@ class ActiveCache:
             raise ValueError("Active message identity does not match its entry")
         if entry["state"] not in ("active", "unknown"):
             raise ValueError("Invalid Active message state")
+        revision = entry.get("content_revision")
+        if revision is not None and (not isinstance(revision, str) or not revision):
+            raise ValueError("Invalid Active content revision")
         for key in ("labels", "roles"):
             if not isinstance(entry.get(key), list) or any(not isinstance(value, str) for value in entry[key]):
                 raise ValueError("Invalid Active message labels or roles")
@@ -217,10 +220,13 @@ class ActiveCache:
         raw: bytes,
         checked_at: str | None = None,
         state: str = "active",
+        content_revision: str | None = None,
     ) -> dict:
         """Commit payload and metadata before updating the disposable search index."""
         if state not in ("active", "unknown"):
             raise ValueError("Invalid Active message state")
+        if content_revision is not None and (not isinstance(content_revision, str) or not content_revision):
+            raise ValueError("Invalid Active content revision")
         if not all(isinstance(value, str) for value in (source_name, account, provider_id, identity)):
             raise ValueError("Active message identity fields must be strings")
         if not all(
@@ -244,10 +250,17 @@ class ActiveCache:
             "checked_at": now,
             "content_at": old["content_at"] if old and old["content_hash"] == content_hash else now,
             "filename": f"messages/{active_id}-{content_hash}.eml",
+            "content_revision": content_revision,
         }
         payload = self._payload_path(entry)
         # Versioned payloads keep the previous metadata readable across a failed save.
-        self._atomic_write(payload, raw)
+        # A matching metadata hash alone cannot establish that the payload is intact.
+        try:
+            unchanged = old is not None and old["content_hash"] == content_hash and self.read(active_id) == raw
+        except (OSError, ValueError):
+            unchanged = False
+        if not unchanged:
+            self._atomic_write(payload, raw)
         self._atomic_write(self._entry_path(active_id), json.dumps(entry, ensure_ascii=True).encode())
         self._index_entry(entry, raw)
         if old and old["filename"] != entry["filename"]:

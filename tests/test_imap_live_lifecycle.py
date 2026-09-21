@@ -31,13 +31,13 @@ def test_imap_pending_message_is_captured_only_after_submission(tmp_path):
 def test_imap_filed_message_checks_pending_state_again_before_capture(tmp_path):
     archive = EmailArchive(tmp_path / "archive")
     provider = imap("Projects")
-    read = provider.read_live_message
+    read = provider.read_live_messages
 
-    def queue_before_read(message_id):
+    def queue_before_read(message_ids):
         provider._conn.flags = b"$SubmitPending"
-        return read(message_id)
+        return read(message_ids)
 
-    provider.read_live_message = queue_before_read
+    provider.read_live_messages = queue_before_read
     result = sync(archive, provider)
     assert result["success_count"] == 0
     assert result["active_refreshed"] == 1

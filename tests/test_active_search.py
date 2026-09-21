@@ -6,7 +6,7 @@ from dataclasses import replace
 import pytest
 
 from ownmail import sidecar
-from ownmail.active_search import archive_links, owned_match
+from ownmail.active_search import OwnedLookup, archive_links, owned_match
 from ownmail.archive import EmailArchive
 from ownmail.query import parse_query
 from tests.test_live_sync import MailServer, message, owned_rows, sync
@@ -108,7 +108,8 @@ def test_empty_archive_does_not_create_a_cache_for_reading(tmp_path):
     assert not (tmp_path / ".archive-active").exists()
 
 
-def test_ambiguous_legacy_content_matches_remain_separate(tmp_path):
+@pytest.mark.parametrize("use_lookup", [False, True])
+def test_ambiguous_legacy_content_matches_remain_separate(tmp_path, use_lookup):
     archive = EmailArchive(tmp_path / "archive")
     source = archive.get_emails_dir("mail")
     source.mkdir(parents=True)
@@ -130,12 +131,16 @@ def test_ambiguous_legacy_content_matches_remain_separate(tmp_path):
             conn=conn,
         )
     sync(archive, MailServer([current]))
+    entry = archive.active_cache().list_entries()[0]
+    lookup = OwnedLookup(archive, entry["account"]) if use_lookup else None
+    assert owned_match(archive, entry, lookup=lookup) is None
     assert not archive_links(archive)
     assert archive.active_count() == 1
 
 
 @pytest.mark.parametrize("change", ["missing", "changed", "external", "source"])
-def test_invalid_owned_match_does_not_hide_live_copy(mixed, tmp_path, change):
+@pytest.mark.parametrize("use_lookup", [False, True])
+def test_invalid_owned_match_does_not_hide_live_copy(mixed, tmp_path, change, use_lookup):
     archive, ids = mixed
     cache_entry = next(entry for entry in archive.active_cache().list_entries() if entry["provider_id"] == "dual")
     row = archive.get_readable_email(ids["dual"])
@@ -151,7 +156,8 @@ def test_invalid_owned_match_does_not_hide_live_copy(mixed, tmp_path, change):
             conn.execute("UPDATE emails SET filename = ? WHERE email_id = ?", (str(external), ids["dual"]))
     else:
         cache_entry = {**cache_entry, "source_name": "../outside"}
-    assert owned_match(archive, cache_entry) is None
+    lookup = OwnedLookup(archive, cache_entry["account"]) if use_lookup else None
+    assert owned_match(archive, cache_entry, lookup=lookup) is None
 
 
 def test_legacy_gmail_stable_id_links_edited_live_content_within_source(tmp_path):

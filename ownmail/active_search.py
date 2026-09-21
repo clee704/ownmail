@@ -6,6 +6,51 @@ import sqlite3
 from ownmail import sidecar
 from ownmail.query import parse_query
 
+_OWNED_COLUMNS = "email_id, filename, downloaded_at, content_hash, account, trashed_at, original_filename, provider_id"
+
+
+class OwnedLookup:
+    """Index one account's owned candidates for the duration of a live sync."""
+
+    def __init__(self, archive, account: str):
+        self._archive = archive
+        self._account = account
+        self._by_hash = {}
+        self._by_provider_id = {}
+        with sqlite3.connect(archive.db.db_path) as conn:
+            for row in conn.execute(f"SELECT {_OWNED_COLUMNS} FROM emails WHERE account = ?", (account,)):
+                self._remember(row)
+
+    def _remember(self, row: tuple) -> None:
+        self._by_hash.setdefault(row[3], {})[row[0]] = row
+        self._by_provider_id.setdefault(row[7], {})[row[0]] = row
+
+    def add(self, email_id: str) -> None:
+        """Add a newly captured message from its account-scoped index row."""
+        with sqlite3.connect(self._archive.db.db_path) as conn:
+            row = conn.execute(
+                f"SELECT {_OWNED_COLUMNS} FROM emails WHERE email_id = ? AND account = ?",
+                (email_id, self._account),
+            ).fetchone()
+        if row:
+            self._remember(row)
+
+    def provider_hashes(self, *provider_ids: str) -> set[str]:
+        """Return known hashes for scoped or legacy provider identities."""
+        return {row[3] for provider_id in provider_ids for row in self._by_provider_id.get(provider_id, {}).values()}
+
+    def candidates(self, entry: dict) -> list[tuple]:
+        """Select candidates without replacing the caller's file verification."""
+        if entry["account"] != self._account:
+            return []
+        rows = dict(self._by_hash.get(entry["content_hash"], {}))
+        for provider_id in (
+            capture_id(entry["source_name"], entry["account"], entry["identity"]),
+            entry["provider_id"],
+        ):
+            rows.update(self._by_provider_id.get(provider_id, {}))
+        return list(rows.values())
+
 
 def capture_id(source_name: str, account: str, identity: str) -> str:
     """Namespace new captures without changing the existing archive schema."""
@@ -14,23 +59,26 @@ def capture_id(source_name: str, account: str, identity: str) -> str:
     return "live:" + hashlib.sha256(json.dumps([source_name, account, identity]).encode()).hexdigest()
 
 
-def owned_match(archive, entry: dict, *, include_trash: bool = True) -> tuple | None:
+def owned_match(archive, entry: dict, *, include_trash: bool = True, lookup: OwnedLookup | None = None) -> tuple | None:
     """Match verified owned content by scoped identity or exact bytes."""
     source_root = archive.get_emails_dir(entry["source_name"]).resolve()
     archive_root = archive.archive_dir.resolve()
     if not source_root.is_relative_to(archive_root):
         return None
-    with sqlite3.connect(archive.db.db_path) as conn:
-        candidates = conn.execute(
-            "SELECT email_id, filename, downloaded_at, content_hash, account, trashed_at, original_filename, provider_id "
-            "FROM emails WHERE account = ? AND (content_hash = ? OR provider_id IN (?, ?))",
-            (
-                entry["account"],
-                entry["content_hash"],
-                capture_id(entry["source_name"], entry["account"], entry["identity"]),
-                entry["provider_id"],
-            ),
-        ).fetchall()
+    if lookup is not None:
+        candidates = lookup.candidates(entry)
+    else:
+        with sqlite3.connect(archive.db.db_path) as conn:
+            candidates = conn.execute(
+                f"SELECT {_OWNED_COLUMNS} "
+                "FROM emails WHERE account = ? AND (content_hash = ? OR provider_id IN (?, ?))",
+                (
+                    entry["account"],
+                    entry["content_hash"],
+                    capture_id(entry["source_name"], entry["account"], entry["identity"]),
+                    entry["provider_id"],
+                ),
+            ).fetchall()
     matches = []
     identity_matches = []
     for candidate in candidates:

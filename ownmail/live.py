@@ -16,6 +16,8 @@ class LiveMessage:
     Unknown finished state remains live and must never authorize capture.
     Labels describe the configured saved snapshot; roles always describe the
     fresh server state, including when label saving is disabled.
+    A content revision permits reuse only when the same scoped identity and
+    locator still guarantee the same bytes. None does not authorize reuse.
     """
 
     message_id: str
@@ -27,6 +29,7 @@ class LiveMessage:
     raw: bytes | None = None
     reason: str | None = None
     download_allowed: bool = True
+    content_revision: str | None = None
 
 
 @dataclass(frozen=True)

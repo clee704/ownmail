@@ -139,6 +139,18 @@ class EmailProvider(ABC):
         """
         return None
 
+    live_batch_size = 1
+
+    def read_live_messages(self, message_ids: list[str]) -> dict[str, LiveMessage | None | Exception]:
+        """Read bounded current observations, retaining successful partial results."""
+        results = {}
+        for message_id in message_ids:
+            try:
+                results[message_id] = self.read_live_message(message_id)
+            except Exception as error:
+                results[message_id] = error
+        return results
+
     def read_live_message(self, message_id: str) -> LiveMessage | None:
         """Read current state and content; None means confirmed absence."""
         raise LiveLookupError("Provider does not support live message lookup")

@@ -45,6 +45,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
         from ownmail.cli import main
         from ownmail.keychain import KeychainStorage
         from ownmail.live import LiveMessage, LiveSnapshot
+        from ownmail.providers.base import EmailProvider
         from ownmail.providers.imap import ImapProvider
 
         release = Path(sys.argv.pop(1))
@@ -92,6 +93,8 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
         ImapProvider.authenticate = lambda self: None
         ImapProvider.list_live_messages = listing
         ImapProvider.read_live_message = message
+        ImapProvider.read_live_messages = EmailProvider.read_live_messages
+        ImapProvider.live_batch_size = 2
         ImapProvider.close = lambda self: None
         main()
         """)

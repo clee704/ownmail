@@ -115,20 +115,8 @@ def _message_id(folder, validity, uid):
     return "imap:" + base64.urlsafe_b64encode(value).decode()
 
 
-def _fetch(provider, folder, validity, uid, folder_state, *, raw=False):
+def _parse_message(provider, folder, validity, folder_state, entry, *, raw=False):
     gmail = provider._is_gmail()
-    fields = "UID FLAGS"
-    if gmail:
-        fields += " X-GM-MSGID X-GM-THRID X-GM-LABELS"
-    if raw:
-        fields += " BODY.PEEK[]"
-    status, data = provider._conn.uid("fetch", str(uid), "(" + fields + ")")
-    if status != "OK" or not isinstance(data, list):
-        raise LiveLookupError("IMAP fetch failed")
-    entries = [item for item in data if item not in (b")", None)]
-    if len(entries) != 1:
-        raise LiveLookupError("IMAP fetch is incomplete")
-    entry = entries[0]
     content = None
     if raw:
         if not isinstance(entry, tuple) or len(entry) != 2 or not isinstance(entry[1], bytes) or not entry[1]:
@@ -139,6 +127,8 @@ def _fetch(provider, folder, validity, uid, folder_state, *, raw=False):
             raise LiveLookupError("IMAP message content is incomplete")
     if not isinstance(entry, bytes):
         raise LiveLookupError("IMAP fetch metadata is malformed")
+    if not re.match(rb"[1-9][0-9]* \(", entry) or (not raw and not entry.endswith(b")")):
+        raise LiveLookupError("IMAP fetch framing is malformed")
     metadata = re.sub(rb'"(?:[^"\\]|\\.)*"', lambda match: b" " * len(match[0]), entry)
     label_match = None
     if gmail:
@@ -149,12 +139,18 @@ def _fetch(provider, folder, validity, uid, folder_state, *, raw=False):
             )
         if label_match:
             metadata = metadata[: label_match.start()] + b" " * len(label_match[0]) + metadata[label_match.end() :]
+    outside_labels = entry
+    if label_match:
+        outside_labels = entry[: label_match.start()] + entry[label_match.end() :]
+    if b'"' in outside_labels:
+        raise LiveLookupError("IMAP fetch attributes are malformed")
     flags = re.search(rb"\bFLAGS \(([^)]*)\)", metadata)
     if flags:
         metadata = metadata[: flags.start()] + b" " * len(flags[0]) + metadata[flags.end() :]
-    identity = re.search(rb"\bUID ([0-9]+)\b", metadata)
-    if identity is None or int(identity[1]) != uid or flags is None:
+    identities = re.findall(rb"\bUID ([1-9][0-9]*)\b", metadata)
+    if len(identities) != 1 or flags is None:
         raise LiveLookupError("IMAP current identity or flags are unavailable")
+    uid = int(identities[0])
     current_roles = set() if gmail else set(folder_state.roles)
     flag_set = set(flags[1].decode("ascii").lower().split())
     if "\\draft" in flag_set:
@@ -182,6 +178,14 @@ def _fetch(provider, folder, validity, uid, folder_state, *, raw=False):
         uncertain = uncertain or any(
             label.startswith("\\") and label not in _GMAIL_ROLES and label not in _GMAIL_NONSTATE for label in labels
         )
+    remaining = re.sub(rb"^[1-9][0-9]* \(", b"", metadata)
+    remaining = re.sub(rb"\bUID [1-9][0-9]*\b", b"", remaining, count=1)
+    if gmail:
+        remaining = re.sub(rb"\bX-GM-MSGID [1-9][0-9]*\b", b"", remaining, count=1)
+        remaining = re.sub(rb"\bX-GM-THRID [1-9][0-9]*\b", b"", remaining, count=1)
+    remaining = re.sub(rb"BODY\[\] \{[0-9]+\}$" if raw else rb"\)$", b"", remaining)
+    if remaining.strip():
+        raise LiveLookupError("IMAP fetch attributes are malformed")
     current_roles = frozenset(current_roles)
     state = message_state(current_roles, unfinished=unfinished, uncertain=uncertain)
     return LiveMessage(
@@ -194,31 +198,63 @@ def _fetch(provider, folder, validity, uid, folder_state, *, raw=False):
         content,
         "IMAP message state is unrecognized" if state == "unknown" else None,
         folder not in provider._exclude_folders,
+        content_revision=message_id,
     )
 
 
-def _check_gmail_folders(provider, message, folders, *, on_check=None):
-    """Check role evidence that Gmail's cross-folder labels may not expose."""
+def _fetch_many(provider, folder, validity, uids, folder_state, *, raw=False):
+    fields = "UID FLAGS"
+    if provider._is_gmail():
+        fields += " X-GM-MSGID X-GM-THRID X-GM-LABELS"
+    if raw:
+        fields += " BODY.PEEK[]"
+    status, data = provider._conn.uid("fetch", ",".join(map(str, uids)), "(" + fields + ")")
+    if status != "OK" or not isinstance(data, list):
+        raise LiveLookupError("IMAP fetch failed")
+    expected = {_message_id(folder, validity, uid): uid for uid in uids}
+    found = {}
+    index = 0
+    while index < len(data):
+        entry = data[index]
+        if raw:
+            if index + 1 >= len(data) or data[index + 1] != b")":
+                raise LiveLookupError("IMAP literal framing is incomplete")
+            index += 1
+        message = _parse_message(provider, folder, validity, folder_state, entry, raw=raw)
+        if message.message_id not in expected:
+            raise LiveLookupError("IMAP fetch returned another identity")
+        uid = expected[message.message_id]
+        found[uid] = LiveLookupError("IMAP fetch returned a duplicate identity") if uid in found else message
+        index += 1
+    return {uid: found.get(uid, LiveLookupError("IMAP fetch is incomplete")) for uid in uids}
+
+
+def _folder_messages(provider, folder, folder_state, *, on_checked=None, criterion="ALL"):
+    """Keep each metadata request bounded while retaining successful batches."""
+    from ownmail.providers.imap import FETCH_BATCH_SIZE
+
+    validity = _select(provider, folder)
+    uids = _uids(provider, criterion)
+    for offset in range(0, len(uids), FETCH_BATCH_SIZE):
+        batch = uids[offset : offset + FETCH_BATCH_SIZE]
+        try:
+            fetched = _fetch_many(provider, folder, validity, batch, folder_state)
+        except Exception as error:
+            fetched = dict.fromkeys(batch, error)
+        for uid in batch:
+            if on_checked:
+                on_checked()
+            yield fetched[uid]
+
+
+def _membership_state(message, memberships, *, failed=False):
     if message.state != "eligible" or not message.identity_token.startswith("gmail:"):
         return message
-    gmail_id = str(int(message.identity_token.removeprefix("gmail:"), 16))
-    uncertain = False
-    for folder, folder_state in folders.items():
-        if not (folder_state.unfinished or folder_state.uncertain):
-            continue
-        try:
-            _select(provider, folder)
-            found = _uids(provider, "X-GM-MSGID " + gmail_id)
-        finally:
-            if on_check:
-                on_check()
-        if not found:
-            continue
-        if folder_state.unfinished:
-            return replace(message, state="active", reason=None)
-        uncertain = True
-    if uncertain:
-        return replace(message, state="unknown", reason="IMAP mailbox state is unrecognized")
+    states = memberships.get(message.identity_token, [])
+    if any(state.unfinished for state in states):
+        return replace(message, state="active", reason=None)
+    if failed or any(state.uncertain for state in states):
+        return replace(message, state="unknown", reason="IMAP mailbox state lookup failed")
     return message
 
 
@@ -226,6 +262,8 @@ def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
     """List selectable folders without capture filters or header deduplication."""
     result = LiveSnapshot(provider.source_name, provider.account)
     failed = False
+    membership_failed = False
+    memberships = {}
     seen = {}
     checked = 0
 
@@ -238,36 +276,34 @@ def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
     try:
         folders = _folders(provider)
         for folder, folder_state in sorted(folders.items(), key=lambda item: roles.ALL not in item[1].roles):
+            exceptional = folder_state.unfinished or folder_state.uncertain
             try:
                 if on_progress:
                     on_progress(checked)
-                validity = _select(provider, folder)
-                for uid in _uids(provider):
-                    try:
-                        message = _fetch(provider, folder, validity, uid, folder_state)
-                        previous_index = seen.get(message.identity_token)
-                        if previous_index is not None:
-                            previous = result.messages[previous_index]
-                            if previous.roles != message.roles or set(previous.labels) != set(message.labels):
-                                failed = True
-                            priority = {"eligible": 0, "unknown": 1, "active": 2, "discarded": 3}
-                            if priority[message.state] > priority[previous.state]:
-                                result.messages[previous_index] = message
-                            continue
-                        seen[message.identity_token] = len(result.messages)
-                        result.messages.append(message)
-                    except Exception:
+                for message in _folder_messages(provider, folder, folder_state, on_checked=metadata_checked):
+                    if isinstance(message, Exception):
                         failed = True
-                    finally:
-                        metadata_checked()
+                        membership_failed |= exceptional
+                        continue
+                    if exceptional:
+                        memberships.setdefault(message.identity_token, []).append(folder_state)
+                    previous_index = seen.get(message.identity_token)
+                    if previous_index is not None:
+                        previous = result.messages[previous_index]
+                        if previous.roles != message.roles or set(previous.labels) != set(message.labels):
+                            failed = True
+                        priority = {"eligible": 0, "unknown": 1, "active": 2, "discarded": 3}
+                        if priority[message.state] > priority[previous.state]:
+                            result.messages[previous_index] = message
+                        continue
+                    seen[message.identity_token] = len(result.messages)
+                    result.messages.append(message)
             except Exception:
                 failed = True
-        for index, message in enumerate(result.messages):
-            try:
-                result.messages[index] = _check_gmail_folders(provider, message, folders, on_check=metadata_checked)
-            except Exception:
-                failed = True
-                result.messages[index] = replace(message, state="unknown", reason="IMAP mailbox state lookup failed")
+                membership_failed |= exceptional
+        result.messages[:] = [
+            _membership_state(message, memberships, failed=membership_failed) for message in result.messages
+        ]
         return replace(
             result, complete=not failed, reason="Some IMAP messages could not be checked" if failed else None
         )
@@ -275,32 +311,110 @@ def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
         return replace(result, reason="IMAP live enumeration failed")
 
 
+def _locator(message_id):
+    if not isinstance(message_id, str) or not message_id.startswith("imap:"):
+        raise LiveLookupError("Missing IMAP identity")
+    folder, validity, uid = json.loads(base64.b64decode(message_id[5:], altchars=b"-_", validate=True))
+    if (
+        not isinstance(folder, str)
+        or not folder
+        or "\r" in folder
+        or "\n" in folder
+        or not isinstance(validity, str)
+        or not re.fullmatch(r"[1-9][0-9]*", validity)
+        or type(uid) is not int
+        or uid <= 0
+    ):
+        raise LiveLookupError("Invalid IMAP identity")
+    return folder, validity, uid
+
+
+def read_messages(provider, message_ids):
+    """Read bounded bodies and fresh lifecycle metadata in each selected folder."""
+    from ownmail.providers.imap import FETCH_BODY_BATCH_SIZE
+
+    result = {}
+    groups = {}
+    for message_id in message_ids:
+        try:
+            folder, validity, uid = _locator(message_id)
+            groups.setdefault((folder, validity), {})[uid] = message_id
+        except Exception:
+            result[message_id] = LiveLookupError("Invalid IMAP identity")
+    try:
+        folders = _folders(provider)
+    except Exception:
+        return {message_id: LiveLookupError("IMAP folder listing failed") for message_id in message_ids}
+    checked_groups = []
+    for (folder, validity), ids in groups.items():
+        try:
+            if folder not in folders:
+                result.update(dict.fromkeys(ids.values()))
+                continue
+            if _select(provider, folder) != validity:
+                raise LiveLookupError("IMAP UIDVALIDITY changed; prior identity is unverified")
+            uids = list(ids)
+            for offset in range(0, len(uids), FETCH_BODY_BATCH_SIZE):
+                batch = uids[offset : offset + FETCH_BODY_BATCH_SIZE]
+                try:
+                    present = _uids(provider, "UID " + ",".join(map(str, batch)))
+                    if not set(present).issubset(batch):
+                        raise LiveLookupError("IMAP lookup returned another identity")
+                    fetched = (
+                        _fetch_many(provider, folder, validity, present, folders[folder], raw=True) if present else {}
+                    )
+                    result.update({ids[uid]: fetched.get(uid) for uid in batch})
+                except Exception as error:
+                    result.update(dict.fromkeys((ids[uid] for uid in batch), error))
+            checked_groups.append((folder, validity, ids))
+        except Exception as error:
+            result.update(dict.fromkeys(ids.values(), error))
+    exceptional = {folder: state for folder, state in folders.items() if state.unfinished or state.uncertain}
+    if provider._is_gmail() and exceptional:
+        try:
+            memberships = {}
+            tokens = {
+                message.identity_token
+                for message in result.values()
+                if isinstance(message, LiveMessage) and message.state == "eligible"
+            }
+            token_list = sorted(tokens)
+            for offset in range(0, len(token_list), FETCH_BODY_BATCH_SIZE):
+                batch_tokens = token_list[offset : offset + FETCH_BODY_BATCH_SIZE]
+                criterion = ""
+                for token in reversed(batch_tokens):
+                    key = "X-GM-MSGID " + str(int(token.removeprefix("gmail:"), 16))
+                    criterion = "OR " + key + " " + criterion if criterion else key
+                for folder, state in exceptional.items():
+                    for message in _folder_messages(provider, folder, state, criterion=criterion):
+                        if isinstance(message, Exception):
+                            raise message
+                        if message.identity_token not in batch_tokens:
+                            raise LiveLookupError("IMAP membership lookup returned another identity")
+                        memberships.setdefault(message.identity_token, []).append(state)
+            for message_id, message in result.items():
+                if isinstance(message, LiveMessage):
+                    result[message_id] = _membership_state(message, memberships)
+        except Exception as error:
+            for message_id, message in result.items():
+                if isinstance(message, LiveMessage) and message.state == "eligible":
+                    result[message_id] = error
+        for folder, validity, ids in checked_groups:
+            try:
+                if _select(provider, folder) != validity:
+                    raise LiveLookupError("IMAP UIDVALIDITY changed during state checks")
+            except Exception as error:
+                result.update(dict.fromkeys(ids.values(), error))
+    return result
+
+
 def read_message(provider, message_id: str) -> LiveMessage | None:
     """Confirm UID identity before reading; partial protocol responses retain cache."""
     try:
-        if not isinstance(message_id, str) or not message_id.startswith("imap:"):
-            raise LiveLookupError("Missing IMAP identity")
-        folder, validity, uid = json.loads(base64.b64decode(message_id[5:], altchars=b"-_", validate=True))
-        if not isinstance(folder, str) or not isinstance(validity, str) or type(uid) is not int or uid <= 0:
-            raise LiveLookupError("Invalid IMAP identity")
-        folders = _folders(provider)
-        if folder not in folders:
-            return None
-        if _select(provider, folder) != validity:
-            raise LiveLookupError("IMAP UIDVALIDITY changed; prior identity is unverified")
-        found = _uids(provider, "UID " + str(uid))
-        if not found:
-            return None
-        if found != [uid]:
-            raise LiveLookupError("IMAP lookup returned another identity")
-        message = _fetch(provider, folder, validity, uid, folders[folder], raw=True)
-        checked = _check_gmail_folders(provider, message, folders)
-        if message.identity_token.startswith("gmail:") and any(
-            state.unfinished or state.uncertain for state in folders.values()
-        ):
-            if _select(provider, folder) != validity:
-                raise LiveLookupError("IMAP UIDVALIDITY changed during state checks")
-        return checked
+        result = read_messages(provider, [message_id])[message_id]
+        if isinstance(result, Exception):
+            raise result
+        return result
     except LiveLookupError:
         raise
     except Exception as error:

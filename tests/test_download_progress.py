@@ -15,6 +15,7 @@ from ownmail.cli import cmd_download, main
 from ownmail.download_lock import DownloadLock
 from ownmail.download_progress import FAILURE_REASONS, DownloadProgress
 from ownmail.live import LiveMessage, LiveSnapshot
+from ownmail.providers.base import EmailProvider
 
 PRIVATE_DETAIL = "private@example.com token=secret-value message-body"
 
@@ -56,6 +57,8 @@ def provider(ids=(), source="Synthetic"):
 
     result.list_live_messages.side_effect = list_live
     result.read_live_message.side_effect = read_live
+    result.live_batch_size = 1
+    result.read_live_messages.side_effect = lambda ids: EmailProvider.read_live_messages(result, ids)
     return result
 
 

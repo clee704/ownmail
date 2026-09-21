@@ -169,6 +169,14 @@ class ImapProvider(EmailProvider):
         """Number of messages to download per batch."""
         return FETCH_BODY_BATCH_SIZE
 
+    @property
+    def live_batch_size(self) -> int:
+        return FETCH_BODY_BATCH_SIZE
+
+    def read_live_messages(self, message_ids):
+        """Read current lifecycle state and bodies in bounded folder batches."""
+        return live_imap.read_messages(self, message_ids)
+
     def list_live_messages(self, *, on_progress=None):
         """Enumerate current state independently of capture preferences."""
         return live_imap.list_messages(self, on_progress=on_progress)
