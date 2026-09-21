@@ -34,6 +34,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
         "auth: {secret_ref: 'keychain:synthetic'}}\n"
     )
     release = tmp_path / "continue-download"
+    release_scan = tmp_path / "continue-scan"
     script = tmp_path / "synthetic_download.py"
     script.write_text(
         textwrap.dedent("""\
@@ -47,6 +48,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
         from ownmail.providers.imap import ImapProvider
 
         release = Path(sys.argv.pop(1))
+        release_scan = Path(sys.argv.pop(1))
 
         def forbid_credentials(*args):
             raise AssertionError("Synthetic download must not access credentials")
@@ -72,8 +74,16 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
             ).encode()
             return LiveMessage(message_id, identity_token=message_id, state="eligible", raw=raw)
 
-        def listing(self):
+        def listing(self, *, on_progress=None):
             ids = ["saved", "duplicate", "deleted", "broken"] if self.source_name == "First" else ["saved"]
+            time.sleep(0.3)
+            on_progress(len(ids))
+            if self.source_name == "First":
+                deadline = time.monotonic() + 10
+                while not release_scan.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                if not release_scan.exists():
+                    raise RuntimeError("Test did not release the synthetic scan")
             return LiveSnapshot(self.source_name, self.account,
                 [LiveMessage(message_id, identity_token=message_id, state="eligible") for message_id in ids],
                 complete=True)
@@ -92,12 +102,18 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
     real_popen = subprocess.Popen
 
     def spawn(args, **kwargs):
-        return real_popen([sys.executable, str(script), str(release), *args[3:]], **kwargs)
+        return real_popen([sys.executable, str(script), str(release), str(release_scan), *args[3:]], **kwargs)
 
     try:
         with patch("ownmail.downloads.subprocess.Popen", side_effect=spawn):
             client = app.test_client()
             assert client.post("/downloads", json={}).status_code == 202
+            scanning = wait_for_status(client, lambda s: s["running"] and s.get("scan_checked") == 4)
+            assert scanning["phase"] == "scanning"
+            assert scanning["source"] == "First"
+            assert scanning["downloaded"] == scanning["skipped"] == scanning["errors"] == 0
+            assert archive.db.get_email_count() == 0
+            release_scan.touch()
             live = wait_for_status(client, lambda s: s["running"] and s.get("skipped") == 1)
             assert live["has_progress"] is True
             assert (live["downloaded"], live["skipped"], live["errors"]) == (1, 1, 0)
@@ -111,12 +127,14 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
             assert final["active_complete"] is False
             assert (final["downloaded"], final["skipped"], final["errors"]) == (2, 2, 1)
             assert final["source"] == "Second"
+            assert final["scan_checked"] == 1
             assert final["failure_reason"]
             assert "do-not-expose" not in str(final)
             assert "first@example.com" not in str(final)
             assert archive.db.get_email_count() == 2
             assert client.get("/downloads").json == final
     finally:
+        release_scan.touch()
         release.touch()
         manager.stop()
 

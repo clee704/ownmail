@@ -76,6 +76,11 @@ class DownloadProgress:
         self._state.setdefault("active_refreshed", 0)
         self._write(force=True)
 
+    def set_scan_progress(self, checked: int) -> None:
+        """Publish the current source's scan count while limiting disk writes."""
+        self._state["scan_checked"] = checked
+        self._write()
+
     def fail(self, reason: str, *, errors: int = 0) -> None:
         """Publish a reason selected from the fixed message catalog."""
         self._state["failure_reason"] = FAILURE_REASONS[reason]

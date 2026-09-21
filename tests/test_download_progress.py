@@ -39,8 +39,10 @@ def provider(ids=(), source="Synthetic"):
         [],
     )
 
-    def list_live():
+    def list_live(*, on_progress=None):
         ids, _ = result.get_new_message_ids()
+        if on_progress:
+            on_progress(len(ids))
         return LiveSnapshot(
             source,
             result.account,
@@ -256,7 +258,7 @@ def test_zero_mail_run_finishes_successfully(cli_download):
     mock_provider = provider()
 
     def check(*args, **kwargs):
-        assert snapshot(path)["phase"] == "refreshing"
+        assert snapshot(path)["phase"] == "scanning"
         return [], None
 
     mock_provider.get_new_message_ids.side_effect = check

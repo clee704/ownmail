@@ -106,9 +106,9 @@ class GmailProvider(EmailProvider):
         """Number of messages to download per batch."""
         return BATCH_SIZE
 
-    def list_live_messages(self):
+    def list_live_messages(self, *, on_progress=None):
         """Enumerate current state independently of capture preferences."""
-        return live_gmail.list_messages(self)
+        return live_gmail.list_messages(self, on_progress=on_progress)
 
     def read_live_message(self, message_id):
         """Read current roles and contents without changing server mail."""

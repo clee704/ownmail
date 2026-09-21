@@ -66,6 +66,47 @@ def test_cumulative_progress_cannot_hide_an_incomplete_source(tmp_path, completi
     assert final["source"] == "Second"
 
 
+def test_scan_progress_is_throttled_until_phase_changes(tmp_path, monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr("ownmail.download_progress.time.monotonic", lambda: now[0])
+    path = tmp_path / "progress.json"
+    reporter = DownloadProgress(path)
+    reporter.set_scan_progress(0)
+    reporter.set_phase("scanning", "Synthetic")
+    reporter.set_scan_progress(1)
+    assert json.loads(path.read_text())["scan_checked"] == 0
+    now[0] = 0.3
+    reporter.set_scan_progress(100)
+    assert json.loads(path.read_text())["scan_checked"] == 100
+    reporter.set_scan_progress(101)
+    reporter.set_phase("refreshing")
+    final = json.loads(path.read_text())
+    assert final["scan_checked"] == 101
+    assert final["phase"] == "refreshing"
+    assert final["source"] == "Synthetic"
+    assert final["downloaded"] == final["errors"] == 0
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_new_source_resets_scan_count_and_retains_capture_counts(manager):
+    manager.start_download()
+    reporter = DownloadProgress(manager._progress_path)
+    reporter.set_scan_progress(100)
+    reporter.set_phase("scanning", "First")
+    first = manager.snapshot()
+    assert first["phase"] == "scanning"
+    assert first["scan_checked"] == 100
+    assert first["downloaded"] == 0
+    reporter.advance(downloaded=2, active_refreshed=4)
+    reporter.set_scan_progress(0)
+    reporter.set_phase("scanning", "Second")
+    second = manager.snapshot()
+    assert second["source"] == "Second"
+    assert second["scan_checked"] == 0
+    assert second["downloaded"] == 2
+    assert second["active_refreshed"] == 4
+
+
 @pytest.mark.parametrize("trigger", ["manual", "scheduled"])
 def test_existing_download_path_reports_active_refresh(manager, process, clock, monkeypatch, trigger):
     if trigger == "manual":
@@ -90,6 +131,7 @@ def test_existing_download_path_reports_active_refresh(manager, process, clock, 
     assert live["downloaded"] == 2
     assert live["active_refreshed"] == 4
     assert live["active_complete"] is None
+    assert live["scan_checked"] == 0
     reporter.set_active_complete(False)
     reporter.finish()
     process.returncode = 0
@@ -111,6 +153,11 @@ def test_existing_download_path_reports_active_refresh(manager, process, clock, 
         {"active_complete": 1},
         {"active_complete": "false"},
         {"active_complete": []},
+        {"scan_checked": -1},
+        {"scan_checked": True},
+        {"scan_checked": 1.5},
+        {"scan_checked": "1"},
+        {"scan_checked": None},
     ],
 )
 def test_invalid_active_progress_preserves_last_valid_snapshot(manager, updates):
@@ -153,6 +200,31 @@ def test_running_refresh_shows_active_counts_before_completion(shell_app, downlo
         assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 failed');
         assert.doesNotMatch(await page.locator('#ownmail-download-message').textContent(), /Capture finished/);
         """,
+    )
+
+
+@pytest.mark.parametrize("source", [None, "Synthetic"])
+def test_running_scan_shows_checked_count_before_capture(shell_app, download_browser, source):
+    app, _ = shell_app
+    test_download_ui.run_download_browser(
+        app,
+        download_browser,
+        """
+        state = {...state, running: true, state: 'running', has_progress: true, phase: 'scanning',
+            source: __SOURCE__, scan_checked: 0, active_refreshed: 0, active_complete: null};
+        await refresh();
+        await waitStatus(__SOURCE__ ? 'Scanning live mail from Synthetic' : 'Scanning live mail…');
+        assert.equal(await progress.isVisible(), true);
+        assert.equal(await counts.textContent(), '0 checked · 0 archived · 0 Active refreshed · 0 failed');
+        state = {...state, scan_checked: 123};
+        await refresh();
+        await waitStatus('123 checked');
+        assert.equal(await counts.textContent(), '123 checked · 0 archived · 0 Active refreshed · 0 failed');
+        state = {...state, phase: 'refreshing', downloaded: 2, active_refreshed: 4};
+        await refresh();
+        await waitStatus('Refreshing live mail');
+        assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 failed');
+        """.replace("__SOURCE__", json.dumps(source)),
     )
 
 

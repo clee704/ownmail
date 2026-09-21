@@ -37,6 +37,25 @@ def gmail(labels=None, *, include_labels=True):
     ]
     catalog.append({"id": "Label_1", "name": "Projects", "type": "user"})
     provider._service.users().labels().list().execute.return_value = {"labels": catalog}
+
+    def new_batch(*, callback):
+        requests = []
+        batch = MagicMock()
+        batch.add.side_effect = lambda request, request_id: requests.append((request_id, request))
+
+        def execute():
+            for request_id, request in requests:
+                try:
+                    response = request.execute()
+                except Exception as error:
+                    callback(request_id, None, error)
+                else:
+                    callback(request_id, response, None)
+
+        batch.execute.side_effect = execute
+        return batch
+
+    provider._service.new_batch_http_request.side_effect = new_batch
     provider._service.reset_mock()
     return provider
 

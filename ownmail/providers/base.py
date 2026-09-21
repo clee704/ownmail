@@ -1,6 +1,7 @@
 """Abstract base class for email providers."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ownmail.live import LiveLookupError, LiveMessage, LiveSnapshot
@@ -130,8 +131,12 @@ class EmailProvider(ABC):
         """
         ...
 
-    def list_live_messages(self) -> LiveSnapshot | None:
-        """Return current lifecycle observations, or None when unsupported."""
+    def list_live_messages(self, *, on_progress: Callable[[int], None] | None = None) -> LiveSnapshot | None:
+        """Return current observations, reporting cumulative metadata checks.
+
+        Counts include failed checks and restart at zero for each source scan.
+        Return None when live enumeration is unsupported.
+        """
         return None
 
     def read_live_message(self, message_id: str) -> LiveMessage | None:

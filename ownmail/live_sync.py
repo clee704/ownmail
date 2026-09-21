@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import tempfile
+import time
 from datetime import datetime, timezone
 
 from ownmail import sidecar
@@ -163,11 +164,21 @@ def sync_live(archive, provider, *, active_downloads=True, since=None, until=Non
     cache.set_source_status(
         provider.source_name, provider.account, complete=False, error="Refresh in progress", checked_at=checked_at
     )
-    if progress:
-        progress.set_phase("refreshing", provider.source_name)
     previous = {entry["identity"]: entry for entry in cache.list_entries(provider.source_name, provider.account)}
     reasons = []
     removals = set()
+    checked = 0
+    last_report = time.monotonic()
+
+    def scan_progress(count):
+        nonlocal checked, last_report
+        checked = count
+        if progress:
+            progress.set_scan_progress(count)
+        now = time.monotonic()
+        if now - last_report >= 1:
+            print(f"  Scanning live mail: {checked} messages checked...", flush=True)
+            last_report = now
 
     def failure(message_id, error):
         result["error_count"] += 1
@@ -181,12 +192,19 @@ def sync_live(archive, provider, *, active_downloads=True, since=None, until=Non
                 progress.fail("active_refresh", errors=1)
 
     try:
-        snapshot = provider.list_live_messages()
+        print("Scanning live mail before capture...", flush=True)
+        if progress:
+            progress.set_scan_progress(0)
+            progress.set_phase("scanning", provider.source_name)
+        snapshot = provider.list_live_messages(on_progress=scan_progress)
         if not isinstance(snapshot, LiveSnapshot) or (snapshot.source_name, snapshot.account) != (
             provider.source_name,
             provider.account,
         ):
             raise ValueError("Provider cannot establish a scoped live view")
+        print(f"Live scan {'complete' if snapshot.complete else 'incomplete'}: {checked} messages checked.", flush=True)
+        if progress:
+            progress.set_phase("refreshing")
         if not snapshot.complete:
             reasons.append(snapshot.reason or "Server listing was incomplete")
         observed = set()

@@ -25,10 +25,12 @@ class MailServer:
         self.reads = []
         self.exclude_roles = []
 
-    def list_live_messages(self):
+    def list_live_messages(self, *, on_progress=None):
         if self.list_error:
             raise self.list_error
         listed = self.listed if self.listed is not None else list(self.messages.values())
+        if on_progress:
+            on_progress(len(listed))
         return LiveSnapshot(
             self.source_name, self.account, listed, self.complete, None if self.complete else "Partial listing"
         )

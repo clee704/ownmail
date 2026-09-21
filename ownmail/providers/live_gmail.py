@@ -12,6 +12,9 @@ from googleapiclient.errors import HttpError
 from ownmail import roles
 from ownmail.live import LiveLookupError, LiveMessage, LiveSnapshot, message_state
 
+# Gmail recommends no more than 50 calls per batch to limit throttling.
+METADATA_BATCH_SIZE = 50
+
 KNOWN_SYSTEM_LABELS = frozenset(
     {
         "SENT",
@@ -117,15 +120,48 @@ def read_message(provider, message_id: str) -> LiveMessage | None:
         raise LiveLookupError("Gmail live lookup failed") from error
 
 
-def list_messages(provider) -> LiveSnapshot:
+def _metadata_batch(provider, message_ids):
+    responses = {}
+    seen = set()
+    failed = False
+
+    def callback(request_id, response, exception):
+        nonlocal failed
+        if request_id not in message_ids or request_id in seen:
+            failed = True
+            responses.pop(request_id, None)
+            return
+        seen.add(request_id)
+        if exception is not None:
+            failed = True
+        else:
+            responses[request_id] = response
+
+    try:
+        batch = provider._service.new_batch_http_request(callback=callback)
+        for message_id in message_ids:
+            batch.add(
+                provider._service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="minimal", fields="id,threadId,labelIds"),
+                request_id=message_id,
+            )
+        batch.execute()
+    except Exception:
+        failed = True
+    return responses, failed or len(responses) != len(message_ids)
+
+
+def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
     """Enumerate all visible mail, keeping failures distinct from an empty mailbox."""
     result = LiveSnapshot(provider.source_name, provider.account)
     token = None
     seen_tokens = set()
     seen_ids = set()
     failed = False
+    checked = 0
     try:
-        catalog = _catalog(provider) if provider._include_labels else None
+        catalog = _catalog(provider)
         while True:
             response = (
                 provider._service.users()
@@ -140,6 +176,7 @@ def list_messages(provider) -> LiveSnapshot:
             )
             if not isinstance(response, dict) or not isinstance(response.get("messages", []), list):
                 raise LiveLookupError("Gmail listing is malformed")
+            message_ids = []
             for entry in response.get("messages", []):
                 if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not entry["id"]:
                     failed = True
@@ -149,21 +186,19 @@ def list_messages(provider) -> LiveSnapshot:
                     failed = True
                     continue
                 seen_ids.add(message_id)
-                try:
-                    message = (
-                        provider._service.users()
-                        .messages()
-                        .get(
-                            userId="me",
-                            id=message_id,
-                            format="minimal",
-                            fields="id,threadId,labelIds",
-                        )
-                        .execute()
-                    )
-                    result.messages.append(_message(provider, message, message_id, catalog))
-                except Exception:
-                    failed = True
+                message_ids.append(message_id)
+            for offset in range(0, len(message_ids), METADATA_BATCH_SIZE):
+                current_ids = message_ids[offset : offset + METADATA_BATCH_SIZE]
+                messages, batch_failed = _metadata_batch(provider, current_ids)
+                failed |= batch_failed
+                for message_id in current_ids:
+                    try:
+                        result.messages.append(_message(provider, messages.get(message_id), message_id, catalog))
+                    except Exception:
+                        failed = True
+                checked += len(current_ids)
+                if on_progress is not None:
+                    on_progress(checked)
             token = response.get("nextPageToken")
             if token is None:
                 break

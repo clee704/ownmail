@@ -49,6 +49,7 @@
                 starting: 'Starting download…',
                 authenticating: snapshot.source ? 'Signing in to ' + snapshot.source + '…' : 'Signing in…',
                 checking: snapshot.source ? 'Checking ' + snapshot.source + ' for new mail…' : 'Checking for new mail…',
+                scanning: snapshot.source ? 'Scanning live mail from ' + snapshot.source + '…' : 'Scanning live mail…',
                 downloading: snapshot.source ? 'Downloading from ' + snapshot.source + '…' : 'Downloading…',
                 refreshing: snapshot.source ? 'Refreshing live mail from ' + snapshot.source + '…' : 'Refreshing live mail…',
                 finished: 'Finishing download…'
@@ -66,9 +67,13 @@
         if (message.textContent !== text) message.textContent = text;
         var totals = snapshot.has_progress ? snapshot.downloaded + ' downloaded · ' +
             snapshot.skipped + ' skipped · ' + snapshot.errors + ' failed' : '';
-        if (snapshot.has_progress && (typeof snapshot.active_complete === 'boolean' || snapshot.phase === 'refreshing')) {
+        if (snapshot.has_progress && (typeof snapshot.active_complete === 'boolean' ||
+                snapshot.phase === 'scanning' || snapshot.phase === 'refreshing')) {
             totals = snapshot.downloaded + ' archived · ' + (snapshot.active_refreshed || 0) +
                 ' Active refreshed · ' + snapshot.errors + ' failed';
+        }
+        if (snapshot.has_progress && snapshot.running && snapshot.phase === 'scanning') {
+            totals = (snapshot.scan_checked || 0) + ' checked · ' + totals;
         }
         if (counts.textContent !== totals) counts.textContent = totals;
         progress.hidden = !snapshot.has_progress;

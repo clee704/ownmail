@@ -217,15 +217,18 @@ def _check_gmail_folders(provider, message, folders):
     return message
 
 
-def list_messages(provider) -> LiveSnapshot:
+def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
     """List selectable folders without capture filters or header deduplication."""
     result = LiveSnapshot(provider.source_name, provider.account)
     failed = False
     seen = {}
+    checked = 0
     try:
         folders = _folders(provider)
         for folder, folder_state in sorted(folders.items(), key=lambda item: roles.ALL not in item[1].roles):
             try:
+                if on_progress:
+                    on_progress(checked)
                 validity = _select(provider, folder)
                 for uid in _uids(provider):
                     try:
@@ -243,10 +246,16 @@ def list_messages(provider) -> LiveSnapshot:
                         result.messages.append(message)
                     except Exception:
                         failed = True
+                    finally:
+                        checked += 1
+                        if on_progress:
+                            on_progress(checked)
             except Exception:
                 failed = True
         for index, message in enumerate(result.messages):
             try:
+                if on_progress:
+                    on_progress(checked)
                 result.messages[index] = _check_gmail_folders(provider, message, folders)
             except Exception:
                 failed = True
