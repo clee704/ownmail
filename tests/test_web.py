@@ -2682,6 +2682,21 @@ class TestCleanSnippetText:
 
         assert _clean_snippet_text("Real​‌‍﻿ text") == "Real text"
 
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Hello&#8199;&#x2007;&nbsp;world", "Hello world"),
+            ("Hello&zwnj;&#8203; world", "Hello world"),
+            ("Fish &amp; chips", "Fish & chips"),
+            ("Use &lt;tag&gt; &amp;lt;literal&amp;gt;", "Use <tag> &lt;literal&gt;"),
+            ("<p>Use &lt;tag&gt; &amp;lt;literal&amp;gt;</p>", "Use <tag> &lt;literal&gt;"),
+        ],
+    )
+    def test_decodes_entities_once_before_cleaning_padding(self, text, expected):
+        from ownmail.web import _clean_snippet_text
+
+        assert _clean_snippet_text(text) == expected
+
     def test_regex_fallback_when_lxml_fails(self):
         """If lxml raises, tags should still be stripped by regex."""
         from unittest.mock import patch
@@ -2689,9 +2704,10 @@ class TestCleanSnippetText:
         from ownmail.web import _clean_snippet_text
 
         with patch("lxml.html.fromstring", side_effect=ValueError("bad")):
-            result = _clean_snippet_text("<style>x{}</style><script>y</script><p>Hello</p>")
-        assert "Hello" in result
-        assert "<p>" not in result
+            result = _clean_snippet_text(
+                "<style>x{}</style><script>y</script><p>Hello&#8199;&zwnj;&lt;world&gt; &amp;lt;literal&amp;gt;</p>"
+            )
+        assert result == "Hello <world> &lt;literal&gt;"
 
     def test_empty_input(self):
         """Empty text should stay empty."""
@@ -2843,6 +2859,17 @@ class TestSearchRoute:
             response = client.get("/search?q=x")
         assert "테스트".encode() in response.data
         assert b"=?UTF-8?B?" not in response.data
+
+    def test_snippet_entities_render_as_text(self, archive):
+        archive.search.return_value = [self._row(snippet="Hello&#8199;world &lt;img src=x onerror=alert(1)&gt;")]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/search?q=is:active")
+        assert response.status_code == 200
+        tree = html.fromstring(response.data)
+        snippet = tree.xpath('//span[@class="ownmail-email-snippet"]')[0]
+        assert snippet.text_content() == "Hello world <img src=x onerror=alert(1)>"
+        assert len(snippet) == 0
 
     def test_missing_subject_placeholder(self, archive):
         """A result with no subject should show a placeholder."""

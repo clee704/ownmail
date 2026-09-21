@@ -493,6 +493,10 @@ def _clean_snippet_text(text: str) -> str:
             text = re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=re.DOTALL | re.IGNORECASE)
             text = re.sub(r"<[^>]+>", " ", text)
             text = re.sub(r"<[^>]*$", "", text)
+            text = html.unescape(text)
+    else:
+        # lxml decodes entities above; tag-free snippets need the same step.
+        text = html.unescape(text)
 
     # Remove zero-width and invisible characters
     # U+200B Zero Width Space
