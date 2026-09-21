@@ -197,7 +197,7 @@ def _fetch(provider, folder, validity, uid, folder_state, *, raw=False):
     )
 
 
-def _check_gmail_folders(provider, message, folders):
+def _check_gmail_folders(provider, message, folders, *, on_check=None):
     """Check role evidence that Gmail's cross-folder labels may not expose."""
     if message.state != "eligible" or not message.identity_token.startswith("gmail:"):
         return message
@@ -206,8 +206,13 @@ def _check_gmail_folders(provider, message, folders):
     for folder, folder_state in folders.items():
         if not (folder_state.unfinished or folder_state.uncertain):
             continue
-        _select(provider, folder)
-        if not _uids(provider, "X-GM-MSGID " + gmail_id):
+        try:
+            _select(provider, folder)
+            found = _uids(provider, "X-GM-MSGID " + gmail_id)
+        finally:
+            if on_check:
+                on_check()
+        if not found:
             continue
         if folder_state.unfinished:
             return replace(message, state="active", reason=None)
@@ -223,6 +228,13 @@ def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
     failed = False
     seen = {}
     checked = 0
+
+    def metadata_checked():
+        nonlocal checked
+        checked += 1
+        if on_progress:
+            on_progress(checked)
+
     try:
         folders = _folders(provider)
         for folder, folder_state in sorted(folders.items(), key=lambda item: roles.ALL not in item[1].roles):
@@ -247,16 +259,12 @@ def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
                     except Exception:
                         failed = True
                     finally:
-                        checked += 1
-                        if on_progress:
-                            on_progress(checked)
+                        metadata_checked()
             except Exception:
                 failed = True
         for index, message in enumerate(result.messages):
             try:
-                if on_progress:
-                    on_progress(checked)
-                result.messages[index] = _check_gmail_folders(provider, message, folders)
+                result.messages[index] = _check_gmail_folders(provider, message, folders, on_check=metadata_checked)
             except Exception:
                 failed = True
                 result.messages[index] = replace(message, state="unknown", reason="IMAP mailbox state lookup failed")

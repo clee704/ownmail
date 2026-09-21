@@ -134,7 +134,7 @@ class EmailProvider(ABC):
     def list_live_messages(self, *, on_progress: Callable[[int], None] | None = None) -> LiveSnapshot | None:
         """Return current observations, reporting cumulative metadata checks.
 
-        Counts include failed checks and restart at zero for each source scan.
+        Counts include failed and cross-folder checks, and restart at zero per scan.
         Return None when live enumeration is unsupported.
         """
         return None

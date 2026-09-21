@@ -1,10 +1,10 @@
 ---
 id: TASK-97
 title: Avoid silent full-mailbox scans during download
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-21 03:16'
-updated_date: '2026-09-21 03:37'
+updated_date: '2026-09-21 03:44'
 labels: []
 dependencies: []
 priority: high
@@ -39,5 +39,11 @@ Diagnosed against the installed editable source at 2035a56. Terminal history fro
 
 Implemented fresh Gmail metadata batches of 50 and one label catalog per scan. A synthetic 1000-message mailbox using the real Google API client HTTP boundary takes 23 round trips on both initial and unchanged repeat scans: one catalog, two list pages, and twenty batches. Inner requests still consume Gmail quota. The batch size follows the Gmail batching guide: https://developers.google.com/workspace/gmail/api/guides/batch. Lifecycle roles are reread every run, including Spam and Trash; no persistent cursor or schema change is needed. Terminal scan updates are limited to one per second, with immediate start/completion lines; web counts use the existing 250ms write throttle and reset per source. IMAP reports each metadata check, including duplicates and failures. Synthetic tests verify pre-capture visibility through the real subprocess/status endpoint and Chromium UI, conservative partial responses, account/source scope, and interruption retention. Deliberate mutations to batching, completeness, progress counters, validation, terminal throttling, and UI rendering failed the intended tests.
 
-Validation: 3489 tests passed, one expected failure, and 96.32% branch-inclusive coverage with required browser tests enabled. The complete pre-push gate passed after staging was fixed in place. Independent GPT review found no actionable issues; the second review is pending.
+Validation: 3489 tests passed, one expected failure, and 96.32% branch-inclusive coverage with required browser tests enabled. The complete pre-push gate passed after staging was fixed in place. Independent GPT and Claude Opus 5 reviews completed. Review identified a counter that stayed fixed during additional IMAP folder verification; those attempted lookups now advance progress, including failures and interruption. Three regression cases pass and detect a deliberate callback-removal mutation. The suggested Gmail retry policy was not adopted: persistent throttling from the documented batch size is unverified, and existing incomplete-snapshot handling remains safe. The final full pre-push gate passed after the IMAP correction, with 96.32% branch-inclusive coverage and required browser tests enabled. Follow-up review found no remaining actionable issues. All validation used synthetic mail; no real-account run was performed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Gmail live enumeration uses batches of 50 with complete fresh lifecycle observations. Terminal and web scan counters appear before capture and include IMAP cross-folder checks. Synthetic request-count, partial-response, interruption, subprocess, and browser tests pass; the full pre-push gate is green.
+<!-- SECTION:FINAL_SUMMARY:END -->
