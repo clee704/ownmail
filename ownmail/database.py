@@ -1103,6 +1103,9 @@ class ArchiveDatabase:
                 order_by = "e.email_date ASC"
             else:
                 order_by = "e.email_date DESC"  # Default for non-FTS queries
+            # Match the consolidated search's tie order before limiting either index.
+            ascending = sort == "date_asc" or (sort == "relevance" and parsed.has_fts())
+            tie_order = (", e.email_id ASC" if ascending else ", e.email_id DESC") if _with_order else ""
 
             # If there's a text search query, use FTS
             if fts_query.strip():
@@ -1162,7 +1165,7 @@ class ArchiveDatabase:
                         {join_sql}
                         WHERE f.emails_fts MATCH ?
                           AND {where_sql}
-                        ORDER BY {order_by}
+                        ORDER BY {order_by}{tie_order}
                         LIMIT ? OFFSET ?
                         """,
                         fts_params,
@@ -1220,7 +1223,7 @@ class ArchiveDatabase:
                     FROM emails e
                     {join_sql}
                     WHERE {where_sql}
-                    ORDER BY {order_by}
+                    ORDER BY {order_by}{tie_order}
                     LIMIT ? OFFSET ?
                     """
                 query_params = filter_params + params + [limit, offset]

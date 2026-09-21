@@ -74,6 +74,42 @@ def test_pagination_neither_duplicates_nor_omits_mixed_results(mixed, sort, quer
     assert len({row[0] for row in expected}) == len(expected)
 
 
+@pytest.mark.parametrize("sort", ["date_desc", "date_asc", "relevance"])
+@pytest.mark.parametrize("query", ["", "Body", "label:Original"])
+def test_active_results_come_first_before_pagination(mixed, sort, query):
+    archive, ids = mixed
+    server = MailServer()
+    for index in range(6):
+        candidate = message(f"extra{index}", state="eligible", labels=("Original",))
+        server.messages[candidate.message_id] = candidate
+    sync(archive, server)
+    # Restore the live entries after the complete snapshot removed them.
+    for name in ("live", "dual"):
+        cache_message(archive, server, message(name))
+    cache = archive.active_cache()
+    active_ids = {ids["dual"], ids["live"]}
+    with sqlite3.connect(archive.db.db_path) as conn:
+        conn.execute("UPDATE emails SET email_date = '2025-01-01T00:00:00+00:00'")
+        conn.execute("UPDATE emails SET email_date = '2023-01-01T00:00:00+00:00' WHERE email_id = ?", (ids["dual"],))
+        conn.execute("UPDATE email_labels SET email_date = (SELECT email_date FROM emails WHERE rowid = email_rowid)")
+
+    options = {"sort": sort, "limit": -1, "_with_order": True}
+    archived = archive.db.search(query, **options)
+    live = cache.db.search(query, **options)
+    by_id = {row[0]: row for row in live if row[0] != archive.active_info(ids["dual"])["cache_id"]}
+    by_id.update({row[0]: row for row in archived})
+    relevance = sort == "relevance" and query == "Body"
+    selected_order = sorted(
+        by_id.values(), key=lambda row: (row[-1], row[0]), reverse=not relevance and sort != "date_asc"
+    )
+    expected = [row[0] for row in selected_order if row[0] in active_ids]
+    expected += [row[0] for row in selected_order if row[0] not in active_ids]
+
+    assert [row[0] for row in archive.search(query, sort=sort, limit=-1)] == expected
+    pages = [archive.search(query, sort=sort, limit=1, offset=index) for index in range(len(expected) + 1)]
+    assert [row[0] for page in pages for row in page] == expected
+
+
 def test_live_only_text_match_links_to_owned_result(mixed):
     archive, ids = mixed
     entry = next(entry for entry in archive.active_cache().list_entries() if entry["provider_id"] == "dual")

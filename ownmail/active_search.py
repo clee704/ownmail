@@ -183,7 +183,7 @@ def active_infos(archive) -> dict[str, dict]:
 
 
 def search(archive, query: str, *, account=None, limit=50, offset=0, sort="relevance", tz=None, include_unknown=False):
-    """Search both indexes, merge verified matches, then apply pagination."""
+    """Search both indexes, merge matches, and paginate with Active mail first."""
     cache = archive.active_cache()
     options = {"account": account, "limit": limit, "offset": offset, "sort": sort, "tz": tz}
     if include_unknown:
@@ -196,6 +196,9 @@ def search(archive, query: str, *, account=None, limit=50, offset=0, sort="relev
     links = archive_links(archive)
     options.update(limit=-1 if limit < 0 else max(0, offset) + limit + len(links), offset=0, _with_order=True)
     archived = archive.db.search(query, _active_ids=set(links.values()), **options)
+    if links and limit >= 0:
+        # Legacy linked Active matches may fall outside the archive's first page.
+        archived += archive.db.search(f"{query} is:active", _active_ids=set(links.values()), **options)
     live = cache.db.search(query, _active_ids=None, _archived_ids=set(links), **options)
     rows = {row[0]: row for row in archived}
     with sqlite3.connect(archive.db.db_path) as conn:
@@ -223,5 +226,7 @@ def search(archive, query: str, *, account=None, limit=50, offset=0, sort="relev
         key=lambda row: (row[-1] or (0 if relevance else ""), row[0]),
         reverse=not relevance and sort != "date_asc",
     )
+    active_ids = set(links.values()) | {row[0] for row in live}
+    ordered.sort(key=lambda row: row[0] not in active_ids)
     end = None if limit < 0 else max(0, offset) + limit
     return [row[:-1] for row in ordered[max(0, offset) : end]]
