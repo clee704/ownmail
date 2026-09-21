@@ -1,7 +1,7 @@
 ---
 id: TASK-103
 title: Keep mailbox status out of archived labels across providers
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-21 06:54'
 labels: []
@@ -21,7 +21,7 @@ Apply one capture policy across Gmail API and IMAP: omit read, starred and impor
 - [x] #1 Gmail API single, batch and Active capture omit status labels while retaining organizational labels and lifecycle decisions.
 - [x] #2 IMAP capture omits status views and Gmail status labels without dropping real similarly named folders or labels.
 - [x] #3 Owned snapshots remain unchanged by later server status changes, and documentation explains the actual scope of unfinished-message discovery.
-- [ ] #4 Regression tests, review, full pre-push checks and clean committed work are complete.
+- [x] #4 Regression tests, review, full pre-push checks and clean committed work are complete.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,3 +36,5 @@ Review base c37c2d1. Filter status at provider label boundaries, retaining raw l
 - Existing owned labels and files remain unchanged. The generic legacy UNREAD reservation is not broadened: doing so would reinterpret local labels and alter historical reconciliation protections.
 - The retained-Archive example was misleading: later status changes do not update owned snapshots. Unknown-state discovery protects capture of unfinished, not-yet-owned messages. Existing return-to-Inbox behavior still represents live state separately while preserving the owned snapshot.
 - Focused provider and lifecycle tests pass (401 tests). Added cross-provider on-disk capture and repeat-snapshot checks, status-view localization/scope coverage, and extended single/batch label tests. Root review checked capture boundaries, lifecycle/scope preservation and existing reconciliation protections. Independent Claude Opus 5 review found no actionable issues. Mutation checks rejected Gmail and IMAP status persistence regressions. Full pre-push checks passed: 3,762 tests, one expected failure, 96.34% branch-inclusive coverage; browser checks were required.
+
+Implementation committed as `5b5599f`; all acceptance criteria verified.
