@@ -151,10 +151,10 @@ def _update_or_create_config(
 
 
 _FILTER_SNIPPET = """\
-    # Inbox, drafts, and unconfirmed mail use a separate Active cache.
-    # Filed and Sent mail can be archived after current checks and a safe save.
-    # active_downloads defaults to true; exclude_roles is deprecated.
-    # Trash and spam stay excluded. See config.example.yaml for provider limits.
+    # Downloads use incremental archiving and exclude_roles filters by default.
+    # Enable a separate Active cache for inbox, drafts, and unconfirmed mail:
+    # active_downloads: true
+    # Trash and spam stay excluded. See config.example.yaml for scope options.
 """
 
 
@@ -499,6 +499,7 @@ def cmd_download(
                 include_labels=source.get("include_labels", True),
                 source_name=name,
                 exclude_roles=source.get("exclude_roles"),
+                active_exclude_labels=source.get("active_exclude_labels"),
             )
 
             # Authenticate
@@ -532,7 +533,7 @@ def cmd_download(
                 since=since,
                 until=until,
                 verbose=verbose,
-                active_downloads=source.get("active_downloads", True),
+                active_downloads=source.get("active_downloads", False),
                 **progress_options,
             )
 
@@ -566,6 +567,7 @@ def cmd_download(
                 exclude_folders=exclude_folders,
                 source_name=name,
                 exclude_roles=source.get("exclude_roles"),
+                active_exclude_folders=source.get("active_exclude_folders"),
             )
 
             if progress:
@@ -589,7 +591,7 @@ def cmd_download(
                 since=since,
                 until=until,
                 verbose=verbose,
-                active_downloads=source.get("active_downloads", True),
+                active_downloads=source.get("active_downloads", False),
                 **progress_options,
             )
 

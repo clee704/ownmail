@@ -51,6 +51,10 @@ def _catalog(provider) -> dict[str, tuple[str, str]]:
         ):
             raise LiveLookupError("Gmail label catalog is malformed")
         labels[label["id"]] = (label["name"], label["type"])
+    for name in provider._active_exclude_labels:
+        matches = [label_id for label_id, (label_name, _) in labels.items() if label_name == name]
+        if len(matches) != 1:
+            raise LiveLookupError(f"Active exclusion label is unavailable or ambiguous: {name}")
     return labels
 
 
@@ -70,8 +74,9 @@ def _message(provider, response, message_id, catalog=None, *, raw=False):
         not isinstance(revision, str) or not revision.isascii() or not revision.isdecimal()
     ):
         raise LiveLookupError("Gmail message revision is malformed")
-    if catalog is None and (provider._include_labels or set(label_ids) - KNOWN_SYSTEM_LABELS):
+    if catalog is None:
         catalog = _catalog(provider)
+    active_scope = tuple(catalog[label][0] for label in label_ids if label in catalog)
     current_roles = frozenset(role for label in label_ids if (role := roles.role_for_gmail_label(label)))
     unknown = any(
         label not in KNOWN_SYSTEM_LABELS and (catalog or {}).get(label, (None, None))[1] != "user"
@@ -105,6 +110,8 @@ def _message(provider, response, message_id, catalog=None, *, raw=False):
         content,
         "An unrecognized Gmail system label needs interpretation" if state == "unknown" else None,
         content_revision=revision,
+        active_allowed=not provider._active_exclude_labels.intersection(active_scope),
+        active_scope=active_scope,
     )
 
 
@@ -126,7 +133,7 @@ def read_message(provider, message_id: str) -> LiveMessage | None:
         raise LiveLookupError("Gmail live lookup failed") from error
 
 
-def _message_batch(provider, message_ids, *, raw=False):
+def _message_batch(provider, message_ids, *, raw=False, allow_not_found=False):
     responses = {}
     seen = set()
     failed = False
@@ -139,7 +146,8 @@ def _message_batch(provider, message_ids, *, raw=False):
             return
         seen.add(request_id)
         if exception is not None:
-            failed = True
+            if not (allow_not_found and isinstance(exception, HttpError) and exception.resp.status == 404):
+                failed = True
             responses[request_id] = exception
         else:
             responses[request_id] = response
@@ -189,61 +197,98 @@ def read_messages(provider, message_ids: list[str]) -> dict[str, LiveMessage | N
     return results
 
 
-def list_messages(provider, *, on_progress=None) -> LiveSnapshot:
-    """Enumerate all visible mail, keeping failures distinct from an empty mailbox."""
+def list_messages(provider, *, incremental=False, sync_state=None, is_owned=None, on_progress=None) -> LiveSnapshot:
+    """Read scoped Active mail and new capture candidates, or an exhaustive view."""
     result = LiveSnapshot(provider.source_name, provider.account)
-    token = None
-    seen_tokens = set()
     seen_ids = set()
     failed = False
     checked = 0
+
+    def read_ids(message_ids, *, allow_not_found=False):
+        nonlocal failed, checked
+        for offset in range(0, len(message_ids), LIVE_BATCH_SIZE):
+            current_ids = message_ids[offset : offset + LIVE_BATCH_SIZE]
+            messages, batch_failed = _message_batch(provider, current_ids, allow_not_found=allow_not_found)
+            failed |= batch_failed
+            for message_id in current_ids:
+                message = messages.get(message_id)
+                if allow_not_found and isinstance(message, HttpError) and message.resp.status == 404:
+                    continue
+                try:
+                    result.messages.append(_message(provider, message, message_id, catalog))
+                except Exception:
+                    failed = True
+            checked += len(current_ids)
+            if on_progress is not None:
+                on_progress(checked)
+
     try:
         catalog = _catalog(provider)
-        while True:
-            response = (
-                provider._service.users()
-                .messages()
-                .list(
-                    userId="me",
-                    maxResults=500,
-                    pageToken=token,
-                    includeSpamTrash=True,
+        candidates = []
+        queries = [{}]
+        if incremental:
+            candidates, new_state = provider.get_new_message_ids(sync_state)
+            result = replace(result, sync_state=new_state)
+            active_labels = {"INBOX", "DRAFT"} | {
+                label_id
+                for label_id, (_, kind) in catalog.items()
+                if kind == "system" and label_id not in KNOWN_SYSTEM_LABELS
+            }
+            query = " ".join(f'-label:"{name}"' for name in sorted(provider._active_exclude_labels))
+            queries = [
+                {"labelIds": [label_id], **({"q": query} if query else {})}
+                for label_id in sorted(active_labels)
+                if catalog.get(label_id, (None, None))[0] not in provider._active_exclude_labels
+            ]
+        for filters in queries:
+            token = None
+            seen_tokens = set()
+            query_ids = set()
+            while True:
+                response = (
+                    provider._service.users()
+                    .messages()
+                    .list(userId="me", maxResults=500, pageToken=token, includeSpamTrash=True, **filters)
+                    .execute()
                 )
-                .execute()
-            )
-            if not isinstance(response, dict) or not isinstance(response.get("messages", []), list):
-                raise LiveLookupError("Gmail listing is malformed")
-            message_ids = []
-            for entry in response.get("messages", []):
-                if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not entry["id"]:
-                    failed = True
-                    continue
-                message_id = entry["id"]
-                if message_id in seen_ids:
-                    failed = True
-                    continue
-                seen_ids.add(message_id)
-                message_ids.append(message_id)
-            for offset in range(0, len(message_ids), LIVE_BATCH_SIZE):
-                current_ids = message_ids[offset : offset + LIVE_BATCH_SIZE]
-                messages, batch_failed = _message_batch(provider, current_ids)
-                failed |= batch_failed
-                for message_id in current_ids:
-                    try:
-                        result.messages.append(_message(provider, messages.get(message_id), message_id, catalog))
-                    except Exception:
+                if not isinstance(response, dict) or not isinstance(response.get("messages", []), list):
+                    raise LiveLookupError("Gmail listing is malformed")
+                message_ids = []
+                for entry in response.get("messages", []):
+                    if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not entry["id"]:
                         failed = True
-                checked += len(current_ids)
-                if on_progress is not None:
-                    on_progress(checked)
-            token = response.get("nextPageToken")
-            if token is None:
-                break
-            if not isinstance(token, str) or not token or token in seen_tokens:
-                raise LiveLookupError("Gmail listing pagination is incomplete")
-            seen_tokens.add(token)
+                        continue
+                    message_id = entry["id"]
+                    if message_id in query_ids:
+                        failed = True
+                        continue
+                    query_ids.add(message_id)
+                    if message_id not in seen_ids:
+                        seen_ids.add(message_id)
+                        message_ids.append(message_id)
+                read_ids(message_ids)
+                token = response.get("nextPageToken")
+                if token is None:
+                    break
+                if not isinstance(token, str) or not token or token in seen_tokens:
+                    raise LiveLookupError("Gmail listing pagination is incomplete")
+                seen_tokens.add(token)
+        capture_ids = []
+        for message_id in candidates:
+            if not isinstance(message_id, str) or not message_id:
+                failed = True
+                continue
+            if message_id in seen_ids:
+                continue
+            seen_ids.add(message_id)
+            identity = LiveMessage(message_id, identity_token="gmail:" + message_id)
+            if is_owned is None or not is_owned(identity):
+                capture_ids.append(message_id)
+        read_ids(capture_ids, allow_not_found=True)
         return replace(
             result, complete=not failed, reason="Some Gmail messages could not be checked" if failed else None
         )
+    except LiveLookupError as error:
+        return replace(result, reason=str(error))
     except Exception:
         return replace(result, reason="Gmail live enumeration failed")

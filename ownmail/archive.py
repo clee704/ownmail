@@ -317,16 +317,15 @@ class EmailArchive:
             until: Only backup emails before this date (YYYY-MM-DD)
             verbose: Show detailed progress output
             progress: Optional reporter for web download status
+            active_downloads: Enable live synchronization only when explicitly True
 
         Returns:
             Dictionary with success_count, error_count, interrupted
         """
-        if active_downloads is not None:
+        if active_downloads is True:
             from ownmail.live_sync import sync_live
 
-            return sync_live(
-                self, provider, active_downloads=active_downloads, since=since, until=until, progress=progress
-            )
+            return sync_live(self, provider, since=since, until=until, progress=progress)
         account = provider.account
         if progress:
             progress.set_phase("checking", provider.source_name)

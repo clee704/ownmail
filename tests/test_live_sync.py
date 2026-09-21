@@ -299,11 +299,11 @@ def test_another_message_failure_defers_cache_removal_until_complete_refresh(arc
 
 @pytest.mark.parametrize("role", [roles.INBOX, roles.DRAFTS])
 @pytest.mark.parametrize("enabled", [True, False])
-def test_download_preferences_never_make_unfinished_mail_owned(archive, role, enabled):
-    active = message(current_roles={role}, labels=(role,))
+def test_active_scope_never_makes_unfinished_mail_owned(archive, role, enabled):
+    active = message(current_roles={role}, labels=(role,), active_allowed=enabled)
     server = MailServer([active])
     server.exclude_roles = []
-    result = archive.backup(server, active_downloads=enabled)
+    result = archive.backup(server, active_downloads=True)
     assert result["success_count"] == 0
     assert owned_rows(archive) == []
     assert list(archive.archive_dir.rglob("*.eml")) == []
@@ -311,13 +311,13 @@ def test_download_preferences_never_make_unfinished_mail_owned(archive, role, en
     assert result["active_complete"] is enabled
 
 
-def test_active_disabled_still_captures_finished_mail(archive):
-    server = MailServer([message(state="eligible", labels=("Saved",))])
-    result = archive.backup(server, active_downloads=False)
+def test_active_excluded_still_captures_finished_mail(archive):
+    server = MailServer([message(state="eligible", labels=("Saved",), active_allowed=False)])
+    result = archive.backup(server, active_downloads=True)
     assert result["success_count"] == 1
     assert len(owned_rows(archive)) == 1
     assert archive.active_count() == 0
-    assert result["active_complete"] is False
+    assert result["active_complete"] is True
 
 
 def test_unknown_state_is_readable_but_never_captured(archive):

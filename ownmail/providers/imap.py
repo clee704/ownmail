@@ -123,6 +123,7 @@ class ImapProvider(EmailProvider):
         exclude_folders: list[str] | None = None,
         source_name: str = "imap",
         exclude_roles: list[str] | None = None,
+        active_exclude_folders: list[str] | None = None,
     ):
         """Initialize IMAP provider.
 
@@ -138,12 +139,15 @@ class ImapProvider(EmailProvider):
             exclude_roles: Canonical roles this source keeps out of the
                 archive, or None for the default. Trash and spam are added
                 whatever this says.
+            active_exclude_folders: Folders omitted from Active tracking while
+                new eligible messages remain capture candidates.
         """
         self._account = account
         self._keychain = keychain
         self._host = host
         self._port = port
         self._exclude_folders = exclude_folders or []
+        self._active_exclude_folders = active_exclude_folders or []
         self._exclude_roles = roles.resolve_exclude_roles(exclude_roles)
         self._source_name = source_name
         self._conn: imaplib.IMAP4_SSL | None = None
@@ -177,9 +181,17 @@ class ImapProvider(EmailProvider):
         """Read current lifecycle state and bodies in bounded folder batches."""
         return live_imap.read_messages(self, message_ids)
 
-    def list_live_messages(self, *, on_progress=None):
-        """Enumerate current state independently of capture preferences."""
-        return live_imap.list_messages(self, on_progress=on_progress)
+    incremental_live = True
+
+    def list_live_messages(self, *, on_progress=None, incremental=False, sync_state=None, is_owned=None):
+        """Enumerate Active scope together with new capture candidates."""
+        return live_imap.list_messages(
+            self, on_progress=on_progress, incremental=incremental, sync_state=sync_state, is_owned=is_owned
+        )
+
+    def live_entry_in_scope(self, entry):
+        """Check saved scope without reading mail outside configured tracking."""
+        return live_imap.entry_in_scope(self, entry)
 
     def read_live_message(self, message_id):
         """Read current roles and contents without changing server mail."""

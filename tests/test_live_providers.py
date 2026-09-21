@@ -23,6 +23,7 @@ def gmail(labels=None, *, include_labels=True):
         "person@example.com", MagicMock(), include_labels=include_labels, source_name="source", exclude_roles=[]
     )
     provider._service = MagicMock()
+    provider.get_new_message_ids = MagicMock(return_value=(["a"], None))
     message = {
         "id": "a",
         "threadId": "thread",

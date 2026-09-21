@@ -180,7 +180,7 @@ def _read_messages(provider, message_ids):
             yield message_id, value
 
 
-def sync_live(archive, provider, *, active_downloads=True, since=None, until=None, progress=None) -> dict:
+def sync_live(archive, provider, *, since=None, until=None, progress=None) -> dict:
     """Refresh one source; only confirmed observations may remove cached copies."""
     cache = archive.active_cache(create=True)
     result = {
@@ -191,13 +191,36 @@ def sync_live(archive, provider, *, active_downloads=True, since=None, until=Non
         "active_refreshed": 0,
         "active_complete": False,
     }
+    from ownmail.config import active_scope_signature
+
+    provider_type = "imap" if getattr(provider, "name", None) == "imap" else "gmail_api"
+    scope_key = "_active_exclude_folders" if provider_type == "imap" else "_active_exclude_labels"
+    exclusions = getattr(provider, scope_key, ())
+    signature = active_scope_signature(
+        provider_type, exclusions if isinstance(exclusions, (list, tuple, set, frozenset)) else ()
+    )
+    prior_status = cache.source_status(provider.source_name, provider.account)
+    capture_signature = (
+        prior_status.get("capture_scope_signature", prior_status.get("active_scope_signature"))
+        if prior_status
+        else signature
+    )
+    capture_state = (prior_status or {}).get("capture_state")
     checked_at = datetime.now(timezone.utc).isoformat()
     cache.set_source_status(
-        provider.source_name, provider.account, complete=False, error="Refresh in progress", checked_at=checked_at
+        provider.source_name,
+        provider.account,
+        complete=False,
+        error="Refresh in progress",
+        checked_at=checked_at,
+        active_scope_signature=signature,
+        capture_scope_signature=capture_signature,
+        capture_state=capture_state,
     )
     previous = {entry["identity"]: entry for entry in cache.list_entries(provider.source_name, provider.account)}
     reasons = []
     removals = set()
+    capture_pending = False
     checked = 0
     last_report = time.monotonic()
 
@@ -237,7 +260,14 @@ def sync_live(archive, provider, *, active_downloads=True, since=None, until=Non
             if not listed.download_allowed:
                 reasons.append("Some folders are excluded from downloads")
                 continue
-            if not active_downloads and listed.state in {"active", "unknown"}:
+            if not listed.active_allowed and listed.state in {"active", "unknown"}:
+                try:
+                    defer_capture(listed)
+                except Exception as error:
+                    failure(listed.message_id, error)
+                    continue
+                if progress:
+                    progress.advance(skipped=1)
                 continue
             if (
                 listed.state == "eligible"
@@ -268,12 +298,83 @@ def sync_live(archive, provider, *, active_downloads=True, since=None, until=Non
                 yield from read_pending()
         yield from read_pending()
 
+    def defer_capture(message):
+        nonlocal capture_pending
+        can_defer = getattr(provider, "can_defer_live_message", None)
+        if callable(can_defer) and can_defer(message, snapshot.sync_state) is True:
+            prior = previous.get(message.identity_token)
+            if prior:
+                cache.update_scope(prior["id"], list(message.active_scope))
+        else:
+            # Retain the cursor unless provider state already guarantees rediscovery.
+            capture_pending = True
+
+    def process_message(listed, message, lookup):
+        if isinstance(message, Exception):
+            raise message
+        if message is None:
+            if listed.identity_token in previous:
+                removals.add(previous[listed.identity_token]["id"])
+            if progress:
+                progress.advance(skipped=1)
+            return
+        if message.identity_token != listed.identity_token or message.message_id != listed.message_id:
+            raise ValueError("Server identity changed during refresh")
+        prior = previous.get(message.identity_token)
+        if message.state == "discarded":
+            if prior:
+                removals.add(prior["id"])
+            return
+        if not message.download_allowed:
+            reasons.append("Some folders are excluded from downloads")
+            return
+        if not message.active_allowed and message.state in {"active", "unknown"}:
+            defer_capture(message)
+            return
+        if message.raw is None or not isinstance(message.raw, bytes):
+            raise ValueError("Message content is unavailable")
+        if message.state == "eligible" and _within_dates(archive, message.raw, since, until):
+            captured = _capture(archive, provider, message, lookup)
+            result["success_count"] += int(captured)
+            if progress:
+                progress.advance(downloaded=int(captured), skipped=int(not captured))
+            if prior:
+                removals.add(prior["id"])
+        elif message.active_allowed and message.state in {"active", "unknown", "eligible"}:
+            cache.put(
+                source_name=provider.source_name,
+                account=provider.account,
+                provider_id=message.message_id,
+                identity=message.identity_token,
+                roles=list(message.roles),
+                labels=list(message.labels),
+                raw=message.raw,
+                state="unknown" if message.state == "eligible" else message.state,
+                checked_at=checked_at,
+                content_revision=message.content_revision,
+                active_scope=list(message.active_scope),
+            )
+            result["active_refreshed"] += 1
+            if message.state == "unknown":
+                reasons.append(message.reason or "Some message states are unconfirmed")
+            if progress:
+                progress.advance(active_refreshed=1)
+
     try:
         print("Scanning live mail before capture...", flush=True)
         if progress:
             progress.set_scan_progress(0)
             progress.set_phase("scanning", provider.source_name)
-        snapshot = provider.list_live_messages(on_progress=scan_progress)
+        lookup = OwnedLookup(archive, provider.account)
+        incremental = getattr(provider, "incremental_live", False) is True
+        options = {}
+        if incremental:
+            options = {
+                "incremental": True,
+                "sync_state": (None if since or until or capture_signature != signature else capture_state),
+                "is_owned": lambda message: _known_owned(archive, provider, message, lookup),
+            }
+        snapshot = provider.list_live_messages(on_progress=scan_progress, **options)
         if not isinstance(snapshot, LiveSnapshot) or (snapshot.source_name, snapshot.account) != (
             provider.source_name,
             provider.account,
@@ -284,75 +385,39 @@ def sync_live(archive, provider, *, active_downloads=True, since=None, until=Non
             progress.set_phase("refreshing")
         if not snapshot.complete:
             reasons.append(snapshot.reason or "Server listing was incomplete")
-        lookup = OwnedLookup(archive, provider.account)
         observed = {listed.identity_token for listed in snapshot.messages}
         for listed, message in refresh_messages(snapshot.messages, lookup):
             try:
-                if isinstance(message, Exception):
-                    raise message
-                if message is None:
-                    if listed.identity_token in previous:
-                        removals.add(previous[listed.identity_token]["id"])
-                    if progress:
-                        progress.advance(skipped=1)
-                    continue
-                if message.identity_token != listed.identity_token or message.message_id != listed.message_id:
-                    raise ValueError("Server identity changed during refresh")
-                prior = previous.get(message.identity_token)
-                if message.state == "discarded":
-                    if prior:
-                        removals.add(prior["id"])
-                    continue
-                if message.raw is None or not isinstance(message.raw, bytes):
-                    raise ValueError("Message content is unavailable")
-                if message.state == "eligible" and _within_dates(archive, message.raw, since, until):
-                    captured = _capture(archive, provider, message, lookup)
-                    result["success_count"] += int(captured)
-                    if progress:
-                        progress.advance(downloaded=int(captured), skipped=int(not captured))
-                    if prior:
-                        removals.add(prior["id"])
-                elif active_downloads and message.state in {"active", "unknown", "eligible"}:
-                    cache.put(
-                        source_name=provider.source_name,
-                        account=provider.account,
-                        provider_id=message.message_id,
-                        identity=message.identity_token,
-                        roles=list(message.roles),
-                        labels=list(message.labels),
-                        raw=message.raw,
-                        state="unknown" if message.state == "eligible" else message.state,
-                        checked_at=checked_at,
-                        content_revision=message.content_revision,
-                    )
-                    result["active_refreshed"] += 1
-                    if message.state == "unknown":
-                        reasons.append(message.reason or "Some message states are unconfirmed")
-                    if progress:
-                        progress.advance(active_refreshed=1)
+                process_message(listed, message, lookup)
             except Exception as error:
                 failure(listed.message_id, error)
         # Listing omission alone is insufficient evidence of deletion or a folder move.
         if snapshot.complete:
-            missing = {entry["provider_id"]: entry for identity, entry in previous.items() if identity not in observed}
+            in_scope = getattr(provider, "live_entry_in_scope", lambda entry: True)
+            missing = {
+                entry["provider_id"]: entry
+                for identity, entry in previous.items()
+                if identity not in observed and in_scope(entry)
+            }
             for message_id, message in _read_messages(provider, list(missing)):
                 entry = missing[message_id]
                 try:
-                    if isinstance(message, Exception):
-                        raise message
-                    if message is None or (
-                        message.identity_token == entry["identity"]
-                        and message.message_id == entry["provider_id"]
-                        and message.state == "discarded"
+                    listed = LiveMessage(message_id, identity_token=entry["identity"])
+                    process_message(listed, message, lookup)
+                    if (
+                        isinstance(message, LiveMessage)
+                        and message.active_allowed
+                        and message.state in {"active", "unknown"}
                     ):
-                        removals.add(entry["id"])
-                    else:
                         reasons.append("A cached message was absent from the server listing")
                 except Exception as error:
                     failure(entry["provider_id"], error)
         if snapshot.complete and not result["error_count"]:
             for cache_id in removals:
                 cache.remove(cache_id)
+            if incremental and snapshot.sync_state and not capture_pending and not since and not until:
+                capture_state = snapshot.sync_state
+                capture_signature = signature
     except KeyboardInterrupt:
         result["interrupted"] = True
         reasons.append("Refresh interrupted; completed saves are retained")
@@ -360,14 +425,21 @@ def sync_live(archive, provider, *, active_downloads=True, since=None, until=Non
             progress.fail("interrupted")
     except Exception as error:
         failure("source", error)
-    if not active_downloads:
-        reasons.append("Active downloads are disabled for this source")
+    if capture_pending:
+        reasons.append("Unfinished capture candidates outside Active tracking will be checked again")
     if since or until:
         reasons.append("Date-filtered capture; some messages may remain unarchived")
     result["active_complete"] = not reasons
     reason = "; ".join(dict.fromkeys(reasons)) or None
     cache.set_source_status(
-        provider.source_name, provider.account, complete=result["active_complete"], error=reason, checked_at=checked_at
+        provider.source_name,
+        provider.account,
+        complete=result["active_complete"],
+        error=reason,
+        checked_at=checked_at,
+        active_scope_signature=signature,
+        capture_scope_signature=capture_signature,
+        capture_state=capture_state,
     )
     if progress:
         progress.set_active_complete(result["active_complete"])

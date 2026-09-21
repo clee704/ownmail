@@ -69,6 +69,7 @@ def cli_download(tmp_path, monkeypatch):
         "sources:\n"
         "  - name: Synthetic\n"
         "    type: imap\n"
+        "    active_downloads: true\n"
         "    account: private@example.com\n"
         "    host: mail.example.com\n"
         "    auth: {secret_ref: 'keychain:synthetic'}\n"

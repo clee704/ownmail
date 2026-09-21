@@ -30,6 +30,8 @@ class LiveMessage:
     reason: str | None = None
     download_allowed: bool = True
     content_revision: str | None = None
+    active_allowed: bool = True
+    active_scope: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,7 @@ class LiveSnapshot:
     messages: list[LiveMessage] = field(default_factory=list)
     complete: bool = False
     reason: str | None = None
+    sync_state: str | None = None
 
 
 def message_state(current_roles: frozenset[str], *, unfinished: bool = False, uncertain: bool = False) -> str:

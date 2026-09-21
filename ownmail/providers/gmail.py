@@ -68,6 +68,7 @@ class GmailProvider(EmailProvider):
         include_labels: bool = True,
         source_name: str = "gmail",
         exclude_roles: list[str] | None = None,
+        active_exclude_labels: list[str] | None = None,
     ):
         """Initialize Gmail provider.
 
@@ -79,12 +80,24 @@ class GmailProvider(EmailProvider):
             exclude_roles: Canonical roles this source keeps out of the
                 archive, or None for the default. Trash and spam are added
                 whatever this says.
+            active_exclude_labels: Exact label names omitted from Active tracking.
         """
         self._account = account
         self._keychain = keychain
         self._include_labels = include_labels
         self._source_name = source_name
         self._exclude_roles = roles.resolve_exclude_roles(exclude_roles)
+        self._active_exclude_labels = frozenset(active_exclude_labels or ())
+        if any(
+            not isinstance(label, str)
+            or not label.strip()
+            or any(char in label for char in ('"', "\\"))
+            or any(ord(char) < 32 or ord(char) == 127 for char in label)
+            for label in self._active_exclude_labels
+        ):
+            raise ValueError(
+                "Active exclusion labels must be nonempty names without quotes, backslashes, or control characters"
+            )
         self._cleanup_credentials = None
         self._service = None
         self._label_cache = {}
@@ -106,9 +119,27 @@ class GmailProvider(EmailProvider):
         """Number of messages to download per batch."""
         return BATCH_SIZE
 
-    def list_live_messages(self, *, on_progress=None):
+    incremental_live = True
+
+    def list_live_messages(self, *, incremental=False, sync_state=None, is_owned=None, on_progress=None):
         """Enumerate current state independently of capture preferences."""
-        return live_gmail.list_messages(self, on_progress=on_progress)
+        return live_gmail.list_messages(
+            self, incremental=incremental, sync_state=sync_state, is_owned=is_owned, on_progress=on_progress
+        )
+
+    def live_entry_in_scope(self, entry):
+        """Check saved scope without treating absent label metadata as exclusion."""
+        scope = entry.get("active_scope", entry.get("labels", []))
+        if not isinstance(scope, (list, tuple)):
+            return True
+        return not any(label in self._active_exclude_labels for label in scope if isinstance(label, str))
+
+    def can_defer_live_message(self, message, sync_state):
+        """A sampled excluded-role member will be rediscovered when it leaves."""
+        return (
+            message.identity_token == "gmail:" + message.message_id
+            and message.message_id in capture.load(sync_state).excluded
+        )
 
     def read_live_message(self, message_id):
         """Read current roles and contents without changing server mail."""

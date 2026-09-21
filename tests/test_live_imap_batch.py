@@ -19,6 +19,7 @@ class BatchMailbox:
         self.validity = dict.fromkeys(folders, "10")
         self.attributes = {}
         self.flags = {}
+        self.labels = {}
         self.omitted = set()
         self.fetch_error = None
         self.transform = lambda rows: rows
@@ -41,7 +42,15 @@ class BatchMailbox:
         self.commands.append((command, self.selected, *args))
         if command == "search":
             criterion = args[1]
-            requested = set(map(int, criterion[4:].split(","))) if criterion.startswith("UID ") else None
+            if criterion.startswith("UID ") and criterion.endswith(":*"):
+                boundary = min(int(criterion[4:-2]), max(self.folders[self.selected], default=0))
+                requested = {uid for uid in self.folders[self.selected] if uid >= boundary}
+            else:
+                requested = set(map(int, criterion[4:].split(","))) if criterion.startswith("UID ") else None
+            if criterion == 'X-GM-RAW "in:inbox"':
+                requested = {uid for uid in self.folders[self.selected] if "\\Inbox" in self.labels.get(uid, [])}
+            elif criterion == "DRAFT":
+                requested = {uid for uid in self.folders[self.selected] if "\\Draft" in self.flags.get(uid, "")}
             if "X-GM-MSGID " in criterion:
                 requested = set(map(int, re.findall(r"X-GM-MSGID ([0-9]+)", criterion)))
             found = [uid for uid in self.folders[self.selected] if requested is None or uid in requested]
@@ -51,11 +60,12 @@ class BatchMailbox:
             raise self.fetch_error
         rows = []
         for seq, uid in enumerate(map(int, args[0].split(",")), 1):
-            if uid in self.omitted:
+            if uid in self.omitted or uid not in self.folders[self.selected]:
                 continue
             metadata = f"{seq} (UID {uid} FLAGS ({self.flags.get(uid, '')})".encode()
             if self.gmail:
-                metadata += f" X-GM-MSGID {uid} X-GM-THRID {uid} X-GM-LABELS (Projects)".encode()
+                labels = " ".join(self.labels.get(uid, ["Projects"]))
+                metadata += f" X-GM-MSGID {uid} X-GM-THRID {uid} X-GM-LABELS ({labels})".encode()
             if "BODY.PEEK[]" in args[1]:
                 raw = f"Subject: {uid}\r\n\r\nBody {uid}".encode()
                 rows.extend([(metadata + f" BODY[] {{{len(raw)}}}".encode(), raw), b")"])
@@ -64,12 +74,13 @@ class BatchMailbox:
         return "OK", self.transform(rows)
 
 
-def provider_for(folders, *, gmail=False):
+def provider_for(folders, *, gmail=False, **kwargs):
     provider = ImapProvider(
         "person@example.com",
         MagicMock(),
         source_name="source",
         host="imap.gmail.com" if gmail else "imap.example.com",
+        **kwargs,
     )
     provider._conn = BatchMailbox(folders, gmail=gmail)
     return provider

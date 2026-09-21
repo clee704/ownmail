@@ -120,20 +120,21 @@ The interval is stored as `web.download_interval_minutes` in `config.yaml`.
 
 ### What gets archived
 
-Ownmail caches **Inbox**, **Drafts**, other observed unfinished mail, and mail
-with unconfirmed state for reading and search alongside your archive. These
-Active copies remain server-owned and follow confirmed server changes. Trash
-and Spam stay out.
+Downloads use the original incremental archiver by default. Inbox, Drafts, Trash,
+and Spam are excluded by the default download filters.
 
-Ordinary filed and Sent mail is archived after a fresh server check finds it
-outside active or discarded states and its contents and configured labels are
-saved. Unrecognized states and failed checks keep affected messages uncaptured.
-Capture follows the state visible to the provider; hidden or unadvertised
-unfinished states may be unavailable to ownmail.
+**Active mail is opt-in.** Set `active_downloads: true` on a source in
+`config.yaml` to cache Inbox, Drafts, and observed unfinished mail for reading
+and search. Active copies remain server-owned. Filed and Sent mail is archived
+after a fresh eligibility check; unknown states remain uncaptured.
 
-Active downloads default on. Set `active_downloads: false` per source to disable
-them; prior cache contents remain stale. Existing `exclude_roles` values are
-accepted but cannot allow Inbox or Drafts into the archive. See
+Remove that setting or set it to `false` to restore the original incremental
+download path. Existing Active copies stay readable with a disabled/stale status;
+downloads do not open or update their cache. Owned mail is preserved.
+
+For opted-in sources, `active_exclude_folders: [Archive]` (IMAP) or
+`active_exclude_labels: [Saved]` (Gmail API) limits Active tracking. New eligible
+mail in those folders or labels still gets archived. See
 [download filters and provider limits](docs/archive.md#download-filters).
 
 ## Server cleanup

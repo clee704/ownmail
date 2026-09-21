@@ -4,6 +4,7 @@ import hashlib
 import sqlite3
 
 from ownmail import sidecar
+from ownmail.config import active_entry_status, active_scope_signature, get_source_by_name
 from ownmail.query import parse_query
 
 _OWNED_COLUMNS = "email_id, filename, downloaded_at, content_hash, account, trashed_at, original_filename, provider_id"
@@ -155,6 +156,14 @@ def active_infos(archive) -> dict[str, dict]:
             status = cache.source_status(entry["source_name"], entry["account"]) or {}
         except (OSError, ValueError):
             status = {"complete": False, "error": "Refresh metadata is unavailable"}
+        reason = active_entry_status(archive.config, entry) or status.get("error")
+        if reason is None:
+            source = get_source_by_name(archive.config, entry["source_name"])
+            key = "active_exclude_labels" if source["type"] == "gmail_api" else "active_exclude_folders"
+            if status.get("active_scope_signature") != active_scope_signature(source["type"], source.get(key)):
+                reason = "Active mail has not been refreshed for the current scope"
+            elif entry["checked_at"] != status.get("checked_at"):
+                reason = "This message was not checked in the latest Active refresh"
         info = {
             "active": True,
             "cache_id": entry["id"],
@@ -163,8 +172,8 @@ def active_infos(archive) -> dict[str, dict]:
             "source_name": entry["source_name"],
             "checked_at": entry["checked_at"],
             "content_at": entry["content_at"],
-            "complete": status.get("complete", False),
-            "reason": status.get("error") or ("Message state is unconfirmed" if entry["state"] == "unknown" else None),
+            "complete": status.get("complete", False) and reason is None,
+            "reason": reason or ("Message state is unconfirmed" if entry["state"] == "unknown" else None),
         }
         result[entry["id"]] = info
         if info["archive_id"]:

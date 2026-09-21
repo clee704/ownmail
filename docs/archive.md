@@ -58,8 +58,15 @@ them in the mail client.
 
 ## Download filters
 
-Downloads cache **Inbox**, **Drafts**, other observed unfinished mail, and
-messages with unconfirmed state by default.
+Active mail is disabled by default. When `active_downloads` is omitted or
+`false`, downloads use the original incremental archiver, including its existing
+`exclude_roles` and `exclude_folders` filters. The default role exclusions are
+Inbox, Drafts, Trash, and Spam. This path makes no Active requests and does not
+open, rebuild, or update the Active cache.
+
+Set `active_downloads: true` per source in `config.yaml` to enable the following
+lifecycle. It caches **Inbox**, **Drafts**, other observed unfinished mail, and
+messages with unconfirmed state.
 Active copies follow confirmed server edits. Confirmed deletion, Trash, or Spam
 retires the cached copy after a complete server listing with no failed message
 reads. Failed or partial listings defer removals and show unconfirmed freshness.
@@ -94,17 +101,41 @@ attributes only describe state the server advertises. A Gmail IMAP label spelled
 `\Scheduled` alone stays unconfirmed; ownmail recognizes the advertised folder
 attribute and checks membership through the message's immutable Gmail ID.
 
-Set `active_downloads: false` on a source to stop fetching Active contents while
-continuing eligible capture. Changing this setting retains prior cached data and
-marks the view stale; it never turns Inbox or unfinished outgoing mail into
-owned copies. Confirmed capture or removal can still retire cached copies.
+To opt out, remove `active_downloads` or set it to `false`. The next download
+uses ordinary incremental archiving. Existing cache contents remain readable
+and searchable, with their original check time and a disabled status. Opt-out
+neither promotes cached messages to owned mail nor removes cached or owned files.
+Re-enable with `true` and run a download to refresh the cache. Until then, its
+last-check timestamp still describes the earlier observation.
 
-`exclude_roles` is deprecated for the new download lifecycle. Existing values
-(`[]`, `[inbox]`, `[drafts]`, or `[inbox, drafts]`) remain accepted, but none
-allows Inbox or Drafts into the archive. Trash and Spam remain excluded;
-naming them in `exclude_roles` is still a configuration error. IMAP
-`exclude_folders` stops downloads from exact folder names while metadata checks
-continue; excluding folders leaves the overall view incomplete.
+For opted-in sources, `exclude_roles` remains accepted but cannot authorize
+capture of unfinished mail. IMAP `exclude_folders` stops downloads from exact
+folder names while lifecycle metadata checks continue. Use the separate Active
+scope options when new eligible mail should still be archived:
+
+```yaml
+sources:
+  - name: personal
+    type: imap
+    # Existing account, host and authentication settings go here.
+    active_downloads: true
+    active_exclude_folders: [Archive]
+```
+
+For a Gmail API source, use `active_exclude_labels: [Saved]` instead. Names must
+match the server exactly; these are literal names, not patterns. Gmail has no
+built-in Archive label: filed mail is already outside its narrowed Active scan.
+A custom Archive label can be excluded by its exact name. Unknown exclusions
+fail the Active scan so a typo cannot silently change its scope. Gmail label
+names containing quotes or backslashes cannot be used in this filter.
+
+Exclusions apply only to Active tracking. New eligible messages there are still
+archived. Existing excluded cache entries remain stale and readable; they are
+not fetched just to refresh the Active view. If an excluded candidate is still
+unfinished or its state is unknown, the capture cursor is retained unless the
+provider already records its later departure from an excluded role. This keeps
+completion discoverable, but can repeat candidate checks until the state is
+resolved.
 
 Gmail captures labels by default. If a required label lookup fails, the message
 remains uncaptured and a later download retries it; other messages can still
@@ -129,11 +160,30 @@ downloads run the same lifecycle. Scheduling uses the existing
 `web.download_interval_minutes` setting and defaults to Off; see
 [browser downloads](../README.md#download-from-the-browser).
 
-Every run enumerates metadata for all mail visible to the provider, including
-Trash and Spam for state checks. This can take longer than an incremental pass
-on large accounts. Verified finished copies already owned can skip content
-fetching. Date filters constrain capture while the Active refresh still examines
-all visible mail; a date-filtered run is marked incomplete.
+With Active disabled, request behavior matches the original incremental path.
+With Active enabled, ordinary capture candidates are combined with the selected
+Active population. Standard IMAP excludes retained folder history using its
+saved UID watermark; it still fetches new candidates and scans included folders.
+Gmail API selects Inbox, Drafts, and unrecognized system-label populations and
+uses incremental history for ordinary capture. A first run, expired history, or
+changed IMAP UIDVALIDITY can require a broader capture scan.
+
+Gmail over IMAP can avoid full All Mail metadata reads when All Mail is excluded
+from Active tracking and the server has no advertised scheduled or unrecognized
+folder state. Otherwise it retains a complete metadata scan to verify lifecycle
+state across overlapping folders. Exclusions still control caching in that case.
+All Mail is an aggregate folder: excluding it does not exclude Inbox or Drafts
+from their separately selected folders.
+
+Active capture cursors are stored per source and account in the disposable cache.
+Removing that cache forces a fresh capture scan. Changing the Active scope also
+rechecks capture candidates so unfinished mail cannot be stranded behind a cursor.
+Successful, unfiltered passes advance the capture cursor. Failed or interrupted
+passes keep completed saves and retry from the previous cursor. Date filters
+constrain capture while Active tracking still covers its configured scope; a
+date-filtered run is marked incomplete. Verified owned messages and unchanged
+Active contents can skip body downloads, but opted-in lifecycle checks still
+cost more than an unchanged ordinary incremental pass.
 
 Ordinary search includes Active and Archived mail. `is:active` selects cached
 live copies, including unconfirmed states; `is:archived` selects owned copies.

@@ -23,7 +23,8 @@ def test_normal_downloads_batch_initial_content_reuse_unchanged_cache_and_fetch_
     assert initial["active_refreshed"] == 101
     assert transport.requests == {
         ("GET", "/gmail/v1/users/me/labels"): 4,
-        ("GET", "/gmail/v1/users/me/messages"): 1,
+        ("GET", "/gmail/v1/users/me/messages"): 8,
+        ("GET", "/gmail/v1/users/me/profile"): 1,
         ("POST", "/batch"): 6,
     }
     assert transport.batch_formats == {"minimal": 101, "raw": 101}
@@ -35,7 +36,8 @@ def test_normal_downloads_batch_initial_content_reuse_unchanged_cache_and_fetch_
     assert repeated["active_complete"]
     assert transport.requests == {
         ("GET", "/gmail/v1/users/me/labels"): 1,
-        ("GET", "/gmail/v1/users/me/messages"): 1,
+        ("GET", "/gmail/v1/users/me/messages"): 7,
+        ("GET", "/gmail/v1/users/me/history"): 1,
         ("POST", "/batch"): 3,
     }
     assert transport.batch_formats == {"minimal": 101}
@@ -49,7 +51,8 @@ def test_normal_downloads_batch_initial_content_reuse_unchanged_cache_and_fetch_
     assert changed["active_complete"]
     assert transport.requests == {
         ("GET", "/gmail/v1/users/me/labels"): 2,
-        ("GET", "/gmail/v1/users/me/messages"): 1,
+        ("GET", "/gmail/v1/users/me/messages"): 7,
+        ("GET", "/gmail/v1/users/me/history"): 1,
         ("POST", "/batch"): 4,
     }
     assert transport.batch_formats == {"minimal": 101, "raw": 1}

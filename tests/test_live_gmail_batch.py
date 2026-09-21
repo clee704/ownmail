@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 from collections import Counter
 from email.parser import Parser
 from unittest.mock import MagicMock
@@ -44,22 +45,43 @@ class GmailTransport:
         self.omitted = set()
         self.fail_batch = None
         self.failure = RuntimeError("private transport details")
+        self.history_events = []
+        self.history_id = "100000"
+        self.history_status = 200
+        self.message_queries = []
+        self.metadata_ids = []
 
     def request(self, uri, method="GET", body=None, headers=None, **kwargs):
         url = urlsplit(uri)
         query = parse_qs(url.query)
         self.requests[method, url.path] += 1
         response_headers = {"status": "200", "content-type": "application/json"}
-        if method == "GET" and url.path == "/gmail/v1/users/me/labels":
+        if method == "GET" and url.path == "/gmail/v1/users/me/profile":
+            content = json.dumps({"historyId": self.history_id})
+        elif method == "GET" and url.path == "/gmail/v1/users/me/history":
+            assert query["historyTypes"] == ["messageAdded"]
+            response_headers["status"] = str(self.history_status)
+            content = json.dumps({"history": self.history_events, "historyId": self.history_id})
+        elif method == "GET" and url.path == "/gmail/v1/users/me/labels":
             content = json.dumps(self.catalog)
         elif method == "GET" and url.path == "/gmail/v1/users/me/messages":
-            assert query["includeSpamTrash"] == ["true"]
+            self.message_queries.append(query)
+            assert query["includeSpamTrash"] in (["true"], ["false"])
             assert query["maxResults"] == ["500"]
-            assert "q" not in query and "labelIds" not in query
+            excluded_names = re.findall(r'-label:"([^"\\]*)"', query.get("q", [""])[0])
+            assert query.get("q", [""])[0] == " ".join(f'-label:"{name}"' for name in excluded_names)
+            excluded_labels = {label["id"] for label in self.catalog["labels"] if label["name"] in excluded_names}
+            matching = [
+                message_id
+                for message_id, message in self.messages.items()
+                if set(query.get("labelIds", [])).issubset(message["labelIds"])
+                and not excluded_labels.intersection(message["labelIds"])
+                and (query["includeSpamTrash"] == ["true"] or not {"SPAM", "TRASH"}.intersection(message["labelIds"]))
+            ]
             offset = int(query.get("pageToken", ["0"])[0])
-            ids = list(self.messages)[offset : offset + 500]
+            ids = matching[offset : offset + 500]
             page = {"messages": [{"id": message_id} for message_id in ids]}
-            if offset + 500 < len(self.messages):
+            if offset + 500 < len(matching):
                 page["nextPageToken"] = str(offset + 500)
             content = json.dumps(page)
         elif method == "POST" and url.path == "/batch":
@@ -84,6 +106,8 @@ class GmailTransport:
                     "alt": ["json"],
                 }
                 self.batch_formats[message_format] += 1
+                if message_format == "minimal":
+                    self.metadata_ids.append(message_id)
                 if message_id in self.omitted:
                     continue
                 status = self.errors.get(message_id, 200)
@@ -105,8 +129,14 @@ class GmailTransport:
         return HttpMockSequence([(response_headers, content)]).request(uri)
 
 
-def provider_for(transport, *, include_labels=True):
-    provider = GmailProvider("person@example.test", MagicMock(), source_name="source", include_labels=include_labels)
+def provider_for(transport, *, include_labels=True, active_exclude_labels=None):
+    provider = GmailProvider(
+        "person@example.test",
+        MagicMock(),
+        source_name="source",
+        include_labels=include_labels,
+        active_exclude_labels=active_exclude_labels,
+    )
     provider._service = build("gmail", "v1", http=transport, static_discovery=True)
     return provider
 

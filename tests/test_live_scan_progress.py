@@ -17,7 +17,9 @@ def test_scan_progress_is_visible_and_bounded_before_first_capture(tmp_path, mon
     archive = EmailArchive(tmp_path / "archive")
     path = tmp_path / "progress.json"
     progress = DownloadProgress(path) if web else None
-    server = MailServer([message(str(index)) for index in range(999)] + [message("saved", state="eligible")])
+    server = MailServer(
+        [message(str(index), active_allowed=False) for index in range(999)] + [message("saved", state="eligible")]
+    )
     read = server.read_live_message
 
     def listing(*, on_progress):
@@ -53,7 +55,7 @@ def test_scan_progress_is_visible_and_bounded_before_first_capture(tmp_path, mon
 
     server.list_live_messages = listing
     server.read_live_message = first_read
-    result = archive.backup(server, progress=progress, active_downloads=False)
+    result = archive.backup(server, progress=progress, active_downloads=True)
     assert result["success_count"] == 1
     assert result["error_count"] == 0
     assert archive.db.get_email_count() == 1

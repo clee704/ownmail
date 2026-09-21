@@ -81,11 +81,12 @@ def test_cache_cannot_be_reassigned_to_another_archive(cache, tmp_path):
 
 
 def test_put_retains_source_metadata_and_indexes_content_and_exact_labels(cache):
-    entry = put(cache, labels=["A, B", "INBOX", "A, B"])
+    entry = put(cache, labels=["A, B", "INBOX", "A, B"], active_scope=["Archive", "Archive"])
     assert cache.get(entry["id"]) == entry
     assert cache.read(entry["id"]) == RAW
     assert cache.path(entry["id"]).read_bytes() == RAW
     assert entry["labels"] == ["A, B", "INBOX"]
+    assert entry["active_scope"] == ["Archive"]
     assert [row[0] for row in cache.db.search('label:"A, B" First')] == [entry["id"]]
     assert cache.db.get_labels_for_email(entry["id"]) == ["A, B", "INBOX"]
 
@@ -276,6 +277,8 @@ def test_directory_redirect_after_open_cannot_remove_archive(cache, tmp_path):
         {"source_name": None},
         {"identity": "another"},
         {"filename": None},
+        {"active_scope": "Archive"},
+        {"active_scope": [None]},
     ],
 )
 def test_corrupt_metadata_is_not_indexed_or_followed(cache, change, caplog):
@@ -314,7 +317,15 @@ def test_invalid_ids_cannot_escape_entries(cache, active_id):
 
 
 @pytest.mark.parametrize(
-    "change", [{"state": "owned"}, {"source_name": None}, {"labels": "INBOX"}, {"content_revision": ""}]
+    "change",
+    [
+        {"state": "owned"},
+        {"source_name": None},
+        {"labels": "INBOX"},
+        {"content_revision": ""},
+        {"active_scope": "Archive"},
+        {"active_scope": [None]},
+    ],
 )
 def test_invalid_put_is_rejected_before_writing(cache, change):
     with pytest.raises(ValueError):
@@ -328,3 +339,24 @@ def test_source_status_rejects_inconsistent_json(cache):
     path.write_text('{"complete": "true"}')
     with pytest.raises(ValueError, match="Invalid Active source status"):
         cache.source_status("mail", "reader@example.test")
+
+
+def test_scope_update_preserves_content_and_freshness(cache):
+    old = put(cache, content_revision="1", active_scope=["INBOX"])
+    path = cache.path(old["id"])
+    before = (path.read_bytes(), path.stat().st_mtime_ns)
+    cache.update_scope(old["id"], ["INBOX", "Retained", "Retained"])
+    assert cache.get(old["id"]) == {**old, "active_scope": ["INBOX", "Retained"]}
+    assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+    assert cache.db.get_labels_for_email(old["id"]) == old["labels"]
+    cache.remove(old["id"])
+    cache.update_scope(old["id"], ["Retained"])
+    assert cache.get(old["id"]) is None
+
+
+@pytest.mark.parametrize("scope", ["Retained", [None]])
+def test_scope_update_rejects_invalid_names_without_changing_entry(cache, scope):
+    old = put(cache)
+    with pytest.raises(ValueError, match="tracking scope"):
+        cache.update_scope(old["id"], scope)
+    assert cache.get(old["id"]) == old

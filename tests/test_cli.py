@@ -316,6 +316,7 @@ class TestCmdDownload:
                 {
                     "name": "test",
                     "type": "imap",
+                    "active_downloads": True,
                     "account": "test@test.com",
                     "host": "imap.test.com",
                     "auth": {"secret_ref": "keychain:test"},
@@ -1147,6 +1148,7 @@ archive_root: {temp_dir}
 sources:
   - name: test_gmail
     type: gmail_api
+    active_downloads: true
     account: test@gmail.com
     auth:
       secret_ref: keychain:test_token
@@ -1177,6 +1179,7 @@ archive_root: {temp_dir}
 sources:
   - name: test_gmail
     type: gmail_api
+    active_downloads: true
     account: test@gmail.com
     auth:
       secret_ref: keychain:test_token
@@ -1229,6 +1232,7 @@ archive_root: {temp_dir}
 sources:
   - name: test_gmail
     type: gmail_api
+    active_downloads: true
     account: test@gmail.com
     auth:
       secret_ref: keychain:test_token
@@ -1264,6 +1268,7 @@ archive_root: {temp_dir}
 sources:
   - name: test_gmail
     type: gmail_api
+    active_downloads: true
     account: test@gmail.com
     auth:
       secret_ref: keychain:test_token

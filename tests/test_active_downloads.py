@@ -31,7 +31,9 @@ def source(kind="imap", **updates):
 
 
 @pytest.mark.parametrize("kind", ["imap", "gmail_api"])
-@pytest.mark.parametrize("settings, enabled", [({}, True), ({"active_downloads": False}, False)])
+@pytest.mark.parametrize(
+    "settings, enabled", [({}, False), ({"active_downloads": False}, False), ({"active_downloads": True}, True)]
+)
 def test_cli_forwards_active_download_default_and_source_override(tmp_path, kind, settings, enabled):
     archive = MagicMock()
     archive.archive_dir = tmp_path / "archive"
@@ -41,8 +43,13 @@ def test_cli_forwards_active_download_default_and_source_override(tmp_path, kind
     provider = Mock()
     constructor = "ownmail.cli.GmailProvider" if kind == "gmail_api" else "ownmail.providers.imap.ImapProvider"
     progress = DownloadProgress(tmp_path / "progress.json")
-    with patch(constructor, return_value=provider):
-        assert cmd_download(archive, {"sources": [source(kind, **settings)]}, progress=progress)
+    key = "active_exclude_labels" if kind == "gmail_api" else "active_exclude_folders"
+    configured = source(kind, **settings, **{key: ["Retained", "Case-sensitive"]})
+    with patch(constructor, return_value=provider) as provider_constructor:
+        assert cmd_download(archive, {"sources": [configured]}, progress=progress)
+    assert provider_constructor.call_args.kwargs[key] == configured[key]
+    other = "active_exclude_folders" if kind == "gmail_api" else "active_exclude_labels"
+    assert other not in provider_constructor.call_args.kwargs
     assert archive.backup.call_args.args == (provider,)
     assert archive.backup.call_args.kwargs["active_downloads"] is enabled
     assert archive.backup.call_args.kwargs["progress"] is progress

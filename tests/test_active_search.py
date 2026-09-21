@@ -14,7 +14,14 @@ from tests.test_live_sync import MailServer, message, owned_rows, sync
 
 @pytest.fixture
 def mixed(tmp_path):
-    archive = EmailArchive(tmp_path / "archive")
+    archive = EmailArchive(
+        tmp_path / "archive",
+        {
+            "sources": [
+                {"name": "mail", "type": "gmail_api", "account": "reader@example.test", "active_downloads": True}
+            ]
+        },
+    )
     archived = message("owned", state="eligible", labels=("Local",))
     dual = message("dual", state="eligible", labels=("Original",))
     server = MailServer([archived, dual])

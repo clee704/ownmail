@@ -1,9 +1,13 @@
 """Configuration loading and validation."""
 
+import json
+import unicodedata
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
 from ownmail import roles
+from ownmail.live import LiveLookupError
 
 # Optional YAML support
 try:
@@ -161,6 +165,41 @@ def parse_secret_ref(secret_ref: str) -> dict[str, str]:
         raise ValueError(f"Unsupported secret_ref type: {ref_type}")
 
 
+def active_scope_signature(source_type: str, exclusions: Collection[str] | None) -> str:
+    """Identify the provider and exact exclusions used for a live refresh."""
+    kind = "gmail_api" if source_type == "gmail" else source_type
+    return json.dumps([kind, sorted(set(exclusions or ()))], separators=(",", ":"))
+
+
+def active_entry_status(config: dict[str, Any], entry: dict) -> str | None:
+    """Return why cached mail is outside current Active configuration, if any."""
+    source = get_source_by_name(config, entry["source_name"])
+    if source is None or source.get("account") != entry["account"]:
+        return "This Active source is no longer configured"
+    if source.get("active_downloads") is not True:
+        return "Active downloads are disabled for this source"
+    kind = source.get("type")
+    if kind not in ("gmail_api", "imap") or _validate_active_scope(source["name"], source):
+        return "Active scope configuration is invalid"
+    key = "active_exclude_labels" if kind == "gmail_api" else "active_exclude_folders"
+    excluded = set(source.get(key, []))
+    if not excluded:
+        return None
+    scope = set(entry.get("active_scope", entry["labels"]))
+    if kind == "imap" and not entry.get("active_scope"):
+        from ownmail.providers.live_imap import _locator
+
+        scope.update(entry["labels"])
+        try:
+            folder, _, _ = _locator(entry["provider_id"])
+        except (ValueError, TypeError, LiveLookupError):
+            return "Active mail scope could not be verified"
+        scope.add(folder)
+    if scope & excluded:
+        return "This message is excluded from Active downloads"
+    return None
+
+
 def validate_config(config: dict[str, Any]) -> list[str]:
     """Validate configuration and return list of errors.
 
@@ -215,12 +254,31 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.extend(_validate_exclude_roles(name, source))
         if "active_downloads" in source and type(source["active_downloads"]) is not bool:
             errors.append(f"Source '{name}': active_downloads must be true or false")
+        errors.extend(_validate_active_scope(name, source))
 
         # IMAP requires host
         if source_type == "imap":
             if "host" not in source:
                 errors.append(f"Source '{name}': IMAP requires 'host' field")
 
+    return errors
+
+
+def _validate_active_scope(name: str, source: dict[str, Any]) -> list[str]:
+    errors = []
+    for key, kind in (("active_exclude_folders", "imap"), ("active_exclude_labels", "gmail_api")):
+        if key not in source:
+            continue
+        if source.get("type") != kind:
+            errors.append(f"Source '{name}': {key} is only supported for {kind}")
+        values = source[key]
+        if not isinstance(values, list) or any(not isinstance(value, str) or not value.strip() for value in values):
+            errors.append(f"Source '{name}': {key} must be a list of nonempty names")
+            continue
+        if any(any(unicodedata.category(character) == "Cc" for character in value) for value in values):
+            errors.append(f"Source '{name}': {key} cannot contain control characters")
+        if kind == "gmail_api" and any('"' in value or "\\" in value for value in values):
+            errors.append(f"Source '{name}': {key} cannot contain quotes or backslashes")
     return errors
 
 

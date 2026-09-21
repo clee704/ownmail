@@ -163,6 +163,11 @@ class ActiveCache:
         for key in ("labels", "roles"):
             if not isinstance(entry.get(key), list) or any(not isinstance(value, str) for value in entry[key]):
                 raise ValueError("Invalid Active message labels or roles")
+        if "active_scope" in entry and (
+            not isinstance(entry["active_scope"], list)
+            or any(not isinstance(value, str) for value in entry["active_scope"])
+        ):
+            raise ValueError("Invalid Active tracking scope")
         if "filename" not in entry or "content_hash" not in entry:
             raise ValueError("Incomplete Active message metadata")
         self._payload_path(entry)
@@ -221,6 +226,7 @@ class ActiveCache:
         checked_at: str | None = None,
         state: str = "active",
         content_revision: str | None = None,
+        active_scope: list[str] | None = None,
     ) -> dict:
         """Commit payload and metadata before updating the disposable search index."""
         if state not in ("active", "unknown"):
@@ -233,6 +239,10 @@ class ActiveCache:
             isinstance(values, list) and all(isinstance(value, str) for value in values) for values in (roles, labels)
         ):
             raise ValueError("Active message labels and roles must be string lists")
+        if active_scope is not None and (
+            not isinstance(active_scope, list) or any(not isinstance(value, str) for value in active_scope)
+        ):
+            raise ValueError("Active tracking scope must be a string list")
         active_id = "active-" + _digest(source_name, account, identity)
         old = self.get(active_id)
         content_hash = hashlib.sha256(raw).hexdigest()
@@ -252,6 +262,8 @@ class ActiveCache:
             "filename": f"messages/{active_id}-{content_hash}.eml",
             "content_revision": content_revision,
         }
+        if active_scope is not None:
+            entry["active_scope"] = list(dict.fromkeys(active_scope))
         payload = self._payload_path(entry)
         # Versioned payloads keep the previous metadata readable across a failed save.
         # A matching metadata hash alone cannot establish that the payload is intact.
@@ -272,6 +284,15 @@ class ActiveCache:
         path.unlink(missing_ok=True)
         self._sync_directory(path.parent)
 
+    def update_scope(self, active_id: str, active_scope: list[str]) -> None:
+        """Record a confirmed exclusion without refreshing cached content or its age."""
+        if not isinstance(active_scope, list) or any(not isinstance(value, str) for value in active_scope):
+            raise ValueError("Active tracking scope must be a string list")
+        entry = self.get(active_id)
+        if entry is not None:
+            entry["active_scope"] = list(dict.fromkeys(active_scope))
+            self._atomic_write(self._entry_path(active_id), json.dumps(entry, ensure_ascii=True).encode())
+
     def remove(self, active_id: str) -> bool:
         """Remove only this cache's metadata, index entry, and validated payload."""
         entry = self.get(active_id)
@@ -285,7 +306,16 @@ class ActiveCache:
         return True
 
     def set_source_status(
-        self, source_name: str, account: str, *, complete: bool, error: str | None = None, checked_at: str | None = None
+        self,
+        source_name: str,
+        account: str,
+        *,
+        complete: bool,
+        error: str | None = None,
+        checked_at: str | None = None,
+        active_scope_signature: str | None = None,
+        capture_scope_signature: str | None = None,
+        capture_state: str | None = None,
     ) -> None:
         """Persist the latest attempt, retaining the last complete refresh time."""
         previous = self.source_status(source_name, account)
@@ -298,6 +328,10 @@ class ActiveCache:
             "checked_at": now,
             "completed_at": now if complete else (previous or {}).get("completed_at"),
         }
+        if active_scope_signature is not None:
+            data["active_scope_signature"] = active_scope_signature
+            data["capture_scope_signature"] = capture_scope_signature
+            data["capture_state"] = capture_state
         self._atomic_write(
             self.cache_dir / "sources" / f"{_digest(source_name, account)}.json", json.dumps(data).encode()
         )

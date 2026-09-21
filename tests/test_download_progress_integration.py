@@ -29,9 +29,9 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
     config.write_text(
         "sources:\n"
         "  - {name: First, type: imap, account: first@example.com, host: mail.example.com, "
-        "auth: {secret_ref: 'keychain:synthetic'}}\n"
+        "active_downloads: true, auth: {secret_ref: 'keychain:synthetic'}}\n"
         "  - {name: Second, type: imap, account: second@example.com, host: mail.example.com, "
-        "auth: {secret_ref: 'keychain:synthetic'}}\n"
+        "active_downloads: true, auth: {secret_ref: 'keychain:synthetic'}}\n"
     )
     release = tmp_path / "continue-download"
     release_scan = tmp_path / "continue-scan"
@@ -95,6 +95,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
         ImapProvider.read_live_message = message
         ImapProvider.read_live_messages = EmailProvider.read_live_messages
         ImapProvider.live_batch_size = 2
+        ImapProvider.incremental_live = False
         ImapProvider.close = lambda self: None
         main()
         """)
