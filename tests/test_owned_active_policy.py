@@ -97,16 +97,19 @@ def test_other_source_or_account_remains_active_despite_matching_owned_content(a
     assert (entry["source_name"], entry["account"]) == (second.source_name, second.account)
 
 
-def test_omitted_cached_identity_can_be_retired_after_fresh_owned_content_match(archive):
+@pytest.mark.parametrize("listing", ["omitted", "partial"])
+def test_cached_identity_retires_after_fresh_owned_content_match(archive, listing):
     original = message("filed", state="eligible")
     server = MailServer([original])
     sync(archive, server)
     returned = message("returned", raw=original.raw)
     cache_message(archive, server, replace(returned, raw=original.raw + b"Different earlier live version"))
     server.messages = {returned.message_id: returned}
-    server.listed = []
+    server.listed = [] if listing == "omitted" else [returned]
+    server.complete = listing != "partial"
     result = sync(archive, server)
-    assert result["active_complete"] and result["active_refreshed"] == 0
+    assert result["active_complete"] is (listing == "omitted")
+    assert result["active_refreshed"] == 0
     assert archive.active_cache().list_entries() == []
 
 

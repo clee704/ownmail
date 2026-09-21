@@ -354,11 +354,14 @@ def test_unknown_state_is_readable_but_never_captured(archive):
 
 def test_partial_snapshot_allows_independently_verified_capture(archive):
     server = MailServer([message(state="eligible")])
+    cache_message(archive, server, replace(server.messages["1"], state="active"))
     server.complete = False
     result = sync(archive, server)
     assert result["success_count"] == 1
     assert len(owned_rows(archive)) == 1
     assert result["active_complete"] is False
+    assert archive.active_cache().list_entries() == []
+    assert archive.search("is:active") == []
 
 
 @pytest.mark.parametrize("fresh", [message(state="unknown"), LiveLookupError("Candidate state unavailable")])
@@ -423,17 +426,30 @@ def test_identity_change_during_read_cannot_overwrite_previous_cache(archive):
     assert archive.active_count() == 1
 
 
-def test_interrupt_retains_completed_capture_and_retryable_remaining_mail(archive, tmp_path):
+@pytest.mark.parametrize("failure", [KeyboardInterrupt, LiveLookupError])
+def test_failed_refresh_retains_capture_and_only_remaining_mail_is_active(archive, tmp_path, monkeypatch, failure):
     first, second = message("1"), message("2")
     server = MailServer([first, second])
     sync(archive, server)
     finished_first = replace(first, state="eligible", roles=frozenset({roles.ARCHIVE}))
     finished_second = replace(second, state="eligible", roles=frozenset({roles.ARCHIVE}))
     server.listed = [finished_first, finished_second]
-    server.messages = {"1": finished_first, "2": KeyboardInterrupt()}
+    server.messages = {"1": finished_first, "2": failure()}
+    read = server.read_live_message
+
+    def check_handoff(message_id):
+        if message_id == "2":
+            assert [entry["provider_id"] for entry in archive.active_cache().list_entries()] == ["2"]
+            assert len(archive.search("is:active")) == 1
+            assert archive.active_info(owned_rows(archive)[0][0]) is None
+        return read(message_id)
+
+    monkeypatch.setattr(server, "read_live_message", check_handoff)
     progress = DownloadProgress(tmp_path / "progress.json")
     result = sync(archive, server, progress=progress)
-    assert result["interrupted"] is True
+    assert result["interrupted"] is (failure is KeyboardInterrupt)
+    assert result["error_count"] == (0 if failure is KeyboardInterrupt else 1)
+    assert [entry["provider_id"] for entry in archive.active_cache().list_entries()] == ["2"]
     assert result["active_complete"] is False
     assert result["success_count"] == 1
     assert len(owned_rows(archive)) == 1
@@ -441,7 +457,9 @@ def test_interrupt_retains_completed_capture_and_retryable_remaining_mail(archiv
     state = json.loads(progress.path.read_text())
     assert state["downloaded"] == 1
     assert state["active_complete"] is False
-    assert "interrupted" in state["failure_reason"].lower()
+    if failure is KeyboardInterrupt:
+        assert "interrupted" in state["failure_reason"].lower()
+    monkeypatch.setattr(server, "read_live_message", read)
     server.messages["2"] = finished_second
     retried = sync(archive, server)
     assert retried["success_count"] == 1

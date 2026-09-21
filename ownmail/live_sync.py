@@ -338,14 +338,17 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
         if message.state == "eligible" and _within_dates(archive, message.raw, since, until):
             captured = _capture(archive, provider, message, lookup)
             result["success_count"] += int(captured)
+            # Ownership ends Active tracking even if the rest of the refresh fails.
+            if prior:
+                cache.remove(prior["id"])
+                del previous[message.identity_token]
             if progress:
                 progress.advance(downloaded=int(captured), skipped=int(not captured))
-            if prior:
-                removals.add(prior["id"])
         elif message.active_allowed and message.state in {"active", "unknown", "eligible"}:
             if owned_match(archive, _entry(provider, message), lookup=lookup):
                 if prior:
-                    removals.add(prior["id"])
+                    cache.remove(prior["id"])
+                    del previous[message.identity_token]
                 if progress:
                     progress.advance(skipped=1)
                 return
@@ -415,7 +418,7 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
                     process_message(listed, message, lookup)
                     if (
                         isinstance(message, LiveMessage)
-                        and entry["id"] not in removals
+                        and entry["identity"] in previous
                         and message.active_allowed
                         and message.state in {"active", "unknown"}
                     ):
