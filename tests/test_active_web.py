@@ -8,11 +8,12 @@ from lxml import html
 
 from ownmail.archive import EmailArchive
 from ownmail.web import create_app
-from tests import test_ui_shell
+from tests import test_email_contrast, test_ui_shell
 from tests.conftest import mock_archive_db
 from tests.test_live_sync import MailServer, cache_message, message, owned_rows, sync
 
 shell_browser = test_ui_shell.shell_browser
+contrast_browser = test_email_contrast.contrast_browser
 
 
 class ActiveWebArchive:
@@ -79,19 +80,21 @@ def active_app(tmp_path, sample_eml_multipart):
     return app, archive
 
 
-def test_search_shows_active_freshness_and_preserves_archived_rows(active_app):
+def test_search_omits_active_freshness_and_preserves_archived_rows(active_app):
     app, _ = active_app
     tree = html.fromstring(app.test_client().get("/search").data)
     active, archived = tree.xpath('//ul[@id="ownmail-email-list"]/li')
     assert "ownmail-email-row-active" in active.get("class")
-    assert "Active · Checked Sep 14, 2026 12:00 UTC" in active.text_content()
+    assert "Checked" not in active.text_content()
+    assert not active.xpath('.//*[@id="active-1"]')
     assert not active.xpath('.//span[contains(@class, "ownmail-label")]')
     assert active.xpath(".//input[@disabled]")
     assert archived.get("class") == "ownmail-email-row"
     assert not archived.xpath(".//input[@disabled]")
     assert "Checked" not in archived.text_content()
     link = active.xpath('.//a[@class="ownmail-email-row-link"]')[0]
-    assert link.get("aria-describedby").split() == ["attachment-1", "active-1"]
+    assert link.get("aria-describedby").split() == ["attachment-1"]
+    assert archived.xpath('.//a[@class="ownmail-email-row-link"]')[0].get("aria-describedby") is None
 
 
 def test_active_sidebar_count_and_filter_selection(active_app):
@@ -110,13 +113,12 @@ def test_incomplete_refresh_retains_copy_with_unknown_freshness(active_app, chec
     app, archive = active_app
     archive.info.update(active=False, complete=False, checked_at=checked, content_at=None)
     listing = html.fromstring(app.test_client().get("/search").data)
-    freshness = listing.get_element_by_id("active-1").text_content()
-    assert "Server state unconfirmed" in freshness
-    assert "Refresh incomplete" in freshness
-    assert "unknown" in freshness
+    assert not listing.xpath('//*[@id="active-1"]')
     reader = html.fromstring(app.test_client().get("/email/active-message").data)
-    notice = reader.xpath('//section[@aria-label="Active message status"]')[0].text_content()
-    assert "Refresh incomplete; server state is unconfirmed." in notice
+    panel = reader.get_element_by_id("ownmail-active-status")
+    assert "hidden" in panel.attrib
+    notice = panel.text_content()
+    assert "Server freshness is unknown." in notice
     assert "Contents cached unknown." in notice
     assert "This email has an attachment." in reader.text_content()
 
@@ -128,6 +130,8 @@ def test_cached_reader_has_content_and_no_local_controls(active_app):
     tree = html.fromstring(response.data)
     assert "This email has an attachment." in tree.text_content()
     notice = tree.xpath('//section[@aria-label="Active message status"]')[0].text_content()
+    assert tree.xpath('//section[@id="ownmail-active-status"][@hidden]')
+    assert tree.xpath('//details//button[@id="ownmail-active-status-toggle"]')
     assert "Manage this message in your mail client." in notice
     assert "Contents cached Sep 14, 2026 11:59 UTC." in notice
     assert not tree.xpath('//*[@id="ownmail-edit-labels" or @id="ownmail-label-editor"]')
@@ -218,4 +222,40 @@ assert.equal(byId('ownmail-selected-count').textContent, '1');
 assert(selectAll.checked);
 """,
         path="/search",
+    )
+
+
+def test_active_details_open_only_from_menu_and_close_with_focus_return(active_app, contrast_browser):
+    app, archive = active_app
+    archive.info.update(complete=True, refresh_error="Another message could not be checked")
+    test_email_contrast.run_contrast_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        """
+const panel = page.locator('#ownmail-active-status');
+const toggle = page.locator('#ownmail-active-status-toggle');
+const summary = page.locator('.ownmail-email-menu > summary');
+assert(!await panel.isVisible());
+assert(!(await panel.textContent()).includes('unconfirmed'));
+assert((await panel.textContent()).includes('Account refresh: Another message could not be checked'));
+await summary.click();
+assert(!await panel.isVisible());
+await toggle.click();
+assert(await panel.isVisible());
+assert(!await page.locator('.ownmail-email-menu').evaluate(e => e.open));
+assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+assert(await panel.evaluate(e => document.activeElement === e));
+await page.locator('#ownmail-active-status-close').click();
+assert(!await panel.isVisible());
+assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+assert(await summary.evaluate(e => document.activeElement === e));
+await summary.click();
+await toggle.click();
+await page.keyboard.press('Escape');
+assert(!await panel.isVisible());
+assert(await summary.evaluate(e => document.activeElement === e));
+""",
+        rendered_page=app.test_client().get("/email/active-message").data.decode(),
     )

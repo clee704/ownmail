@@ -172,3 +172,52 @@ def test_invalid_scope_configuration_is_stale_without_provider_access(cached):
     info = archive.active_info(entry["id"])
     assert info["complete"] is False
     assert info["reason"] == "Active scope configuration is invalid"
+
+
+@pytest.mark.parametrize("unknown", [False, True])
+@pytest.mark.parametrize("source_complete", [False, True])
+def test_current_message_state_is_independent_of_unrelated_refresh_errors(cached, unknown, source_complete):
+    archive, source, entry = cached
+    cache = archive.active_cache()
+    cache.put(
+        source_name="mail",
+        account=source["account"],
+        provider_id="one",
+        identity="gmail:one",
+        labels=entry["labels"],
+        roles=entry["roles"],
+        raw=RAW,
+        checked_at=CHECKED,
+        state="unknown" if unknown else "active",
+    )
+    error = None if source_complete else "Some messages could not be checked"
+    cache.set_source_status(
+        "mail",
+        source["account"],
+        complete=source_complete,
+        checked_at=CHECKED,
+        error=error,
+        active_scope_signature=active_scope_signature("gmail_api", []),
+    )
+    info = archive.active_info(entry["id"])
+    assert info["complete"] is (not unknown)
+    assert info["reason"] == ("Message state is unrecognized" if unknown else None)
+    assert info["refresh_error"] == error
+
+
+def test_interrupted_refresh_retains_last_check_time_and_explains_staleness(cached):
+    archive, source, entry = cached
+    cache = archive.active_cache()
+    cache.set_source_status(
+        "mail",
+        source["account"],
+        complete=False,
+        checked_at=LATER,
+        error="Refresh interrupted; completed saves are retained",
+        active_scope_signature=active_scope_signature("gmail_api", []),
+    )
+    info = archive.active_info(entry["id"])
+    assert info["complete"] is False
+    assert info["checked_at"] == CHECKED
+    assert info["reason"] == "This message was not checked in the latest Active refresh"
+    assert info["refresh_error"] == "Refresh interrupted; completed saves are retained"

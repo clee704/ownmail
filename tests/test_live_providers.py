@@ -288,6 +288,10 @@ def imap(folder="INBOX", flags=b"", *, gmail_labels=None, **kwargs):
         ("INBOX", b"\\Deleted", "discarded"),
         ("Sent", b"", "eligible"),
         ("Archive", b"", "eligible"),
+        ("Archive", b"\\Seen $NotJunk NotJunk NonJunk JunkRecorded", "eligible"),
+        ("Archive", b"\\Draft $NotJunk NotJunk", "active"),
+        ("Archive", b"$SubmitPending JunkRecorded", "active"),
+        ("Trash", b"$NotJunk NotJunk", "discarded"),
         ("Outbox", b"", "eligible"),
         ("Projects", b"", "eligible"),
         ("Projects", b"$Forwarded $Submitted $MDNSent $Important", "eligible"),
@@ -629,3 +633,16 @@ def test_gmail_imap_label_text_cannot_spoof_current_flags_or_identity():
     assert result.complete
     assert result.messages[0].state == "active"
     assert result.messages[0].identity_token == "gmail:ff"
+
+
+def test_imap_empty_mailbox_accepts_omitted_search_data_without_masking_nonempty_failure():
+    provider = imap()
+    provider._conn.selection = ("OK", [b"0"])
+    provider._conn.search = ("OK", [None])
+    snapshot = provider.list_live_messages()
+    assert snapshot.complete and snapshot.messages == []
+    assert provider.read_live_message(_message_id("INBOX", "10", 1)) is None
+    provider._conn.selection = ("OK", [b"1"])
+    assert not provider.list_live_messages().complete
+    with pytest.raises(LiveLookupError, match="search is incomplete"):
+        provider.read_live_message(_message_id("INBOX", "10", 1))

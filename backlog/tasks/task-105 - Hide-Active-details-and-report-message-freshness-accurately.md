@@ -18,9 +18,9 @@ Remove Active/check-time text from message list rows. Hide reader Active details
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Message list rows contain no Active freshness line and retain valid attachment accessibility references.
-- [ ] #2 Reader Active details appear only after selecting a kebab-menu item, with accessible close behavior.
-- [ ] #3 Freshness distinguishes current confirmed messages, unknown lifecycle state, stale observations and account-level refresh problems; live warning causes are investigated and addressed where in scope.
+- [x] #1 Message list rows contain no Active freshness line and retain valid attachment accessibility references.
+- [x] #2 Reader Active details appear only after selecting a kebab-menu item, with accessible close behavior.
+- [x] #3 Freshness distinguishes current confirmed messages, unknown lifecycle state, stale observations and account-level refresh problems; live warning causes are investigated and addressed where in scope.
 - [ ] #4 Relevant UI and state tests, required checks, review and clean committed delivery are complete.
 <!-- AC:END -->
 
@@ -29,3 +29,14 @@ Remove Active/check-time text from message list rows. Hide reader Active details
 <!-- SECTION:PLAN:BEGIN -->
 Review base f471ad7. Use existing menu/panel patterns. Diagnose live status with aggregate metadata and read-only provider observations. Work in an isolated checkout before applying to the running server.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+- Removed the list freshness line and its obsolete layout/accessibility references. Reader status opens through Message status in the kebab menu; Close and Escape restore focus.
+- Per-message freshness uses its own observation and scope. Account refresh errors remain available separately. Unknown lifecycle state stays unconfirmed.
+- Confirmed on a real archive: ordinary non-junk IMAP keywords were mistaken for unknown lifecycle state, and empty mailboxes returning no SEARCH payload made enumeration incomplete. Recognize established non-junk markers and accept missing search data only after successful selection reported zero messages. Nonempty mailbox failures remain errors.
+- One Gmail source also returned temporary HTTP 429 errors; a subsequent read-only enumeration succeeded. No account settings or retry policy changed.
+- Focused tests and a real Chromium interaction check pass. Mutation checks reject broken message freshness, keyword classification and empty-folder handling.
+- Full gate initially found one integration assertion that still required the removed list text; updated it to the requested behavior. Final pre-push gate passed: 3,785 tests, one expected failure, 96.34% coverage.
+- A patched read-only IMAP enumeration completed successfully against a real server.
+- Primary-agent code review completed. An additional Anthropic review is unavailable because its session quota is exhausted; no independent review is claimed.

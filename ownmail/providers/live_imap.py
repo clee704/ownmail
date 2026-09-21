@@ -26,7 +26,18 @@ _GMAIL_ROLES = {
 }
 _GMAIL_NONSTATE = roles.GMAIL_IMAP_STATUS_LABELS
 _STANDARD_FLAGS = {"\\seen", "\\answered", "\\flagged", "\\deleted", "\\draft", "\\recent"}
-_KNOWN_KEYWORDS = {"$forwarded", "$submitted", "$submitpending", "$mdnsent", "$important"}
+_KNOWN_KEYWORDS = {
+    "$forwarded",
+    "$submitted",
+    "$submitpending",
+    "$mdnsent",
+    "$important",
+    # Spam-filter bookkeeping does not indicate unfinished mail (RFC 5232).
+    "$notjunk",
+    "notjunk",
+    "nonjunk",
+    "junkrecorded",
+}
 _NONSTATE_ATTRIBUTES = {
     "\\flagged",
     "\\haschildren",
@@ -94,7 +105,8 @@ def _folders(provider):
 
 def _select(provider, folder):
     quoted = '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    status, _ = provider._conn.select(quoted, readonly=True)
+    status, count = provider._conn.select(quoted, readonly=True)
+    provider._live_selected_empty = status == "OK" and count == [b"0"]
     if status != "OK":
         raise LiveLookupError("IMAP folder selection failed")
     status, data = provider._conn.response("UIDVALIDITY")
@@ -107,6 +119,9 @@ def _select(provider, folder):
 
 def _uids(provider, criterion="ALL"):
     status, data = provider._conn.uid("search", None, criterion)
+    # Some servers omit SEARCH data in mailboxes confirmed empty by SELECT.
+    if status == "OK" and data == [None] and getattr(provider, "_live_selected_empty", False):
+        return []
     if status != "OK" or not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], bytes):
         raise LiveLookupError("IMAP search is incomplete")
     if not re.fullmatch(rb"(?:[1-9][0-9]*(?: [1-9][0-9]*)*)?", data[0]):

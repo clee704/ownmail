@@ -98,7 +98,8 @@ def test_active_metadata_uses_persisted_freshness_not_owned_labels(mixed):
     cache.set_source_status(entry["source_name"], entry["account"], complete=False, error="Synthetic failed refresh")
     info = archive.active_info(ids["dual"])
     assert not info["complete"]
-    assert info["reason"] == "Synthetic failed refresh"
+    assert info["reason"] == "Active mail has not been refreshed for the current scope"
+    assert info["refresh_error"] == "Synthetic failed refresh"
     assert info["archive_id"] == ids["dual"]
     assert info["checked_at"]
     assert archive.active_info(ids["owned"]) is None

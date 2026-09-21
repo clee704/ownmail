@@ -1,7 +1,4 @@
 .ownmail-email-row-active { box-shadow: inset 2px 0 var(--ownmail-accent-ink); }
-.ownmail-email-row-active .ownmail-email-row-content { display: block; }
-.ownmail-active-preview { display: flex; align-items: baseline; min-width: 0; overflow: hidden; }
-.ownmail-active-freshness { display: block; color: var(--ownmail-secondary); font-size: var(--ownmail-text-xs); line-height: 18px; }
 .ownmail-email-row-active .ownmail-email-checkbox input:disabled { visibility: hidden; }
 .ownmail-active-notice { margin: 0 0 var(--ownmail-space-5); padding: var(--ownmail-space-2) var(--ownmail-space-3); border-left: 2px solid var(--ownmail-accent-ink); color: var(--ownmail-secondary); font-size: var(--ownmail-text-sm); }
 .ownmail-active-notice p { margin: var(--ownmail-space-1) 0; }

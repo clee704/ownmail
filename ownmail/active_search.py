@@ -151,8 +151,10 @@ def active_infos(archive) -> dict[str, dict]:
         try:
             status = cache.source_status(entry["source_name"], entry["account"]) or {}
         except (OSError, ValueError):
-            status = {"complete": False, "error": "Refresh metadata is unavailable"}
-        reason = active_entry_status(archive.config, entry) or status.get("error")
+            status = {}
+        reason = active_entry_status(archive.config, entry)
+        if reason is None and not status:
+            reason = "Refresh metadata is unavailable"
         if reason is None:
             source = get_source_by_name(archive.config, entry["source_name"])
             key = "active_exclude_labels" if source["type"] == "gmail_api" else "active_exclude_folders"
@@ -160,6 +162,8 @@ def active_infos(archive) -> dict[str, dict]:
                 reason = "Active mail has not been refreshed for the current scope"
             elif entry["checked_at"] != status.get("checked_at"):
                 reason = "This message was not checked in the latest Active refresh"
+            elif entry["state"] == "unknown":
+                reason = "Message state is unrecognized"
         info = {
             "active": True,
             "cache_id": entry["id"],
@@ -168,8 +172,9 @@ def active_infos(archive) -> dict[str, dict]:
             "source_name": entry["source_name"],
             "checked_at": entry["checked_at"],
             "content_at": entry["content_at"],
-            "complete": status.get("complete", False) and reason is None,
-            "reason": reason or ("Message state is unconfirmed" if entry["state"] == "unknown" else None),
+            "complete": reason is None,
+            "reason": reason,
+            "refresh_error": status.get("error"),
         }
         result[entry["id"]] = info
         if info["archive_id"]:

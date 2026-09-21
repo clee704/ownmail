@@ -588,7 +588,7 @@ def test_real_cached_mail_is_readable_in_web_and_rejects_local_label_edits(archi
     rows = listing.xpath('//ul[@id="ownmail-email-list"]/li')
     assert len(rows) == 1
     assert "ownmail-email-row-active" in rows[0].get("class")
-    assert "Checked" in rows[0].text_content()
+    assert "Checked" not in rows[0].text_content()
     reader = client.get(f"/email/{entry['id']}")
     assert reader.status_code == 200
     assert b"Body 1" in reader.data

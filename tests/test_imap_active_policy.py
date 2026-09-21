@@ -50,7 +50,7 @@ def test_unresolved_identity_is_rechecked_without_holding_other_arrivals(tmp_pat
     assert second["success_count"] == 1 and second["error_count"] == 0
     assert metadata_fetches(provider, "Archive")[0][2] == "1,21"
     assert json.loads(capture.load(capture_state(archive, provider)).cursor)["Archive"]["max_uid"] == 21
-    provider._conn.flags.clear()
+    provider._conn.flags[1] = "$NotJunk NotJunk JunkRecorded"
     provider._conn.commands.clear()
     third = archive.backup(provider, active_downloads=True)
     assert third["success_count"] == 1

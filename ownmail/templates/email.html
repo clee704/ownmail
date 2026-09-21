@@ -14,6 +14,7 @@
                 <a href="/raw/{{ email_id }}" title="Show original message">{{ icon('file') }}<span>Original</span></a>
                 <a href="/download/{{ email_id }}" title="Download message">{{ icon('download') }}<span>Download</span></a>
                 {% if not cached_view %}<button type="button" id="ownmail-edit-labels" data-message-action aria-expanded="false" aria-controls="ownmail-label-editor">{{ icon('label') }}<span>Edit labels</span></button>{% endif %}
+                {% if active %}<button type="button" id="ownmail-active-status-toggle" aria-expanded="false" aria-controls="ownmail-active-status">{{ icon('refresh') }}<span>Message status</span></button>{% endif %}
                 {% if body_html %}
                 <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-content" hidden>Show actual size</button>
                 {% endif %}
@@ -69,14 +70,16 @@
         </header>
 
         {% if active %}
-        <section class="ownmail-active-notice" aria-label="Active message status">
+        <section class="ownmail-active-notice" id="ownmail-active-status" aria-label="Active message status" tabindex="-1" hidden>
             {% if cached_view %}
             <p><strong>{% if active.active %}Active{% else %}Server state unconfirmed{% endif %}.</strong> You are reading a cached server copy. Manage this message in your mail client. Confirmed server changes replace or remove this copy.</p>
             {% if active.archive_id %}<p><a href="{{ url_for('view_email', email_id=active.archive_id, return_to=back_url) }}">Read your archived copy</a>. Its saved contents and labels stay unchanged.</p>{% endif %}
             {% else %}
             <p><strong>{% if active.active %}Also Active on the server{% else %}Server state unconfirmed{% endif %}.</strong> You are reading your archived copy. Its saved contents and labels stay unchanged. <a href="{{ url_for('view_email', email_id=active.cache_id, return_to=back_url) }}">Read the cached server copy</a>.</p>
             {% endif %}
-            <p>{% if not active.complete %}<strong>Refresh incomplete; server state is unconfirmed.</strong> {% endif %}{% if active.checked_at %}Server state last checked {{ active.checked_at_display }}.{% else %}Server freshness is unknown.{% endif %} Contents cached {{ active.content_at_display }}.</p>
+            <p>{% if not active.complete %}<strong>{{ active.reason or 'Server freshness is unknown' }}.</strong> {% endif %}{% if active.checked_at %}Server state last checked {{ active.checked_at_display }}.{% endif %} Contents cached {{ active.content_at_display }}.</p>
+            {% if active.refresh_error %}<p>Account refresh: {{ active.refresh_error }}.</p>{% endif %}
+            <button type="button" class="ownmail-button" id="ownmail-active-status-close">Close</button>
         </section>
         {% endif %}
 
@@ -306,6 +309,33 @@ document.getElementById('ownmail-message-details-toggle').addEventListener('clic
     this.title = expanded ? 'Hide message details' : 'Show message details';
     document.getElementById('ownmail-message-metadata').hidden = !expanded;
 });
+
+{% if active %}
+(function() {
+    var toggle = document.getElementById('ownmail-active-status-toggle');
+    var panel = document.getElementById('ownmail-active-status');
+    var menu = toggle.closest('details');
+    toggle.addEventListener('click', function() {
+        panel.hidden = false;
+        toggle.setAttribute('aria-expanded', 'true');
+        menu.open = false;
+        panel.focus();
+    });
+    function closeStatus() {
+        panel.hidden = true;
+        toggle.setAttribute('aria-expanded', 'false');
+        menu.querySelector('summary').focus();
+    }
+    document.getElementById('ownmail-active-status-close').addEventListener('click', closeStatus);
+    panel.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeStatus();
+        }
+    });
+})();
+{% endif %}
 
 var originalEmailStyles = new WeakMap();
 function applyEmailTheme(siteIsDark) {
