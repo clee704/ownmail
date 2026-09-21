@@ -132,8 +132,10 @@ Remove that setting or set it to `false` to restore the original incremental
 download path. Existing Active copies stay readable with a disabled/stale status;
 downloads do not open or update their cache. Owned mail is preserved.
 
-For opted-in sources, `active_exclude_folders: [Archive]` (IMAP) or
-`active_exclude_labels: [Saved]` (Gmail API) limits Active tracking. New eligible
+Opted-in sources use targeted Active checks and incremental capture by default;
+ordinary retained Archive mail needs no manual exclusion. Optional
+`active_exclude_folders: [Archive]` (IMAP) or `active_exclude_labels: [Saved]`
+(Gmail API) also suppresses Active tracking for matching messages. New eligible
 mail in those folders or labels still gets archived. See
 [download filters and provider limits](docs/archive.md#download-filters).
 

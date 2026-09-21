@@ -285,11 +285,15 @@ def _metadata_messages(provider, folder, validity, folder_state, uids, *, on_che
             yield fetched[uid]
 
 
+def _live_fingerprint(provider):
+    return capture.fingerprint(provider._filter_fingerprint(), "active-selection-v2")
+
+
 def _capture_cursor(provider, sync_state):
     try:
         prior = capture.load(sync_state)
         cursor = json.loads(prior.cursor) if prior.cursor else {}
-        if prior.stale(provider._filter_fingerprint()) or not isinstance(cursor, dict):
+        if prior.stale(_live_fingerprint(provider)) or not isinstance(cursor, dict):
             return {}, frozenset()
         for folder, value in cursor.items():
             if (
@@ -306,56 +310,103 @@ def _capture_cursor(provider, sync_state):
                 )
             ):
                 return {}, frozenset()
-        if any(not isinstance(value, str) for value in prior.excluded):
-            return {}, frozenset()
+        for value in prior.excluded:
+            if not isinstance(value, str):
+                return {}, frozenset()
+            if provider._is_gmail():
+                if not re.fullmatch(r"gmail:[0-9a-f]+", value):
+                    return {}, frozenset()
+            else:
+                _locator(value)
         return cursor, prior.excluded
-    except (TypeError, ValueError, AttributeError):
+    except (TypeError, ValueError, AttributeError, LiveLookupError):
         return {}, frozenset()
 
 
-def _incremental_folder(
-    provider,
-    folder,
-    folder_state,
-    prior,
-    next_cursor,
-    *,
-    all_mail=None,
-    prior_excluded=(),
-    excluded=None,
-    on_checked=None,
-):
+def _active_uids(provider, folder, folder_state):
+    """Search current unfinished state; None requires a complete metadata scan."""
+    if provider._is_gmail() and (folder_state.unfinished or folder_state.uncertain):
+        return None
+    if folder in provider._active_exclude_folders or folder_state.roles & {roles.TRASH, roles.SPAM}:
+        return []
+    if folder_state.unfinished or folder_state.uncertain or folder_state.roles & {roles.INBOX, roles.DRAFTS}:
+        return None
+    try:
+        status, data = provider._conn.response("FLAGS")
+        if status != "FLAGS" or not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], bytes):
+            return None
+        text = data[0].decode("ascii")
+        if not re.fullmatch(r"\((?:[^\s(){}%*\"\x00-\x1f\x7f]+(?: [^\s(){}%*\"\x00-\x1f\x7f]+)*)?\)", text):
+            return None
+        flags = set(text[1:-1].lower().split())
+        unknown = flags - _STANDARD_FLAGS - _KNOWN_KEYWORDS
+        if any("\\" in flag or "]" in flag for flag in unknown):
+            return None
+    except (AttributeError, TypeError, ValueError, UnicodeError):
+        return None
+    try:
+        selected = set(_uids(provider, "DRAFT"))
+        for keyword in sorted(unknown | {"$submitpending"}):
+            selected.update(_uids(provider, "KEYWORD " + keyword))
+        if provider._is_gmail():
+            selected.update(_uids(provider, 'X-GM-RAW "in:inbox"'))
+        return sorted(selected)
+    except Exception:
+        return None
+
+
+def _pending_uids(provider, folder, validity, pending, *, all_mail, selected):
+    from ownmail.providers.imap import FETCH_BATCH_SIZE
+
+    criteria = []
+    if provider._is_gmail():
+        if all_mail is not None and folder != all_mail:
+            return {}, {}
+        tokens = sorted(token for token in pending if re.fullmatch(r"gmail:[0-9a-f]+", token))
+        for start in range(0, len(tokens), FETCH_BATCH_SIZE):
+            batch = tokens[start : start + FETCH_BATCH_SIZE]
+            terms = ["X-GM-MSGID " + str(int(token[6:], 16)) for token in batch]
+            criteria.append(("OR " * (len(terms) - 1) + " ".join(terms), set(batch)))
+    else:
+        uids = []
+        for token in pending:
+            saved_folder, saved_validity, uid = _locator(token)
+            if (saved_folder, saved_validity) == (folder, validity) and uid not in selected:
+                uids.append(uid)
+        for start in range(0, len(uids), FETCH_BATCH_SIZE):
+            batch = uids[start : start + FETCH_BATCH_SIZE]
+            criteria.append(("UID " + ",".join(map(str, batch)), set(batch)))
+    found, expected = set(), {}
+    for criterion, identities in criteria:
+        values = set(_uids(provider, criterion))
+        if values & found or (not provider._is_gmail() and not values.issubset(identities)):
+            raise LiveLookupError("IMAP pending lookup returned another identity")
+        if provider._is_gmail():
+            expected.update(dict.fromkeys(values, identities))
+        found.update(values)
+    return found, expected
+
+
+def _incremental_folder(provider, folder, folder_state, prior, next_cursor, *, all_mail, pending, on_checked=None):
     validity = _select(provider, folder)
     saved = prior.get(folder, {})
-    same_epoch = saved.get("uidvalidity") == validity
-    watermark = saved.get("max_uid", 0) if same_epoch else 0
-    if folder == all_mail:
-        from ownmail.providers.imap import _ALL_MAIL_ROLE_SEARCH
-
-        for criterion in _ALL_MAIL_ROLE_SEARCH.values():
-            excluded.update(f"{folder}:{uid}" for uid in _uids(provider, criterion))
-    criterion = f"UID {watermark + 1}:*" if watermark and folder in provider._active_exclude_folders else "ALL"
+    watermark = saved.get("max_uid", 0) if saved.get("uidvalidity") == validity else 0
+    active = _active_uids(provider, folder, folder_state)
+    criterion = "ALL" if not watermark or active is None else f"UID {watermark + 1}:*"
     found = _uids(provider, criterion)
-    uids = [uid for uid in found if uid > watermark] if criterion != "ALL" else found
-    next_cursor[folder] = {"max_uid": max([watermark, *uids]), "uidvalidity": validity}
-    if folder == all_mail and same_epoch:
-        prefix = folder + ":"
-        departed = set(prior_excluded) - excluded
-        recovered = []
-        for value in departed:
-            if value.startswith(prefix) and re.fullmatch(r"[1-9][0-9]*", value[len(prefix) :]):
-                recovered.append(int(value[len(prefix) :]))
-        # A filed message retains its All Mail UID; a trashed one may be absent.
-        from ownmail.providers.imap import FETCH_BATCH_SIZE
-
-        for start in range(0, len(recovered), FETCH_BATCH_SIZE):
-            batch = recovered[start : start + FETCH_BATCH_SIZE]
-            present = _uids(provider, "UID " + ",".join(map(str, batch)))
-            if not set(present).issubset(batch):
-                raise LiveLookupError("IMAP capture lookup returned another identity")
-            uids.extend(present)
-        uids = sorted(set(uids))
-    yield from _metadata_messages(provider, folder, validity, folder_state, uids, on_checked=on_checked)
+    arrivals = found if criterion == "ALL" else [uid for uid in found if uid > watermark]
+    next_cursor[folder] = {"max_uid": max([watermark, *arrivals]), "uidvalidity": validity}
+    candidates = set(arrivals) | set(active or ())
+    recovered, expected = _pending_uids(provider, folder, validity, pending, all_mail=all_mail, selected=candidates)
+    candidates.update(recovered)
+    for message in _metadata_messages(
+        provider, folder, validity, folder_state, sorted(candidates), on_checked=on_checked
+    ):
+        if not isinstance(message, Exception):
+            uid = _locator(message.message_id)[2]
+            if uid in expected and message.identity_token not in expected[uid]:
+                message = LiveLookupError("Gmail pending lookup returned another identity")
+        yield message
 
 
 def _membership_state(message, memberships, *, failed=False):
@@ -387,15 +438,8 @@ def list_messages(provider, *, on_progress=None, incremental=False, sync_state=N
     try:
         folders = _folders(provider)
         all_mail = next((name for name, state in folders.items() if roles.ALL in state.roles), None)
-        scoped_incremental = incremental and (
-            not provider._is_gmail()
-            or (
-                all_mail in provider._active_exclude_folders
-                and not any(state.unfinished or state.uncertain for state in folders.values())
-            )
-        )
-        prior, prior_excluded = _capture_cursor(provider, sync_state)
-        next_cursor, excluded = {}, set()
+        prior, pending = _capture_cursor(provider, sync_state)
+        next_cursor = {}
         for folder, folder_state in sorted(folders.items(), key=lambda item: roles.ALL not in item[1].roles):
             exceptional = folder_state.unfinished or folder_state.uncertain
             try:
@@ -409,11 +453,10 @@ def list_messages(provider, *, on_progress=None, incremental=False, sync_state=N
                         prior,
                         next_cursor,
                         all_mail=all_mail if provider._is_gmail() else None,
-                        prior_excluded=prior_excluded,
-                        excluded=excluded,
+                        pending=pending,
                         on_checked=metadata_checked,
                     )
-                    if scoped_incremental
+                    if incremental
                     else _folder_messages(provider, folder, folder_state, on_checked=metadata_checked)
                 )
                 for message in messages:
@@ -449,11 +492,13 @@ def list_messages(provider, *, on_progress=None, incremental=False, sync_state=N
             capture.dump(
                 capture.CaptureState(
                     cursor=json.dumps(next_cursor),
-                    excluded=frozenset(excluded),
-                    fingerprint=provider._filter_fingerprint(),
+                    excluded=frozenset(
+                        message.identity_token for message in result.messages if message.state in {"active", "unknown"}
+                    ),
+                    fingerprint=_live_fingerprint(provider),
                 )
             )
-            if scoped_incremental and not failed
+            if incremental and not failed
             else None
         )
         return replace(

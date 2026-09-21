@@ -161,19 +161,29 @@ downloads run the same lifecycle. Scheduling uses the existing
 [browser downloads](../README.md#download-from-the-browser).
 
 With Active disabled, request behavior matches the original incremental path.
-With Active enabled, ordinary capture candidates are combined with the selected
-Active population. Standard IMAP excludes retained folder history using its
-saved UID watermark; it still fetches new candidates and scans included folders.
-Gmail API selects Inbox, Drafts, and unrecognized system-label populations and
-uses incremental history for ordinary capture. A first run, expired history, or
-changed IMAP UIDVALIDITY can require a broader capture scan.
+With Active enabled, all providers use the same policy: track Inbox, drafts,
+observed unfinished mail and uncertain states; archive newly eligible mail
+incrementally. Ordinary retained filed mail does not need a repeated metadata
+fetch or an explicit Archive exclusion.
 
-Gmail over IMAP can avoid full All Mail metadata reads when All Mail is excluded
-from Active tracking and the server has no advertised scheduled or unrecognized
-folder state. Otherwise it retains a complete metadata scan to verify lifecycle
-state across overlapping folders. Exclusions still control caching in that case.
-All Mail is an aggregate folder: excluding it does not exclude Inbox or Drafts
-from their separately selected folders.
+Gmail API uses label queries and history. IMAP combines new UIDs with server-side
+draft and keyword searches, plus the unresolved identities from the previous
+pass. Inbox, Drafts, advertised scheduled folders and folders with uncertain
+attributes still get complete state checks. If the server's flag catalog is
+missing, cannot be interpreted safely, or targeted searches fail, that folder
+falls back to a full metadata scan. State the server does not advertise cannot be discovered through
+these searches. See [IMAP searches and flags](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.4).
+
+Gmail over IMAP uses immutable Gmail identities to find formerly unfinished
+messages in All Mail after they leave a scheduled or draft folder. Special-folder
+membership checks still apply before capture. All Mail is an aggregate folder:
+excluding it does not exclude Inbox or Drafts from their separately selected
+folders.
+
+IMAP replaces its unresolved identity set each pass. An unfinished message in an
+excluded folder can remain retryable while unrelated arrivals advance the cursor.
+A first run, a checkpoint from the older full-scan implementation, expired Gmail
+history, or changed IMAP UIDVALIDITY can require a broader capture scan.
 
 Active capture cursors are stored per source and account in the disposable cache.
 Removing that cache forces a fresh capture scan. Changing the Active scope also

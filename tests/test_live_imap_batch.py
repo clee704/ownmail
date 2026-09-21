@@ -35,6 +35,11 @@ class BatchMailbox:
         return "OK", [str(len(self.folders[self.selected])).encode()]
 
     def response(self, name):
+        if name == "FLAGS":
+            flags = {r"\Seen", r"\Draft", r"\Answered", r"\Deleted", r"\Flagged"}
+            for uid in self.folders[self.selected]:
+                flags.update(self.flags.get(uid, "").split())
+            return name, [("(" + " ".join(sorted(flags)) + ")").encode()]
         assert name == "UIDVALIDITY"
         return name, [self.validity[self.selected].encode()]
 
@@ -51,6 +56,12 @@ class BatchMailbox:
                 requested = {uid for uid in self.folders[self.selected] if "\\Inbox" in self.labels.get(uid, [])}
             elif criterion == "DRAFT":
                 requested = {uid for uid in self.folders[self.selected] if "\\Draft" in self.flags.get(uid, "")}
+            elif criterion.startswith("KEYWORD "):
+                flag = criterion[8:].lower()
+                assert '"' not in flag
+                requested = {
+                    uid for uid in self.folders[self.selected] if flag in self.flags.get(uid, "").lower().split()
+                }
             if "X-GM-MSGID " in criterion:
                 requested = set(map(int, re.findall(r"X-GM-MSGID ([0-9]+)", criterion)))
             found = [uid for uid in self.folders[self.selected] if requested is None or uid in requested]

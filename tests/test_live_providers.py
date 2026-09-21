@@ -243,6 +243,8 @@ class Mailbox:
         return self.selection
 
     def response(self, name):
+        if name == "FLAGS":
+            return name, [b"(" + self.flags + b")"]
         assert name == "UIDVALIDITY"
         return self.validity
 

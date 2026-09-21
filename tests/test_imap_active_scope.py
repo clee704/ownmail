@@ -6,7 +6,7 @@ import pytest
 
 from ownmail import capture
 from ownmail.archive import EmailArchive
-from ownmail.providers.live_imap import _message_id
+from ownmail.providers.live_imap import _live_fingerprint, _message_id
 from tests.test_live_imap_batch import provider_for
 
 
@@ -17,7 +17,7 @@ def state_for(provider, watermarks, *, validity="10", excluded=()):
                 {folder: {"max_uid": uid, "uidvalidity": validity} for folder, uid in watermarks.items()}
             ),
             excluded=frozenset(excluded),
-            fingerprint=provider._filter_fingerprint(),
+            fingerprint=_live_fingerprint(provider),
         )
     )
 
@@ -158,7 +158,9 @@ def test_excluded_archive_capture_retries_pending_state_without_populating_activ
     provider._conn.flags[2] = "$SubmitPending"
     pending = archive.backup(provider, active_downloads=True)
     assert pending["success_count"] == pending["active_refreshed"] == 0
-    assert capture_state(archive, provider) == saved
+    retained = capture.load(capture_state(archive, provider))
+    assert json.loads(retained.cursor)["Archive"]["max_uid"] == 2
+    assert retained.excluded == frozenset({_message_id("Archive", "10", 2)})
     assert archive.active_cache().list_entries() == []
     provider._conn.flags.clear()
     complete = archive.backup(provider, active_downloads=True)
@@ -175,21 +177,21 @@ def test_excluded_all_mail_uses_arrivals_and_role_departures_not_full_metadata()
     )
     provider._conn.attributes["All Mail"] = "\\All"
     provider._conn.labels[50] = ["\\Inbox"]
-    saved = state_for(provider, {"All Mail": 1000, "INBOX": 50}, excluded=["All Mail:50", "All Mail:60"])
+    saved = state_for(provider, {"All Mail": 1000, "INBOX": 50}, excluded=["gmail:32", "gmail:3c"])
     snapshot = provider.list_live_messages(incremental=True, sync_state=saved)
     assert snapshot.complete and snapshot.sync_state
-    assert metadata_fetches(provider, "All Mail")[0][2] == "60"
+    assert metadata_fetches(provider, "All Mail")[0][2] == "50,60"
     assert len(metadata_fetches(provider, "All Mail")) == 1
     by_identity = {message.identity_token: message for message in snapshot.messages}
     assert by_identity["gmail:3c"].state == "eligible" and not by_identity["gmail:3c"].active_allowed
     assert by_identity["gmail:32"].active_allowed and by_identity["gmail:32"].state == "active"
-    assert capture.load(snapshot.sync_state).excluded == frozenset({"All Mail:50"})
+    assert capture.load(snapshot.sync_state).excluded == frozenset({"gmail:32"})
 
 
 def test_gmail_departure_absence_is_confirmed_before_metadata_fetch():
     provider = provider_for({"All Mail": [1]}, gmail=True, active_exclude_folders=["All Mail"])
     provider._conn.attributes["All Mail"] = "\\All"
-    saved = state_for(provider, {"All Mail": 2}, excluded=["All Mail:2"])
+    saved = state_for(provider, {"All Mail": 2}, excluded=["gmail:2"])
     snapshot = provider.list_live_messages(incremental=True, sync_state=saved)
     assert snapshot.complete and snapshot.messages == []
     assert capture.load(snapshot.sync_state).excluded == frozenset()
@@ -199,21 +201,22 @@ def test_gmail_departure_absence_is_confirmed_before_metadata_fetch():
 def test_gmail_changed_uidvalidity_does_not_recover_departures_from_old_epoch():
     provider = provider_for({"All Mail": [1]}, gmail=True, active_exclude_folders=["All Mail"])
     provider._conn.attributes["All Mail"] = "\\All"
-    saved = state_for(provider, {"All Mail": 1000}, validity="9", excluded=["All Mail:999"])
+    saved = state_for(provider, {"All Mail": 1000}, validity="9", excluded=["gmail:3e7"])
     snapshot = provider.list_live_messages(incremental=True, sync_state=saved)
     assert snapshot.complete
     assert [message.message_id for message in snapshot.messages] == [_message_id("All Mail", "10", 1)]
     assert metadata_fetches(provider, "All Mail")[0][2] == "1"
 
 
-def test_gmail_exceptional_folders_keep_full_state_checks_as_safe_fallback():
+def test_gmail_exceptional_folders_are_checked_without_rescanning_retained_all_mail():
     provider = provider_for({"All Mail": [1, 2], "Later": [1]}, gmail=True, active_exclude_folders=["All Mail"])
     provider._conn.attributes = {"All Mail": "\\All", "Later": "\\Scheduled"}
     snapshot = provider.list_live_messages(
         incremental=True, sync_state=state_for(provider, {"All Mail": 2, "Later": 1})
     )
-    assert snapshot.complete and snapshot.sync_state is None
-    assert metadata_fetches(provider, "All Mail")[0][2] == "1,2"
+    assert snapshot.complete and snapshot.sync_state
+    assert metadata_fetches(provider, "All Mail") == []
+    assert capture.load(snapshot.sync_state).excluded == frozenset({"gmail:1"})
     assert any(message.state == "active" and message.active_allowed for message in snapshot.messages)
 
 
@@ -294,8 +297,8 @@ def test_narrowing_active_scope_keeps_unfinished_cached_message_retryable(tmp_pa
     provider._conn.commands.clear()
     pending = archive.backup(provider, active_downloads=True)
     assert pending["success_count"] == pending["active_refreshed"] == 0
-    assert not pending["active_complete"]
-    assert capture_state(archive, provider) == saved
+    assert pending["active_complete"]
+    assert capture.load(capture_state(archive, provider)).excluded == frozenset({_message_id("Archive", "10", 1)})
     assert len(archive.active_cache().list_entries()) == 1
     assert ("search", "Archive", None, "ALL") in provider._conn.commands
 
@@ -306,7 +309,7 @@ def test_narrowing_active_scope_keeps_unfinished_cached_message_retryable(tmp_pa
     assert completed["active_complete"]
     assert archive.active_cache().list_entries() == []
     assert archive.db.get_email_count() == 1
-    assert ("search", "Archive", None, "ALL") in provider._conn.commands
+    assert ("search", "Archive", None, "UID 1") in provider._conn.commands
     provider._conn.commands.clear()
     repeated = archive.backup(provider, active_downloads=True)
     assert repeated["success_count"] == 0 and repeated["active_complete"]

@@ -189,6 +189,10 @@ class ImapProvider(EmailProvider):
             self, on_progress=on_progress, incremental=incremental, sync_state=sync_state, is_owned=is_owned
         )
 
+    def can_defer_live_message(self, message, sync_state):
+        """The next pass explicitly checks unresolved identities from this snapshot."""
+        return message.identity_token in capture.load(sync_state).excluded
+
     def live_entry_in_scope(self, entry):
         """Check saved scope without reading mail outside configured tracking."""
         return live_imap.entry_in_scope(self, entry)
