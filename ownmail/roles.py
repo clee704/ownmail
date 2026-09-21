@@ -68,19 +68,15 @@ DEFAULT_EXCLUDE_ROLES = FIXED_EXCLUDE_ROLES | CONFIGURABLE_EXCLUDE_ROLES
 # grow, which is why it is never diffed. See TASK-14.3.
 TRANSIENT_EXCLUDE_ROLES = frozenset({INBOX, DRAFTS, TRASH, SPAM})
 
-# Gmail label IDs for mail-client state ownmail deliberately does not archive.
-#
-# Read/unread is a property of a mailbox session, not of the message. Sync
-# never re-fetches a message it already has, so a captured value is frozen at
-# download time and only decays: mail is picked up around arrival, when it is
-# usually unread, and nothing later corrects it. Standard IMAP puts the same
-# fact in the \Seen flag, which ownmail does not read either — dropping it on
-# the Gmail side is what makes the two providers agree.
-#
-# Matched exactly, never case-folded: these are Gmail system label IDs, which
-# are always upper-case and cannot collide with a user label. A differently
-# cased IMAP folder (`Unread`) is a real folder and is kept.
+# UNREAD remains reserved by local label editing, search and legacy cleanup.
 EPHEMERAL_LABELS = frozenset({"UNREAD"})
+
+# Filter status at provider boundaries, where system IDs are distinguishable
+# from real folders and labels with similar names. Existing owned snapshots
+# and locally assigned labels are not rewritten.
+GMAIL_STATUS_LABELS = EPHEMERAL_LABELS | {"STARRED", "IMPORTANT"}
+GMAIL_IMAP_STATUS_LABELS = frozenset({"\\Starred", "\\Important"})
+IMAP_STATUS_ATTRIBUTES = frozenset({"\\flagged", "\\important"})
 
 # Labels that recorded where a message was at capture, and that nothing since
 # has refreshed.

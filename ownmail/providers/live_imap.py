@@ -24,7 +24,7 @@ _GMAIL_ROLES = {
     "\\Spam": roles.SPAM,
     "\\All": roles.ALL,
 }
-_GMAIL_NONSTATE = {"\\Important", "\\Starred"}
+_GMAIL_NONSTATE = roles.GMAIL_IMAP_STATUS_LABELS
 _STANDARD_FLAGS = {"\\seen", "\\answered", "\\flagged", "\\deleted", "\\draft", "\\recent"}
 _KNOWN_KEYWORDS = {"$forwarded", "$submitted", "$submitpending", "$mdnsent", "$important"}
 _NONSTATE_ATTRIBUTES = {
@@ -57,6 +57,7 @@ def _folders(provider):
     if status != "OK" or not isinstance(data, list):
         raise LiveLookupError("IMAP folder listing failed")
     found = {}
+    status_folders = set()
     for row in data:
         if not isinstance(row, bytes):
             raise LiveLookupError("IMAP folder listing is incomplete")
@@ -70,6 +71,8 @@ def _folders(provider):
         attributes = set(flags.lower().split())
         if "\\noselect" in attributes:
             continue
+        if attributes & roles.IMAP_STATUS_ATTRIBUTES:
+            status_folders.add(name)
         current_roles = {roles.role_for_imap_folder("", flag, "") for flag in flags.split()} - {None}
         if not current_roles:
             role = roles.role_for_imap_folder(name, flags, "" if delimiter == "NIL" else _unquote(delimiter))
@@ -84,6 +87,7 @@ def _folders(provider):
         found[name] = _FolderState(frozenset(current_roles), "\\scheduled" in attributes, bool(unknown))
     if set(provider._active_exclude_folders) - found.keys():
         raise LiveLookupError("An Active exclusion names an unavailable IMAP folder")
+    provider._status_folders = status_folders
     provider._live_folders = found
     return found
 
@@ -193,7 +197,7 @@ def _parse_message(provider, folder, validity, folder_state, entry, *, raw=False
     state = message_state(current_roles, unfinished=unfinished, uncertain=uncertain)
     return LiveMessage(
         message_id,
-        tuple(labels),
+        tuple(provider._archive_labels(labels)),
         current_roles,
         state,
         token,

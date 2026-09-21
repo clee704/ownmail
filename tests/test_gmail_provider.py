@@ -295,7 +295,8 @@ class TestGmailProviderDownloadMessage:
             raw_data, labels = provider.download_message("msg123")
 
             # Labels should be returned separately, not injected into raw data
-            assert "INBOX" in labels or "IMPORTANT" in labels
+            assert raw_data == raw_email
+            assert labels == ["INBOX"]
 
 
 class TestGmailProviderLabelHandling:
@@ -574,7 +575,7 @@ class TestDownloadMessagesBatch:
                         request_id,
                         {
                             "raw": encoded,
-                            "labelIds": ["INBOX", "Label_1"],
+                            "labelIds": ["INBOX", "UNREAD", "STARRED", "IMPORTANT", "Label_1"],
                         },
                         None,
                     )
@@ -610,8 +611,7 @@ class TestDownloadMessagesBatch:
             assert "msg1" in results
             raw_data, labels, error = results["msg1"]
             assert raw_data == raw_email
-            assert "INBOX" in labels
-            assert "Work" in labels
+            assert labels == ["INBOX", "Work"]
             assert error is None
 
     def test_batch_download_falls_back_when_no_label_ids(self):
@@ -1108,15 +1108,16 @@ class TestGmailLabels(_GmailFixture):
 
             assert list_call.call_count == 1
 
-    def test_unread_is_dropped(self):
-        """Read/unread is client state, not archive content - it must not be stored."""
+    @pytest.mark.parametrize("status", ["UNREAD", "STARRED", "IMPORTANT"])
+    def test_status_labels_are_dropped(self, status):
+        """System status is omitted before resolving user label names."""
         with patch("ownmail.providers.gmail.build") as mock_build:
             provider, service, _ = self._provider(mock_build)
             service.users.return_value.labels.return_value.list.return_value.execute.return_value = {
-                "labels": [{"id": "UNREAD", "name": "UNREAD"}, {"id": "Label_1", "name": "Work"}]
+                "labels": [{"id": status, "name": status}, {"id": "Label_1", "name": "Starred"}]
             }
 
-            assert provider._resolve_label_names(["INBOX", "UNREAD", "Label_1"]) == ["INBOX", "Work"]
+            assert provider._resolve_label_names(["INBOX", status, "Label_1"]) == ["INBOX", "Starred"]
 
     def test_unread_only_leaves_no_labels(self):
         """A message whose sole label is UNREAD should archive with none."""

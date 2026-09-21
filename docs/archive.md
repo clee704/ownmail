@@ -25,6 +25,19 @@ as well. These files can contain sensitive information; ownmail does not encrypt
 them. A separate `db_dir` can place the index on a faster drive while the archive
 stays on external storage.
 
+Captured labels preserve organization, such as Projects or Receipts. Mailbox
+status is omitted: IMAP message flags are not saved, and Gmail API system labels
+`UNREAD`, `STARRED` and `IMPORTANT` are filtered before names are stored. IMAP
+folders advertised as starred or important status views and Gmail's corresponding
+special labels are omitted too. Ordinary folders or user labels with similar
+names remain organizational labels. Inbox, Drafts, Sent, Trash and Spam still
+participate in lifecycle decisions; category labels remain organizational.
+See [Gmail labels](https://developers.google.com/workspace/gmail/api/guides/labels)
+and [Gmail IMAP special-use folders](https://developers.google.com/workspace/gmail/imap/imap-extensions).
+
+This capture policy does not rewrite existing sidecars or remove local labels.
+Previously captured status labels remain part of those owned snapshots.
+
 Active mail has separate, disposable storage. By default, an archive named
 `archive` uses the sibling directory `.archive-active`. Set the top-level
 `active_cache_dir` to use another directory. It must be outside the archive,
@@ -172,7 +185,10 @@ pass. Inbox, Drafts, advertised scheduled folders and folders with uncertain
 attributes still get complete state checks. If the server's flag catalog is
 missing, cannot be interpreted safely, or targeted searches fail, that folder
 falls back to a full metadata scan. State the server does not advertise cannot be discovered through
-these searches. See [IMAP searches and flags](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.4).
+these searches. This limitation matters when determining whether uncaptured
+mail is finished. An already-owned filed message does not need flag-change
+tracking to maintain its archive: later server changes do not update that owned
+snapshot. See [IMAP searches and flags](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.4.4).
 
 Gmail over IMAP uses immutable Gmail identities to find formerly unfinished
 messages in All Mail after they leave a scheduled or draft folder. Special-folder

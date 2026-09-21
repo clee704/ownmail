@@ -34,7 +34,7 @@ def gmail(labels=None, *, include_labels=True):
     provider._service.users().messages().list().execute.return_value = {"messages": [{"id": "a"}]}
     catalog = [
         {"id": label, "name": label, "type": "system"}
-        for label in ["INBOX", "DRAFT", "SENT", "TRASH", "SPAM", "UNREAD", "SCHEDULED"]
+        for label in ["INBOX", "DRAFT", "SENT", "TRASH", "SPAM", "UNREAD", "STARRED", "IMPORTANT", "SCHEDULED"]
     ]
     catalog.append({"id": "Label_1", "name": "Projects", "type": "user"})
     provider._service.users().labels().list().execute.return_value = {"labels": catalog}
@@ -102,7 +102,7 @@ def test_gmail_fresh_roles_override_capture_preferences(labels, state, include_l
 
 
 def test_gmail_labels_and_state_are_refreshed_together():
-    provider = gmail(["INBOX", "UNREAD", "Label_1"])
+    provider = gmail(["INBOX", "UNREAD", "STARRED", "IMPORTANT", "Label_1"])
     result = provider.list_live_messages()
     assert result.complete
     assert (result.source_name, result.account) == ("source", "person@example.com")

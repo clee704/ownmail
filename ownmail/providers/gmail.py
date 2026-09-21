@@ -756,8 +756,8 @@ class GmailProvider(EmailProvider):
     def _resolve_label_names(self, label_ids: list[str]) -> list[str]:
         """Convert label IDs to human-readable names.
 
-        Ephemeral client state (``UNREAD``) is dropped rather than archived —
-        see ``roles.EPHEMERAL_LABELS``.
+        Read, starred and important status is omitted from captured labels;
+        see ``roles.GMAIL_STATUS_LABELS``.
         """
         # Cache labels on first use
         if not self._label_cache:
@@ -770,7 +770,7 @@ class GmailProvider(EmailProvider):
 
         names = []
         for lid in label_ids:
-            if lid in roles.EPHEMERAL_LABELS:
+            if lid in roles.GMAIL_STATUS_LABELS:
                 continue
             if lid in self._label_cache:
                 names.append(self._label_cache[lid])

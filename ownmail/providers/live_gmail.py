@@ -86,7 +86,7 @@ def _message(provider, response, message_id, catalog=None, *, raw=False):
     labels = []
     if provider._include_labels:
         for label in label_ids:
-            if label in roles.EPHEMERAL_LABELS:
+            if label in roles.GMAIL_STATUS_LABELS:
                 continue
             if label not in catalog:
                 raise LiveLookupError("Required Gmail label names are unavailable")

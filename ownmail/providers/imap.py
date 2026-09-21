@@ -238,8 +238,11 @@ class ImapProvider(EmailProvider):
 
         folders = []
         self._folder_roles = {}
+        self._status_folders = set()
         self._label_folders = []
         for folder_name, flags, delimiter in parse_list_response(folder_data):
+            if set(flags.lower().split()) & roles.IMAP_STATUS_ATTRIBUTES:
+                self._status_folders.add(folder_name)
             role = roles.role_for_imap_folder(folder_name, flags, delimiter)
             if role:
                 self._folder_roles[folder_name] = role
@@ -862,6 +865,13 @@ class ImapProvider(EmailProvider):
             pass
         return None
 
+    def _archive_labels(self, labels):
+        """Omit server status views while preserving ordinary folder names."""
+        ignored = set(getattr(self, "_status_folders", ()))
+        if self._is_gmail():
+            ignored.update(roles.GMAIL_IMAP_STATUS_LABELS)
+        return [label for label in labels if label not in ignored]
+
     def _get_labels_for_downloaded(self, composite_id: str, raw_data: bytes, folder: str) -> list[str]:
         """Determine labels for a downloaded message.
 
@@ -872,7 +882,7 @@ class ImapProvider(EmailProvider):
         # Standard path: folder lookup populated during dedup scan
         folder_lookup = getattr(self, "_folder_lookup", {})
         if composite_id in folder_lookup:
-            return folder_lookup[composite_id]
+            return self._archive_labels(folder_lookup[composite_id])
 
         # Gmail optimized path: look up Message-ID from raw email content
         msg_id_to_folders = getattr(self, "_message_id_to_folders", None)
@@ -881,11 +891,11 @@ class ImapProvider(EmailProvider):
                 msg = email.message_from_bytes(raw_data)
                 message_id = msg.get("Message-ID", "").strip()
                 if message_id and message_id in msg_id_to_folders:
-                    return [folder] + msg_id_to_folders[message_id]
+                    return self._archive_labels([folder] + msg_id_to_folders[message_id])
             except Exception:
                 pass
 
-        return [folder]
+        return self._archive_labels([folder])
 
     def download_message(self, msg_id: str) -> tuple[bytes, list[str]]:
         """Download a message by its composite ID (folder:uid).
