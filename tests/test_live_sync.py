@@ -82,6 +82,24 @@ def source_status(archive, server):
     return archive.active_cache().source_status(server.source_name, server.account)
 
 
+def cache_message(archive, server, current):
+    """Seed a live copy left by versions that tracked owned mail as Active."""
+    cache = archive.active_cache(create=True)
+    status = cache.source_status(server.source_name, server.account) or {}
+    return cache.put(
+        source_name=server.source_name,
+        account=server.account,
+        provider_id=current.message_id,
+        identity=current.identity_token,
+        roles=list(current.roles),
+        labels=list(current.labels),
+        state=current.state,
+        raw=current.raw,
+        checked_at=status.get("checked_at"),
+        active_scope=list(current.active_scope),
+    )
+
+
 def test_active_handoff_captures_one_owned_snapshot(archive):
     active = message()
     server = MailServer([active])
@@ -115,14 +133,17 @@ def test_returned_inbox_preserves_owned_bytes_labels_and_one_result(archive):
     server.messages["1"] = replace(
         original, state="active", roles=frozenset({roles.INBOX}), labels=("INBOX", "Changed")
     )
+    server.reads.clear()
     refreshed = sync(archive, server)
     assert refreshed["success_count"] == 0
-    assert refreshed["active_refreshed"] == 1
+    assert refreshed["active_refreshed"] == 0
+    assert server.reads == []
+    assert archive.active_cache().list_entries() == []
     assert (path.read_bytes(), sidecar.sidecar_path(path).read_bytes()) == before
     assert archive.db.get_labels_for_email(email_id) == ["Saved"]
     assert [row[0] for row in archive.search("Body")] == [email_id]
-    assert [row[0] for row in archive.search("is:active")] == [email_id]
-    assert archive.active_info(email_id)["archived"] is True
+    assert archive.search("is:active") == []
+    assert archive.active_info(email_id) is None
     assert archive.consolidated_count() == 1
 
 
@@ -137,7 +158,7 @@ def test_returned_inbox_edit_does_not_replace_owned_copy_or_duplicate_identity(a
     sync(archive, server)
     assert (archive.archive_dir / filename).read_bytes() == original.raw
     assert [row[0] for row in archive.search("")] == [email_id]
-    assert archive.active_info(email_id)["archived"] is True
+    assert archive.active_info(email_id) is None
 
 
 @pytest.mark.parametrize("failure_stage", ["metadata", "index"])
@@ -261,7 +282,7 @@ def test_confirmed_server_removal_clears_only_disposable_copy(archive, cause):
     path = archive.archive_dir / row[1]
     before = (path.read_bytes(), sidecar.sidecar_path(path).read_bytes())
     server.messages["1"] = replace(original, state="active", roles=frozenset({roles.INBOX}))
-    sync(archive, server)
+    cache_message(archive, server, server.messages["1"])
     assert archive.active_count() == 1
     if cause == "deleted":
         server.messages = {}
@@ -368,14 +389,12 @@ def test_same_remote_id_is_isolated_between_sources_and_accounts(archive, scope)
     second.messages["1"] = replace(original, state="active", roles=frozenset({roles.INBOX}))
     sync(archive, first)
     sync(archive, second)
-    assert archive.active_count() == 2
+    assert archive.active_count() == 0
     assert archive.consolidated_count() == 2
     first.messages = {}
     sync(archive, first)
-    remaining = archive.active_cache().list_entries()
-    assert len(remaining) == 1
-    assert remaining[0]["source_name"] == second.source_name
-    assert remaining[0]["account"] == second.account
+    assert archive.active_cache().list_entries() == []
+    assert len(owned_rows(archive)) == 2
 
 
 def test_uidvalidity_change_preserves_unverified_previous_identity(archive):
@@ -494,9 +513,8 @@ def test_local_trash_stays_owned_when_server_copy_returns(archive):
     saved = (trashed.read_bytes(), sidecar.sidecar_path(trashed).read_bytes())
     server.messages["1"] = replace(original, state="active", roles=frozenset({roles.INBOX}))
     sync(archive, server)
-    assert archive.active_count() == 1
-    assert len(archive.search("Body")) == 1
-    assert archive.search("Body")[0][0].startswith("active-")
+    assert archive.active_count() == 0
+    assert archive.search("Body") == []
     server.messages["1"] = original
     assert sync(archive, server)["success_count"] == 0
     assert archive.active_count() == 0
@@ -581,7 +599,7 @@ def test_real_cached_mail_is_readable_in_web_and_rejects_local_label_edits(archi
     assert owned_rows(archive) == []
 
 
-def test_real_owned_reader_links_to_edited_server_copy_with_distinct_contents(archive):
+def test_real_owned_reader_stays_archived_after_server_return_and_edit(archive):
     from lxml import html
 
     from ownmail.web import create_app
@@ -594,16 +612,12 @@ def test_real_owned_reader_links_to_edited_server_copy_with_distinct_contents(ar
         original, state="active", roles=frozenset({roles.INBOX}), raw=original.raw.replace(b"Body", b"Edited")
     )
     sync(archive, server)
-    cached_id = archive.active_cache().list_entries()[0]["id"]
+    assert archive.active_cache().list_entries() == []
     client = create_app(archive, display_timezone="UTC").test_client()
     listing = html.fromstring(client.get("/search").data)
     assert len(listing.xpath('//ul[@id="ownmail-email-list"]/li')) == 1
     owned = html.fromstring(client.get(f"/email/{email_id}").data)
-    live = html.fromstring(client.get(f"/email/{cached_id}").data)
     assert "Body 1" in owned.text_content()
     assert "Edited 1" not in owned.text_content()
-    assert "Edited 1" in live.text_content()
-    assert owned.xpath(f'//section[@aria-label="Active message status"]//a[starts-with(@href, "/email/{cached_id}")]')
-    assert live.xpath(f'//section[@aria-label="Active message status"]//a[starts-with(@href, "/email/{email_id}")]')
+    assert not owned.xpath('//section[@aria-label="Active message status"]')
     assert owned.xpath('//*[@id="ownmail-edit-labels"]')
-    assert not live.xpath('//*[@id="ownmail-edit-labels"]')

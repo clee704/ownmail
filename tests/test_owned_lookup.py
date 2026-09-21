@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from ownmail.active_search import OwnedLookup, capture_id, owned_match
+from ownmail.active_search import OwnedLookup, owned_match
 from ownmail.archive import EmailArchive
 from tests.test_live_sync import MailServer, message, owned_rows, sync
 
@@ -46,9 +46,8 @@ def test_lookup_loads_account_once_for_repeated_identity_and_content_matches(own
     archive, entry, row = owned
     queries = trace_queries(monkeypatch)
     lookup = OwnedLookup(archive, entry["account"])
-    provider_id = capture_id(entry["source_name"], entry["account"], entry["identity"])
     for _ in range(25):
-        assert lookup.provider_hashes(provider_id, entry["provider_id"]) == {entry["content_hash"]}
+        assert owned_match(archive, {**entry, "content_hash": None}, lookup=lookup)[0] == row[0]
         assert owned_match(archive, entry, lookup=lookup)[0] == row[0]
         assert owned_match(archive, {**entry, "provider_id": "other", "identity": "other"}, lookup=lookup)[0] == row[0]
     assert len(queries) == 1
@@ -96,8 +95,7 @@ def test_added_capture_is_found_without_reloading_the_account(tmp_path, monkeypa
     lookup.add(email_id)
     lookup.add("missing")
     assert owned_match(archive, entry, lookup=lookup)[0] == email_id
-    provider_id = capture_id(entry["source_name"], entry["account"], entry["identity"])
-    assert lookup.provider_hashes(provider_id) == {entry["content_hash"]}
+    assert owned_match(archive, {**entry, "content_hash": None}, lookup=lookup)[0] == email_id
     assert len(queries) == 3
     assert all("FROM emails WHERE email_id =" in query and "AND account =" in query for query in queries)
 
@@ -106,6 +104,4 @@ def test_lookup_add_cannot_import_another_accounts_candidate(owned):
     archive, entry, row = owned
     lookup = OwnedLookup(archive, "other@example.test")
     lookup.add(row[0])
-    provider_id = capture_id(entry["source_name"], entry["account"], entry["identity"])
-    assert lookup.provider_hashes(provider_id) == set()
     assert lookup.candidates({**entry, "account": "other@example.test"}) == []

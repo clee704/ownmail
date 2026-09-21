@@ -214,14 +214,22 @@ cost more than an unchanged ordinary incremental pass.
 Ordinary search includes Active and Archived mail. `is:active` selects cached
 live copies, including unconfirmed states; `is:archived` selects owned copies.
 Unknown `is:` values are search errors. An owned message that returns to Inbox
-keeps its contents, labels, and local Trash state. Verified live/owned matches
-produce one ordinary result, with links between the archived and cached content.
-Historical `INBOX` or `DRAFT` labels alone never establish current Active state.
+stays Archived: its contents, labels, and local Trash state are unchanged, and
+no second Active copy is kept. Stable owned identities skip live body downloads.
+If an IMAP move changes the identity, exact downloaded contents can establish
+the match instead. A changed identity with different contents cannot safely be
+assumed to be the same message.
+
+Refreshes remove older duplicate Active copies after verifying their owned
+files, even when server listing fails or the cache entry is outside Active
+scope. Missing, damaged or ambiguous local matches keep the cached copy.
+Historical `INBOX` or `DRAFT` labels never reactivate an owned message.
 
 Active rows and the reader show the last check time. Incomplete or disabled
 refreshes keep that age visible and mark the state unconfirmed. The Active
-sidebar counts cached entries, including stale entries and entries with an owned
-match; consolidation can produce fewer search results. Download status reports
+sidebar counts cached entries, including stale entries. Older duplicate entries
+can remain until the next refresh; read-time consolidation hides verified matches
+in ordinary results during that transition. Download status reports
 archived and Active-refreshed counts separately. A completed archive pass does
 not establish that the Active view is current.
 

@@ -9,7 +9,7 @@ from ownmail import sidecar
 from ownmail.active_search import OwnedLookup, archive_links, owned_match
 from ownmail.archive import EmailArchive
 from ownmail.query import parse_query
-from tests.test_live_sync import MailServer, message, owned_rows, sync
+from tests.test_live_sync import MailServer, cache_message, message, owned_rows, sync
 
 
 @pytest.fixture
@@ -31,6 +31,7 @@ def mixed(tmp_path):
     server.messages["live"] = message("live", labels=("Inbox", "LiveLabel"))
     server.messages["dual"] = replace(dual, state="active", labels=("Inbox", "ServerLabel"))
     sync(archive, server)
+    cache_message(archive, server, server.messages["dual"])
     live_id = next(entry["id"] for entry in archive.active_cache().list_entries() if entry["provider_id"] == "live")
     return archive, {"owned": owned_id, "dual": dual_id, "live": live_id}
 
@@ -180,7 +181,9 @@ def test_legacy_gmail_stable_id_links_edited_live_content_within_source(tmp_path
     server = MailServer([message("old", identity="gmail:old", raw=raw.replace(b"Body", b"Edited"))])
     sync(archive, server)
     owned_id = owned_rows(archive)[0][0]
-    assert [row[0] for row in archive.search("Edited")] == [owned_id]
+    assert archive.search("Edited") == []
+    assert [row[0] for row in archive.search("is:archived")] == [owned_id]
+    assert archive.active_count() == 0
 
 
 def test_search_account_filter_applies_to_both_indexes(mixed):
@@ -256,14 +259,11 @@ def test_historical_state_labels_remain_owned_until_fresh_server_observation(tmp
     assert (path.read_bytes(), sidecar.sidecar_path(path).read_bytes()) == frozen
 
     returned = replace(original, raw=original.raw.replace(b"Body", b"Edited"), labels=("INBOX", "Current server label"))
-    assert sync(archive, MailServer([returned]))["active_refreshed"] == 1
-    cache = archive.active_cache()
-    entry = cache.list_entries()[0]
-    assert cache.read(entry["id"]) == returned.raw
-    assert entry["labels"] == ["INBOX", "Current server label"]
+    assert sync(archive, MailServer([returned]))["active_refreshed"] == 0
+    assert archive.active_cache().list_entries() == []
     assert (path.read_bytes(), sidecar.sidecar_path(path).read_bytes()) == frozen
     assert archive.db.get_labels_for_email(email_id) == [historical_label, "Kept locally"]
-    assert archive.active_info(email_id)["archive_id"] == email_id
+    assert archive.active_info(email_id) is None
     assert [row[0] for row in archive.search("")] == [email_id]
-    assert [row[0] for row in archive.search("is:active")] == [email_id]
+    assert archive.search("is:active") == []
     assert archive.consolidated_count() == 1

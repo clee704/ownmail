@@ -10,7 +10,7 @@ from ownmail.archive import EmailArchive
 from ownmail.web import create_app
 from tests import test_ui_shell
 from tests.conftest import mock_archive_db
-from tests.test_live_sync import MailServer, message, owned_rows, sync
+from tests.test_live_sync import MailServer, cache_message, message, owned_rows, sync
 
 shell_browser = test_ui_shell.shell_browser
 
@@ -158,7 +158,7 @@ def test_dual_state_label_post_changes_only_the_owned_snapshot(tmp_path):
     assert sync(archive, provider)["success_count"] == 1
     email_id, filename = owned_rows(archive)[0]
     provider.messages[original.message_id] = replace(original, state="active", labels=("INBOX", "Server label"))
-    assert sync(archive, provider)["active_refreshed"] == 1
+    cache_message(archive, provider, provider.messages[original.message_id])
     cache = archive.active_cache()
     cache_id = archive.active_info(email_id)["cache_id"]
     before_cache = cache.get(cache_id)

@@ -129,10 +129,8 @@ def _within_dates(archive, raw, since, until) -> bool:
 
 
 def _known_owned(archive, provider, message, lookup) -> bool:
-    """Avoid refetching finished contents already owned under a stable identity."""
-    provider_id = capture_id(provider.source_name, provider.account, message.identity_token)
-    hashes = lookup.provider_hashes(provider_id, message.message_id)
-    return any(
+    """Recognize verified owned copies without following later server changes."""
+    return (
         owned_match(
             archive,
             {
@@ -140,12 +138,20 @@ def _known_owned(archive, provider, message, lookup) -> bool:
                 "account": provider.account,
                 "provider_id": message.message_id,
                 "identity": message.identity_token,
-                "content_hash": value,
+                "content_hash": None,
             },
             lookup=lookup,
         )
-        for value in hashes
+        is not None
     )
+
+
+def _prune_owned_cache(archive, cache, entries, lookup):
+    """Retire old live duplicates using local evidence, even when the server fails."""
+    for identity, entry in list(entries.items()):
+        if owned_match(archive, entry, lookup=lookup):
+            cache.remove(entry["id"])
+            del entries[identity]
 
 
 def _batch_size(provider) -> int:
@@ -257,6 +263,10 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             pending.clear()
 
         for listed in messages:
+            if _known_owned(archive, provider, listed, lookup):
+                if progress:
+                    progress.advance(skipped=1)
+                continue
             if not listed.download_allowed:
                 reasons.append("Some folders are excluded from downloads")
                 continue
@@ -266,14 +276,6 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
                 except Exception as error:
                     failure(listed.message_id, error)
                     continue
-                if progress:
-                    progress.advance(skipped=1)
-                continue
-            if (
-                listed.state == "eligible"
-                and listed.identity_token not in previous
-                and _known_owned(archive, provider, listed, lookup)
-            ):
                 if progress:
                     progress.advance(skipped=1)
                 continue
@@ -341,6 +343,12 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             if prior:
                 removals.add(prior["id"])
         elif message.active_allowed and message.state in {"active", "unknown", "eligible"}:
+            if owned_match(archive, _entry(provider, message), lookup=lookup):
+                if prior:
+                    removals.add(prior["id"])
+                if progress:
+                    progress.advance(skipped=1)
+                return
             cache.put(
                 source_name=provider.source_name,
                 account=provider.account,
@@ -366,6 +374,7 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             progress.set_scan_progress(0)
             progress.set_phase("scanning", provider.source_name)
         lookup = OwnedLookup(archive, provider.account)
+        _prune_owned_cache(archive, cache, previous, lookup)
         incremental = getattr(provider, "incremental_live", False) is True
         options = {}
         if incremental:
@@ -406,6 +415,7 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
                     process_message(listed, message, lookup)
                     if (
                         isinstance(message, LiveMessage)
+                        and entry["id"] not in removals
                         and message.active_allowed
                         and message.state in {"active", "unknown"}
                     ):

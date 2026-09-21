@@ -24,6 +24,9 @@ outgoing mail remain server-owned; successfully archived copies are ownmail-owne
 
 ## Behavior
 
+The return-to-Inbox policy below is superseded by TASK-104: verified owned
+messages remain Archived and are no longer tracked as Active.
+
 - Download Active contents for reading and search alongside Archived mail.
   Keep status and freshness visible wherever Active messages appear.
 - Follow confirmed server edits, role changes, and deletion for Active copies.

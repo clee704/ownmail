@@ -36,10 +36,6 @@ class OwnedLookup:
         if row:
             self._remember(row)
 
-    def provider_hashes(self, *provider_ids: str) -> set[str]:
-        """Return known hashes for scoped or legacy provider identities."""
-        return {row[3] for provider_id in provider_ids for row in self._by_provider_id.get(provider_id, {}).values()}
-
     def candidates(self, entry: dict) -> list[tuple]:
         """Select candidates without replacing the caller's file verification."""
         if entry["account"] != self._account:
@@ -61,7 +57,7 @@ def capture_id(source_name: str, account: str, identity: str) -> str:
 
 
 def owned_match(archive, entry: dict, *, include_trash: bool = True, lookup: OwnedLookup | None = None) -> tuple | None:
-    """Match verified owned content by scoped identity or exact bytes."""
+    """Match verified owned files by identity or bytes; a null hash requires identity."""
     source_root = archive.get_emails_dir(entry["source_name"]).resolve()
     archive_root = archive.archive_dir.resolve()
     if not source_root.is_relative_to(archive_root):

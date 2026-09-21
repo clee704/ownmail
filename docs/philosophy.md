@@ -43,8 +43,10 @@ its labels. Sending completes a message even if its conversation continues. A
 failed download does not complete the handoff.
 
 After archival, server moves, deletion, or label changes never alter the owned
-copy. A server copy returning to Inbox becomes active again; its archived copy
-stays unchanged. Ownmail's local edits and Trash are independent of the server's.
+copy. A verified owned message returning to Inbox remains Archived and is not
+tracked as Active again. Ownmail's local edits and Trash are independent of the
+server's. Older duplicate Active copies are removed after verifying the owned
+file; missing, damaged or ambiguous ownership evidence keeps the cache.
 
 Mail captured before it reaches server Trash is preserved. Mail first observed
 in Trash is skipped, even if it passed through an archive folder between
