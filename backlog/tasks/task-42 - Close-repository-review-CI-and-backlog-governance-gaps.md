@@ -4,7 +4,7 @@ title: 'Close repository review, CI, and backlog governance gaps'
 status: In Progress
 assignee: []
 created_date: '2026-09-11 10:52'
-updated_date: '2026-09-13 18:29'
+updated_date: '2026-09-22 17:25'
 labels: []
 dependencies: []
 documentation:
@@ -24,7 +24,7 @@ Complete the governance follow-ups from doc-10. Local lint, coverage, documentat
 - [x] #1 Review the commits intended for publication; after separate authorization, publish the reviewed CI changes and record passing lint and Python-matrix runs at the published revision.
 - [ ] #2 Decide and document branch protection and merge-method enforcement consistent with the maintainer workflow; apply authorized remote settings and verify them.
 - [ ] #3 Document proportionate independent review expectations and implement Conventional Commit validation for direct commits and PR titles without adding runtime dependencies.
-- [ ] #4 Repair the nine historical Done tasks identified in doc-10 using implementation and decision evidence; remove number-only accidental criteria and reopen or explicitly supersede any unmet requirement.
+- [x] #4 Repair the nine historical Done tasks identified in doc-10 using implementation and decision evidence; remove number-only accidental criteria and reopen or explicitly supersede any unmet requirement.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -39,4 +39,6 @@ Independent verification found none of the identified private-data markers in ou
 The first CI run exposed a formatter-version mismatch. Pinning development Ruff to 0.15.0 aligned CI with the existing pre-commit hook. No runtime dependency or test gate changed.
 
 Published revision 0871bc681333eef3feae63984e52d53c97a7d2c1 passed lint, formatting, deptry, and the Python 3.10/3.11/3.12 matrix in [CI run 34774617015](https://github.com/clee704/ownmail/actions/runs/34774617015). Each Python job passed 2,384 tests with one expected failure, zero skips, and 95.52% coverage including branches. The local full pre-push gate passed with 95.55% coverage. Both exceed the 95% minimum.
+
+Historical ledger repair (AC 4): removed the sixteen number-only criteria from TASK-2.1 through TASK-2.6 and checked the criteria met by the current repository. Each unmet criterion now begins with the decision that superseded it: the mbsync and notmuch NO-GOs for TASK-1.2 and TASK-1.5, the Python 3.10 floor for TASK-2.6 #3, and the rejected Trash-archiving branch for TASK-15 #2. TASK-15 #3 is met by docs/philosophy.md and config.example.yaml. No requirement needed reopening.
 <!-- SECTION:NOTES:END -->

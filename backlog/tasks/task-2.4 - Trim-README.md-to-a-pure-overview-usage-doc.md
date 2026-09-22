@@ -4,7 +4,7 @@ title: Trim README.md to a pure overview + usage doc
 status: Done
 assignee: []
 created_date: '2026-07-24 04:43'
-updated_date: '2026-07-24 20:32'
+updated_date: '2026-09-22 17:25'
 labels: []
 milestone: m-2
 dependencies:
@@ -22,6 +22,11 @@ README.md should be an overview for everyone (not dev-process) plus how-to-use f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 README.md has no Roadmap section and no dev-process content
-- [ ] #2 1
+- [x] #1 README.md has no Roadmap section and no dev-process content
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Ledger repair, 2026-09-22 (TASK-42).** Removed number-only accidental criteria and checked the remaining criteria against the current repository.
+<!-- SECTION:NOTES:END -->

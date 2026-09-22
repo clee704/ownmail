@@ -4,7 +4,7 @@ title: Write AGENTS.md with AI-only operating rules
 status: Done
 assignee: []
 created_date: '2026-07-24 04:42'
-updated_date: '2026-07-24 20:20'
+updated_date: '2026-09-22 17:25'
 labels: []
 milestone: m-2
 dependencies: []
@@ -21,20 +21,16 @@ Create AGENTS.md as the canonical AI-only rules file: autonomy policy (commit at
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 AGENTS.md exists at repo root with the sections above
-- [ ] #2 .github/copilot-instructions.md content is merged in, not left duplicated
-- [ ] #3 AGENTS.md documents a zero-prompt session-start rule: no direction given -> check backlog/ for the next To Do task by ordinal/milestone and start on it
-- [ ] #4 .github/copilot-instructions.md and CLAUDE.md (TASK-2.5) both surface this rule, not just AGENTS.md
-- [ ] #5 1
-- [ ] #6 2
-- [ ] #7 3
-- [ ] #8 4
+- [x] #1 AGENTS.md exists at repo root with the sections above
+- [x] #2 .github/copilot-instructions.md content is merged in, not left duplicated
+- [x] #3 AGENTS.md documents a zero-prompt session-start rule: no direction given -> check backlog/ for the next To Do task by ordinal/milestone and start on it
+- [x] #4 .github/copilot-instructions.md and CLAUDE.md (TASK-2.5) both surface this rule, not just AGENTS.md
 <!-- AC:END -->
-
-
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Caveat on the zero-prompt session-start rule: it's straightforward when there's one obvious next task, but needs a tie-breaker once multiple tasks are unblocked at once, or a task was left In Progress by a prior session (resume that before pulling a new To Do one?). Left as an implementation decision - don't over-specify this now, just make sure AGENTS.md's session-start rule accounts for the ambiguity rather than silently assuming only one candidate task ever exists.
+
+**Ledger repair, 2026-09-22 (TASK-42).** Removed number-only accidental criteria and checked the remaining criteria against the current repository.
 <!-- SECTION:NOTES:END -->

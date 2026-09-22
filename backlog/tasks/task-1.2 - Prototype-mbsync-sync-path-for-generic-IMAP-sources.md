@@ -4,7 +4,7 @@ title: Prototype mbsync sync path for generic IMAP sources
 status: Done
 assignee: []
 created_date: '2026-07-23 18:44'
-updated_date: '2026-09-13 09:44'
+updated_date: '2026-09-22 17:25'
 labels:
   - sync
 dependencies: []
@@ -21,9 +21,9 @@ Replace providers/imap.py sync loop with mbsync for non-Gmail IMAP sources (Fast
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 mbsync config generated from ownmail config.yaml IMAP sources
-- [ ] #2 Gmail sources explicitly excluded from mbsync path, continue using GmailProvider
-- [ ] #3 Resulting Maildir++ layout can be indexed without breaking existing archive structure/scan logic
+- [ ] #1 Superseded by the NO-GO decision in the notes: mbsync config generated from ownmail config.yaml IMAP sources
+- [ ] #2 Superseded by the NO-GO decision in the notes: Gmail sources explicitly excluded from mbsync path, continue using GmailProvider
+- [ ] #3 Superseded by the NO-GO decision in the notes: Resulting Maildir++ layout can be indexed without breaking existing archive structure/scan logic
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,4 +53,6 @@ The original objection above (Maildir++ staging tree ⇒ two on-disk layouts, tw
 - A Maildir writer would be needed for the Gmail path anyway, so mbsync eliminates no component.
 
 The Dovecot architecture that prompted the revisit was itself rejected (doc-6). Original revisit trigger stands unchanged: only if providers/imap.py hits a real, specific problem cheaper to fix via mbsync than directly.
+
+**Ledger repair, 2026-09-22 (TASK-42).** All three criteria describe adopting the mbsync path, which the NO-GO above rejected, so they are marked superseded rather than met. The prototype and revert revisions named above are not present in the current repository history.
 <!-- SECTION:NOTES:END -->

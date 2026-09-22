@@ -4,7 +4,7 @@ title: Retire ROADMAP.md — convert its content into backlog tasks
 status: Done
 assignee: []
 created_date: '2026-07-24 04:42'
-updated_date: '2026-07-24 20:30'
+updated_date: '2026-09-22 17:25'
 labels: []
 milestone: m-2
 dependencies: []
@@ -21,8 +21,12 @@ Convert ROADMAP.md's three sections into proper backlog tasks/docs via the backl
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All ROADMAP.md content has a corresponding backlog task or doc
-- [ ] #2 ROADMAP.md deleted, no remaining references to it in the repo
-- [ ] #3 1
-- [ ] #4 2
+- [x] #1 All ROADMAP.md content has a corresponding backlog task or doc
+- [x] #2 ROADMAP.md deleted, no remaining references to it in the repo
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Ledger repair, 2026-09-22 (TASK-42).** Removed number-only accidental criteria and checked the remaining criteria against the current repository.
+<!-- SECTION:NOTES:END -->

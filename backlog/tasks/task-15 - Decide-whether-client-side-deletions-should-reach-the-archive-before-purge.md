@@ -4,7 +4,7 @@ title: Decide whether client-side deletions should reach the archive before purg
 status: Done
 assignee: []
 created_date: '2026-07-24 22:46'
-updated_date: '2026-07-24 22:59'
+updated_date: '2026-09-22 17:25'
 labels: []
 milestone: m-5
 dependencies: []
@@ -34,9 +34,9 @@ Related but distinct from TASK-5.2, which covers canonical naming/display of pro
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Decision recorded (in doc-6 or its own doc) on whether provider Trash is archived, with the reasoning
-- [ ] #2 If adopted: Trash sync is configurable per source rather than hardcoded, and documented in config.example.yaml
-- [ ] #3 If rejected: the permanent-loss window is documented so the behaviour is a known choice, not a surprise
+- [x] #1 Decision recorded (in doc-6 or its own doc) on whether provider Trash is archived, with the reasoning
+- [ ] #2 Superseded because Trash archiving was rejected: If adopted: Trash sync is configurable per source rather than hardcoded, and documented in config.example.yaml
+- [x] #3 If rejected: the permanent-loss window is documented so the behaviour is a known choice, not a surprise
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -59,4 +59,6 @@ Scope of that gap, corrected same day: it is narrower than 'anyone whose delete 
 The question 'should client-side deletions reach the archive?' was filed as a code decision. Under TASK-14's two-knob design (optional purge + configurable download filter) it stops being one: it is simply whether 'trash' appears in the configured download filter. Excluded (the default) means deletions stay deleted and never enter the archive; removed from the filter means Trash is downloaded and deletions are captured within the provider's retention window.
 
 No behaviour was decided away - the choice is now a documented config knob rather than a hardcoded query string, which is what the original task was asking for. TASK-14 AC #8 covers the default value and AC #12 covers documenting it.
+
+**Ledger repair, 2026-09-22 (TASK-42).** #1 is met by the decision recorded here and in TASK-14.1, which reverses doc-6. #3 is met by docs/philosophy.md, which states that mail first observed in Trash is skipped, and config.example.yaml, which states that Trash and Spam are always excluded. #2 was the branch for adopting Trash archiving and is superseded by the rejection.
 <!-- SECTION:NOTES:END -->

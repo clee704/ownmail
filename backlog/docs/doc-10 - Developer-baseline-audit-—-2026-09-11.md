@@ -34,13 +34,16 @@ Audit baseline: commit `9932143`, with read-only GitHub checks on 2026-09-11.
    enforces the documented Conventional Commit format. Settle proportionate
    review and validation rules while preserving the intended maintainer workflow.
 
-3. **Historical Done records have unchecked or accidental criteria.** Nine
+3. **Corrected: historical Done records had unchecked or accidental criteria.** Nine
    tasks are affected: TASK-1.2, TASK-1.5, TASK-2.1 through TASK-2.6, and TASK-15.
    The six TASK-2 subtasks contain sixteen number-only criteria. For example,
    [TASK-2.6](<../tasks/task-2.6 - Add-pre-commit-hooks-GitHub-Actions-CI-for-ruff-pytest.md>)
    is Done with ten unchecked criteria, five containing only numbers. Audit
    implementation and decision evidence before correcting status or checkboxes;
    distinguish superseded requirements from completed implementation.
+   TASK-42 removed the number-only criteria, checked criteria met by the
+   repository, and prefixed each unmet criterion with the decision that
+   superseded it. No task was reopened.
 
 4. **Corrected: the pre-push test hook skipped non-Python changes.** At the audit baseline,
    its `types: [python]` filter and missing `always_run` caused
