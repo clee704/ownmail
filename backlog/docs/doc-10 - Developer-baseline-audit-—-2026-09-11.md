@@ -20,19 +20,22 @@ Audit baseline: commit `9932143`, with read-only GitHub checks on 2026-09-11.
 
 ## Gaps
 
-1. **CI has not reached GitHub.** The remote default branch was still
+1. **Corrected: CI had not reached GitHub.** The remote default branch was still
    `f6c86e561cb671edb1bd824bbaec53f32fd90e57`; the Actions API returned zero
    workflows and runs. The local workflow therefore has no verified remote
    execution. Review the commits intended for publication, obtain separate
-   authorization, then verify the published revision's matrix.
+   authorization, then verify the published revision's matrix. TASK-42
+   published CI on 2026-09-13 and verified the matrix.
 
-2. **Merge and review rules are not enforced.** GitHub reported `master` as
+2. **Corrected: merge and review rules were not enforced.** GitHub reported `master` as
    unprotected, no rulesets, and merge commits, rebase, and squash all enabled.
    [The landing policy](../../CONTRIBUTING.md#how-changes-land) permits direct
    maintainer commits and requires PRs for risky changes, but does not define
    independent review expectations. No commit-message hook or PR-title check
    enforces the documented Conventional Commit format. Settle proportionate
    review and validation rules while preserving the intended maintainer workflow.
+   TASK-42 added the review policy, commit-header checks, two `master`
+   rulesets, and squash-only merges, all documented in CONTRIBUTING.
 
 3. **Corrected: historical Done records had unchecked or accidental criteria.** Nine
    tasks are affected: TASK-1.2, TASK-1.5, TASK-2.1 through TASK-2.6, and TASK-15.

@@ -173,6 +173,18 @@ That's the same list AGENTS.md flags as STOP-and-ask, for the same reason:
 these are the changes that are expensive or impossible to walk back, so they're
 worth a green matrix and a deliberate second look before they land.
 
+GitHub enforces the mechanics with two rulesets on `master`:
+
+- **master integrity** blocks force pushes and branch deletion for everyone.
+  An authorized history rewrite means disabling it for that push and turning
+  it back on afterwards.
+- **master merge gate** requires a PR with passing `lint`, `test (3.10)`,
+  `test (3.11)`, `test (3.12)`, and `conventional` checks. Repository admins
+  bypass it, which is what lets maintainers commit directly.
+
+Squash is the only enabled merge method, and the squashed commit takes the PR
+title and body.
+
 ### Review
 
 Review scales with how hard a change is to undo:
