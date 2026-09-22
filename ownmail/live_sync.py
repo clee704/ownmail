@@ -225,7 +225,6 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
     )
     previous = {entry["identity"]: entry for entry in cache.list_entries(provider.source_name, provider.account)}
     reasons = []
-    removals = set()
     capture_pending = False
     checked = 0
     last_report = time.monotonic()
@@ -316,7 +315,8 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             raise message
         if message is None:
             if listed.identity_token in previous:
-                removals.add(previous[listed.identity_token]["id"])
+                cache.remove(previous[listed.identity_token]["id"])
+                del previous[listed.identity_token]
             if progress:
                 progress.advance(skipped=1)
             return
@@ -325,7 +325,8 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
         prior = previous.get(message.identity_token)
         if message.state == "discarded":
             if prior:
-                removals.add(prior["id"])
+                cache.remove(prior["id"])
+                del previous[message.identity_token]
             return
         if not message.download_allowed:
             reasons.append("Some folders are excluded from downloads")
@@ -403,31 +404,28 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
                 process_message(listed, message, lookup)
             except Exception as error:
                 failure(listed.message_id, error)
-        # Listing omission alone is insufficient evidence of deletion or a folder move.
-        if snapshot.complete:
-            in_scope = getattr(provider, "live_entry_in_scope", lambda entry: True)
-            missing = {
-                entry["provider_id"]: entry
-                for identity, entry in previous.items()
-                if identity not in observed and in_scope(entry)
-            }
-            for message_id, message in _read_messages(provider, list(missing)):
-                entry = missing[message_id]
-                try:
-                    listed = LiveMessage(message_id, identity_token=entry["identity"])
-                    process_message(listed, message, lookup)
-                    if (
-                        isinstance(message, LiveMessage)
-                        and entry["identity"] in previous
-                        and message.active_allowed
-                        and message.state in {"active", "unknown"}
-                    ):
-                        reasons.append("A cached message was absent from the server listing")
-                except Exception as error:
-                    failure(entry["provider_id"], error)
+        # A scoped lookup can confirm changes even when the listing was incomplete.
+        in_scope = getattr(provider, "live_entry_in_scope", lambda entry: True)
+        missing = {
+            entry["provider_id"]: entry
+            for identity, entry in previous.items()
+            if identity not in observed and in_scope(entry)
+        }
+        for message_id, message in _read_messages(provider, list(missing)):
+            entry = missing[message_id]
+            try:
+                listed = LiveMessage(message_id, identity_token=entry["identity"])
+                process_message(listed, message, lookup)
+                if (
+                    isinstance(message, LiveMessage)
+                    and entry["identity"] in previous
+                    and message.active_allowed
+                    and message.state in {"active", "unknown"}
+                ):
+                    reasons.append("A cached message was absent from the server listing")
+            except Exception as error:
+                failure(entry["provider_id"], error)
         if snapshot.complete and not result["error_count"]:
-            for cache_id in removals:
-                cache.remove(cache_id)
             if incremental and snapshot.sync_state and not capture_pending and not since and not until:
                 capture_state = snapshot.sync_state
                 capture_signature = signature

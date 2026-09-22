@@ -425,6 +425,9 @@ def _incremental_folder(provider, folder, folder_state, prior, next_cursor, *, a
             uid = _locator(message.message_id)[2]
             if uid in expected and message.identity_token not in expected[uid]:
                 message = LiveLookupError("Gmail pending lookup returned another identity")
+            elif uid <= watermark and message.state == "eligible" and message.identity_token not in pending:
+                # A fallback scan checks state without redownloading completed history.
+                continue
         yield message
 
 

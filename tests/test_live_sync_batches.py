@@ -129,11 +129,13 @@ def test_reconciliation_batches_confirmed_absence(archive):
     assert archive.active_cache().list_entries() == []
 
 
-def test_reconciliation_rejects_a_different_message_locator(archive):
+@pytest.mark.parametrize("complete", [True, False])
+def test_reconciliation_rejects_a_different_message_locator(archive, complete):
     original = message()
     server = BatchServer([original])
     sync(archive, server)
     server.listed = []
+    server.complete = complete
     server.messages["1"] = replace(original, message_id="other", state="discarded")
     assert sync(archive, server)["active_complete"] is False
     assert len(archive.active_cache().list_entries()) == 1

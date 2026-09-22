@@ -4,8 +4,9 @@ import json
 
 import pytest
 
-from ownmail import capture
+from ownmail import capture, sidecar
 from ownmail.archive import EmailArchive
+from ownmail.providers.live_imap import _message_id
 from tests.test_imap_active_scope import capture_state, metadata_fetches, state_for
 from tests.test_live_imap_batch import provider_for
 
@@ -83,7 +84,7 @@ def test_unusable_flag_catalog_falls_back_to_complete_metadata(flags):
     provider._conn.response = lambda name: ("FLAGS", [flags]) if name == "FLAGS" else response(name)
     snapshot = provider.list_live_messages(incremental=True, sync_state=state_for(provider, {"Archive": 2}))
     assert snapshot.complete
-    assert len(snapshot.messages) == 2
+    assert snapshot.messages == []
     assert metadata_fetches(provider, "Archive")[0][2] == "1,2"
 
 
@@ -194,6 +195,50 @@ def test_rejected_targeted_search_falls_back_to_successful_full_scan(rejected):
     provider._conn.uid = uid
     snapshot = provider.list_live_messages(incremental=True, sync_state=state_for(provider, {"Archive": 2}))
     assert snapshot.complete and snapshot.sync_state
-    assert len(snapshot.messages) == 2
+    assert len(snapshot.messages) == 1
     assert snapshot.messages[0].state == "active"
     assert metadata_fetches(provider, "Archive")[0][2] == "1,2"
+
+
+def test_empty_filtered_search_does_not_redownload_completed_legacy_history(tmp_path):
+    archive = EmailArchive(tmp_path / "archive")
+    provider = provider_for({"Archive": list(range(1, 31))})
+    assert archive.backup(provider, active_downloads=True)["success_count"] == 30
+    # Legacy files have labels but no UIDVALIDITY capture provenance.
+    for path in archive.archive_dir.rglob("*.eml"):
+        sidecar.write_labels(path, ["Archive"])
+    original = provider._conn.uid
+
+    def uid(command, *args):
+        result = original(command, *args)
+        if command == "search" and args[1] == "DRAFT":
+            return "OK", [None]
+        return result
+
+    provider._conn.uid = uid
+    provider._conn.folders["Archive"].append(31)
+    provider._conn.commands.clear()
+    result = archive.backup(provider, active_downloads=True)
+
+    assert result["active_complete"] and result["success_count"] == 1
+    body_fetches = [command for command in metadata_fetches(provider, "Archive") if "BODY.PEEK[]" in command[-1]]
+    assert [command[2] for command in body_fetches] == ["31"]
+    assert archive.db.get_email_count() == 31
+
+
+def test_fallback_scan_keeps_previously_pending_old_uid_as_capture_candidate():
+    provider = provider_for({"Archive": [1, 2]})
+    pending = _message_id("Archive", "10", 1)
+    saved = state_for(provider, {"Archive": 2}, excluded=[pending])
+    original = provider._conn.uid
+
+    def uid(command, *args):
+        if command == "search" and args[1] == "DRAFT":
+            return "OK", [None]
+        return original(command, *args)
+
+    provider._conn.uid = uid
+    snapshot = provider.list_live_messages(incremental=True, sync_state=saved)
+    assert snapshot.complete
+    assert [message.message_id for message in snapshot.messages] == [pending]
+    assert snapshot.messages[0].state == "eligible"

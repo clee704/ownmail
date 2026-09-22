@@ -265,6 +265,7 @@ def test_incomplete_observation_keeps_previous_cache_and_reports_stale(archive, 
         server.list_error = ConnectionError("offline")
     elif failure == "partial":
         server.complete = False
+        server.messages["1"] = LiveLookupError("state unavailable")
     else:
         server.messages["1"] = LiveLookupError("state unavailable")
     result = sync(archive, server)
@@ -295,24 +296,30 @@ def test_confirmed_server_removal_clears_only_disposable_copy(archive, cause):
     assert (path.read_bytes(), sidecar.sidecar_path(path).read_bytes()) == before
 
 
-def test_partial_listing_does_not_remove_even_observed_discarded_cache(archive):
+@pytest.mark.parametrize("listed", [True, False])
+@pytest.mark.parametrize("state", ["discarded", "deleted", "eligible"])
+def test_partial_listing_applies_individually_verified_cached_state(archive, listed, state):
     active = message()
     server = MailServer([active])
     sync(archive, server)
     server.complete = False
-    server.messages["1"] = replace(active, state="discarded", roles=frozenset({roles.TRASH}), raw=None)
-    assert sync(archive, server)["active_complete"] is False
-    assert archive.active_count() == 1
+    server.listed = [active] if listed else []
+    server.messages["1"] = None if state == "deleted" else message(state=state)
+    result = sync(archive, server)
+    assert result["active_complete"] is False
+    assert result["success_count"] == int(state == "eligible")
+    assert archive.active_count() == 0
+    assert archive.active_cache().list_entries() == []
 
 
-def test_another_message_failure_defers_cache_removal_until_complete_refresh(archive):
+def test_another_message_failure_preserves_only_the_unverified_cache(archive):
     first, second = message("1"), message("2")
     server = MailServer([first, second])
     sync(archive, server)
     server.listed = [first, second]
     server.messages = {"1": None, "2": LiveLookupError("unavailable")}
     assert sync(archive, server)["active_complete"] is False
-    assert archive.active_count() == 2
+    assert [entry["provider_id"] for entry in archive.active_cache().list_entries()] == ["2"]
     server.messages["2"] = second
     assert sync(archive, server)["active_complete"] is True
     assert archive.active_count() == 1
