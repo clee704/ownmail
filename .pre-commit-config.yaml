@@ -1,16 +1,18 @@
-# Install both hook types:  pre-commit install
+# Install all hook types:   pre-commit install
 # Run everything by hand:    pre-commit run -a --hook-stage pre-push
 #
-# Two stages, split by cost. Lint and hygiene run per-commit (~0.4s) so they
-# don't tax the commit-often policy in AGENTS.md. The test suite runs per-push
-# (~11s) — once per push regardless of how many commits it carries, at the
-# moment master actually becomes exposed.
+# Stages are split by cost. The commit-message check is instant. Lint and
+# hygiene run per-commit (~0.4s) so they don't tax the commit-often policy in
+# AGENTS.md. The test suite runs per-push (~11s) — once per push regardless of
+# how many commits it carries, at the moment master actually becomes exposed.
 #
 # CI (.github/workflows/ci.yml) runs the same checks and stays the real gate:
 # local runs can't prove a green build on their own, since the supported range
 # is Python 3.10-3.12 and you're almost certainly on something newer.
 
-default_install_hook_types: [pre-commit, pre-push]
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+# Hooks without their own stages run on commit and push, not on the message.
+default_stages: [pre-commit, pre-push]
 
 # .eml test fixtures are byte-exact inputs — several deliberately carry broken
 # encodings, truncated bodies, or missing trailing newlines. Never rewrite them.
@@ -50,6 +52,14 @@ repos:
   # file args, and always runs the whole suite regardless of what changed.
   - repo: local
     hooks:
+      # Conventional Commit header, per CONTRIBUTING.md. CI checks pushed
+      # commits and PR titles the same way.
+      - id: commit-msg
+        name: conventional commit header
+        entry: python3 scripts/check_commit_msg.py
+        language: system
+        stages: [commit-msg]
+
       - id: pytest
         name: pytest (with coverage gate)
         entry: pytest --cov=ownmail -q

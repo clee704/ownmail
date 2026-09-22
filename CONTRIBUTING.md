@@ -23,7 +23,7 @@ source venv/bin/activate
 # Install in development mode
 pip install -e ".[dev]"
 
-# Install commit checks and the full test suite at push time
+# Install commit and message checks, and the full test suite at push time
 pre-commit install
 ```
 
@@ -95,11 +95,12 @@ When adding new code, write tests to maintain or improve coverage. The build wil
 
 ## Before Committing
 
-`pre-commit install` wires up two stages, split by how long they take:
+`pre-commit install` wires up these stages, split by how long they take:
 
 | Stage | Checks | Cost |
 |---|---|---|
 | **on commit** | File hygiene (trailing whitespace, final newline, LF endings), `ruff check --fix`, `ruff format`, `deptry` | ~0.5s |
+| **on commit message** | The header follows [Commit Messages](#commit-messages) | instant |
 | **on push** | The above, plus `pytest` with the coverage gate | ~11s |
 
 Tests run at push rather than at commit deliberately: it's once per push no
@@ -144,6 +145,11 @@ versions you aren't. Local hooks are a fast filter; CI is the gate.
 The matrix mirrors the versions in `pyproject.toml`'s classifiers. If you change
 the supported Python range, update both.
 
+[`.github/workflows/commits.yml`](.github/workflows/commits.yml) checks
+Conventional Commit headers: every commit pushed to `master`, and each PR's
+title, which becomes the squashed commit header. It re-runs when a PR title is
+edited.
+
 ## How changes land
 
 Which path applies depends on whether you have write access — the two aren't
@@ -167,6 +173,19 @@ That's the same list AGENTS.md flags as STOP-and-ask, for the same reason:
 these are the changes that are expensive or impossible to walk back, so they're
 worth a green matrix and a deliberate second look before they land.
 
+### Review
+
+Review scales with how hard a change is to undo:
+
+- **Direct commits** — the author reviews their own diff before committing.
+  The local hooks and CI are the check; no second reviewer is needed.
+- **PR-route changes** (the list above) — someone other than the author
+  reviews the PR before it merges. When an AI agent wrote the change, the
+  maintainer's review is that review. When the maintainer wrote it, use a
+  reviewer that took no part in writing it, such as a fresh AI review session
+  given the diff and the task. Resolve or answer each finding in the PR.
+- **Outside contributions** — the maintainer reviews every PR, and CI must pass.
+
 ## Branches
 
 Branch off `master`, one branch per change:
@@ -188,7 +207,8 @@ refactor/extract-email-parser
 ## Commit Messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) with a clear,
-concise description:
+concise description. The commit-message hook and CI enforce the header format
+and the type list below. Scopes such as `feat(web):` are not used.
 
 ### Format
 
@@ -230,7 +250,7 @@ perf: batch FTS deletes at end of reindex for 10x speedup
 ### Guidelines
 
 - Use imperative mood: "add feature" not "added feature"
-- Keep first line under 72 characters
+- Keep the first line within 72 characters
 - Add body for complex changes explaining why, not just what
 - Reference the backlog task ID when there is one: `feat: add import command (TASK-7)`
 
