@@ -1,92 +1,36 @@
 ---
 id: TASK-19
-title: >-
-  Configurable label exclusion for platform auto-labels (IMPORTANT, CATEGORY_*,
-  STARRED)
+title: Decide whether to exclude recurring platform and workflow labels at capture
 status: To Do
 assignee: []
 created_date: '2026-07-25 06:20'
-updated_date: '2026-07-25 06:57'
+updated_date: '2026-09-26 02:24'
 labels: []
 dependencies: []
-priority: medium
-ordinal: 24000
+priority: low
+ordinal: 29000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-TASK-5.3 dropped Gmail's UNREAD unconditionally: nothing refreshes a captured value, so an archived 'unread' becomes false over time. Gmail's other non-topical pseudo-labels (IMPORTANT, CATEGORY_*, STARRED, CHAT) still pass through _resolve_label_names into the labels array, but they are a different kind of question — taste, not correctness. So this task ships a config knob rather than a maintainer ruling on each label.
+Filed 2026-07-25 as a config knob for Gmail pseudo-labels, with a design that filtered the index and kept every provider label in the sidecar. Later work settled most of that:
 
-## The line between the tiers
+- TASK-5.3 drops UNREAD at capture (roles.EPHEMERAL_LABELS).
+- TASK-103 drops Gmail STARRED and IMPORTANT, and IMAP \\Flagged and \\Important, at capture as mailbox status (roles.GMAIL_STATUS_LABELS and related sets). Star state is not archived, so the proposed canonical `flagged` role is no longer wanted.
+- TASK-5.4 made sidecars hold ownmail-owned labels, including local edits, so a sidecar is no longer a record of what the server sent. Local label editing covers one-off removals.
+- doc-8 describes `exclude_labels` as an inheritance rule applied at the handoff, and says it earns its keep only for recurring platform labels across many messages.
 
-Does a stored value become **false**, or merely **unwanted**?
+What remains: Gmail CATEGORY_* and CHAT labels, and user-created workflow labels such as `Waiting` or `To Read` that describe state at capture, still enter the archive. Decide whether a per-source exclusion list for such labels is worth adding. If local editing is enough, close this task with that reason.
 
-- UNREAD becomes false. Stays hardcoded in roles.EPHEMERAL_LABELS, dropped at capture, deliberately NOT configurable — a knob there only lets a user opt into a lie.
-- IMPORTANT stays true as a statement about the past ('Gmail flagged this at delivery') even when it is noise to the reader.
-- CATEGORY_PERSONAL/SOCIAL/PROMOTIONS/UPDATES/FORUMS — Gmail's tab classification. Stable, topical, weakest case for dropping.
-- CHAT — closer to a message type than a label.
-
-Everything in the second tier is captured and then filtered.
-
-## Not just platform labels — any label its owner knows is transient
-
-The knob's real scope is wider than IMPORTANT and CATEGORY_*. A user-created
-label used as workflow state — `Waiting`, `To Read`, `Action Required` — decays
-exactly the way UNREAD did, and for the same reason: it describes now, and an
-archive records then.
-
-Neither archival philosophy rescues it. Snapshot semantics (what ownmail does
-today) freeze a workflow state that has since moved on. Mirror semantics track
-it correctly and then the label hits zero, leaving no evidence it ever existed.
-There is no representation that survives, so ownmail cannot fix this
-mechanically — only its owner knows which of their labels are classification and
-which are a to-do list.
-
-exclude_labels is that declaration, and it is why the option should take
-arbitrary strings rather than a closed set of known platform labels. It also
-retires the open question of whether STARRED means durable curation or a
-transient to-do marker: users who star transiently list STARRED, and the project
-needs no ruling on what starring means.
-
-## Design: filter the index, not the archive
-
-Do NOT drop excluded labels at capture. Instead:
-
-- The sidecar stores every label the provider sent (minus UNREAD). It is the record of what the server said at capture time.
-- exclude_labels is applied when populating the email_labels table — the rebuildable cache. Search and the web UI never see excluded labels.
-- rebuild --only sidecars re-applies whatever the config currently says, in both directions. This is the 'bulk edit for already-downloaded messages': the purge path TASK-5.3 built, reading config instead of a hardcoded frozenset.
-
-Why this over blocking at capture:
-
-- **Reversible both ways, permanently.** Flip the config, rebuild, and an excluded label comes back — it never left the archive. Capture-time blocking is one-way.
-- **No purge deadline.** update-labels can currently re-fetch dropped labels from the server (commands.py:1362), but TASK-14.2 trashes the server copy once archived, closing that window for good. Filtering the index has no such dependency.
-- **Less code.** One filter point instead of two, and no destructive path to test.
-- It is what invariant #1 is for: files are truth, the DB is a rebuildable index.
-
-Consequence for _reconcile_label_sidecars: 'DB matches sidecar' becomes 'DB matches filter(sidecar)'. The current equality comparison needs to account for that.
-
-## Open question this does NOT resolve
-
-STARRED is a deliberate user act and the strongest candidate for archiving. It is also not an asymmetry of concept, only of spelling: Gmail's STARRED label and RFC 3501's \Flagged are the same stored bit, and Gmail's own IMAP interface maps one to the other. Starring in the web UI sets \Flagged over IMAP.
-
-That makes it a roles.py problem, not a new-capability problem — the same shape as TRASH vs [Gmail]/Trash that doc-7 already solved. A canonical `flagged` role resolving from both the Gmail STARRED label and the IMAP \Flagged flag would close it, and doc-7 explicitly parked `flagged` as 'nothing consumes it yet'. This task is that consumer.
-
-Still a real decision, because ownmail does not read IMAP FLAGS at all today. Capturing \Flagged means adding FLAGS to the FETCH in imap.py — which must keep readonly=True / BODY.PEEK, since fetching RFC822 on a writable mailbox sets \Seen as a side effect and would silently mark the user's mailbox read.
-
-Adjacent, out of scope, worth filing if pursued: \Answered has no Gmail API counterpart at all (Gmail infers reply state from threads). It stays true forever, so it passes the false-vs-unwanted test, but capturing it creates the mirror-image asymmetry where IMAP archives carry it and Gmail archives cannot.
+The original design (filter the index, rebuild in both directions) is in this file's git history.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-source exclude_labels config option, defaulting to empty (archive and index everything the provider sent)
-- [ ] #2 Sidecars keep every provider label; exclusion happens only when populating email_labels
-- [ ] #3 rebuild --only sidecars re-applies the current exclude_labels in both directions - removing a label from the config restores it to the index without a server round-trip
-- [ ] #4 _reconcile_label_sidecars compares DB against filter(sidecar), not raw sidecar equality
-- [ ] #5 UNREAD stays dropped at capture via roles.EPHEMERAL_LABELS and is not reachable through exclude_labels
-- [ ] #6 STARRED is handled as a canonical `flagged` role resolving from Gmail STARRED, the RFC 6154 \Flagged mailbox attribute, and the RFC 3501 \Flagged message flag
-- [ ] #7 No other IMAP message flag is captured, per the doc-7 four-question test
-- [ ] #8 exclude_labels accepts arbitrary label strings, not a closed set of known platform labels
+- [ ] #1 Decision recorded: add a per-source label exclusion option, or close as unnecessary, with reasoning against doc-8 and local label editing
+- [ ] #2 If added, the option accepts arbitrary label strings, defaults to empty, applies at capture alongside the TASK-103 status-label filtering, and cannot re-admit labels those filters drop
+- [ ] #3 If added, config.example.yaml and the docs describe it, and tests cover Gmail and IMAP sources
 <!-- AC:END -->
 
 ## Comments

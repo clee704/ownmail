@@ -10,13 +10,13 @@ references:
   - ownmail/archive.py
 priority: high
 type: bug
-ordinal: 94000
+ordinal: 2000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-At abda815, EmailArchive.backup marks a message downloaded before writing its required label sidecar. If sidecar.write_labels raises OSError, the outer finally block commits the incomplete row. A synthetic provider reproduction confirms that the next backup filters out that ID, performs no download, reports no new mail, and leaves the sidecar missing. Keep an incomplete contents-and-labels save retryable, preserve completed owned copies, and continue unrelated captures after recoverable per-message storage failures. This is separate from TASK-90, which handles label retrieval failure before saving. TASK-28 must account for the same failure during Active promotion.
+EmailArchive.backup, the default download path when a source does not enable active_downloads, marks a message downloaded before writing its required label sidecar. If sidecar.write_labels raises OSError, the outer finally block commits the incomplete row. A synthetic provider reproduction confirms that the next backup filters out that ID, performs no download, reports no new mail, and leaves the sidecar missing. Keep an incomplete contents-and-labels save retryable, preserve completed owned copies, and continue unrelated captures after recoverable per-message storage failures. This is separate from TASK-90, which handles label retrieval failure before saving. The live capture path added by TASK-28 writes the sidecar before registering the row and records failures as retryable, so it does not have this bug.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

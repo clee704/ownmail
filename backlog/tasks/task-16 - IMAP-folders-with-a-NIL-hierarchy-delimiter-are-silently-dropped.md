@@ -4,9 +4,11 @@ title: IMAP folders with a NIL hierarchy delimiter are silently dropped
 status: To Do
 assignee: []
 created_date: '2026-07-25 05:24'
+updated_date: '2026-09-26 02:24'
 labels: []
 dependencies: []
-ordinal: 23000
+priority: medium
+ordinal: 11000
 ---
 
 ## Description
@@ -18,3 +20,9 @@ Pre-existing; predates the role work in TASK-5.2, which only moved the regex int
 
 Fix: accept NIL as well as a quoted delimiter, and treat it as an empty delimiter — roles.role_for_imap_folder already handles delimiter='' by matching the whole name. Consider also warning when a LIST line fails to parse, so a future shape mismatch is visible instead of silent.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-25 review: still present in the archive download path (providers/imap.py LIST regex requires a quoted delimiter and skips other lines without a warning). The live path already accepts NIL and maps it to an empty delimiter (providers/live_imap.py), which can serve as the model for the fix.
+<!-- SECTION:NOTES:END -->

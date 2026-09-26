@@ -9,13 +9,13 @@ labels:
 dependencies: []
 priority: medium
 type: bug
-ordinal: 96000
+ordinal: 21000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The padding detector still misses sender backgrounds supplied by scoped CSS classes or nested beyond the first wrapper child. Synthetic cases include a class-styled root canvas, a background table under multiple div wrappers, and a background applied only to a table cell. Recognize these authored layouts without removing readable padding from simple HTML or changing sender markup. Body attribute extraction remains tracked in TASK-56.
+The padding detector still misses sender backgrounds supplied by scoped CSS classes or nested beyond the first wrapper child. Synthetic cases include a class-styled root canvas, a background table under multiple div wrappers, and a background applied only to a table cell. Recognize these authored layouts without removing readable padding from simple HTML or changing sender markup. TASK-94 now carries the body style onto the reader container; the remaining body attributes and body-qualified selectors are tracked in TASK-56.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

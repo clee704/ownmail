@@ -4,9 +4,11 @@ title: update-labels --source silently processes only one source
 status: To Do
 assignee: []
 created_date: '2026-08-06 19:22'
+updated_date: '2026-09-26 02:24'
 labels: []
 dependencies: []
-ordinal: 41000
+priority: medium
+ordinal: 12000
 ---
 
 ## Description
@@ -45,3 +47,9 @@ fallback may have been copied.
 - Named `--source` still restricts to that one
 - Help text and behaviour agree
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-25 review: still present (commands.py falls back to sources[0] while cli.py help says 'default: all sources'). cmd_sync_check has the same fallback and the same help text; fix both together.
+<!-- SECTION:NOTES:END -->

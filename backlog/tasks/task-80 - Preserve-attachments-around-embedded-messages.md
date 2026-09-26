@@ -4,10 +4,12 @@ title: Preserve attachments around embedded messages
 status: To Do
 assignee: []
 created_date: '2026-09-14 04:07'
+updated_date: '2026-09-26 02:23'
 labels: []
 dependencies: []
+priority: high
 type: bug
-ordinal: 84000
+ordinal: 7000
 ---
 
 ## Description

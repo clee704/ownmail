@@ -8,7 +8,7 @@ labels: []
 milestone: m-4
 dependencies: []
 priority: medium
-ordinal: 50
+ordinal: 24000
 ---
 
 ## Description
@@ -21,7 +21,7 @@ Carried over from ROADMAP.md's unscheduled Backlog section. Sketched there as:
 
 Export archived emails out of ownmail, filtered by the existing search query syntax (query.py already parses from:/subject:/attachment: etc., so --query should reuse it rather than growing a second filter language). mbox is the straightforward case - stdlib mailbox module, and it's the format other clients import. PDF is a much bigger lift (HTML-to-PDF rendering, a new heavyweight dependency) and is worth splitting into its own task or dropping unless there's a concrete need; the Minimal dependencies invariant argues against pulling in a browser engine for it.
 
-Scope is undecided: mbox-only first is the sensible cut.
+Scope is undecided: mbox-only first is the sensible cut. Also decide whether export includes Active messages or only archived ones, and whether sidecar labels are written into the output (for example as X-Keywords).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

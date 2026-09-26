@@ -8,13 +8,13 @@ labels: []
 milestone: m-3
 dependencies: []
 priority: low
-ordinal: 40
+ordinal: 27000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Carried over from ROADMAP.md's 'Web UI Polish' section, filed verbatim as an open question: 'Verify CJK attachment filename encoding (RFC 5987) - check if this is still an issue.' Non-ASCII attachment filenames (Korean, Japanese, Chinese) are encoded per RFC 2231/5987 as filename*=UTF-8''%XX... in Content-Disposition. Confirm whether the download path in web.py and the filename extraction in parser.py handle that correctly end-to-end, or whether it mangles/mojibakes. Start by checking against a real CJK-attachment email in the archive - tests/fixtures/ already has Korean encoding fixtures (korean_encoded.eml, split_multibyte_rfc2047.eml) but those cover header encoding, not attachment filenames. If it turns out to already work, close this task with a regression test proving it rather than deleting it silently.
+Carried over from ROADMAP.md's 'Web UI Polish' section, filed verbatim as an open question: 'Verify CJK attachment filename encoding (RFC 5987) - check if this is still an issue.' Non-ASCII attachment filenames (Korean, Japanese, Chinese) are encoded per RFC 2231/5987 as filename*=UTF-8''%XX... in Content-Disposition. Confirm whether the download path in web.py and the filename extraction in parser.py handle that correctly end-to-end, or whether it mangles/mojibakes. Extraction is now covered: tests/test_parser.py tests extract_attachment_filename with Korean filename*=UTF-8'' and unknown-8bit values, and TASK-29 added tests/fixtures/rfc2047_filename_param.eml, a Korean RFC 2047 attachment filename. Remaining: no fixture uses the RFC 2231 filename*= form, and no test asserts the Content-Disposition that the /attachment/ route produces for a non-ASCII name. Close this task once a download test covers that.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

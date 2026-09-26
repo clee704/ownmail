@@ -4,10 +4,11 @@ title: Reassess label provenance for explicit repairs
 status: To Do
 assignee: []
 created_date: '2026-08-06 18:38'
-updated_date: '2026-09-14 09:07'
+updated_date: '2026-09-26 02:24'
 labels: []
 dependencies: []
-ordinal: 40000
+priority: low
+ordinal: 30000
 ---
 
 ## Description
@@ -38,3 +39,9 @@ repository approval and PR requirements.
 - [ ] #1 A concrete explicit-repair use case and its benefit are recorded before implementation, or the task is closed with a decision that provenance is unnecessary.
 - [ ] #2 Any retained provenance design preserves all captured and locally edited labels during routine operations, including intentional removals; it introduces no automatic server-partition replacement.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-25 review: candidate concrete use for AC 1 is relabel. Its union strategy can re-add a folder label the user removed locally, and its server strategy drops local edits; origin metadata could separate those cases. Without such a use, close as unnecessary.
+<!-- SECTION:NOTES:END -->

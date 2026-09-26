@@ -69,7 +69,11 @@ behind the order, tracked mechanically via each task's `milestone` and
 
 ## Phase 5 order (updated 2026-09-14)
 
-Work these one at a time, in this order among eligible tasks. **This table is the authority.**
+**Complete.** Every task below and TASK-14 were Done by 2026-09-20. The
+[backlog order](#backlog-order-2026-09-25) now governs task selection; this
+table is kept as the record of how Phase 5 was sequenced.
+
+Work these one at a time, in this order among eligible tasks.
 Each task's `ordinal` matches it, but neither `backlog task list --plain`
 (sorts by priority) nor `backlog board` renders that order, so read it here
 rather than trying to recover it from the CLI.
@@ -197,6 +201,59 @@ active-message storage. Those remain TASK-6, TASK-5.4 and TASK-28. Label
 exclusion, classification and storage repair remain TASK-19, TASK-26 and
 TASK-27. UI work preserves the existing distinction between the local bin
 and historical server-trash labels described in doc-9.
+
+## Backlog order (2026-09-25)
+
+Written after Phase 5 finished and every open task was checked against the
+code at 8b05d63. No open task had been fixed; several descriptions were
+corrected, TASK-5 was closed because its subtasks were Done, and TASK-19 was
+rewritten around what TASK-103 and TASK-5.4 already settled.
+
+**This table is the authority for task selection.** Each task's `ordinal`
+matches its row. It overrides milestone order: TASK-6.1, TASK-6.2 and TASK-8
+keep their Phase 4 milestone for history, but do not jump ahead of the table.
+
+| # | Task | Priority | Why here |
+|---|------|----------|----------|
+| 1 | TASK-113 | high | Commit-message tests fail when Git signing is enabled and the signer is unavailable, which breaks the pre-push gate for every other task |
+| 2 | TASK-91 | high | A labels-file write failure leaves a message marked downloaded; it is never retried |
+| 3 | TASK-26 | high | reconcile treats user labels named like system folders as that role and can sweep real mail to the expiring local bin |
+| 4 | TASK-22 | high | Text + label + date searches return wrong results; one clear cause |
+| 5 | TASK-21 | high | Multiple label: filters return wrong results; same code as TASK-22 |
+| 6 | TASK-84 | high | A message that fails indexing is missing from search while the run reports success |
+| 7 | TASK-80 | high | Attachments after an embedded message disappear, and downloads can return the wrong file |
+| 8 | TASK-72 | high | Remote images load while blocking is on |
+| 9 | TASK-67 | high | Sanitizer dependency advisories; DOMPurify is the HTML security boundary |
+| 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
+| 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
+| 12 | TASK-37 | medium | update-labels and sync-check process only the first source |
+| 13 | TASK-98 | medium | Ctrl-C and web Stop do not stop later sources |
+| 14 | TASK-110 | medium | Throttled Gmail live batch members are not retried; recovered on a later run |
+| 15 | TASK-95 | medium | Page loads reread the whole Active cache several times |
+| 16 | TASK-78 | medium | Per-account totals overcount duplicates; display only |
+| 17 | TASK-44 | medium | Trusted-sender save failures report success |
+| 18 | TASK-99 | medium | Post-scan download progress is hard to observe |
+| 19 | TASK-13 | medium | Email addresses inside URLs produce broken links |
+| 20 | TASK-56 | medium | Body-qualified CSS selectors never match |
+| 21 | TASK-93 | medium | Padding detection misses class-styled and nested backgrounds |
+| 22 | TASK-111 | medium | JSON search output for scripts and assistants |
+| 23 | TASK-112 | medium | Read a message by ID as JSON; depends on TASK-111 |
+| 24 | TASK-9 | medium | mbox export; PDF needs a new dependency |
+| 25 | TASK-64 | low | CLI Trash listing crashes when Trash is not empty; web Trash works |
+| 26 | TASK-12 | low | --verbose before the subcommand is ignored |
+| 27 | TASK-8 | low | Only a download-header test remains |
+| 28 | TASK-50 | low | iPhone Home Screen polish |
+| 29 | TASK-19 | low | Decision on excluding recurring labels at capture |
+| 30 | TASK-36 | low | Decision on label provenance |
+| 31 | TASK-6.1 | low | Thread grouping; needs schema and sidecar sign-off |
+| 32 | TASK-6.2 | low | Threaded list; depends on TASK-6.1 |
+| 33 | TASK-10 | low | Keyring-less credential store; STOP item |
+| 34 | TASK-11 | low | Encryption at rest; decide whether to build it at all |
+| 35 | TASK-6 | low | Parent of TASK-6.1 and TASK-6.2 |
+
+Correctness and data loss come before security, then reliability, rendering,
+features and decisions. Within a tier, cheaper fixes and fixes sharing code go
+first. File new tasks into this table when they are created.
 
 ## Keeping this current
 

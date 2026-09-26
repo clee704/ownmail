@@ -4,13 +4,14 @@ title: Isolate commit-message tests from user Git signing settings
 status: To Do
 assignee: []
 created_date: '2026-09-24 18:50'
+updated_date: '2026-09-26 02:23'
 labels: []
 dependencies: []
 references:
   - tests/test_check_commit_msg.py
-priority: medium
+priority: high
 type: bug
-ordinal: 114000
+ordinal: 1000
 ---
 
 ## Description

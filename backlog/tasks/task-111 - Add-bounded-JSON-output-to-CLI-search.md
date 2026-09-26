@@ -13,7 +13,7 @@ references:
   - ownmail/active_search.py
 priority: medium
 type: feature
-ordinal: 112000
+ordinal: 22000
 ---
 
 ## Description

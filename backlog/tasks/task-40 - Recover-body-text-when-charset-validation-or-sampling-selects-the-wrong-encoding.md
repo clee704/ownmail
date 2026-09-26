@@ -6,11 +6,12 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-11 10:43'
+updated_date: '2026-09-26 02:23'
 labels: []
 dependencies: []
-priority: medium
+priority: high
 type: bug
-ordinal: 43000
+ordinal: 10000
 ---
 
 ## Description

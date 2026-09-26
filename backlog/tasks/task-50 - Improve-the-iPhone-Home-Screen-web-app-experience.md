@@ -4,7 +4,7 @@ title: Improve the iPhone Home Screen web app experience
 status: To Do
 assignee: []
 created_date: '2026-09-13 04:50'
-updated_date: '2026-09-13 05:06'
+updated_date: '2026-09-26 02:24'
 labels:
   - ui
   - mobile
@@ -17,9 +17,9 @@ references:
     https://webkit.org/blog/17333/webkit-features-in-safari-26-0/#every-site-can-be-a-web-app-on-ios-and-ipados
   - 'https://webkit.org/blog/7929/designing-websites-for-iphone-x/'
   - 'https://www.w3.org/TR/service-workers/#secure-context'
-priority: medium
+priority: low
 type: enhancement
-ordinal: 53000
+ordinal: 28000
 ---
 
 ## Description
@@ -27,7 +27,7 @@ ordinal: 53000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Make ownmail reliable and comfortable when launched from the iPhone Home Screen. Prioritize navigation, resuming after backgrounding, and validation on an actual iPhone, then complete installation metadata and connection recovery.
 
-TASK-49 added a minimal manifest with root navigation scope and configured branding, prevented automatic search focus on return, and improved list restoration and loading feedback. Its standalone navigation was verified in an iPhone simulator. TASK-50.1 adds the Archive app icon through Apple touch and manifest declarations. Remaining work includes theme colors, app-managed reading-position recovery, connection recovery, and physical-device checks.
+TASK-49, TASK-51, TASK-52, and TASK-53 cover most navigation and resume behavior; physical-device confirmation remains. TASK-49 added a minimal manifest with root navigation scope and configured branding, prevented automatic search focus on return, and improved list restoration and loading feedback. Its standalone navigation was verified in an iPhone simulator. TASK-50.1 adds the Archive app icon through Apple touch and manifest declarations. Remaining work includes theme colors, app-managed reading-position recovery, connection recovery, and physical-device checks.
 
 Implement this incrementally in the existing Flask UI. A cached offline fallback depends on a trusted HTTPS origin over LAN; record that dependency before selecting a service-worker strategy. Full offline mail storage is a separate product decision.
 <!-- SECTION:DESCRIPTION:END -->

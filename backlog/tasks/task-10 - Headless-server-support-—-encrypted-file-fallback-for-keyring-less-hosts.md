@@ -8,7 +8,7 @@ labels: []
 milestone: m-4
 dependencies: []
 priority: low
-ordinal: 51
+ordinal: 33000
 ---
 
 ## Description
@@ -16,7 +16,7 @@ ordinal: 51
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Carried over from ROADMAP.md's unscheduled Backlog section: 'Encrypted file fallback for servers without a desktop keyring.'
 
-keychain.py currently requires a working keyring backend (macOS Keychain, Windows Credential Locker, or a Linux Secret Service provider). On a headless Linux box - the natural place to run ownmail on a schedule - there's usually no D-Bus session and no Secret Service, so setup and every subsequent run fail with no usable fallback. Add an encrypted-file credential store used only when no keyring backend is available, with the passphrase supplied by env var or prompt.
+keychain.py currently requires a working keyring backend (macOS Keychain, Windows Credential Locker, or a Linux Secret Service provider). On a headless Linux box - the natural place to run ownmail on a schedule - there's usually no D-Bus session and no Secret Service, so setup and every subsequent run fail with no usable fallback. Add an encrypted-file credential store used only when no keyring backend is available. It must cover every stored secret: client credentials, the Gmail token, IMAP passwords, and the separate cleanup OAuth token (TASK-14.2). config.parse_secret_ref accepts only keychain: references today and is the natural extension point. The passphrase is supplied by env var or prompt.
 
 Touches credential handling, which is a STOP-and-ask area per AGENTS.md: get the design signed off (key derivation, file location/permissions, how the passphrase reaches a cron job without ending up in a process listing) before implementing.
 <!-- SECTION:DESCRIPTION:END -->

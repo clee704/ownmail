@@ -4,15 +4,16 @@ title: Avoid reading the entire Active cache repeatedly for each page
 status: To Do
 assignee: []
 created_date: '2026-09-15 03:27'
+updated_date: '2026-09-26 02:24'
 labels: []
 dependencies: []
 references:
   - ownmail/active_cache.py
   - ownmail/active_search.py
   - ownmail/web.py
-priority: high
+priority: medium
 type: bug
-ordinal: 95000
+ordinal: 15000
 ---
 
 ## Description
@@ -27,3 +28,9 @@ The TASK-28 Active cache implementation repeatedly calls list_entries from activ
 - [ ] #2 Cached corruption, missing payloads, stale metadata, and ambiguous archive links remain handled without hiding valid owned results.
 - [ ] #3 Ownership filters, counts, freshness, pagination, and local-label isolation retain their existing behavior.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-25 review: the full-cache traversal pattern is unchanged at HEAD (list_entries reads every payload; active_count, archive_links, active_infos and search each traverse). The read counts above were not re-measured.
+<!-- SECTION:NOTES:END -->

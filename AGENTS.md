@@ -25,13 +25,9 @@ format, branch naming, dev setup, testing, migrations — live in
 
 ## Session start
 
-**Active workstream: [Mail ownership (TASK-14)](<backlog/tasks/task-14 - Drain-remote-servers-—-delete-archived-mail-once-verified-locally.md#resume>).**
-When the user says "continue the work", "continue Mail ownership", or otherwise
-asks to resume without naming different work, follow that workstream's resume
-rule before the general selection below. TASK-14 is a container, not an
-implementation task to claim. An unrelated `In Progress` task does not override
-this route. If the workstream is complete, report completion instead of silently
-selecting another project task. Explicit user direction still takes precedence.
+**No active workstream.** Mail ownership (TASK-14) finished on 2026-09-20.
+When the user asks to "continue the work" without naming different work, use
+the general selection below.
 
 **If the user gives you no specific direction at session start, do not ask which
 task to work on. Pick one and start.**
@@ -41,13 +37,12 @@ Selection order:
 1. **Resume before you start.** If any task is `In Progress`, finish it before
    pulling new work. Check the working tree too — an uncommitted diff is
    in-progress work whether or not a task says so.
-2. **Otherwise take the next `To Do` task**: lowest `ordinal` within the
-   earliest open milestone. **Read the order from
-   `backlog/docs/doc-4 - Execution order`**, which holds both the sequence and
-   the rationale — its Phase 5 table is the current authority. Do *not* try to
-   recover the order from the CLI: `backlog task list --plain` sorts by
-   priority and `backlog board` by neither, so neither shows `ordinal`
-   sequence. Use `backlog task <id> --plain` to read a task once doc-4 has told
+2. **Otherwise take the next `To Do` task** in the order given by
+   **`backlog/docs/doc-4 - Execution order`**, which holds both the sequence and
+   the rationale. Its Backlog order table is the current authority and
+   overrides milestone order. Do *not* try to recover the order from the CLI:
+   `backlog task list --plain` sorts by priority and `backlog board` by
+   neither, so neither shows `ordinal` sequence. Use `backlog task <id> --plain` to read a task once doc-4 has told
    you which one.
 3. **Respect `dependencies:`.** A task whose dependencies aren't `Done` is not
    eligible — skip to the next one.

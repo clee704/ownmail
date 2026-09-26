@@ -4,11 +4,13 @@ title: Fix CLI Trash listing with database result rows
 status: To Do
 assignee: []
 created_date: '2026-09-13 08:07'
+updated_date: '2026-09-26 02:24'
 labels:
   - cli
 dependencies: []
+priority: low
 type: bug
-ordinal: 67000
+ordinal: 25000
 ---
 
 ## Description

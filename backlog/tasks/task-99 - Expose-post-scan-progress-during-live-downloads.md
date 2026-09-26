@@ -11,13 +11,13 @@ references:
   - ownmail/static/downloads.js
 priority: medium
 type: bug
-ordinal: 101000
+ordinal: 18000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A web-triggered download can look stalled after live enumeration even while the worker continues checking and refreshing messages. The refreshing UI omits skipped counts, and live_sync does not advance progress for discarded messages or final cached-message reconciliation. Sequential provider reads can therefore leave visible counters unchanged for extended periods. LiveLookupError also collapses underlying provider failures into a generic active_refresh reason, which prevents operators from distinguishing slow work from request failures. Make post-scan work and safe failure categories observable while preserving lifecycle safety.
+A web-triggered download can look stalled after live enumeration even while the worker continues checking and refreshing messages. The refreshing UI omits skipped counts, and live_sync does not advance progress for discarded messages or final cached-message reconciliation. TASK-100 restored batched reads that flush progress after each batch, so the remaining quiet stretches come from reconciliation and silent skips. LiveLookupError also collapses underlying provider failures into a generic active_refresh reason, which prevents operators from distinguishing slow work from request failures. Make post-scan work and safe failure categories observable while preserving lifecycle safety.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

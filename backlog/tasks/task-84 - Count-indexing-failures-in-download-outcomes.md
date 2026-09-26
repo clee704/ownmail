@@ -4,10 +4,12 @@ title: Count indexing failures in download outcomes
 status: To Do
 assignee: []
 created_date: '2026-09-14 07:25'
+updated_date: '2026-09-26 02:23'
 labels: []
 dependencies: []
+priority: high
 type: bug
-ordinal: 88000
+ordinal: 6000
 ---
 
 ## Description
@@ -21,3 +23,9 @@ EmailArchive.backup ignores a false return from _index_email, increments success
 - [ ] #1 A failed index operation is represented in the download result and prevents the run from being reported as fully successful.
 - [ ] #2 Sync-state and retry behavior after an indexing failure preserve the ability to recover the affected message, with a synthetic regression.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-25 review: affects the default EmailArchive.backup path only; the live path rolls back the row on indexing failure. backup also sets indexed_hash when indexing failed, which can hide the message from later reindex checks, and the sync cursor still advances when error_count is 0.
+<!-- SECTION:NOTES:END -->
