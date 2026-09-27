@@ -852,6 +852,98 @@ class TestBackupResume:
         provider.download_message.assert_called_once_with("msg2")
 
 
+class TestBackupSidecarFailure:
+    """A capture is complete only once its label sidecar is saved."""
+
+    @staticmethod
+    def _provider():
+        from unittest.mock import MagicMock
+
+        provider = MagicMock()
+        provider.account = "test@gmail.com"
+        provider.source_name = "test_source"
+        provider.name = "imap"
+        provider.download_batch_size = 1
+        provider.get_new_message_ids.return_value = (["msg0", "msg1", "msg2"], "new-state")
+        provider.download_message.side_effect = lambda msg_id: (
+            _raw_email_with_id(int(msg_id[3:])),
+            [f"label-{msg_id}"],
+        )
+        return provider
+
+    @staticmethod
+    def _failing_second_write(error):
+        real_write = sidecar.write_labels
+        calls = []
+
+        def write_labels(path, labels):
+            calls.append(path)
+            if len(calls) == 2:
+                raise error
+            real_write(path, labels)
+
+        return write_labels
+
+    @staticmethod
+    def _files(archive):
+        import sqlite3
+
+        with sqlite3.connect(archive.db.db_path) as conn:
+            rows = conn.execute("SELECT provider_id, filename FROM emails").fetchall()
+        return {provider_id: archive.archive_dir / filename for provider_id, filename in rows}
+
+    def test_failed_sidecar_write_stays_retryable(self, temp_dir):
+        from unittest.mock import MagicMock, patch
+
+        archive = EmailArchive(temp_dir, {})
+        provider = self._provider()
+        progress = MagicMock()
+
+        with patch("ownmail.archive.sidecar.write_labels", self._failing_second_write(OSError("disk full"))):
+            result = archive.backup(provider, progress=progress)
+
+        assert result["success_count"] == 2
+        assert result["error_count"] == 1
+        assert result["failed_ids"] == ["msg1"]
+        error = progress.fail_exception.call_args
+        assert isinstance(error.args[0], OSError)
+        assert error.kwargs == {"context": "archive", "errors": 1}
+        assert archive.db.get_downloaded_ids("test@gmail.com") == {"msg0", "msg2"}
+        assert archive.db.get_sync_state("test@gmail.com", "sync_state") is None
+
+        completed = self._files(archive)
+        before = {
+            path: (path.read_bytes(), sidecar.sidecar_path(path).read_bytes(), path.stat().st_mtime_ns)
+            for path in completed.values()
+        }
+
+        provider.download_message.reset_mock()
+        result = archive.backup(provider)
+
+        provider.download_message.assert_called_once_with("msg1")
+        assert result["success_count"] == 1
+        assert result["error_count"] == 0
+        assert sidecar.read_labels(self._files(archive)["msg1"]) == ["label-msg1"]
+        assert archive.db.get_sync_state("test@gmail.com", "sync_state") == "new-state"
+        for path, (content, labels, mtime) in before.items():
+            assert path.read_bytes() == content
+            assert sidecar.sidecar_path(path).read_bytes() == labels
+            assert path.stat().st_mtime_ns == mtime
+
+    def test_forced_quit_during_sidecar_write_keeps_completed_progress(self, temp_dir):
+        from unittest.mock import patch
+
+        archive = EmailArchive(temp_dir, {})
+        provider = self._provider()
+
+        with patch("ownmail.archive.sidecar.write_labels", self._failing_second_write(SystemExit(1))):
+            with pytest.raises(SystemExit):
+                archive.backup(provider)
+
+        assert archive.db.get_downloaded_ids("test@gmail.com") == {"msg0"}
+        assert archive.db.get_sync_state("test@gmail.com", "sync_state") is None
+
+
 class TestBackupSyncState:
     """Tests for sync state update conditions."""
 

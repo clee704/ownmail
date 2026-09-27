@@ -522,13 +522,25 @@ class EmailArchive:
                     filepath, email_date = self._save_email(raw_data, msg_id, account, emails_dir)
 
                     if filepath:
-                        size_bytes = filepath.stat().st_size
+                        # The row marks the capture complete, so the required label
+                        # sidecar must exist first; a missing row keeps a failed save
+                        # retryable on the next backup.
+                        try:
+                            size_bytes = filepath.stat().st_size
+                            sidecar.write_labels(filepath, labels or [])
+                        except OSError as e:
+                            print(f"\n  Error saving labels for {msg_id}: {e}")
+                            failed_ids.append(msg_id)
+                            error_count += 1
+                            if progress:
+                                progress.fail_exception(e, context="archive", errors=1)
+                            continue
                         size_str = self._format_size(size_bytes)
 
                         # Compute stable email_id from account + provider_id
                         email_id = ArchiveDatabase.make_email_id(account, msg_id)
 
-                        # Mark as downloaded first (creates the row in emails table)
+                        # Creates the row in the emails table
                         self.db.mark_downloaded(
                             email_id=email_id,
                             provider_id=msg_id,
@@ -538,9 +550,6 @@ class EmailArchive:
                             conn=self._batch_conn,
                             email_date=email_date,
                         )
-
-                        # Index the current capture's labels, even after an interrupted download.
-                        sidecar.write_labels(filepath, labels or [])
 
                         # Index the email (updates the row with parsed metadata + FTS)
                         indexed = self._index_email(email_id, filepath, raw_data, skip_delete=True)
