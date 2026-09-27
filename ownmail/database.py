@@ -1158,18 +1158,31 @@ class ArchiveDatabase:
                 where_clauses.append(f"NOT {match[0]}")
                 params.extend(match[1])
 
+            # Label and recipient filters JOIN their tables. Their clauses and
+            # params go on the shared lists so bound values follow SQL order.
+            joins = []
+            if label_filter:
+                joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
+                where_clauses.append("el.label = ? COLLATE NOCASE")
+                params.append(label_filter)
+            if recipient_email_filter:
+                joins.append("JOIN email_recipients er ON er.email_rowid = e.rowid")
+                where_clauses.append("er.recipient_email = ?")
+                params.append(recipient_email_filter)
+            join_sql = " ".join(joins)
+
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
             # Get FTS query
             fts_query = parsed.fts_query
 
-            # Determine sort order
-            if sort == "date_desc":
-                order_by = "e.email_date DESC"
-            elif sort == "date_asc":
-                order_by = "e.email_date ASC"
+            # Determine sort order. A label JOIN sorts on el.email_date to
+            # leverage its covering index.
+            date_column = "el.email_date" if label_filter else "e.email_date"
+            if sort == "date_asc":
+                order_by = f"{date_column} ASC"
             else:
-                order_by = "e.email_date DESC"  # Default for non-FTS queries
+                order_by = f"{date_column} DESC"  # date_desc, and relevance without FTS
             # Match the consolidated search's tie order before limiting either index.
             ascending = sort == "date_asc" or (sort == "relevance" and parsed.has_fts())
             tie_order = (", e.email_id ASC" if ascending else ", e.email_id DESC") if _with_order else ""
@@ -1181,32 +1194,6 @@ class ArchiveDatabase:
                     order_by = "rank"
                 order_column = ", rank" if sort == "relevance" else ", e.email_date"
 
-                # Build additional JOINs for label/recipient filters
-                extra_joins = []
-                extra_where = []
-                extra_params = []
-
-                if label_filter:
-                    extra_joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
-                    extra_where.append("el.label = ? COLLATE NOCASE")
-                    extra_params.append(label_filter)
-                    # Use el.email_date for sorting to leverage covering index
-                    if order_by == "e.email_date DESC":
-                        order_by = "el.email_date DESC"
-                    elif order_by == "e.email_date ASC":
-                        order_by = "el.email_date ASC"
-
-                if recipient_email_filter:
-                    extra_joins.append("JOIN email_recipients er ON er.email_rowid = e.rowid")
-                    extra_where.append("er.recipient_email = ?")
-                    extra_params.append(recipient_email_filter)
-
-                join_sql = " ".join(extra_joins)
-                if extra_where:
-                    where_sql = (
-                        " AND ".join([where_sql] + extra_where) if where_sql != "1=1" else " AND ".join(extra_where)
-                    )
-
                 # Determine if we need DISTINCT
                 # Single-join cases never produce duplicates due to PKs on junction tables
                 # Multi-join (label + recipient) also safe: each email has at most one
@@ -1214,7 +1201,7 @@ class ArchiveDatabase:
                 distinct = ""
 
                 # JOIN with FTS using rowid
-                fts_params = [fts_query] + extra_params + params + [limit, offset]
+                fts_params = [fts_query] + params + [limit, offset]
                 _t2 = time.time()
                 try:
                     results = conn.execute(
@@ -1250,28 +1237,6 @@ class ArchiveDatabase:
                 # No text search - query emails table only (fast with indexes)
                 _t2 = time.time()
 
-                # Build query - use JOIN if filtering by recipient email or label
-                joins = []
-                filter_params = []
-
-                if recipient_email_filter:
-                    joins.append("JOIN email_recipients er ON er.email_rowid = e.rowid")
-                    where_clauses.insert(0, "er.recipient_email = ?")
-                    filter_params.append(recipient_email_filter)
-
-                if label_filter:
-                    joins.append("JOIN email_labels el ON el.email_rowid = e.rowid")
-                    where_clauses.insert(0, "el.label = ? COLLATE NOCASE")
-                    filter_params.append(label_filter)
-                    # Use el.email_date for sorting to leverage covering index
-                    if "email_date DESC" in order_by:
-                        order_by = "el.email_date DESC"
-                    elif "email_date ASC" in order_by:
-                        order_by = "el.email_date ASC"
-
-                join_sql = " ".join(joins)
-                where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
-
                 # Determine if we need DISTINCT
                 # Single-join cases never produce duplicates due to PKs on junction tables
                 # Multi-join (label + recipient) also safe: each email has at most one
@@ -1293,7 +1258,7 @@ class ArchiveDatabase:
                     ORDER BY {order_by}{tie_order}
                     LIMIT ? OFFSET ?
                     """
-                query_params = filter_params + params + [limit, offset]
+                query_params = params + [limit, offset]
 
                 print(f"[db.search] SQL: {sql}", flush=True)
                 print(f"[db.search] params: {query_params}", flush=True)

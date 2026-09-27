@@ -1009,6 +1009,54 @@ class TestSearchLabelSorting:
         assert page2[0][2] == "Older invoice"
 
 
+class TestSearchFilterCombinations:
+    """Label and recipient filters combined with other bound filters (TASK-22)."""
+
+    # Each decoy differs from "match" in exactly one filtered attribute.
+    ROWS = [
+        # (name, account, label, recipient, date)
+        ("match", "a@example.com", "INBOX", "me@example.com", "2024-03-01T10:00:00+00:00"),
+        ("labelled", "a@example.com", "Work", "me@example.com", "2024-03-01T10:00:00+00:00"),
+        ("addressed", "a@example.com", "INBOX", "you@example.com", "2024-03-01T10:00:00+00:00"),
+        ("later", "a@example.com", "INBOX", "me@example.com", "2024-09-01T10:00:00+00:00"),
+        ("elsewhere", "b@example.com", "INBOX", "me@example.com", "2024-03-01T10:00:00+00:00"),
+    ]
+
+    def _db(self, temp_dir):
+        db = ArchiveDatabase(temp_dir)
+        for name, account, label, recipient, date in self.ROWS:
+            email_id = _eid(name, account)
+            db.mark_downloaded(email_id, name, f"{name}.eml", email_date=date, account=account)
+            db.index_email(
+                email_id=email_id,
+                subject=f"Quarterly {name}",
+                sender="boss@example.com",
+                recipients=recipient,
+                date_str=date,
+                body="report body",
+                attachments="",
+                labels=[label],
+            )
+        return db
+
+    @pytest.mark.parametrize(
+        ("query", "account", "expected"),
+        [
+            ("quarterly label:INBOX before:2024-06-01", None, {"match", "addressed", "elsewhere"}),
+            ("quarterly to:me@example.com before:2024-06-01", None, {"match", "labelled", "elsewhere"}),
+            ("quarterly label:INBOX", "a@example.com", {"match", "addressed", "later"}),
+            ("to:me@example.com label:INBOX", None, {"match", "later", "elsewhere"}),
+            ("label:INBOX to:me@example.com", None, {"match", "later", "elsewhere"}),
+            ("quarterly to:me@example.com label:INBOX after:2024-06-01", "a@example.com", {"later"}),
+            ("to:me@example.com label:INBOX before:2024-06-01", "a@example.com", {"match"}),
+        ],
+    )
+    def test_each_filter_binds_its_own_value(self, temp_dir, query, account, expected):
+        db = self._db(temp_dir)
+        results = db.search(query, account=account)
+        assert {row[2].removeprefix("Quarterly ") for row in results} == expected
+
+
 class TestRoleFilter:
     """Tests for the role: filter, which unions every spelling of a role."""
 
