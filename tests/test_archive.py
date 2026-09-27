@@ -944,6 +944,43 @@ class TestBackupSidecarFailure:
         assert archive.db.get_sync_state("test@gmail.com", "sync_state") is None
 
 
+class TestBackupIndexFailure:
+    """A saved message that fails indexing stays recorded and reindexable."""
+
+    def test_failed_index_is_reported_and_rebuild_recovers_it(self, temp_dir):
+        import sqlite3
+        from unittest.mock import MagicMock, patch
+
+        from ownmail.commands import cmd_rebuild
+
+        archive = EmailArchive(temp_dir, {})
+        provider = TestBackupSidecarFailure._provider()
+        progress = MagicMock()
+        real_index = archive.db.index_email
+
+        def index_email(**kwargs):
+            if kwargs["subject"] == "Email 1":
+                raise sqlite3.OperationalError("database is locked")
+            real_index(**kwargs)
+
+        with patch.object(archive.db, "index_email", side_effect=index_email):
+            result = archive.backup(provider, progress=progress)
+
+        assert result["success_count"] == 2
+        assert result["error_count"] == 1
+        assert result["failed_ids"] == ["msg1"]
+        progress.fail.assert_called_once_with("message_index", errors=1)
+        assert archive.db.get_sync_state("test@gmail.com", "sync_state") is None
+        assert archive.db.get_downloaded_ids("test@gmail.com") == {"msg0", "msg1", "msg2"}
+        assert archive.search("Email 1") == []
+
+        cmd_rebuild(archive)
+
+        assert [row[0] for row in archive.search("Email 1")] == [_eid("msg1", "test@gmail.com")]
+        with sqlite3.connect(archive.db.db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM emails WHERE indexed_hash IS NULL").fetchone()[0] == 0
+
+
 class TestBackupSyncState:
     """Tests for sync state update conditions."""
 

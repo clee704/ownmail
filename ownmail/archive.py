@@ -566,24 +566,29 @@ class EmailArchive:
                                         (rowid_row[0], label, rowid_row[1]),
                                     )
 
-                        # Set indexed_hash to mark as indexed
-                        self._batch_conn.execute(
-                            "UPDATE emails SET indexed_hash = ? WHERE email_id = ?", (content_hash, email_id)
-                        )
-
-                        success_count += 1
                         downloaded_hashes.add(content_hash)
+                        if indexed:
+                            # Set indexed_hash to mark as indexed
+                            self._batch_conn.execute(
+                                "UPDATE emails SET indexed_hash = ? WHERE email_id = ?", (content_hash, email_id)
+                            )
+                            success_count += 1
+                            if progress:
+                                progress.advance(downloaded=1)
+                        else:
+                            # The saved copy stays recorded even if the server copy
+                            # later disappears; a NULL indexed_hash lets rebuild add it
+                            # to search.
+                            print(f"  Run 'ownmail rebuild' to add {msg_id} to search")
+                            failed_ids.append(msg_id)
+                            error_count += 1
+                            if progress:
+                                progress.fail("message_index", errors=1)
 
                         # Commit periodically
                         if success_count - last_commit_count >= COMMIT_INTERVAL:
                             self._batch_conn.commit()
                             last_commit_count = success_count
-
-                        if progress:
-                            if indexed:
-                                progress.advance(downloaded=1)
-                            else:
-                                progress.fail("message_index", errors=1)
 
                         # Update progress stats
                         elapsed = time.time() - start_time
