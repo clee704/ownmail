@@ -885,7 +885,6 @@ _ROLE_NAMES = {
     roles.INBOX: "Inbox",
     roles.SENT: "Sent",
     roles.DRAFTS: "Drafts",
-    roles.ARCHIVE: "Archive",
     roles.ALL: "All Mail",
     roles.SPAM: "Spam",
     roles.TRASH: "Trash (server)",
@@ -901,7 +900,6 @@ _ROLE_NAV = (
     (roles.INBOX, "inbox"),
     (roles.SENT, "sent"),
     (roles.DRAFTS, "draft"),
-    (roles.ARCHIVE, "archive"),
     (roles.SPAM, "spam"),
     (roles.TRASH, "trash"),
 )

@@ -37,7 +37,7 @@ TASK-21 — independent of this task, and not fixed here.
 ## Decision: a `role:` search term
 
 `role:<slug>` over the closed role set in `roles.py`
-(`inbox sent drafts trash spam archive all`). It resolves, at search time,
+(`inbox sent drafts trash spam all`). It resolves, at search time,
 to every distinct label in *this* archive whose `role_for_label` matches,
 then filters `email_labels.label IN (…)`.
 
@@ -79,8 +79,9 @@ Notes on scope:
 Three sections, top to bottom:
 
 1. **All Mail** → `/search` — unchanged. Means "everything in the archive".
-2. **System roles**, fixed order: Inbox, Sent, Drafts, Archive, Spam,
-   Trash (server). Each links to `role:<slug>`.
+2. **System roles**, fixed order: Inbox, Sent, Drafts, Spam,
+   Trash (server). Each links to `role:<slug>`. Archive was removed by
+   TASK-114; Archive folders are ordinary labels in section 3.
 3. **Labels** — every remaining label, `label:"<raw>"`, lexicographic.
 4. **Trash** → `/trash` — unchanged. ownmail's own bin, not a label.
 

@@ -19,10 +19,13 @@ SENT = "sent"
 DRAFTS = "drafts"
 TRASH = "trash"
 SPAM = "spam"
-ARCHIVE = "archive"
 ALL = "all"
 
-ROLES = frozenset({INBOX, SENT, DRAFTS, TRASH, SPAM, ARCHIVE, ALL})
+# Archive is deliberately not a role. Every owned message is archived, so a
+# server's Archive folder is one filing place among others and belongs with
+# the labels. Nor does it mean one thing across providers: Gmail archives by
+# removing INBOX and adds no label. See TASK-114.
+ROLES = frozenset({INBOX, SENT, DRAFTS, TRASH, SPAM, ALL})
 
 # Roles no configuration can admit into the archive.
 #
@@ -101,7 +104,6 @@ STALE_STATE_LABELS = frozenset({"INBOX", "DRAFT"})
 # The authoritative signal when the server advertises it.
 _SPECIAL_USE = {
     "\\all": ALL,
-    "\\archive": ARCHIVE,
     "\\drafts": DRAFTS,
     "\\junk": SPAM,
     "\\sent": SENT,
@@ -192,15 +194,6 @@ _FOLDER_NAMES = {
         "すべてのメール",
         "전체보관함",
         "所有邮件",
-    ),
-    ARCHIVE: (
-        "archive",
-        "archives",
-        "archiv",
-        "archivio",
-        "archivo",
-        "arkiv",
-        "アーカイブ",
     ),
 }
 
@@ -311,7 +304,7 @@ def role_for_label(label: str, *, gmail: bool) -> str | None:
     Gmail names its system labels unambiguously: API label IDs, or IMAP
     folders under its reserved ``[Gmail]/`` namespace. Every other string on
     a Gmail message is a user label, however it is spelled, so the leaf-name
-    table is kept away from it — a user label called 'Archive' or 'Trash' is
+    table is kept away from it — a user label called 'Junk' or 'Bin' is
     the owner's filing, not a system folder. See TASK-26.
 
     Other IMAP servers leave only the folder name, so the table is the best

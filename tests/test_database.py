@@ -1096,7 +1096,7 @@ class TestRoleFilter:
 
 
 class TestGmailUserLabelsNamedLikeFolders:
-    """TASK-26: on Gmail a label named 'Archive' is the owner's, not a role."""
+    """TASK-26: on Gmail a label named 'Junk' is the owner's, not a role."""
 
     DATE = "2024-03-01T10:00:00+00:00"
     GMAIL = "g@example.com"
@@ -1121,10 +1121,10 @@ class TestGmailUserLabelsNamedLikeFolders:
         return db
 
     ROWS = [
-        ("gmail-label", GMAIL, ["Archive"]),
+        ("gmail-label", GMAIL, ["Junk"]),
         ("gmail-trash", GMAIL, ["[Gmail]/Trash"]),
-        ("imap-folder", IMAP, ["Archive"]),
-        ("imported", None, ["Archive"]),
+        ("imap-folder", IMAP, ["Junk"]),
+        ("imported", None, ["Junk"]),
     ]
 
     def _subjects(self, db, query):
@@ -1132,8 +1132,8 @@ class TestGmailUserLabelsNamedLikeFolders:
 
     def test_role_search_skips_the_gmail_user_label(self, temp_dir):
         db = self._db(temp_dir, self.ROWS)
-        assert self._subjects(db, "role:archive") == ["imap-folder", "imported"]
-        assert self._subjects(db, "-role:archive") == ["gmail-label", "gmail-trash"]
+        assert self._subjects(db, "role:spam") == ["imap-folder", "imported"]
+        assert self._subjects(db, "-role:spam") == ["gmail-label", "gmail-trash"]
 
     def test_gmail_system_labels_still_resolve(self, temp_dir):
         db = self._db(temp_dir, self.ROWS)
@@ -1141,25 +1141,32 @@ class TestGmailUserLabelsNamedLikeFolders:
 
     def test_role_counts_skip_the_gmail_user_label(self, temp_dir):
         db = self._db(temp_dir, self.ROWS)
-        assert db.get_role_counts() == {"archive": 2, "trash": 1}
+        assert db.get_role_counts() == {"spam": 2, "trash": 1}
 
     def test_a_label_gmail_holds_is_not_system_only(self, temp_dir):
         db = self._db(temp_dir, self.ROWS)
         assert db.get_system_labels() == {"[Gmail]/Trash"}
 
-        imap_only = self._db(temp_dir / "imap", [("imap-folder", self.IMAP, ["Archive"])])
-        assert imap_only.get_system_labels() == {"Archive"}
+        imap_only = self._db(temp_dir / "imap", [("imap-folder", self.IMAP, ["Junk"])])
+        assert imap_only.get_system_labels() == {"Junk"}
 
     def test_trashed_gmail_mail_does_not_make_a_user_label(self, temp_dir):
         """The sidebar counts searchable mail only, so this check must too."""
         db = self._db(temp_dir, self.ROWS)
         db.trash_email(_eid("gmail-label", self.GMAIL), "trash/gmail-label.eml")
-        assert "Archive" in db.get_system_labels()
+        assert "Junk" in db.get_system_labels()
+
+    def test_archive_is_one_label_across_accounts(self, temp_dir):
+        """TASK-114: no role entry competes with the label of the same name."""
+        db = self._db(temp_dir, [("gmail-label", self.GMAIL, ["Archive"]), ("imap-folder", self.IMAP, ["Archive"])])
+        assert db.get_system_labels() == set()
+        assert db.get_role_counts() == {}
+        assert db.get_label_counts() == {"Archive": 2}
 
     def test_without_gmail_accounts_names_resolve_as_before(self, temp_dir):
         db = self._db(temp_dir, self.ROWS, gmail_accounts=frozenset())
-        assert self._subjects(db, "role:archive") == ["gmail-label", "imap-folder", "imported"]
-        assert db.get_system_labels() == {"Archive", "[Gmail]/Trash"}
+        assert self._subjects(db, "role:spam") == ["gmail-label", "imap-folder", "imported"]
+        assert db.get_system_labels() == {"Junk", "[Gmail]/Trash"}
 
 
 class TestLabelCounts:
@@ -1261,10 +1268,10 @@ class TestRoleCounts:
         assert db.get_role_counts()["inbox"] == 1
 
     def test_user_labels_named_like_system_folders_still_count(self, temp_dir):
-        """'Archive' and 'Trash' must not be swept up by the stale-label rule."""
-        db = self._db(temp_dir, [("m1", ["Archive"]), ("m2", ["Trash"])])
+        """'Junk' and 'Trash' must not be swept up by the stale-label rule."""
+        db = self._db(temp_dir, [("m1", ["Junk"]), ("m2", ["Trash"])])
         counts = db.get_role_counts()
-        assert counts["archive"] == 1
+        assert counts["spam"] == 1
         assert counts["trash"] == 1
 
     def test_one_message_with_two_spellings_counts_once(self, temp_dir):

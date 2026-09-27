@@ -37,7 +37,6 @@ class TestImapSpecialUse:
         "flag,expected",
         [
             ("\\All", roles.ALL),
-            ("\\Archive", roles.ARCHIVE),
             ("\\Drafts", roles.DRAFTS),
             ("\\Junk", roles.SPAM),
             ("\\Sent", roles.SENT),
@@ -49,6 +48,11 @@ class TestImapSpecialUse:
 
     def test_case_insensitive(self):
         assert roles.role_for_imap_folder("x", "\\TRASH") == roles.TRASH
+
+    def test_archive_is_a_filing_place_not_a_role(self):
+        """TASK-114: Archive folders are listed with the labels."""
+        assert roles.role_for_imap_folder("Archive", "\\Archive") is None
+        assert roles.role_for_label("Archive", gmail=False) is None
 
     def test_beats_a_conflicting_name(self):
         """The server's own answer wins over the fallback table."""
@@ -87,7 +91,6 @@ class TestImapNameFallback:
             ("Spam", roles.SPAM),
             ("Drafts", roles.DRAFTS),
             ("Sent Items", roles.SENT),
-            ("Archive", roles.ARCHIVE),
         ],
     )
     def test_common_names(self, name, expected):
@@ -158,11 +161,11 @@ class TestGmailStoredLabels:
         assert roles.role_for_label("[Gmail]/All Mail", gmail=True) == roles.ALL
 
     def test_user_labels_named_like_system_folders_have_no_role(self):
-        for label in ("Archive", "Trash", "Bin", "Junk", "Drafts", "Sent Items", "Work/Archive"):
+        for label in ("Trash", "Bin", "Junk", "Drafts", "Sent Items", "Work/Junk"):
             assert roles.role_for_label(label, gmail=True) is None, label
 
     def test_generic_imap_keeps_the_name_table(self):
-        assert roles.role_for_label("Archive", gmail=False) == roles.ARCHIVE
+        assert roles.role_for_label("Junk", gmail=False) == roles.SPAM
 
 
 class TestStaleStateLabels:
@@ -188,7 +191,6 @@ class TestRoleSet:
         resolved = {
             roles.role_for_imap_folder("INBOX"),
             roles.role_for_imap_folder("x", "\\All"),
-            roles.role_for_imap_folder("x", "\\Archive"),
             roles.role_for_imap_folder("x", "\\Drafts"),
             roles.role_for_imap_folder("x", "\\Junk"),
             roles.role_for_imap_folder("x", "\\Sent"),

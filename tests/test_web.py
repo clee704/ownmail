@@ -2470,24 +2470,24 @@ class TestViewEmailRendering:
         assert "Entwürfe".encode() in response.data
 
     def test_gmail_user_label_chip_keeps_its_name(self, archive):
-        """TASK-26: on Gmail, 'Archive' is the owner's label, not the role."""
+        """TASK-26: on Gmail, 'Junk' is the owner's label, not the role."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.gmail_accounts = frozenset({"a@example.com"})
-        archive.db.get_labels_for_email.return_value = ["Archive", "[Gmail]/Trash"]
+        archive.db.get_labels_for_email.return_value = ["Junk", "[Gmail]/Trash"]
         app = create_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
-        assert b"label%3A%22Archive%22" in response.data
-        assert b"role%3Aarchive" not in response.data
+        assert b"label%3A%22Junk%22" in response.data
+        assert b"role%3Aspam" not in response.data
         assert b"role%3Atrash" in response.data
 
     def test_imap_folder_chip_still_resolves_by_name(self, archive):
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
-        archive.db.get_labels_for_email.return_value = ["Archive"]
+        archive.db.get_labels_for_email.return_value = ["Junk"]
         app = create_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
-        assert b"role%3Aarchive" in response.data
+        assert b"role%3Aspam" in response.data
 
     def test_chips_collapse_labels_that_share_a_role(self, archive):
         """Two spellings of 'sent' say one thing about the message."""

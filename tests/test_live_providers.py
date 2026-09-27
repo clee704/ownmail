@@ -523,6 +523,15 @@ def test_imap_advertised_scheduled_mail_stays_active_without_becoming_draft(gmai
     assert roles.DRAFTS not in fresh.roles
 
 
+def test_imap_archive_attribute_leaves_mail_eligible():
+    """TASK-114: \\Archive is no longer a role, but it is still a known attribute."""
+    provider = imap("Archive")
+    provider._conn.listing = ("OK", [b'(\\Archive \\HasNoChildren) "/" "Archive"'])
+    message = provider.list_live_messages().messages[0]
+    assert message.state == "eligible"
+    assert provider.read_live_message(message.message_id).state == "eligible"
+
+
 @pytest.mark.parametrize("attribute", [b"\\Unknown", b"\\Outbox", b"\\Submission"])
 def test_imap_unknown_mailbox_attributes_hold_messages(attribute):
     provider = imap("Projects")

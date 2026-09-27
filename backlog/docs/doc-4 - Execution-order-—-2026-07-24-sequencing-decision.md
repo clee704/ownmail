@@ -218,6 +218,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 1 | TASK-113 | high | Commit-message tests fail when Git signing is enabled and the signer is unavailable, which breaks the pre-push gate for every other task |
 | 2 | TASK-91 | high | A labels-file write failure leaves a message marked downloaded; it is never retried |
 | 3 | TASK-26 | high | reconcile treats user labels named like system folders as that role and can sweep real mail to the expiring local bin |
+| 3a | TASK-114 | high | Follow-up to TASK-26: Archive has no consumer as a role and produced two sidebar entries named Archive |
 | 4 | TASK-22 | high | Text + label + date searches return wrong results; one clear cause |
 | 5 | TASK-21 | high | Multiple label: filters return wrong results; same code as TASK-22 |
 | 6 | TASK-84 | high | A message that fails indexing is missing from search while the run reports success |

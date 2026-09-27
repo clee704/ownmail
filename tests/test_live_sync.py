@@ -47,7 +47,7 @@ def message(message_id="1", *, state="active", identity=None, labels=None, curre
     if current_roles is None:
         current_roles = {
             "active": {roles.INBOX},
-            "eligible": {roles.ARCHIVE},
+            "eligible": set(),
             "discarded": {roles.TRASH},
             "unknown": set(),
         }[state]
@@ -110,7 +110,7 @@ def test_active_handoff_captures_one_owned_snapshot(archive):
     assert archive.active_cache().read(archive.active_cache().list_entries()[0]["id"]) == active.raw
     assert len(archive.search("Body is:active")) == 1
 
-    server.messages["1"] = replace(active, state="eligible", roles=frozenset({roles.ARCHIVE}), labels=("Saved",))
+    server.messages["1"] = replace(active, state="eligible", roles=frozenset(), labels=("Saved",))
     captured = sync(archive, server)
     assert captured["success_count"] == 1
     assert captured["active_complete"] is True
@@ -167,9 +167,7 @@ def test_capture_failure_keeps_active_copy_and_retries_once(archive, monkeypatch
     server = MailServer([active])
     sync(archive, server)
     cached_id = archive.active_cache().list_entries()[0]["id"]
-    server.messages["1"] = replace(
-        active, state="eligible", roles=frozenset({roles.ARCHIVE}), labels=("First saved label",)
-    )
+    server.messages["1"] = replace(active, state="eligible", roles=frozenset(), labels=("First saved label",))
 
     def fail(*args, **kwargs):
         raise OSError("write unavailable")
@@ -204,7 +202,7 @@ def test_raw_capture_write_failure_preserves_cache_until_retry(archive, monkeypa
     server = MailServer([active])
     sync(archive, server)
     cached = archive.active_cache().list_entries()[0]
-    server.messages["1"] = replace(active, state="eligible", roles=frozenset({roles.ARCHIVE}))
+    server.messages["1"] = replace(active, state="eligible", roles=frozenset())
 
     def fail(*args, **kwargs):
         raise OSError("archive unavailable")
@@ -438,8 +436,8 @@ def test_failed_refresh_retains_capture_and_only_remaining_mail_is_active(archiv
     first, second = message("1"), message("2")
     server = MailServer([first, second])
     sync(archive, server)
-    finished_first = replace(first, state="eligible", roles=frozenset({roles.ARCHIVE}))
-    finished_second = replace(second, state="eligible", roles=frozenset({roles.ARCHIVE}))
+    finished_first = replace(first, state="eligible", roles=frozenset())
+    finished_second = replace(second, state="eligible", roles=frozenset())
     server.listed = [finished_first, finished_second]
     server.messages = {"1": finished_first, "2": failure()}
     read = server.read_live_message
@@ -490,7 +488,7 @@ def test_unavailable_content_cannot_authorize_capture_or_evict_previous_copy(arc
     active = message()
     server = MailServer([active])
     sync(archive, server)
-    server.messages["1"] = replace(active, state="eligible", roles=frozenset({roles.ARCHIVE}), raw=None)
+    server.messages["1"] = replace(active, state="eligible", roles=frozenset(), raw=None)
     result = sync(archive, server)
     assert result["success_count"] == 0
     assert result["error_count"] == 1
@@ -551,7 +549,7 @@ def test_incomplete_capture_with_malformed_sidecar_is_preserved_for_repair(archi
     active = message()
     server = MailServer([active])
     sync(archive, server)
-    server.messages["1"] = replace(active, state="eligible", roles=frozenset({roles.ARCHIVE}))
+    server.messages["1"] = replace(active, state="eligible", roles=frozenset())
 
     def fail(*args, **kwargs):
         raise sqlite3.OperationalError("index unavailable")

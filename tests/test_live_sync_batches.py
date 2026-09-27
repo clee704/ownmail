@@ -63,7 +63,7 @@ def test_eligible_transition_rechecks_state_even_when_revision_matches(archive):
     server = BatchServer([original])
     sync(archive, server)
     server.batches.clear()
-    server.listed = [replace(original, state="eligible", roles=frozenset({roles.ARCHIVE}))]
+    server.listed = [replace(original, state="eligible", roles=frozenset())]
     server.messages["1"] = replace(original, roles=frozenset({roles.DRAFTS}), labels=("Drafts",))
     assert sync(archive, server)["success_count"] == 0
     assert server.batches == [["1"]]

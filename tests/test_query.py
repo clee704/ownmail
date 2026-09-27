@@ -416,6 +416,10 @@ class TestParseQuery:
         assert "sent" in result.error  # lists the valid slugs
         assert result.where_clauses == []
 
+    def test_archive_is_not_a_role(self):
+        """TASK-114: Archive folders are searched with label:."""
+        assert "Unknown role 'archive'" in parse_query("role:archive").error
+
     def test_two_roles_both_survive(self):
         """Each role term must produce its own marker, not overwrite the last."""
         result = parse_query("role:inbox role:sent")

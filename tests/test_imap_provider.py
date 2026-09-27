@@ -256,6 +256,14 @@ class TestImapRoleExclusion:
         provider._conn.list.return_value = ("OK", lines)
         return provider._list_folders()
 
+    def test_archive_folders_are_downloaded_and_label_mail(self):
+        """TASK-114: Archive is a filing place like any folder, not a role."""
+        provider = self._make_provider()
+        folders = self._listing(provider, [b'(\\HasNoChildren \\Archive) "/" "Archive"'])
+        assert folders == ["Archive"]
+        assert provider._label_folders == ["Archive"]
+        assert provider._folder_roles == {}
+
     def test_special_use_trash_excluded_under_any_name(self):
         provider = self._make_provider()
         folders = self._listing(

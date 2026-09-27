@@ -574,7 +574,7 @@ class ArchiveDatabase:
         retroactively fixes every archive with no re-sync.
 
         The flag marks a label that holds its role only on non-Gmail accounts.
-        A bare 'Archive' is the archive folder on a plain IMAP server and a user
+        A bare 'Junk' is the spam folder on a plain IMAP server and a user
         label on Gmail (TASK-26), so callers must not apply that role to Gmail
         messages.
 
@@ -638,7 +638,7 @@ class ArchiveDatabase:
     def get_system_labels(self) -> set[str]:
         """Labels that name a role on every account holding them, for the sidebar.
 
-        The rest are user labels. A label like 'Archive' is both when a plain
+        The rest are user labels. A label like 'Junk' is both when a plain
         IMAP server and a Gmail account each hold it: its IMAP messages count
         under the role, and the Gmail owner still finds their label.
 

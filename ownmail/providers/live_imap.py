@@ -38,7 +38,9 @@ _KNOWN_KEYWORDS = {
     "nonjunk",
     "junkrecorded",
 }
+# \Archive marks a filing place, not a state; see roles.ROLES.
 _NONSTATE_ATTRIBUTES = {
+    "\\archive",
     "\\flagged",
     "\\haschildren",
     "\\hasnochildren",

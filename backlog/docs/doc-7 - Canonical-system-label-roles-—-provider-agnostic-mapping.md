@@ -27,11 +27,16 @@ Two things force this:
 A closed set of **roles** — semantic, per-message, provider-independent:
 
 ```
-inbox  sent  drafts  trash  spam  archive  all
+inbox  sent  drafts  trash  spam  all
 ```
 
 Each has a consumer today. `all` replaces the hardcoded All Mail name
-list; `archive` falls out of the same SPECIAL-USE enumeration for free.
+list. `archive` was in the original set because SPECIAL-USE offered it,
+and TASK-114 removed it: nothing consumed it, Gmail archives by removing
+INBOX rather than adding a label, and in ownmail every owned message is
+archived. A server's Archive folder is a filing place and is listed with
+the labels. Live IMAP sync still treats `\Archive` as a known attribute,
+so mail in such folders stays eligible for capture.
 Deliberately **not** included: `flagged`, `important`, `starred`,
 `unread`. RFC 6154 defines `\Flagged` and Gmail advertises `\Important`,
 but nothing consumes them yet.
@@ -125,7 +130,7 @@ change.
 **IMAP**, highest confidence first:
 
 1. **SPECIAL-USE attributes** (RFC 6154) from the `LIST` response —
-   `\All`, `\Archive`, `\Drafts`, `\Junk`, `\Sent`, `\Trash`. This is the
+   `\All`, `\Drafts`, `\Junk`, `\Sent`, `\Trash`. This is the
    provider-agnostic primitive and it costs nothing to read: the LIST
    parser already captured the flags and discarded them.
 2. **`INBOX`**, compared case-insensitively. RFC 3501 mandates the name
@@ -150,7 +155,7 @@ singular `DRAFT`.
 IMAP, names its system labels exactly: API IDs, or folders under
 `[Gmail]/` (`[Google Mail]/` in some regions). Every other string on a
 Gmail message is a user label, so the leaf-name table never applies to
-it. A Gmail label called `Archive` or `Trash` stays the owner's label in
+it. A Gmail label called `Junk` or `Bin` stays the owner's label in
 the sidebar, chips, `role:` search, `verify` and `reconcile`. Other IMAP
 accounts, and accounts no longer configured, keep the table, because a
 bare folder name is the only evidence left there. Which accounts are
