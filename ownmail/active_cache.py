@@ -34,8 +34,9 @@ def _digest(*parts: str) -> str:
 class ActiveCache:
     """Keep rebuildable search data and authoritative cache files outside an archive."""
 
-    def __init__(self, archive_dir: Path, cache_dir: Path | None = None):
+    def __init__(self, archive_dir: Path, cache_dir: Path | None = None, gmail_accounts: frozenset[str] = frozenset()):
         self.archive_dir = Path(archive_dir).resolve()
+        self.gmail_accounts = gmail_accounts
         chosen = (
             Path(cache_dir) if cache_dir is not None else self.archive_dir.with_name(f".{self.archive_dir.name}-active")
         )
@@ -406,11 +407,11 @@ class ActiveCache:
         """Rebuild cache search data entirely from verified message files and JSON."""
         self._check_database_paths()
         try:
-            self._db = ArchiveDatabase(self.cache_dir)
+            self._db = ArchiveDatabase(self.cache_dir, gmail_accounts=self.gmail_accounts)
         except sqlite3.DatabaseError:
             for suffix in ("", "-journal", "-wal", "-shm"):
                 self._unlink(self.cache_dir / f"ownmail.db{suffix}")
-            self._db = ArchiveDatabase(self.cache_dir)
+            self._db = ArchiveDatabase(self.cache_dir, gmail_accounts=self.gmail_accounts)
         with closing(sqlite3.connect(self.db.db_path)) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("DROP TABLE emails_fts")

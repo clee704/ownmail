@@ -29,15 +29,20 @@ class ArchiveDatabase:
     - emails_fts: FTS5 virtual table for full-text search
     """
 
-    def __init__(self, archive_dir: Path, db_dir: Path = None):
+    def __init__(self, archive_dir: Path, db_dir: Path = None, gmail_accounts: frozenset[str] = frozenset()):
         """Initialize the archive database.
 
         Args:
             archive_dir: Directory containing the email archive
             db_dir: Optional separate directory for the database.
                     If not provided, the database is stored in archive_dir.
+            gmail_accounts: Accounts whose stored labels use Gmail's exact
+                    vocabulary; see roles.role_for_label. Every other account,
+                    including one no longer configured, keeps the folder-name
+                    fallback.
         """
         self.archive_dir = archive_dir
+        self.gmail_accounts = gmail_accounts
         effective_db_dir = db_dir or archive_dir
         self.db_path = effective_db_dir / "ownmail.db"
         archive_dir.mkdir(parents=True, exist_ok=True)
@@ -561,35 +566,105 @@ class ArchiveDatabase:
             counts[label] -= count
         return {label: count for label, count in counts.items() if count > 0}
 
-    @staticmethod
-    def _label_role_map(conn: sqlite3.Connection) -> dict[str, str]:
+    def _label_role_map(self, conn: sqlite3.Connection) -> dict[str, tuple[str, bool]]:
         """Map this archive's labels to canonical roles, dropping the roleless.
 
         Roles are derived, not stored (doc-7), so the distinct labels get run
         through the name table on demand. Which means improving that table
         retroactively fixes every archive with no re-sync.
+
+        The flag marks a label that holds its role only on non-Gmail accounts.
+        A bare 'Archive' is the archive folder on a plain IMAP server and a user
+        label on Gmail (TASK-26), so callers must not apply that role to Gmail
+        messages.
+
+        Returns:
+            Mapping of label to (role, non-Gmail accounts only)
         """
         rows = conn.execute("SELECT DISTINCT label FROM email_labels").fetchall()
         resolved = {}
         for (label,) in rows:
-            role = roles.role_for_label(label)
+            role = roles.role_for_label(label, gmail=False)
             if role:
-                resolved[label] = role
+                non_gmail_only = bool(self.gmail_accounts) and roles.role_for_label(label, gmail=True) is None
+                resolved[label] = (role, non_gmail_only)
         return resolved
 
-    def get_labels_for_role(self, role: str) -> list[str]:
-        """Every label in this archive that resolves to a canonical role.
+    def _non_gmail(self, account_sql: str) -> tuple[str, list[str]]:
+        """SQL true when the account is not a Gmail one, unknown accounts included."""
+        placeholders = ",".join("?" for _ in self.gmail_accounts)
+        return f"COALESCE({account_sql}, '') NOT IN ({placeholders})", sorted(self.gmail_accounts)
 
-        Returns the raw strings, which is what email_labels holds.
+    def _role_match(self, role: str) -> tuple[str, list[str]] | None:
+        """SQL true when email ``e`` carries a label with this role.
+
+        Uses EXISTS rather than a JOIN: an email carrying both 'SENT' and
+        '[Gmail]/Sent Mail' would join twice and appear twice. Matching is
+        exact, not NOCASE, because the labels came straight out of email_labels.
 
         Args:
             role: Canonical role slug, e.g. 'sent'
 
         Returns:
-            Matching raw label strings, in no particular order
+            (sql, params), or None when no label in this archive has the role
         """
         with sqlite3.connect(self.db_path) as conn:
-            return [label for label, r in self._label_role_map(conn).items() if r == role]
+            role_map = self._label_role_map(conn)
+        everywhere = sorted(
+            label for label, (r, non_gmail_only) in role_map.items() if r == role and not non_gmail_only
+        )
+        non_gmail = sorted(label for label, (r, non_gmail_only) in role_map.items() if r == role and non_gmail_only)
+
+        clauses, params = [], []
+        for labels, on_gmail in ((everywhere, True), (non_gmail, False)):
+            if not labels:
+                continue
+            placeholders = ",".join("?" for _ in labels)
+            clause = f"""EXISTS (
+                SELECT 1 FROM email_labels el_role
+                WHERE el_role.email_rowid = e.rowid
+                  AND el_role.label IN ({placeholders})
+            )"""
+            if not on_gmail:
+                account_sql, account_params = self._non_gmail("e.account")
+                clause = f"({account_sql} AND {clause})"
+                params.extend(account_params)
+            clauses.append(clause)
+            params.extend(labels)
+        if not clauses:
+            return None
+        return f"({' OR '.join(clauses)})", params
+
+    def get_system_labels(self) -> set[str]:
+        """Labels that name a role on every account holding them, for the sidebar.
+
+        The rest are user labels. A label like 'Archive' is both when a plain
+        IMAP server and a Gmail account each hold it: its IMAP messages count
+        under the role, and the Gmail owner still finds their label.
+
+        Returns:
+            Raw label strings that belong only in the system section
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            role_map = self._label_role_map(conn)
+            shared = sorted(label for label, (_, non_gmail_only) in role_map.items() if non_gmail_only)
+            held_by_gmail = set()
+            if shared:
+                labels = ",".join("?" for _ in shared)
+                accounts = ",".join("?" for _ in self.gmail_accounts)
+                held_by_gmail = {
+                    label
+                    for (label,) in conn.execute(
+                        f"""SELECT DISTINCT el.label FROM email_labels el
+                            JOIN emails e ON e.rowid = el.email_rowid
+                            WHERE el.label IN ({labels})
+                              AND el.email_date IS NOT NULL
+                              AND e.trashed_at IS NULL
+                              AND e.account IN ({accounts})""",
+                        [*shared, *sorted(self.gmail_accounts)],
+                    )
+                }
+        return set(role_map) - held_by_gmail
 
     def get_role_counts(self) -> dict[str, int]:
         """Count searchable emails per canonical role, for the sidebar.
@@ -613,25 +688,35 @@ class ArchiveDatabase:
         """
         with sqlite3.connect(self.db_path) as conn:
             role_map = {
-                label: role
-                for label, role in self._label_role_map(conn).items()
+                label: resolved
+                for label, resolved in self._label_role_map(conn).items()
                 if label not in roles.STALE_STATE_LABELS
             }
             if not role_map:
                 return {}
-            values = ",".join("(?,?)" for _ in role_map)
-            pairs = [value for item in role_map.items() for value in item]
+            values = ",".join("(?,?,?)" for _ in role_map)
+            params = [
+                value for label, (role, non_gmail_only) in role_map.items() for value in (label, role, non_gmail_only)
+            ]
+            account_filter = ""
+            if any(non_gmail_only for _, non_gmail_only in role_map.values()):
+                account_sql, account_params = self._non_gmail(
+                    "(SELECT account FROM emails WHERE rowid = el.email_rowid)"
+                )
+                account_filter = f"AND (NOT rm.non_gmail_only OR {account_sql})"
+                params.extend(account_params)
             rows = conn.execute(
                 f"""
-                WITH role_map(label, role) AS (VALUES {values})
+                WITH role_map(label, role, non_gmail_only) AS (VALUES {values})
                 SELECT rm.role, COUNT(DISTINCT el.email_rowid)
                 FROM email_labels el
                 JOIN role_map rm ON rm.label = el.label
                 WHERE el.email_date IS NOT NULL
                   AND el.email_rowid NOT IN (SELECT rowid FROM emails WHERE trashed_at IS NOT NULL)
+                  {account_filter}
                 GROUP BY rm.role
                 """,
-                pairs,
+                params,
             ).fetchall()
         return {role: count for role, count in rows if count > 0}
 
@@ -1056,40 +1141,22 @@ class ArchiveDatabase:
                 """)
                 params.append(not_label_filter)
 
-            # Role filters match a set of labels (every provider spelling of the
-            # role), so they use EXISTS rather than a JOIN: an email carrying
-            # both 'SENT' and '[Gmail]/Sent Mail' would join twice and appear
-            # twice. Matching is exact, not NOCASE — the labels came straight
-            # out of email_labels.
+            # Role filters match every provider spelling of the role.
             for role in role_filters:
-                role_labels = self.get_labels_for_role(role)
-                if not role_labels:
+                match = self._role_match(role)
+                if not match:
                     # No label in this archive resolves to the role, so nothing
                     # can match. Skip the query rather than build an empty IN.
                     return []
-                placeholders = ",".join("?" for _ in role_labels)
-                where_clauses.append(f"""
-                    EXISTS (
-                        SELECT 1 FROM email_labels el_role
-                        WHERE el_role.email_rowid = e.rowid
-                          AND el_role.label IN ({placeholders})
-                    )
-                """)
-                params.extend(role_labels)
+                where_clauses.append(match[0])
+                params.extend(match[1])
 
             for role in not_role_filters:
-                role_labels = self.get_labels_for_role(role)
-                if not role_labels:
+                match = self._role_match(role)
+                if not match:
                     continue  # Nothing to exclude when the role resolves to nothing
-                placeholders = ",".join("?" for _ in role_labels)
-                where_clauses.append(f"""
-                    NOT EXISTS (
-                        SELECT 1 FROM email_labels el_not_role
-                        WHERE el_not_role.email_rowid = e.rowid
-                          AND el_not_role.label IN ({placeholders})
-                    )
-                """)
-                params.extend(role_labels)
+                where_clauses.append(f"NOT {match[0]}")
+                params.extend(match[1])
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 

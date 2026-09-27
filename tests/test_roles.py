@@ -122,29 +122,47 @@ class TestStoredLabels:
     """Resolving labels already written to the archive."""
 
     def test_resolves_gmail_and_imap_vocabularies(self):
-        assert roles.role_for_label("TRASH") == roles.TRASH
-        assert roles.role_for_label("[Gmail]/Spam") == roles.SPAM
+        assert roles.role_for_label("TRASH", gmail=False) == roles.TRASH
+        assert roles.role_for_label("[Gmail]/Spam", gmail=False) == roles.SPAM
 
     def test_tries_both_delimiters(self):
         """The archive doesn't record which delimiter the server used."""
-        assert roles.role_for_label("INBOX.Trash") == roles.TRASH
-        assert roles.role_for_label("[Gmail]/Trash") == roles.TRASH
+        assert roles.role_for_label("INBOX.Trash", gmail=False) == roles.TRASH
+        assert roles.role_for_label("[Gmail]/Trash", gmail=False) == roles.TRASH
 
     def test_plain_name(self):
-        assert roles.role_for_label("Deleted Items") == roles.TRASH
+        assert roles.role_for_label("Deleted Items", gmail=False) == roles.TRASH
 
     def test_user_label_has_no_role(self):
-        assert roles.role_for_label("Receipts") is None
+        assert roles.role_for_label("Receipts", gmail=False) is None
 
     def test_resolves_gmails_catch_all_folder(self):
         """Its SPECIAL-USE flag is gone once the name is stored as a label."""
-        assert roles.role_for_label("[Gmail]/All Mail") == roles.ALL
-        assert roles.role_for_label("Alle Nachrichten") == roles.ALL
+        assert roles.role_for_label("[Gmail]/All Mail", gmail=False) == roles.ALL
+        assert roles.role_for_label("Alle Nachrichten", gmail=False) == roles.ALL
 
     def test_single_word_all_spellings_are_not_matched(self):
         """'Todos' is a plausible user label, so the table only holds phrases."""
-        assert roles.role_for_label("Todos") is None
-        assert roles.role_for_label("All") is None
+        assert roles.role_for_label("Todos", gmail=False) is None
+        assert roles.role_for_label("All", gmail=False) is None
+
+
+class TestGmailStoredLabels:
+    """Gmail names its system labels exactly, so only those resolve (TASK-26)."""
+
+    def test_system_label_ids_and_imap_namespace_resolve(self):
+        assert roles.role_for_label("TRASH", gmail=True) == roles.TRASH
+        assert roles.role_for_label("INBOX", gmail=True) == roles.INBOX
+        assert roles.role_for_label("[Gmail]/Sent Mail", gmail=True) == roles.SENT
+        assert roles.role_for_label("[Google Mail]/Bin", gmail=True) == roles.TRASH
+        assert roles.role_for_label("[Gmail]/All Mail", gmail=True) == roles.ALL
+
+    def test_user_labels_named_like_system_folders_have_no_role(self):
+        for label in ("Archive", "Trash", "Bin", "Junk", "Drafts", "Sent Items", "Work/Archive"):
+            assert roles.role_for_label(label, gmail=True) is None, label
+
+    def test_generic_imap_keeps_the_name_table(self):
+        assert roles.role_for_label("Archive", gmail=False) == roles.ARCHIVE
 
 
 class TestStaleStateLabels:
@@ -159,7 +177,7 @@ class TestStaleStateLabels:
 
     def test_every_member_resolves_to_a_role(self):
         """A typo here would silently hide nothing at all."""
-        assert all(roles.role_for_label(label) for label in roles.STALE_STATE_LABELS)
+        assert all(roles.role_for_label(label, gmail=True) for label in roles.STALE_STATE_LABELS)
 
 
 class TestRoleSet:

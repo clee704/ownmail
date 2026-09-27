@@ -8,12 +8,13 @@ from ownmail.database import ArchiveDatabase
 ACCOUNT = "alice@example.com"
 
 
-def _filter(exclude_roles=None, exclude_folders=()):
+def _filter(exclude_roles=None, exclude_folders=(), gmail=False):
     return reconcile.SourceFilter(
         name="personal",
         account=ACCOUNT,
         exclude_roles=roles.resolve_exclude_roles(exclude_roles),
         exclude_folders=frozenset(exclude_folders),
+        gmail=gmail,
     )
 
 
@@ -51,6 +52,22 @@ class TestSourceFilter:
             ]
         }
         assert [f.name for f in reconcile.source_filters(config)] == ["first"]
+
+    def test_gmail_sources_read_labels_exactly(self):
+        """TASK-26: on Gmail, a user label named 'Trash' is not the trash."""
+        config = {
+            "sources": [
+                {"name": "api", "account": ACCOUNT, "type": "gmail_api"},
+                {"name": "gimap", "account": "b@example.com", "type": "imap", "host": "imap.gmail.com"},
+                {"name": "other", "account": "c@example.com", "type": "imap", "host": "imap.example.com"},
+            ]
+        }
+        api, gimap, other = reconcile.source_filters(config)
+        assert not api.rejects("Trash")
+        assert not gimap.rejects("Junk")
+        assert api.rejects("TRASH")
+        assert gimap.rejects("[Gmail]/Spam")
+        assert other.rejects("Trash")
 
     def test_a_source_without_an_account_is_skipped(self):
         assert reconcile.source_filters({"sources": [{"name": "half-configured"}]}) == []
@@ -173,6 +190,26 @@ class TestBuildPlan:
             config,
         )
         assert [c.account for c in plan.sweep] == [ACCOUNT]
+
+    def test_a_gmail_user_label_named_like_trash_is_never_swept(self, temp_dir):
+        """AC #5 of TASK-26: the label is the owner's filing, not the trash."""
+        config = {
+            "sources": [
+                {"name": "personal", "account": ACCOUNT, "type": "gmail_api"},
+                {"name": "other", "account": "c@example.com", "type": "imap", "host": "imap.example.com"},
+            ]
+        }
+        plan, _ = self._plan(
+            temp_dir,
+            [
+                ("m1", ACCOUNT, ["Trash"]),
+                ("m2", ACCOUNT, ["TRASH"]),
+                ("m3", "c@example.com", ["Trash"]),
+            ],
+            config,
+        )
+        assert sorted(c.email_id for c in plan.sweep) == [f"m2-{ACCOUNT}", "m3-c@example.com"]
+        assert plan.reported == []
 
     def test_mail_with_no_configured_source_is_reported_and_skipped(self, temp_dir):
         plan, _ = self._plan(temp_dir, [("m1", "imported@elsewhere.com", ["Deleted Items"])])

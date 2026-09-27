@@ -1094,11 +1094,72 @@ class TestRoleFilter:
         db = self._db(temp_dir, self.ROWS)
         assert db.search("role:starred") == []
 
-    def test_get_labels_for_role(self, temp_dir):
-        """Raw strings come back, since that's what email_labels holds."""
+
+class TestGmailUserLabelsNamedLikeFolders:
+    """TASK-26: on Gmail a label named 'Archive' is the owner's, not a role."""
+
+    DATE = "2024-03-01T10:00:00+00:00"
+    GMAIL = "g@example.com"
+    IMAP = "i@example.com"
+
+    def _db(self, temp_dir, rows, gmail_accounts=frozenset({GMAIL})):
+        """Build a database from (provider_id, account, labels) rows."""
+        db = ArchiveDatabase(temp_dir, gmail_accounts=gmail_accounts)
+        for provider_id, account, labels in rows:
+            email_id = _eid(provider_id, account)
+            db.mark_downloaded(email_id, provider_id, f"{provider_id}.eml", account=account, email_date=self.DATE)
+            db.index_email(
+                email_id=email_id,
+                subject=provider_id,
+                sender="alice@example.com",
+                recipients="user@example.com",
+                date_str=self.DATE,
+                body="body",
+                attachments="",
+                labels=labels,
+            )
+        return db
+
+    ROWS = [
+        ("gmail-label", GMAIL, ["Archive"]),
+        ("gmail-trash", GMAIL, ["[Gmail]/Trash"]),
+        ("imap-folder", IMAP, ["Archive"]),
+        ("imported", None, ["Archive"]),
+    ]
+
+    def _subjects(self, db, query):
+        return sorted(row[2] for row in db.search(query))
+
+    def test_role_search_skips_the_gmail_user_label(self, temp_dir):
         db = self._db(temp_dir, self.ROWS)
-        assert sorted(db.get_labels_for_role("sent")) == ["SENT", "[Gmail]/Sent Mail"]
-        assert db.get_labels_for_role("drafts") == []
+        assert self._subjects(db, "role:archive") == ["imap-folder", "imported"]
+        assert self._subjects(db, "-role:archive") == ["gmail-label", "gmail-trash"]
+
+    def test_gmail_system_labels_still_resolve(self, temp_dir):
+        db = self._db(temp_dir, self.ROWS)
+        assert self._subjects(db, "role:trash") == ["gmail-trash"]
+
+    def test_role_counts_skip_the_gmail_user_label(self, temp_dir):
+        db = self._db(temp_dir, self.ROWS)
+        assert db.get_role_counts() == {"archive": 2, "trash": 1}
+
+    def test_a_label_gmail_holds_is_not_system_only(self, temp_dir):
+        db = self._db(temp_dir, self.ROWS)
+        assert db.get_system_labels() == {"[Gmail]/Trash"}
+
+        imap_only = self._db(temp_dir / "imap", [("imap-folder", self.IMAP, ["Archive"])])
+        assert imap_only.get_system_labels() == {"Archive"}
+
+    def test_trashed_gmail_mail_does_not_make_a_user_label(self, temp_dir):
+        """The sidebar counts searchable mail only, so this check must too."""
+        db = self._db(temp_dir, self.ROWS)
+        db.trash_email(_eid("gmail-label", self.GMAIL), "trash/gmail-label.eml")
+        assert "Archive" in db.get_system_labels()
+
+    def test_without_gmail_accounts_names_resolve_as_before(self, temp_dir):
+        db = self._db(temp_dir, self.ROWS, gmail_accounts=frozenset())
+        assert self._subjects(db, "role:archive") == ["gmail-label", "imap-folder", "imported"]
+        assert db.get_system_labels() == {"Archive", "[Gmail]/Trash"}
 
 
 class TestLabelCounts:
@@ -1191,7 +1252,6 @@ class TestRoleCounts:
     def test_dropping_the_count_does_not_drop_the_label(self, temp_dir):
         """Only the count goes: the archive still holds it, and still finds it."""
         db = self._db(temp_dir, [("m1", ["INBOX"])])
-        assert db.get_labels_for_role("inbox") == ["INBOX"]
         assert len(db.search("role:inbox")) == 1
         assert len(db.search("label:INBOX")) == 1
 

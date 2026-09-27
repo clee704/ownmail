@@ -709,7 +709,7 @@ def _verify_single_file(args: tuple) -> tuple:
         return ("corrupted", filename)
 
 
-def _find_trash_labelled(db_path: Path) -> list[tuple[str, str, int]]:
+def _find_trash_labelled(db_path: Path, gmail_accounts: frozenset[str]) -> list[tuple[str, str, int]]:
     """Find archived emails carrying a label that means trash or spam.
 
     These are emails downloaded before ownmail could recognize the source
@@ -718,11 +718,16 @@ def _find_trash_labelled(db_path: Path) -> list[tuple[str, str, int]]:
 
     Resolution is by name only: the SPECIAL-USE flags that identified the
     folder at sync time aren't kept in the archive. That makes this a report
-    and not a fix — a user label genuinely named 'Archive' or 'Junk' looks
-    identical here.
+    and not a fix — on a plain IMAP server, a user folder genuinely named
+    'Junk' looks identical here. Gmail names its system labels exactly, so
+    its user labels are never reported.
 
     Emails already in ownmail's local trash are skipped; they've been dealt
     with.
+
+    Args:
+        db_path: Archive database
+        gmail_accounts: Accounts whose labels use Gmail's exact vocabulary
 
     Returns:
         List of (label, account, count), largest first
@@ -741,7 +746,7 @@ def _find_trash_labelled(db_path: Path) -> list[tuple[str, str, int]]:
     hits = [
         (label, account or "(unknown)", count)
         for label, account, count in rows
-        if roles.role_for_label(label) in (roles.TRASH, roles.SPAM)
+        if roles.role_for_label(label, gmail=account in gmail_accounts) in (roles.TRASH, roles.SPAM)
     ]
     return sorted(hits, key=lambda row: row[2], reverse=True)
 
@@ -1032,7 +1037,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
 
     print("\n3. Checking system labels...\n")
 
-    polluted = _find_trash_labelled(db_path)
+    polluted = _find_trash_labelled(db_path, archive.db.gmail_accounts)
     polluted_total = sum(count for _, _, count in polluted)
 
     if polluted:

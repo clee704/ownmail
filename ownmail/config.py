@@ -8,6 +8,7 @@ from typing import Any
 
 from ownmail import roles
 from ownmail.live import LiveLookupError
+from ownmail.providers.imap import GMAIL_IMAP_HOST
 
 # Optional YAML support
 try:
@@ -140,6 +141,29 @@ def get_source_by_account(config: dict[str, Any], account: str) -> dict[str, Any
         if source.get("account") == account:
             return source
     return None
+
+
+def gmail_accounts(config: dict[str, Any]) -> frozenset[str]:
+    """Accounts whose stored labels use Gmail's vocabulary.
+
+    Gmail over IMAP counts too: it names system folders under ``[Gmail]/``
+    just as the API names them by ID. See ``roles.role_for_label``.
+
+    Args:
+        config: Full configuration dictionary
+
+    Returns:
+        Account addresses of Gmail API sources and IMAP sources on Gmail's host
+    """
+    return frozenset(
+        source["account"]
+        for source in get_sources(config)
+        if source.get("account")
+        and (
+            source.get("type") == "gmail_api"
+            or (source.get("type") == "imap" and source.get("host") == GMAIL_IMAP_HOST)
+        )
+    )
 
 
 def parse_secret_ref(secret_ref: str) -> dict[str, str]:

@@ -217,6 +217,10 @@ _GMAIL_LABEL_IDS = {
     "SPAM": SPAM,
 }
 
+# Where Gmail-over-IMAP puts its system folders. Accounts in some regions see
+# the Google Mail branding instead.
+_GMAIL_IMAP_NAMESPACES = ("[Gmail]/", "[Google Mail]/")
+
 _ROLE_TO_GMAIL_LABEL = {role: label_id for label_id, role in _GMAIL_LABEL_IDS.items()}
 
 
@@ -298,18 +302,25 @@ def role_for_imap_folder(name: str, flags: str = "", delimiter: str = "/") -> st
     return _NAME_TO_ROLE.get(leaf.strip().lower())
 
 
-def role_for_label(label: str) -> str | None:
+def role_for_label(label: str, *, gmail: bool) -> str | None:
     """Resolve a stored label string to a canonical role, best effort.
 
     For labels already written to the archive, where the SPECIAL-USE flags
-    that were available at sync time are gone. Tries both provider
-    vocabularies, since a stored label may have come from either.
+    that were available at sync time are gone.
 
-    Both known hierarchy delimiters are tried because the archive doesn't
-    record which one the server used.
+    Gmail names its system labels unambiguously: API label IDs, or IMAP
+    folders under its reserved ``[Gmail]/`` namespace. Every other string on
+    a Gmail message is a user label, however it is spelled, so the leaf-name
+    table is kept away from it — a user label called 'Archive' or 'Trash' is
+    the owner's filing, not a system folder. See TASK-26.
+
+    Other IMAP servers leave only the folder name, so the table is the best
+    evidence there. Both known hierarchy delimiters are tried because the
+    archive doesn't record which one the server used.
 
     Args:
         label: Label as stored in a sidecar or the email_labels table
+        gmail: Whether the label came from a Gmail account, over the API or IMAP
 
     Returns:
         Role name, or None if the label has no canonical role.
@@ -317,6 +328,8 @@ def role_for_label(label: str) -> str | None:
     role = role_for_gmail_label(label)
     if role:
         return role
+    if gmail:
+        return role_for_imap_folder(label) if label.startswith(_GMAIL_IMAP_NAMESPACES) else None
     for delimiter in ("/", "."):
         role = role_for_imap_folder(label, delimiter=delimiter)
         if role:

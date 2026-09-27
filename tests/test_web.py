@@ -2469,6 +2469,26 @@ class TestViewEmailRendering:
         # The raw string is what the archive holds, so it stays visible.
         assert "Entwürfe".encode() in response.data
 
+    def test_gmail_user_label_chip_keeps_its_name(self, archive):
+        """TASK-26: on Gmail, 'Archive' is the owner's label, not the role."""
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.gmail_accounts = frozenset({"a@example.com"})
+        archive.db.get_labels_for_email.return_value = ["Archive", "[Gmail]/Trash"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"label%3A%22Archive%22" in response.data
+        assert b"role%3Aarchive" not in response.data
+        assert b"role%3Atrash" in response.data
+
+    def test_imap_folder_chip_still_resolves_by_name(self, archive):
+        self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
+        archive.db.get_labels_for_email.return_value = ["Archive"]
+        app = create_app(archive)
+        with app.test_client() as client:
+            response = client.get("/email/id1")
+        assert b"role%3Aarchive" in response.data
+
     def test_chips_collapse_labels_that_share_a_role(self, archive):
         """Two spellings of 'sent' say one thing about the message."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
@@ -3515,6 +3535,7 @@ class TestLabelSidebar:
             get_email_count=9,
             get_label_counts={"Work": 4, "receipts": 2, "INBOX": 5, "[Gmail]/Sent Mail": 3},
             get_role_counts={"inbox": 5, "sent": 3},
+            get_system_labels={"INBOX", "[Gmail]/Sent Mail"},
         )
         archive.auto_expire_trash.return_value = 0
         archive.search.return_value = []
@@ -3548,6 +3569,14 @@ class TestLabelSidebar:
         html = self._nav(archive)
         assert "q=label%3A%22INBOX%22" not in html
         assert "q=label%3A%22%5BGmail%5D%2FSent+Mail%22" not in html
+
+    def test_a_label_named_like_a_folder_stays_a_user_label(self, archive):
+        """TASK-26: only labels the database calls system leave this section."""
+        archive.db.get_label_counts.return_value = {"Archive": 2, "Archive/Example": 1}
+        archive.db.get_system_labels.return_value = set()
+        html = self._nav(archive)
+        assert "q=label%3A%22Archive%22" in html
+        assert "q=label%3A%22Archive%2FExample%22" in html
 
     def test_user_labels_are_sorted_case_insensitively(self, archive):
         """Frequency order would reshuffle the sidebar on every sync."""

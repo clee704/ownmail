@@ -29,6 +29,8 @@ def mock_archive_db(**overrides):
     db.get_trash_count.return_value = 0
     db.get_label_counts.return_value = {}
     db.get_role_counts.return_value = {}
+    db.get_system_labels.return_value = set()
+    db.gmail_accounts = frozenset()
     for name, value in overrides.items():
         getattr(db, name).return_value = value
     return db

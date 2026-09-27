@@ -473,8 +473,8 @@ class TestVerifySystemLabels:
     '[Gmail]/Trash' used to sync straight into the archive.
     """
 
-    def _archive_with_labels(self, temp_dir, labels, account="user@company.com", trashed=False):
-        archive = EmailArchive(temp_dir, {})
+    def _archive_with_labels(self, temp_dir, labels, account="user@company.com", trashed=False, config=None):
+        archive = EmailArchive(temp_dir, config or {})
         archive.db.mark_downloaded(_eid("m1", account), "m1", "2024/01/m1.eml", account=account)
         archive.db.index_email(
             _eid("m1", account),
@@ -502,6 +502,13 @@ class TestVerifySystemLabels:
         archive = self._archive_with_labels(temp_dir, ["Junk"])
         cmd_verify(archive)
         assert "carry a trash/spam label" in capsys.readouterr().out
+
+    def test_ignores_gmail_user_labels_named_like_trash(self, temp_dir, capsys):
+        """TASK-26: Gmail spells its trash TRASH or [Gmail]/Trash, never 'Trash'."""
+        config = {"sources": [{"name": "g", "type": "gmail_api", "account": "user@company.com"}]}
+        archive = self._archive_with_labels(temp_dir, ["Trash", "Junk"], config=config)
+        cmd_verify(archive)
+        assert "No emails labelled trash/spam" in capsys.readouterr().out
 
     def test_ignores_ordinary_labels(self, temp_dir, capsys):
         archive = self._archive_with_labels(temp_dir, ["Receipts", "INBOX"])
@@ -2918,7 +2925,7 @@ class TestCmdReconcile:
     ACCOUNT = "alice@example.com"
 
     def _archive(self, temp_dir, exclude_roles=None, exclude_folders=None):
-        source = {"name": "personal", "type": "gmail_api", "account": self.ACCOUNT}
+        source = {"name": "personal", "type": "imap", "host": "imap.example.com", "account": self.ACCOUNT}
         if exclude_roles is not None:
             source["exclude_roles"] = exclude_roles
         if exclude_folders is not None:

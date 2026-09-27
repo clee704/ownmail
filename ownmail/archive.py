@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from ownmail import roles, sidecar
-from ownmail.config import get_db_dir
+from ownmail.config import get_db_dir, gmail_accounts
 from ownmail.database import ArchiveDatabase
 from ownmail.download_progress import DownloadProgress
 from ownmail.keychain import KeychainStorage
@@ -52,7 +52,7 @@ class EmailArchive:
         self.archive_dir = archive_dir
         self.config = config or {}
         db_dir = get_db_dir(self.config)
-        self.db = ArchiveDatabase(archive_dir, db_dir=db_dir)
+        self.db = ArchiveDatabase(archive_dir, db_dir=db_dir, gmail_accounts=gmail_accounts(self.config))
         self.keychain = KeychainStorage()
 
         # Batch connection for fast writes
@@ -67,7 +67,7 @@ class EmailArchive:
         configured = self.config.get("active_cache_dir")
         cache_dir = Path(configured) if configured else root.with_name(f".{root.name}-active")
         if self._active_cache is None and (create or cache_dir.exists()):
-            self._active_cache = ActiveCache(self.archive_dir, cache_dir)
+            self._active_cache = ActiveCache(self.archive_dir, cache_dir, gmail_accounts=self.db.gmail_accounts)
         return self._active_cache
 
     def active_info(self, email_id: str) -> dict | None:

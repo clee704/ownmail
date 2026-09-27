@@ -304,3 +304,13 @@ def test_historical_state_labels_remain_owned_until_fresh_server_observation(tmp
     assert [row[0] for row in archive.search("")] == [email_id]
     assert archive.search("is:active") == []
     assert archive.consolidated_count() == 1
+
+
+def test_gmail_user_label_named_like_a_folder_has_no_role_in_active_results(tmp_path):
+    """TASK-26 applies to the Active index too, which is searched alongside."""
+    source = {"name": "mail", "type": "gmail_api", "account": "reader@example.test", "active_downloads": True}
+    archive = EmailArchive(tmp_path / "archive", {"sources": [source]})
+    sync(archive, MailServer([message("live", labels=("Archive",))]))
+
+    assert archive.search("role:archive") == []
+    assert len(archive.search("label:Archive is:active")) == 1

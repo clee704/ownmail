@@ -146,6 +146,17 @@ table misses.
 `SPAM`) are stable and never localized, so it is a direct map. Note the
 singular `DRAFT`.
 
+**Stored labels (TASK-26)** resolve per account. Gmail, over the API or
+IMAP, names its system labels exactly: API IDs, or folders under
+`[Gmail]/` (`[Google Mail]/` in some regions). Every other string on a
+Gmail message is a user label, so the leaf-name table never applies to
+it. A Gmail label called `Archive` or `Trash` stays the owner's label in
+the sidebar, chips, `role:` search, `verify` and `reconcile`. Other IMAP
+accounts, and accounts no longer configured, keep the table, because a
+bare folder name is the only evidence left there. Which accounts are
+Gmail comes from config, so the fix applies to existing archives with no
+re-sync.
+
 ## What this changes
 
 - `_get_all_mail_folder`'s four hardcoded localized names

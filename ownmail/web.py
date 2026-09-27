@@ -931,7 +931,7 @@ def _label_nav_entry(name: str, icon: str, query: str, count: int, active_query:
     }
 
 
-def _label_chips(labels: list) -> list:
+def _label_chips(labels: list, gmail: bool) -> list:
     """An email's labels, named canonically, for the detail view.
 
     A system label shows its role name and links to role:, so clicking a chip
@@ -941,6 +941,9 @@ def _label_chips(labels: list) -> list:
 
     Two labels that share a role collapse into one chip, since they say the
     same thing about the message.
+
+    ``gmail`` says whether the message came from a Gmail account, whose user
+    labels never name a role however they are spelled — see TASK-26.
     """
     chips = {}
     for label in labels:
@@ -953,14 +956,14 @@ def _label_chips(labels: list) -> list:
         # search — see roles.STALE_STATE_LABELS.
         if label in roles.STALE_STATE_LABELS:
             continue
-        role = roles.role_for_label(label)
+        role = roles.role_for_label(label, gmail=gmail)
         name, query = (_ROLE_NAMES[role], f"role:{role}") if role else (label, f'label:"{label}"')
         chip = chips.setdefault(name, {"name": name, "url": _label_search_url(query), "raw": []})
         chip["raw"].append(label)
     return list(chips.values())
 
 
-def _build_label_nav(label_counts: dict, role_counts: dict, active_query: str = "") -> dict:
+def _build_label_nav(label_counts: dict, role_counts: dict, system_labels: set, active_query: str = "") -> dict:
     """Group the archive's labels into sidebar sections.
 
     System labels collapse into one entry per canonical role, so an archive
@@ -975,6 +978,7 @@ def _build_label_nav(label_counts: dict, role_counts: dict, active_query: str = 
     Args:
         label_counts: Per-raw-label counts from get_label_counts()
         role_counts: Per-role counts from get_role_counts()
+        system_labels: Labels covered by a role entry, from get_system_labels()
         active_query: The current search, for highlighting the matching row
 
     Returns:
@@ -993,7 +997,7 @@ def _build_label_nav(label_counts: dict, role_counts: dict, active_query: str = 
         # destination. Stale state labels are a capture-time snapshot nothing
         # refreshes, so their count would answer a question nobody asked.
         # Labels with a role are already covered above.
-        if label in roles.EPHEMERAL_LABELS or label in roles.STALE_STATE_LABELS or roles.role_for_label(label):
+        if label in roles.EPHEMERAL_LABELS or label in roles.STALE_STATE_LABELS or label in system_labels:
             continue
         user.append(_label_nav_entry(label, "label", f'label:"{label}"', count, active_query))
     user.sort(key=lambda entry: entry["name"].lower())
@@ -1160,6 +1164,7 @@ def create_app(
             return _build_label_nav(
                 archive.db.get_label_counts(),
                 archive.db.get_role_counts(),
+                archive.db.get_system_labels(),
                 request.args.get("q", "").strip(),
             )
         except sqlite3.Error as e:
@@ -1380,7 +1385,11 @@ def create_app(
         cached_view = active is not None and active["cached_view"]
 
         # Get labels from email_labels table, named canonically for display
-        labels = [] if cached_view else _label_chips(archive.db.get_labels_for_email(email_id))
+        labels = (
+            []
+            if cached_view
+            else _label_chips(archive.db.get_labels_for_email(email_id), email_info[4] in archive.db.gmail_accounts)
+        )
 
         # Parse email using EmailParser for proper Korean charset handling
         if verbose:

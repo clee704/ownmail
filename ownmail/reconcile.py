@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ownmail import roles
+from ownmail.config import gmail_accounts
 
 # Labels that are not evidence a message was ever filed anywhere.
 #
@@ -66,17 +67,19 @@ class SourceFilter:
     account: str
     exclude_roles: frozenset[str]
     exclude_folders: frozenset[str]
+    gmail: bool
 
     def rejects(self, label: str) -> bool:
         """Whether this label alone would keep a message out of the archive.
 
         Folders are matched by exact name because that is how the filter
         matches them at download time; roles by resolving the stored string,
-        which is the accepted imprecision above.
+        which is the accepted imprecision above. On Gmail that string is
+        exact, so a user label named 'Trash' is never read as trash.
         """
         if label in self.exclude_folders:
             return True
-        return roles.role_for_label(label) in self.exclude_roles
+        return roles.role_for_label(label, gmail=self.gmail) in self.exclude_roles
 
     def describe(self) -> str:
         """The filter in one line, for the report."""
@@ -116,6 +119,7 @@ def source_filters(config: dict) -> list[SourceFilter]:
     the first one wins, as elsewhere in ownmail.
     """
     filters = {}
+    gmail = gmail_accounts(config)
     for source in config.get("sources", []):
         account = source.get("account")
         if not account or account in filters:
@@ -125,6 +129,7 @@ def source_filters(config: dict) -> list[SourceFilter]:
             account=account,
             exclude_roles=roles.resolve_exclude_roles(source.get("exclude_roles")),
             exclude_folders=frozenset(source.get("exclude_folders") or ()),
+            gmail=account in gmail,
         )
     return list(filters.values())
 
@@ -143,7 +148,9 @@ def classify(email_id: str, account: str, labels: list[str], source_filter: Sour
     kept = [
         label
         for label in labels
-        if label not in rejected and label not in NON_FILING_LABELS and roles.role_for_label(label) != roles.ALL
+        if label not in rejected
+        and label not in NON_FILING_LABELS
+        and roles.role_for_label(label, gmail=source_filter.gmail) != roles.ALL
     ]
     return Candidate(email_id=email_id, account=account, rejected=tuple(sorted(rejected)), kept=tuple(sorted(kept)))
 
