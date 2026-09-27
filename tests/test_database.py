@@ -1057,6 +1057,51 @@ class TestSearchFilterCombinations:
         assert {row[2].removeprefix("Quarterly ") for row in results} == expected
 
 
+class TestRepeatedFilters:
+    """Repeated label and recipient filters all apply (TASK-21)."""
+
+    ROWS = [
+        # (name, labels, recipients)
+        ("a", ["A"], "a@example.com"),
+        ("b", ["B"], "b@example.com"),
+        ("ab", ["A", "B"], "a@example.com, b@example.com"),
+        ("neither", ["C"], "c@example.com"),
+    ]
+
+    def _db(self, temp_dir):
+        db = ArchiveDatabase(temp_dir)
+        for name, labels, recipients in self.ROWS:
+            email_id = _eid(name)
+            db.mark_downloaded(email_id, name, f"{name}.eml", email_date="2024-03-01T10:00:00+00:00")
+            db.index_email(
+                email_id=email_id,
+                subject=f"Report {name}",
+                sender="boss@example.com",
+                recipients=recipients,
+                date_str="2024-03-01",
+                body="report body",
+                attachments="",
+                labels=labels,
+            )
+        return db
+
+    @pytest.mark.parametrize(
+        ("query", "expected"),
+        [
+            ("label:A label:B", {"ab"}),
+            ("report label:A label:B", {"ab"}),
+            ("-label:A -label:B", {"neither"}),
+            ("label:A -label:B", {"a"}),
+            ("to:a@example.com to:b@example.com", {"ab"}),
+            ("-to:a@example.com -to:b@example.com", {"neither"}),
+            ("report to:a@example.com -to:b@example.com label:A", {"a"}),
+        ],
+    )
+    def test_every_term_applies(self, temp_dir, query, expected):
+        db = self._db(temp_dir)
+        assert {row[2].removeprefix("Report ") for row in db.search(query)} == expected
+
+
 class TestRoleFilter:
     """Tests for the role: filter, which unions every spelling of a role."""
 

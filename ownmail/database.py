@@ -1067,10 +1067,20 @@ class ArchiveDatabase:
 
             # Add WHERE clauses from parsed query
             # Handle special markers that need custom handling
+            # The first label and recipient terms JOIN below. Repeated and
+            # negated terms each become an EXISTS, so none is dropped.
             recipient_email_filter = None
-            not_recipient_email_filter = None
             label_filter = None
-            not_label_filter = None
+            has_recipient = """EXISTS (
+                SELECT 1 FROM email_recipients er2
+                WHERE er2.email_rowid = e.rowid
+                  AND er2.recipient_email = ?
+            )"""
+            has_label = """EXISTS (
+                SELECT 1 FROM email_labels el2
+                WHERE el2.email_rowid = e.rowid
+                  AND el2.label = ? COLLATE NOCASE
+            )"""
             # Lists, not single values: two role terms in one query mean "carries
             # both", and a single variable would silently drop all but the last.
             role_filters = []
@@ -1090,22 +1100,24 @@ class ArchiveDatabase:
                         conn.executemany(f"INSERT OR IGNORE INTO {table} VALUES (?)", ((i,) for i in identities))
                         predicate = f"e.email_id IN (SELECT id FROM {table})"
                     where_clauses.append(f"NOT ({predicate})" if clause == "__NOT_STATE__" else predicate)
-                elif clause == "__RECIPIENT_EMAIL__":
-                    # This is a recipient email filter - needs JOIN
-                    recipient_email_filter = parsed.params[param_idx]
+                elif clause in {"__RECIPIENT_EMAIL__", "__NOT_RECIPIENT_EMAIL__"}:
+                    address = parsed.params[param_idx]
                     param_idx += 1
-                elif clause == "__NOT_RECIPIENT_EMAIL__":
-                    # This is a negated recipient email filter - needs NOT EXISTS
-                    not_recipient_email_filter = parsed.params[param_idx]
+                    if clause == "__RECIPIENT_EMAIL__" and not recipient_email_filter:
+                        recipient_email_filter = address
+                    else:
+                        where_clauses.append(
+                            has_recipient if clause == "__RECIPIENT_EMAIL__" else f"NOT {has_recipient}"
+                        )
+                        params.append(address)
+                elif clause in {"__LABEL__", "__NOT_LABEL__"}:
+                    label = parsed.params[param_idx]
                     param_idx += 1
-                elif clause == "__LABEL__":
-                    # This is a label filter - needs JOIN with email_labels
-                    label_filter = parsed.params[param_idx]
-                    param_idx += 1
-                elif clause == "__NOT_LABEL__":
-                    # This is a negated label filter - needs NOT EXISTS
-                    not_label_filter = parsed.params[param_idx]
-                    param_idx += 1
+                    if clause == "__LABEL__" and not label_filter:
+                        label_filter = label
+                    else:
+                        where_clauses.append(has_label if clause == "__LABEL__" else f"NOT {has_label}")
+                        params.append(label)
                 elif clause == "__ROLE__":
                     role_filters.append(parsed.params[param_idx])
                     param_idx += 1
@@ -1118,28 +1130,6 @@ class ArchiveDatabase:
                     if "?" in clause:
                         params.append(parsed.params[param_idx])
                         param_idx += 1
-
-            # Add negated recipient email filter as a WHERE clause
-            if not_recipient_email_filter:
-                where_clauses.append("""
-                    NOT EXISTS (
-                        SELECT 1 FROM email_recipients er2
-                        WHERE er2.email_rowid = e.rowid
-                          AND er2.recipient_email = ?
-                    )
-                """)
-                params.append(not_recipient_email_filter)
-
-            # Add negated label filter as a WHERE clause
-            if not_label_filter:
-                where_clauses.append("""
-                    NOT EXISTS (
-                        SELECT 1 FROM email_labels el2
-                        WHERE el2.email_rowid = e.rowid
-                          AND el2.label = ? COLLATE NOCASE
-                    )
-                """)
-                params.append(not_label_filter)
 
             # Role filters match every provider spelling of the role.
             for role in role_filters:

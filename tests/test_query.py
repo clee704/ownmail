@@ -1,5 +1,7 @@
 """Tests for the search query parser."""
 
+import pytest
+
 from ownmail.query import (
     Token,
     TokenType,
@@ -546,6 +548,41 @@ class TestParseQuery:
         result = parse_query("invoice OR receipt")
         assert result.error is None
         assert "OR" in result.fts_query
+
+    @pytest.mark.parametrize(
+        ("query", "term"),
+        [
+            ("label:A OR label:B", "label:A"),
+            ("invoice OR label:A", "label:A"),
+            ("invoice OR -label:A", "-label:A"),
+            ("to:a@example.com OR to:b@example.com", "to:a@example.com"),
+            ("from:a@example.com OR invoice", "from:a@example.com"),
+            ("invoice OR before:2024-01-01", "before:2024-01-01"),
+            ("role:sent OR invoice", "role:sent"),
+            ("invoice OR is:active", "is:active"),
+            ("has:attachment OR invoice", "has:attachment"),
+            ("(invoice label:A) OR receipt", "label:A"),
+            ("(label:A)", "label:A"),
+        ],
+    )
+    def test_filter_with_or_or_parentheses_is_rejected(self, query, term):
+        """SQL filters apply to the whole search, so they cannot be OR alternatives."""
+        result = parse_query(query)
+        assert result.error is not None
+        assert f"'{term}'" in result.error
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "(invoice OR receipt) label:A",
+            "invoice OR receipt is:active",
+            "from:alice OR subject:invoice",
+            "invoice OR attachment:pdf",
+        ],
+    )
+    def test_filter_outside_or_is_accepted(self, query):
+        """Filters away from OR, and FTS-backed field terms beside it, still parse."""
+        assert parse_query(query).error is None
 
     def test_combined_query(self):
         """Test query with filters and text."""

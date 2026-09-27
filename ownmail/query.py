@@ -20,6 +20,10 @@ Supported syntax:
     after:2024-01-01            Date filter
     -keyword                    Exclude emails containing keyword
     invoice OR receipt          Boolean OR (AND is implicit)
+
+Filters that become SQL conditions (addresses, labels, roles, dates, has:, is:)
+apply to the whole search, and repeated ones must all match. They cannot be OR
+alternatives or go inside parentheses.
 """
 
 from __future__ import annotations
@@ -436,8 +440,9 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
     fts_parts = []
     where_clauses = []
     params = []
+    depth = 0
 
-    for token in tokens:
+    for index, token in enumerate(tokens):
         if token.type == TokenType.WORD:
             fts_parts.append(_escape_fts5_value(token.value))
 
@@ -455,14 +460,17 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
 
         elif token.type == TokenType.LPAREN:
             fts_parts.append("(")
+            depth += 1
 
         elif token.type == TokenType.RPAREN:
             fts_parts.append(")")
+            depth -= 1
 
         elif token.type == TokenType.FILTER:
             field = token.field
             value = token.value
             negated = token.negated
+            fts_count = len(fts_parts)
 
             if field == "from":
                 if re.fullmatch(r"[^@\s<>]+@[^@\s<>]+", value):
@@ -579,6 +587,16 @@ def parse_query(query: str, tz=None) -> ParsedQuery:
                     fts_parts.append(f"NOT attachments:{escaped}")
                 else:
                     fts_parts.append(f"attachments:{escaped}")
+
+            # A filter kept out of the FTS string applies to the whole search.
+            # OR and parentheses only group FTS terms, so rejecting the filter
+            # there beats answering a different question.
+            beside_or = any(t.type == TokenType.OR for t in tokens[max(index - 1, 0) : index + 2])
+            if len(fts_parts) == fts_count and (depth or beside_or):
+                term = f"{'-' if negated else ''}{field}:{value}"
+                return ParsedQuery(
+                    error=f"'{term}' filters the whole search, so it cannot be used with OR or inside parentheses"
+                )
 
     # Build final FTS query
     fts_query = " ".join(fts_parts)

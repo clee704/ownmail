@@ -47,9 +47,14 @@
         </table>
 
         <h3>Boolean operators</h3>
+        <p class="ownmail-help-note">Address, label, role, date, <code>has:</code> and <code>is:</code>
+        filters apply to the whole search, and repeated filters must all match. They cannot be OR
+        alternatives or go inside parentheses.</p>
         <table class="ownmail-help-table">
             <tr><td><code>apple orange</code></td><td>Both words (implicit AND)</td></tr>
             <tr><td><code>apple OR orange</code></td><td>Either word</td></tr>
+            <tr><td><code>(apple OR orange) label:Work</code></td><td>Either word, with the Work label</td></tr>
+            <tr><td><code>label:Work label:Travel</code></td><td>Emails with both labels</td></tr>
             <tr><td><code>-orange</code></td><td>Exclude emails containing "orange"</td></tr>
             <tr><td><code>-"exact phrase"</code></td><td>Exclude exact phrase</td></tr>
         </table>
