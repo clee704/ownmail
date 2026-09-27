@@ -242,6 +242,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 24 | TASK-9 | medium | mbox export; PDF needs a new dependency |
 | 25 | TASK-64 | low | CLI Trash listing crashes when Trash is not empty; web Trash works |
 | 26 | TASK-12 | low | --verbose before the subcommand is ignored |
+| 26a | TASK-115 | low | Unused query helpers in ArchiveDatabase; deletion only |
 | 27 | TASK-8 | low | Only a download-header test remains |
 | 28 | TASK-50 | low | iPhone Home Screen polish |
 | 29 | TASK-19 | low | Decision on excluding recurring labels at capture |
