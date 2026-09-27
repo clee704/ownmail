@@ -2406,6 +2406,77 @@ class TestViewEmailRendering:
             assert client.get("/attachment/id1/2").status_code == 404
         assert b"see both attached" in response.data
 
+    @staticmethod
+    def _attachment_links(document):
+        return [
+            (link.text_content().strip(), link.get("href")) for link in document.find_class("ownmail-attachment-name")
+        ]
+
+    def test_parts_after_an_embedded_message_are_kept(self, archive):
+        """Parts following a digest entry still reach the body and the attachment list."""
+        raw = (
+            b"From: list@example.com\r\nSubject: Digest\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: message/rfc822\r\n\r\n"
+            b"From: inner@example.com\r\nSubject: Inner subject\r\n"
+            b'Content-Type: multipart/mixed; boundary="b2"\r\n\r\n'
+            b"--b2\r\nContent-Type: text/plain\r\n\r\ninner body text\r\n"
+            b"--b2\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="nested.pdf"\r\n\r\nNESTED PDF\r\n'
+            b"--b2--\r\n"
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nlist footer\r\n"
+            b"--b1\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="after.pdf"\r\n\r\nAFTER PDF\r\n'
+            b"--b1--\r\n"
+        )
+        self._store(archive, raw)
+        with create_app(archive).test_client() as client:
+            response = client.get("/email/id1")
+            assert b"list footer" in response.data
+            assert b"Inner subject" in response.data
+            assert b"inner body text" in response.data
+            links = self._attachment_links(html.fromstring(response.data))
+            assert links == [
+                ("nested.pdf", "/attachment/id1/0/nested.pdf"),
+                ("after.pdf", "/attachment/id1/1/after.pdf"),
+            ]
+            for (_, href), payload in zip(links, [b"NESTED PDF", b"AFTER PDF"]):
+                assert client.get(href + "?download").data == payload
+            assert client.get("/attachment/id1/2").status_code == 404
+
+    def test_attached_message_is_listed_and_downloads_the_message(self, archive):
+        """An attached message downloads as the message it holds, ahead of its own attachments."""
+        embedded = (
+            b"From: inner@example.com\r\n"
+            b"Subject: A forwarded subject long enough that re-serializing would fold this header line\r\n"
+            b'Content-Type: multipart/mixed; boundary="b2"\r\n\r\n'
+            b"--b2\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
+            b"forwarded caf\xc3\xa9\r\n"
+            b"--b2\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="inner.pdf"\r\n\r\nINNER PDF\r\n'
+            b"--b2--\r\n"
+        )
+        raw = (
+            b"From: a@example.com\r\nSubject: Fwd\r\n"
+            b'MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary="b1"\r\n\r\n'
+            b"--b1\r\nContent-Type: text/plain\r\n\r\nsee the attached message\r\n"
+            b'--b1\r\nContent-Type: message/rfc822; name="forwarded.eml"\r\n'
+            b'Content-Disposition: attachment; filename="forwarded.eml"\r\n\r\n' + embedded + b"--b1--\r\n"
+        )
+        self._store(archive, raw)
+        with create_app(archive).test_client() as client:
+            response = client.get("/email/id1")
+            assert b"see the attached message" in response.data
+            assert "forwarded café" in response.data.decode()
+            document = html.fromstring(response.data)
+            assert self._attachment_links(document) == [
+                ("forwarded.eml", "/attachment/id1/0/forwarded.eml"),
+                ("inner.pdf", "/attachment/id1/1/inner.pdf"),
+            ]
+            assert document.find_class("ownmail-attachment-meta")[0].text_content() == f"EML · {len(embedded)} B"
+            assert client.get("/attachment/id1/0/forwarded.eml").data == embedded
+            assert client.get("/attachment/id1/1/inner.pdf?download").data == b"INNER PDF"
+
     @pytest.mark.parametrize(
         ("content_type", "payload"),
         [(b"text/plain", b"Visible body"), (b"text/html", b"<p>Visible body</p>")],

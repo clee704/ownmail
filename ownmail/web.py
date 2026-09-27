@@ -73,6 +73,10 @@ CHARSET_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
 # attachment cannot reach the archive around it.
 ATTACHMENT_CSP = "default-src 'none'; sandbox"
 
+# Writes an attached message with the header folding it arrived with, and
+# the CRLF line endings RFC 5322 requires
+ATTACHED_MESSAGE_POLICY = email_policy.clone(refold_source="none", linesep="\r\n")
+
 # Regex to extract charset from HTML meta tag
 # Matches: <meta charset="euc-kr"> or <meta http-equiv="Content-Type" content="text/html; charset=euc-kr">
 HTML_CHARSET_RE = re.compile(
@@ -1418,21 +1422,20 @@ def create_app(
         body_html = None
         body_parts = []  # Collect text parts from top-level only
         embedded_messages = []  # Collect embedded message/rfc822 for digests
-        attachments = []
+        attachments = [_attachment_entry(part) for part in _attachment_parts(msg)]
         cid_images = {}  # Content-ID -> data URI mapping
 
         if msg.is_multipart():
-            # Track depth to skip content nested inside message/rfc822 parts
-            # These are embedded messages (like in digests) that shouldn't be
-            # concatenated into the main body
-            inside_message_rfc822 = 0
+            # Parts of embedded message/rfc822 parts (like digest entries),
+            # which shouldn't be concatenated into the main body
+            embedded_parts = set()
 
             for part in msg.walk():
                 content_type = part.get_content_type()
 
                 # Handle embedded message/rfc822 parts (digest entries)
                 if content_type == "message/rfc822":
-                    inside_message_rfc822 += 1
+                    embedded_parts.update(part.walk())
                     # Extract embedded message for digest display
                     try:
                         embedded = part.get_payload(0)
@@ -1443,15 +1446,10 @@ def create_app(
                             emb_to = decode_header(embedded.get("To", ""))
                             emb_reply_to = decode_header(embedded.get("Reply-To", ""))
 
-                            # Get body and attachments of embedded message
+                            # Get body of embedded message
                             emb_body = ""
                             for sub in embedded.walk():
-                                sub_ct = sub.get_content_type()
-
-                                # Check for attachments inside embedded message
-                                if is_attachment(sub):
-                                    attachments.append(_attachment_entry(sub))
-                                elif sub_ct == "text/plain" and not emb_body:
+                                if sub.get_content_type() == "text/plain" and not emb_body and not is_attachment(sub):
                                     payload = sub.get_payload(decode=True)
                                     if payload:
                                         emb_body = _decode_text_body(payload, sub.get_content_charset())
@@ -1481,11 +1479,8 @@ def create_app(
                         cid_images[cid] = data_uri
 
                 # Skip content inside embedded messages (already extracted above)
-                if inside_message_rfc822 > 0:
+                if part in embedded_parts:
                     continue
-
-                if is_attachment(part):
-                    attachments.append(_attachment_entry(part))
 
                 # Named inline text remains part of the displayed message.
                 if part.get_content_disposition() == "attachment":
@@ -1717,40 +1712,37 @@ def create_app(
         with open(filepath, "rb") as f:
             msg = email.message_from_binary_file(f, policy=email_policy)
 
-        attachment_idx = 0
-        for part in msg.walk():
-            if is_attachment(part):
-                if attachment_idx == index:
-                    # Extract filename with proper charset handling
-                    att_filename = extract_attachment_filename(part)
-                    att_data = part.get_payload(decode=True)
+        parts = _attachment_parts(msg)
+        if index >= len(parts):
+            abort(404)
+        part = parts[index]
 
-                    # ?download is the explicit save action; otherwise render
-                    # in the browser when the format is one we serve inline.
-                    inline_type = None if "download" in request.args else _inline_content_type(part)
+        # Extract filename with proper charset handling
+        att_filename = extract_attachment_filename(part)
 
-                    # Send directly from memory
-                    import io
+        # ?download is the explicit save action; otherwise render
+        # in the browser when the format is one we serve inline.
+        inline_type = None if "download" in request.args else _inline_content_type(part)
 
-                    response = send_file(
-                        io.BytesIO(att_data or b""),
-                        # Downloads deliberately go out as octet-stream: the
-                        # type the message claims is not worth trusting, and
-                        # the filename already carries the extension.
-                        mimetype=inline_type or "application/octet-stream",
-                        as_attachment=inline_type is None,
-                        download_name=att_filename,
-                    )
-                    response.headers["X-Content-Type-Options"] = "nosniff"
-                    if inline_type:
-                        # Set explicitly: werkzeug appends a charset of its own
-                        # to any text/* mimetype, which would leave two.
-                        response.headers["Content-Type"] = inline_type
-                        response.headers["Content-Security-Policy"] = ATTACHMENT_CSP
-                    return response
-                attachment_idx += 1
+        # Send directly from memory
+        import io
 
-        abort(404)
+        response = send_file(
+            io.BytesIO(_attachment_bytes(part)),
+            # Downloads deliberately go out as octet-stream: the
+            # type the message claims is not worth trusting, and
+            # the filename already carries the extension.
+            mimetype=inline_type or "application/octet-stream",
+            as_attachment=inline_type is None,
+            download_name=att_filename,
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        if inline_type:
+            # Set explicitly: werkzeug appends a charset of its own
+            # to any text/* mimetype, which would leave two.
+            response.headers["Content-Type"] = inline_type
+            response.headers["Content-Security-Policy"] = ATTACHMENT_CSP
+        return response
 
     @app.route("/settings", methods=["GET"])
     def settings_page():
@@ -2101,11 +2093,25 @@ def _inline_content_type(part) -> str | None:
     return content_type
 
 
+def _attachment_parts(msg) -> list:
+    """Return the attachment parts in the order detail links number them."""
+    return [part for part in msg.walk() if is_attachment(part)]
+
+
+def _attachment_bytes(part) -> bytes:
+    """Return the file content of an attachment part."""
+    if part.get_content_type() == "message/rfc822":
+        # An attached message has no decoded payload; its file is the
+        # message it holds
+        return part.get_payload(0).as_bytes(policy=ATTACHED_MESSAGE_POLICY)
+    return part.get_payload(decode=True) or b""
+
+
 def _attachment_entry(part) -> dict:
     """Describe one attachment part for the detail template."""
     filename = extract_attachment_filename(part)
     content_type = (part.get_content_type() or "").lower()
-    payload = part.get_payload(decode=True)
+    payload = _attachment_bytes(part)
 
     # The extension is what people recognize; fall back to the MIME subtype
     # for the attachments that arrive without one.
