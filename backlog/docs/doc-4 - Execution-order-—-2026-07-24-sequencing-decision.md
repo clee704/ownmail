@@ -226,6 +226,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 8 | TASK-72 | high | Remote images load while blocking is on |
 | 9 | TASK-67 | high | Sanitizer dependency advisories; DOMPurify is the HTML security boundary |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
+| 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
 | 12 | TASK-37 | medium | update-labels and sync-check process only the first source |
 | 13 | TASK-98 | medium | Ctrl-C and web Stop do not stop later sources |
