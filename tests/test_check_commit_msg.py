@@ -53,6 +53,8 @@ def repo(tmp_path, monkeypatch):
     git("init", "-q")
     git("config", "user.name", "Test")
     git("config", "user.email", "test@example.com")
+    # A developer's global signing setting would otherwise sign fixture commits.
+    git("config", "commit.gpgsign", "false")
     monkeypatch.chdir(tmp_path)
     return git
 
