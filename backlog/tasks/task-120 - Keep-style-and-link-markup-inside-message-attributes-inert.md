@@ -1,10 +1,10 @@
 ---
 id: TASK-120
 title: Keep style and link markup inside message attributes inert
-status: Done
+status: To Do
 assignee: []
 created_date: '2026-09-29 12:31'
-updated_date: '2026-09-29 16:21'
+updated_date: '2026-09-29 16:34'
 labels:
   - ui
 dependencies: []
@@ -26,8 +26,8 @@ Both reproduce with synthetic messages, and the matching predates TASK-117. Coll
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 Style and link markup written inside attribute values stays attribute text after body extraction, and the message's real style and link elements keep their cascade order
-- [x] #2 A browser test confirms that an event handler written inside an attribute this way does not run, with remote content blocked and loaded
+- [ ] #1 Style and link markup written inside attribute values stays attribute text after body extraction, and the message's real style and link elements keep their cascade order
+- [ ] #2 A browser test confirms that an event handler written inside an attribute this way does not run, with remote content blocked and loaded
 - [x] #3 The full pre-push gate passes
 <!-- AC:END -->
 
@@ -41,4 +41,14 @@ Review base: 1084a8e. Collect real <style>/<link> elements with a tag-aware scan
 
 <!-- SECTION:NOTES:BEGIN -->
 Fixed in ownmail/web.py: _extract_body_content now delegates style/link collection to _split_style_and_link_elements, which walks the markup one tag at a time (STYLE_LINK_TOKEN_RE consumes each tag's quoted attribute runs). A <link> or <style> the sanitizer keeps as inert attribute text is swallowed by its enclosing tag, so it is no longer lifted into a live element; real style/link elements keep document (cascade) order. Body content stays string-based rather than re-serialized through lxml, which would have regressed void elements such as <source> inside <picture>. Comment handling was left out because DOMPurify strips comments before this runs. Tests: two unit cases in tests/test_web.py and a browser test in tests/test_image_blocking.py asserting the injected onload/onerror never fires with remote content blocked and loaded; all three fail against the pre-fix code. Full pre-push gate green at 96.44% coverage.
+
+Review of f76d495 on 2026-09-29: reopened because AC 1 and AC 2 are incomplete. The new style/link scan fixes the original paragraph-attribute case, but _extract_body_content still finds the body boundary with a regex that ignores quoted attribute values (ownmail/web.py:399). A greater-than sign followed by link markup inside a body title attribute is emitted as a live link. A body start marker followed by link markup inside an html or head title attribute has the same result.
+
+Verified all three wrapper-attribute variants through the real DOMPurify worker, synthetic MIME messages, the message route, and Chromium. The link handler executes both with remote content blocked and loaded; browser requests were intercepted by the existing fixture. Blocking prevents the stylesheet request but still allows its error handler. Compared with the exact extractor at 1084a8e: these paths predate f76d495, so this is an incomplete fix, not a new regression.
+
+The 61 extraction and image-blocking tests pass with OWNMAIL_REQUIRE_BROWSER_TESTS=1. All three tests added by f76d495 fail when the exact parent extractor is substituted in memory, confirming that those tests detect the original bug. They do not cover wrapper attributes. Extend the existing regression cases to body/html/head attributes and extract body boundaries from parsed tags before marking this task Done. Preserve style/link order and HTML5 void elements.
+
+Targeted validation: OWNMAIL_REQUIRE_BROWSER_TESTS=1 .venv/bin/pytest tests/test_web.py::TestExtractBodyContent tests/test_image_blocking.py -q. Browser setup prerequisites remain in CONTRIBUTING.md. This review does not implement the remaining fix.
+
+Full suite verification with required browser tests: 3,909 passed, 1 expected failure; coverage 96.44%.
 <!-- SECTION:NOTES:END -->
