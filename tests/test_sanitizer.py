@@ -1,7 +1,9 @@
 """Tests for the HTML sanitizer (DOMPurify sidecar)."""
 
+import os
 import shutil
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -427,6 +429,19 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         result, *_ = self.sanitizer.sanitize(html)
         assert "example.com" in result
         assert "Text" in result
+
+    def test_ignores_css_source_map_comments(self):
+        """A sourceMappingURL comment can neither read a local file nor drop the stylesheet."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "probe.map")
+            with open(path, "w") as f:
+                f.write("not a source map")
+            # Loading either target as a source map fails the CSS parse, which drops the rule.
+            for target in (path, "data:application/json,not%20a%20source%20map"):
+                with self.subTest(target=target):
+                    html = f"<style>p {{ color: red; }} /*# sourceMappingURL={target} */</style><p>Hi</p>"
+                    result, *_ = self.sanitizer.sanitize(html)
+                    assert "#ownmail-email-content p" in result
 
     def test_strips_css_javascript_url(self):
         """Test that javascript: url() references are removed."""

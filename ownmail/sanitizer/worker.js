@@ -114,7 +114,8 @@ function isTrustedFontUrl(url) {
 function scopeAndSanitizeCSS(css) {
   let root;
   try {
-    root = postcss.parse(css);
+    // Ignore sourceMappingURL comments so message CSS cannot make postcss read local files.
+    root = postcss.parse(css, { map: false });
   } catch (e) {
     return "/* CSS parse error */";
   }
