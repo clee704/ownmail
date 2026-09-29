@@ -226,7 +226,8 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 8 | TASK-72 | high | Remote images load while blocking is on |
 | 9 | TASK-67 | high | Sanitizer dependency advisories; DOMPurify is the HTML security boundary |
 | 9a | TASK-117 | medium | Follow-up to TASK-72: remote fonts and media still load while images are blocked |
-| 9b | TASK-118 | medium | Follow-up to TASK-67: installs that keep node_modules never pick up raised sanitizer dependency floors |
+| 9b | TASK-120 | high | Found in TASK-117 review: link markup inside a message attribute becomes a live element whose event handlers run when the message opens |
+| 9c | TASK-118 | medium | Follow-up to TASK-67: installs that keep node_modules never pick up raised sanitizer dependency floors |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
