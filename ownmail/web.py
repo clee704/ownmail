@@ -25,10 +25,12 @@ from ownmail.parser import EmailParser, _validate_decoded_text, extract_attachme
 from ownmail.query import parse_query
 from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_web_config, serialize_config_writes
 
-# While images are blocked, the browser refuses every image from another host,
-# whichever HTML or CSS feature asks for it. 'self' keeps the app's own icons
-# and data: keeps inline cid: images.
-IMAGE_BLOCKING_CSP = "img-src 'self' data:"
+# While remote content is blocked, the page loads only from the archive's host
+# and data: URIs, so the browser refuses every remote image, font, stylesheet,
+# audio and video, whichever HTML or CSS feature asks for it. data: keeps
+# inline cid: images; 'unsafe-inline' keeps the reader's inline scripts and
+# the message's styles.
+IMAGE_BLOCKING_CSP = "default-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
 
 # Shown in place of a blocked <img> so it keeps its authored size instead of
 # collapsing to its alt text
@@ -44,25 +46,32 @@ URL_TRIMMED_CHARACTERS = "".join(chr(code) for code in range(0x21))
 # so a candidate ends at whitespace.
 SRCSET_URL_RE = re.compile(r"(?:^|,)[\s,]*([^\s,]\S*)")
 
-# Attributes that fetch an image, by element. Any element but <body> may also
-# have a background; the reader drops body attributes other than style.
-IMAGE_URL_ATTRIBUTES = {
+# Attributes that load a URL, by element. Any element but <body> may also have
+# a background; the reader drops body attributes other than style. The
+# sanitizer keeps <link> only for trusted font stylesheets.
+URL_ATTRIBUTES = {
+    "audio": ("src",),
     "img": ("src", "srcset"),
     "input": ("src",),
-    "source": ("srcset",),
-    "video": ("poster",),
+    "link": ("href",),
+    "source": ("src", "srcset"),
+    "track": ("src",),
+    "video": ("poster", "src"),
 }
 
 # The argument of a CSS url()
 CSS_URL_RE = re.compile(r"""url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))""", re.IGNORECASE)
+
+# An @import may name its stylesheet as a bare string
+CSS_IMPORT_STRING_RE = re.compile(r"""@import\s*(?:"([^"]*)"|'([^']*)')""", re.IGNORECASE)
 
 # The arguments of an image-set(), which also takes images as bare strings.
 # Strings elsewhere, such as in selectors and content, load nothing.
 CSS_IMAGE_SET_RE = re.compile(r"""image-set\(((?:[^()"']|"[^"]*"|'[^']*'|\([^()]*\))*)\)""", re.IGNORECASE)
 CSS_STRING_RE = re.compile(r""""([^"]*)"|'([^']*)'""")
 
-# CSS that names URLs without loading images: comments, fonts and imports
-CSS_WITHOUT_IMAGES_RE = re.compile(r"/\*.*?\*/|@font-face\s*\{[^}]*\}|@import[^;]*;?", re.IGNORECASE | re.DOTALL)
+# CSS comments, which load nothing
+CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 
 # An <img> or <source> tag as the sanitizer serializes it: attribute values
 # are always double-quoted, and a quoted value may contain ">"
@@ -779,31 +788,32 @@ def _is_remote_url(url: str) -> bool:
     return REMOTE_URL_RE.match(url) is not None
 
 
-def _css_has_remote_images(css: str) -> bool:
-    """Whether CSS refers to an image outside the archive's host."""
-    css = CSS_WITHOUT_IMAGES_RE.sub("", css)
+def _css_has_remote_urls(css: str) -> bool:
+    """Whether CSS loads anything from outside the archive's host."""
+    css = CSS_COMMENT_RE.sub("", css)
     urls = [match[match.lastindex] for match in CSS_URL_RE.finditer(css)]
+    urls.extend(match[match.lastindex] for match in CSS_IMPORT_STRING_RE.finditer(css))
     for image_set in CSS_IMAGE_SET_RE.finditer(css):
         urls.extend(match[match.lastindex] for match in CSS_STRING_RE.finditer(image_set[1]))
     return any(_is_remote_url(url) for url in urls)
 
 
-def _has_remote_images(html: str) -> bool:
-    """Whether sanitized message HTML refers to images outside the archive's host.
+def _has_remote_content(html: str) -> bool:
+    """Whether sanitized message HTML loads anything from outside the archive's host.
 
-    This decides whether the reader offers to load or block images. The CSP
-    does the blocking, so a reference this misses stays blocked.
+    This decides whether the reader offers to load or block remote content. The
+    CSP does the blocking, so a reference this misses stays blocked.
     """
     from lxml import etree
     from lxml import html as lxml_html
 
     for element in lxml_html.document_fromstring(html).iter(etree.Element):
         urls = [] if element.tag == "body" else [element.get("background", "")]
-        for name in IMAGE_URL_ATTRIBUTES.get(element.tag, ()):
+        for name in URL_ATTRIBUTES.get(element.tag, ()):
             value = element.get(name, "")
             urls.extend(SRCSET_URL_RE.findall(value) if name == "srcset" else [value])
         css = (element.text or "") if element.tag == "style" else element.get("style", "")
-        if any(_is_remote_url(url) for url in urls) or _css_has_remote_images(css):
+        if any(_is_remote_url(url) for url in urls) or _css_has_remote_urls(css):
             return True
     return False
 
@@ -1067,9 +1077,9 @@ def create_app(
     Args:
         archive: EmailArchive instance
         verbose: Enable request timing logs
-        block_images: Block external images by default
+        block_images: Block remote content by default
         page_size: Number of results per page
-        trusted_senders: List of email addresses to always show images from
+        trusted_senders: Email addresses whose remote content always loads
         config_path: Path to config.yaml for updating trusted senders
         date_format: strftime format for search result dates (default: "%b %d, %Y")
         auto_scale: Scale down wide emails to fit viewport
@@ -1561,7 +1571,7 @@ def create_app(
                     body = _decode_text_body(payload, header_charset)
 
         # Prefer HTML over plain text for better formatting
-        # (we already block external images for privacy)
+        # (we already block remote content for privacy)
         if body_html:
             body = ""
 
@@ -1603,8 +1613,8 @@ def create_app(
         sender_name, sender_email = parse_email_address(email_data["sender"])
         recipients_parsed = parse_recipients(email_data["recipients"])
 
-        # Images load by default when blocking is off or the sender is trusted;
-        # the reader's Load images and Block images actions override that.
+        # Remote content loads by default when blocking is off or the sender is
+        # trusted; the reader's Load and Block actions override that.
         trusted_senders = app.config.get("trusted_senders", set())
         sender_is_trusted = bool(sender_email) and sender_email.lower() in trusted_senders
         images = request.args.get("images")
@@ -1613,9 +1623,9 @@ def create_app(
         else:
             images_blocked = app.config["block_images"] and not sender_is_trusted
 
-        # Always detect external images so the menu can offer to load or block them
-        has_external_images = bool(body_html) and _has_remote_images(body_html)
-        if images_blocked and has_external_images:
+        # Always detect remote content so the menu can offer to load or block it
+        has_remote_content = bool(body_html) and _has_remote_content(body_html)
+        if images_blocked and has_remote_content:
             body_html = _hide_blocked_images(body_html)
 
         # Extract just the body content for direct embedding
@@ -1649,7 +1659,7 @@ def create_app(
                 body_attributes=body_attributes,
                 attachments=email_data["attachments"],
                 images_blocked=images_blocked,
-                has_external_images=has_external_images,
+                has_remote_content=has_remote_content,
                 sender_is_trusted=sender_is_trusted,
                 needs_padding=needs_padding,
                 supports_dark=supports_dark,
@@ -2188,9 +2198,9 @@ def run_server(
         port: Port to listen on
         debug: Enable debug mode
         verbose: Enable request timing logs
-        block_images: Block external images by default
+        block_images: Block remote content by default
         page_size: Number of results per page
-        trusted_senders: List of email addresses to always show images from
+        trusted_senders: Email addresses whose remote content always loads
         config_path: Path to config.yaml for updating trusted senders
         date_format: strftime format for search result dates (default: "%b %d, %Y")
         auto_scale: Scale down wide emails to fit viewport
@@ -2240,7 +2250,7 @@ def run_server(
     if verbose:
         print("   Verbose logging enabled")
     if block_images:
-        print("   External images blocked by default")
+        print("   Remote content blocked by default")
     if trusted_senders:
         print(f"   Trusted senders: {len(trusted_senders)}")
     if not sanitizer.available:

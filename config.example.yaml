@@ -116,8 +116,8 @@ web:
   # Default: 20
   page_size: 50
 
-  # Block external images in emails by default (for privacy/security).
-  # Images from trusted_senders are always shown.
+  # Block remote images, fonts, audio, and video in emails by default (for
+  # privacy/security). Remote content from trusted_senders always loads.
   # Default: true
   block_images: true
 
@@ -142,7 +142,7 @@ web:
   # Default: %a, %d %b %Y %H:%M:%S (e.g., "Tue, 27 Jan 2026 07:16:05")
   # detail_date_format: '%a, %d %b %Y %H:%M:%S'
 
-  # Email addresses whose images are always loaded,
+  # Email addresses whose remote content always loads,
   # even when block_images is on. One per line.
   # Default: []
   trusted_senders:

@@ -129,9 +129,9 @@
                     <label>
                         <input type="checkbox" name="block_images" id="block_images"
                                {{ 'checked' if settings.block_images }}>
-                        Block external images by default
+                        Block remote content by default
                     </label>
-                    <p class="ownmail-settings-hint">Images from trusted senders are always shown.</p>
+                    <p class="ownmail-settings-hint">Covers remote images, fonts, audio, and video. Content from trusted senders always loads.</p>
                 </div>
 
                 <div class="ownmail-settings-field ownmail-settings-checkbox">
@@ -149,7 +149,7 @@
                     <label for="trusted_senders">Trusted sender emails (one per line)</label>
                     <textarea name="trusted_senders" id="trusted_senders" rows="8"
                               placeholder="user@example.com">{{ settings.trusted_senders | join('\n') }}</textarea>
-                    <p class="ownmail-settings-hint">Images from these senders are always loaded, even when image blocking is on.</p>
+                    <p class="ownmail-settings-hint">Remote content from these senders always loads, even when blocking is on.</p>
                 </div>
             </fieldset>
 

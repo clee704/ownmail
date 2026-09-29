@@ -27,8 +27,8 @@ product philosophy, Active ownership, and server-cleanup limits.
   message and sidebar density, dates, time zone, and page size. In Settings, choose
   Comfortable, Standard (the default), or Compact spacing; density is saved
   automatically in your browser.
-- **Control remote images:** Load images for a message or remember a trusted
-  sender. Image blocking is enabled by default, with [limitations](#privacy-and-security).
+- **Control remote content:** Load remote images, fonts, audio, and video for a
+  message or remember a trusted sender. Blocking is enabled by default.
 - **Manage saved mail:** Select messages, move them to the archive's Trash, and
   restore them. Mobile selection supports a long press.
 
@@ -224,11 +224,11 @@ and can contain sensitive information. Use encrypted storage and protect your
 backups; ownmail does not encrypt the archive itself.
 
 The web interface sanitizes message HTML with
-[DOMPurify](https://github.com/cure53/DOMPurify). Image blocking is enabled by
-default and stops every remote image, including CSS and responsive images, until
-you load them. It does not block other remote content, such as fonts that message
-styles request. Loading images explicitly can reveal your request to the sender's
-servers.
+[DOMPurify](https://github.com/cure53/DOMPurify). Remote content blocking is
+enabled by default. It stops every request a message makes for remote images,
+fonts, audio, and video, including CSS and responsive images and fonts from
+services such as Google Fonts. Loading remote content explicitly can reveal your
+request to the servers that host it.
 
 The server listens on localhost by default and has no built-in login. If you
 make it reachable from other devices, control access through a trusted network

@@ -1,4 +1,4 @@
-"""Remote image blocking in the message reader."""
+"""Remote content blocking in the message reader."""
 
 import json
 import subprocess
@@ -14,7 +14,7 @@ from werkzeug.serving import make_server
 from ownmail.web import (
     BLOCKED_IMAGE_PLACEHOLDER,
     IMAGE_BLOCKING_CSP,
-    _has_remote_images,
+    _has_remote_content,
     _hide_blocked_images,
     create_app,
 )
@@ -47,10 +47,18 @@ spacing_sanitizer = test_reader_spacing.spacing_sanitizer
         "<style>.a {background-image: image-set(url(a.png) 1x, 'https://t.test/x.png' type('image/png') 2x)}</style>",
         "<style>.a {background-image: -webkit-image-set(url(https://t.test/x.png) 1x)}</style>",
         "<style>@font-face {font-family: X; src: url(x.woff2)} li {list-style-image: url(https://t.test/x.png)}</style>",
+        "<style>@font-face {font-family: X; src: local(X), url(//t.test/x.woff2)}</style>",
+        '<style>@import url("https://fonts.googleapis.com/css2?family=X");</style>',
+        "<style>@import 'https://fonts.googleapis.com/css2?family=X';</style>",
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=X">',
+        '<video src="https://t.test/movie.mp4"></video>',
+        '<video><source src="https://t.test/movie.mp4"></video>',
+        '<audio src="//t.test/sound.mp3"></audio>',
+        '<video><track src="https://t.test/captions.vtt"></video>',
     ],
 )
-def test_remote_image_references_are_detected(markup):
-    assert _has_remote_images(markup)
+def test_remote_references_are_detected(markup):
+    assert _has_remote_content(markup)
 
 
 @pytest.mark.parametrize(
@@ -60,16 +68,14 @@ def test_remote_image_references_are_detected(markup):
         '<img src="images/logo.png" srcset="data:image/png;base64,AA,BB 1x, images/x.png 2x">',
         # The reader drops body attributes other than style.
         '<body background="https://t.test/x.png"><p>Text</p></body>',
-        "<style>@font-face {font-family: X; src: url(https://t.test/x.woff2)}</style>",
-        '<style>@import url("https://fonts.googleapis.com/css2?family=X");</style>',
-        "<style>/* background: url(https://t.test/x.png) */ p {color: red}</style>",
+        "<style>@font-face {font-family: X; src: local(X), url(fonts/x.woff2)}</style>",
+        "<style>/* @import url(https://t.test/x.css); background: url(https://t.test/x.png) */ p {color: red}</style>",
         '<style>a[href^="https://"] {color: blue} p::before {content: "https://t.test/x.png"}</style>',
-        '<video><source src="https://t.test/movie.mp4"></video>',
         '<p><a href="https://t.test/">https://t.test/x.png</a></p>',
     ],
 )
-def test_local_and_non_image_references_are_not_detected(markup):
-    assert not _has_remote_images(markup)
+def test_local_and_inert_references_are_not_detected(markup):
+    assert not _has_remote_content(markup)
 
 
 @pytest.mark.parametrize(
@@ -127,13 +133,15 @@ def open_message(app, query=""):
 
 
 REMOTE_IMAGE = '<p><img src="https://t.test/x.png" width="40"></p>'
+REMOTE_FONT = '<style>@font-face {font-family:X;src:url(https://t.test/x.woff2)}</style><p style="font-family:X">X</p>'
 
 
-def test_blocked_message_sends_csp_and_offers_to_load_images(message_app):
-    app = message_app(REMOTE_IMAGE, block_images=True)
+@pytest.mark.parametrize(("markup", "images"), [(REMOTE_IMAGE, [BLOCKED_IMAGE_PLACEHOLDER]), (REMOTE_FONT, [])])
+def test_blocked_message_sends_csp_and_offers_to_load_content(message_app, markup, images):
+    app = message_app(markup, block_images=True)
     response, page = open_message(app, "?return_to=%2Fsearch%3Fq%3Dsale")
     assert response.headers["Content-Security-Policy"] == IMAGE_BLOCKING_CSP
-    assert page.xpath("//*[@id='ownmail-email-content']//img/@src") == [BLOCKED_IMAGE_PLACEHOLDER]
+    assert page.xpath("//*[@id='ownmail-email-content']//img/@src") == images
     load = "/email/message?images=load&return_to=/search?q%3Dsale"
     assert page.xpath("//*[@id='load-images-btn']/@data-images-url") == [load]
     assert page.xpath("//*[@id='menu-load-images']/@data-images-url") == [load]
@@ -180,8 +188,13 @@ def test_block_images_setting_applies_to_the_next_message(message_app):
     assert "Content-Security-Policy" not in open_message(app)[0].headers
 
 
-# Every image source the sanitizer keeps, each fetched from its own path
-REMOTE_IMAGE_MESSAGE = """<html><head><style>
+# Every remote source the sanitizer keeps, each fetched from its own path. The
+# sanitizer keeps stylesheets only from trusted font providers.
+REMOTE_CONTENT_MESSAGE = """<html><head>
+<link rel="stylesheet" href="https://fonts.googleapis.com/link.css">
+<style>
+@import url("https://fonts.googleapis.com/import.css");
+@font-face {font-family:Remote;src:url(https://fixture.test/font.woff2)}
 .sheet {height:20px;background-image:url("https://fixture.test/style-block.svg")}
 .set {height:20px;background-image:image-set("https://fixture.test/image-set.svg" 1x)}
 </style></head>
@@ -199,22 +212,35 @@ REMOTE_IMAGE_MESSAGE = """<html><head><style>
 <div class="sheet"></div><div class="set"></div>
 <video width="40" height="20" poster="https://fixture.test/poster.svg"></video>
 <input type="image" width="40" height="20" alt="Submit" src="https://fixture.test/input.svg">
+<p style="font-family:Remote">Remote font</p><p style="font-family:Link">Linked font</p>
+<p style="font-family:Import">Imported font</p>
+<video width="40" height="20" src="https://fixture.test/video.mp4"></video>
+<video width="40" height="20"><source src="https://fixture.test/source.mp4"></video>
+<audio src="https://fixture.test/audio.mp3"></audio>
 </body></html>"""
 
 LOADED_PATHS = [
+    "/audio.mp3",
     "/body.svg",
     "/cell.svg",
+    "/font.woff2",
     "/image-set.svg",
     "/img.svg",
+    "/import.css",
+    "/import.woff2",
     "/inline.svg",
     "/input.svg",
+    "/link.css",
+    "/link.woff2",
     "/list.svg",
     "/picture.svg",
     "/poster.svg",
     "/scheme-relative.svg",
+    "/source.mp4",
     "/srcset.svg",
     "/style-block.svg",
     "/table.svg",
+    "/video.mp4",
 ]
 
 BROWSER_SCRIPT = r"""
@@ -234,12 +260,18 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         await page.route('**/*', route => {
             const url = new URL(route.request().url());
             if (url.origin === input.base) return route.continue();
-            if (url.hostname === 'fixture.test') {
-                remote.push(url.pathname);
+            remote.push(url.pathname);
+            if (url.pathname.endsWith('.svg')) {
                 return route.fulfill({contentType: 'image/svg+xml',
                     body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"></svg>'});
             }
-            return route.abort();
+            if (url.pathname.endsWith('.css')) {
+                // A font provider's stylesheet names a font file on the provider's host.
+                const name = url.pathname.slice(1, -'.css'.length);
+                return route.fulfill({contentType: 'text/css',
+                    body: `@font-face {font-family: ${name}; src: url(https://fonts.gstatic.com/${name}.woff2)}`});
+            }
+            return route.fulfill({body: ''});
         });
         const settle = async () => {
             await page.waitForLoadState('load');
@@ -271,7 +303,7 @@ def image_app(tmp_path, spacing_sanitizer):
     message = EmailMessage()
     message["Subject"] = "Synthetic message"
     message["From"] = "Sender <sender@example.com>"
-    message.set_content(REMOTE_IMAGE_MESSAGE, subtype="html")
+    message.set_content(REMOTE_CONTENT_MESSAGE, subtype="html")
     (tmp_path / "synthetic.eml").write_bytes(message.as_bytes())
     archive = MagicMock()
     archive.archive_dir = tmp_path

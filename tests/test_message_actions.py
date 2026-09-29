@@ -293,7 +293,7 @@ def test_existing_action_requests_and_confirmations(
             trash_count=1,
             subject="Synthetic",
             sender_email="sender@example.com",
-            has_external_images=True,
+            has_remote_content=True,
             images_blocked=True,
             body_text="Synthetic message.",
         )

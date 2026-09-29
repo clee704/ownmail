@@ -53,7 +53,8 @@ const PURIFY_CONFIG = {
   RETURN_DOM_FRAGMENT: false,
 };
 
-// Trusted font provider domains (for @import and @font-face url())
+// Font providers whose stylesheets @import and <link> may load. A remote
+// stylesheet escapes selector scoping, so no other host's is kept.
 const TRUSTED_FONT_HOSTS = [
   "fonts.googleapis.com",
   "fonts.gstatic.com",
@@ -107,7 +108,8 @@ function isTrustedFontUrl(url) {
  * Scope and sanitize a CSS stylesheet using postcss AST.
  * - Removes @charset; allows @import only from trusted font providers
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
- * - Removes url() with external resources (keeps data: URIs and trusted font URLs)
+ * - Keeps remote url() values, including @font-face sources from any host; the
+ *   reader's content security policy blocks them until remote content is loaded
  * - Scopes all selectors under #ownmail-email-content
  * - Leaves @font-face, @keyframes unscoped
  */
@@ -149,8 +151,8 @@ function scopeAndSanitizeCSS(css) {
       return;
     }
 
-    // Allow external url() — image blocking is handled server-side in Python.
-    // Only strip url() with javascript: scheme (security risk).
+    // Remote url() values stay for the reader's content security policy to
+    // block. Only javascript: URLs are a security risk.
     if (/url\s*\(\s*['"]?javascript:/i.test(val)) {
       decl.remove();
       return;
@@ -198,8 +200,8 @@ function scopeAndSanitizeCSS(css) {
  * Removes dangerous CSS constructs but does NOT scope (no selectors in inline styles).
  */
 function sanitizeInlineStyle(css) {
-  // Remove javascript: URLs (security risk) but allow external image URLs
-  // (image blocking is handled server-side in Python)
+  // Remove javascript: URLs (security risk). Remote URLs stay for the reader's
+  // content security policy to block.
   css = css.replace(/url\s*\(\s*['"]?javascript:[^)]*\)/gi, "/* url removed */");
   css = css.replace(/expression\s*\([^)]*\)/gi, "");
   css = css.replace(/behavior\s*:\s*[^;]*/gi, "");

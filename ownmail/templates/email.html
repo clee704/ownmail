@@ -18,12 +18,12 @@
                 {% if body_html %}
                 <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-content" hidden>Show actual size</button>
                 {% endif %}
-                {% if has_external_images %}
+                {% if has_remote_content %}
                 <hr class="ownmail-email-menu-divider">
                 {% if images_blocked %}
-                <button type="button" id="menu-load-images" data-images-url="{{ url_for('view_email', email_id=email_id, images='load', return_to=back_url) }}">Load images</button>
+                <button type="button" id="menu-load-images" data-images-url="{{ url_for('view_email', email_id=email_id, images='load', return_to=back_url) }}">Load remote content</button>
                 {% else %}
-                <button type="button" id="menu-block-images" data-images-url="{{ url_for('view_email', email_id=email_id, images='block', return_to=back_url) }}">Block images</button>
+                <button type="button" id="menu-block-images" data-images-url="{{ url_for('view_email', email_id=email_id, images='block', return_to=back_url) }}">Block remote content</button>
                 {% endif %}
                 {% if sender_email %}
                 <button type="button" id="menu-trust-sender" {% if sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="trustSender()">Always trust this sender</button>
@@ -110,23 +110,23 @@
         {% endif %}
 
         <div class="ownmail-email-content-area" data-supports-dark="{{ 'true' if supports_dark else 'false' }}">
-        {% if images_blocked and has_external_images %}
+        {% if images_blocked and has_remote_content %}
         <div class="ownmail-image-banner" id="ownmail-image-banner" data-has-banner="true">
-            <span class="ownmail-image-banner-text" id="ownmail-image-banner-text">{{ icon('image') }} External images are blocked.</span>
+            <span class="ownmail-image-banner-text" id="ownmail-image-banner-text">{{ icon('image') }} Remote content is blocked.</span>
             <div class="ownmail-image-banner-buttons">
-                <button type="button" id="load-images-btn" data-images-url="{{ url_for('view_email', email_id=email_id, images='load', return_to=back_url) }}">Load images</button>
+                <button type="button" id="load-images-btn" data-images-url="{{ url_for('view_email', email_id=email_id, images='load', return_to=back_url) }}">Load remote content</button>
                 {% if sender_email and not sender_is_trusted %}
                 <button class="ownmail-trust-btn" data-message-action onclick="trustSender()">Always trust this sender</button>
                 {% endif %}
             </div>
         </div>
         {% endif %}
-        {% if has_external_images %}
+        {% if has_remote_content %}
         <script>
         var senderEmail = {{ sender_email | tojson }};
 
-        // The response's CSP decides which images the browser may request, so
-        // loading or blocking them reloads the message.
+        // The response's CSP decides what the browser may request from other
+        // hosts, so loading or blocking remote content reloads the message.
         document.querySelectorAll('[data-images-url]').forEach(function(button) {
             button.addEventListener('click', function() {
                 showLoading();

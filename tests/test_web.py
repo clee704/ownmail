@@ -2046,7 +2046,7 @@ class TestRunServer:
             )
         out = capsys.readouterr().out
         assert "Verbose logging enabled" in out
-        assert "External images blocked by default" in out
+        assert "Remote content blocked by default" in out
         assert "Trusted senders: 1" in out
 
     def test_opens_browser_when_requested(self, archive, sanitizer):

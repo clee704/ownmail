@@ -44,8 +44,8 @@ sources:
 # web:
 #   port: 8080              # Default: 8080
 #   page_size: 50            # Emails per search page (default: 50)
-#   block_images: true       # Block external images by default (default: true)
-#   trusted_senders:         # Always load images from these senders
+#   block_images: true       # Block remote content by default (default: true)
+#   trusted_senders:         # Always load remote content from these senders
 #     - sender@example.com
 """
 

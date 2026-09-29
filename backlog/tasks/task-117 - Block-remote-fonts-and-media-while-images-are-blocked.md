@@ -1,10 +1,10 @@
 ---
 id: TASK-117
 title: Block remote fonts and media while images are blocked
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-29 05:40'
-updated_date: '2026-09-29 05:40'
+updated_date: '2026-09-29 12:05'
 labels:
   - ui
 dependencies: []
@@ -25,3 +25,14 @@ Image blocking stops every remote image through the message response's CSP img-s
 - [ ] #2 Loading images or trusting the sender restores the covered content, and the banner and docs describe what blocking covers
 - [ ] #3 Sanitizer comments match the enforced font policy and the full pre-push gate passes
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Review base: f8fcb51.
+1. While blocking is on, the message response CSP becomes default-src 'self' data: with script-src and style-src 'self' 'unsafe-inline', so the browser refuses every remote resource a message names: images, fonts, font stylesheets and audio and video. Trusted font providers are covered too: a request at open reveals the open whichever host receives it. The sanitizer's provider list only decides which remote stylesheets are safe to keep once content loads.
+2. Detect remote fonts (@font-face sources, @import, kept <link> stylesheets) and media sources (video, audio, source and track src) as well as images, so the banner and menu appear whenever something is blocked.
+3. The reader, settings and docs call this remote content: banner, Load and Block actions, trusted-sender hints, README, docs/setup.md and the CLI config comment. Internal ids, the images= parameter and the block_images key stay.
+4. Sanitizer comments describe the enforced policy: remote url() values stay, including @font-face sources from any host, and the reader's CSP blocks them; @import and <link> keep only trusted font providers' stylesheets because remote stylesheets escape scoping.
+5. Tests: detection cases for fonts, imports, links and media; the Chromium and WebKit regression gains @font-face, a trusted-provider <link> and @import, and video and audio sources, none requested while blocked and all restored by Load, re-blocked by Block, and restored by trusting the sender.
+<!-- SECTION:PLAN:END -->

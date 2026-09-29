@@ -83,7 +83,7 @@ ownmail serve --config /path/to/config.yaml
 [config.example.yaml](../config.example.yaml) documents additional sources,
 a separate database directory, download filters, and web settings. The web
 Settings page controls appearance, date formats, time zone, page size, and
-image preferences.
+remote content preferences.
 
 ## Browser and mobile access
 
@@ -99,7 +99,7 @@ step or `--port 8081` to choose another port. Keep the process running while usi
 the interface.
 
 The first launch downloads the sanitizer dependencies through npm. Later local
-reading and search can work without internet, though remote images and external
+reading and search can work without internet, though remote content and external
 links still need their respective servers. If the sanitizer cannot start,
 ownmail refuses to serve message HTML; check that Node.js and npm are available.
 
@@ -117,15 +117,15 @@ not expose the server directly to the public internet.
 You can add the site to the phone's Home Screen. Its icon and standalone layout
 use the same running server, so this does not provide a separate offline copy.
 
-## HTML and remote images
+## HTML and remote content
 
 Ownmail sanitizes email HTML through [DOMPurify](https://github.com/cure53/DOMPurify)
-in a Node.js sidecar before displaying it. Image blocking is enabled by default
-and stops every remote image, including CSS and responsive images. It does not
-block other remote content, such as fonts that message styles request. Use
-**Load images** to reload one message with its images, or **Always trust this
-sender** to remember a sender. Loading remote content can reveal your request to
-the remote server.
+in a Node.js sidecar before displaying it. Remote content blocking is enabled by
+default. It stops every request a message makes for remote images, fonts, audio,
+and video, including CSS and responsive images and fonts from services such as
+Google Fonts. Use **Load remote content** to reload one message with its remote
+content, or **Always trust this sender** to remember a sender. Loading remote
+content can reveal your request to the remote server.
 
 For live template and Python changes during development, see
 [Running locally](../CONTRIBUTING.md#running-locally).
