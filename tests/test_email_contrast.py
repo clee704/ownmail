@@ -61,6 +61,7 @@ def run_contrast_browser(
     is_mobile=False,
     attachments=(),
     rendered_page=None,
+    page_headers=None,
     external_stylesheets=None,
 ):
     page = rendered_page
@@ -88,6 +89,7 @@ def run_contrast_browser(
         files[path] = {"body": response.data.decode(), "contentType": response.mimetype}
     payload = {
         "page": page,
+        "pageHeaders": page_headers or {},
         "files": files,
         "theme": theme,
         "systemTheme": system_theme,
@@ -114,7 +116,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
             const url = new URL(route.request().url());
             requests.set(url.href, (requests.get(url.href) || 0) + 1);
             if (url.origin === 'http://ownmail.test' && url.pathname === '/email/synthetic') {
-                return route.fulfill({contentType: 'text/html', body: input.page});
+                return route.fulfill({contentType: 'text/html', body: input.page, headers: input.pageHeaders});
             }
             if (url.origin === 'http://ownmail.test' && input.files[url.pathname]) {
                 return route.fulfill(input.files[url.pathname]);

@@ -325,27 +325,6 @@ class TestWebDecodeHelpers:
         assert "MB" in _format_size(2 * 1024 * 1024)
 
 
-class TestBlockExternalImagesFunction:
-    """Test block_external_images function."""
-
-    def test_block_external_images_http(self):
-        """Test blocking HTTP images."""
-        from ownmail.web import block_external_images
-
-        html = '<img src="http://tracker.com/pixel.gif">'
-        result, has_external = block_external_images(html)
-        assert has_external is True
-
-    def test_block_external_images_data_uri(self):
-        """Test that data URIs are not blocked."""
-        from ownmail.web import block_external_images
-
-        html = '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">'
-        result, has_external = block_external_images(html)
-        assert has_external is False
-        assert "data:image" in result
-
-
 class TestParseRecipients:
     """Test parse_recipients function."""
 

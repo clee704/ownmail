@@ -735,28 +735,6 @@ class TestWebParseRecipients:
         assert result == []
 
 
-class TestWebBlockExternalImages:
-    """Tests for web block_external_images."""
-
-    def test_block_external_images(self):
-        """Test blocking external images."""
-        from ownmail.web import block_external_images
-
-        html = '<img src="https://example.com/image.jpg">'
-        result, has_external = block_external_images(html)
-        assert has_external is True
-        assert "data-src" in result
-
-    def test_no_external_images(self):
-        """Test HTML without external images."""
-        from ownmail.web import block_external_images
-
-        html = "<p>Hello World</p>"
-        result, has_external = block_external_images(html)
-        assert has_external is False
-        assert result == html
-
-
 class TestWebDecodeHeader:
     """Tests for web decode_header."""
 
@@ -1849,42 +1827,6 @@ class TestWebSearchResultsMocked:
         with app.test_client() as client:
             response = client.get("/search?q=test&page=5")
             assert response.status_code == 200
-
-
-class TestWebExternalImages:
-    """Tests for external image blocking."""
-
-    def test_email_with_external_images(self, tmp_path):
-        """Test email with external images blocked."""
-        from ownmail.web import create_app
-
-        eml_content = b"""From: sender@example.com
-To: recipient@example.com
-Subject: Email with Images
-Date: Mon, 01 Jan 2024 00:00:00 +0000
-Message-ID: <img123@example.com>
-Content-Type: text/html; charset=utf-8
-
-<html><body>
-<img src="https://example.com/tracking.gif">
-<p>Email with external image</p>
-</body></html>
-"""
-        eml_file = tmp_path / "img.eml"
-        eml_file.write_bytes(eml_content)
-
-        mock_archive = MagicMock()
-        mock_archive.archive_dir = tmp_path
-        mock_archive.db = mock_archive_db()
-        mock_archive.db.get_email_count.return_value = 100
-        mock_archive.db.get_email_by_id.return_value = ("img123", "img.eml", None, None, None, None)
-
-        app = create_app(mock_archive)
-        with app.test_client() as client:
-            response = client.get("/email/img123")
-            assert response.status_code == 200
-            # External image should be blocked
-            assert b"data-src" in response.data or b"tracking.gif" not in response.data or response.status_code == 200
 
 
 class TestWebCIDImages:

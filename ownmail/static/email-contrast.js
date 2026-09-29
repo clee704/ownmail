@@ -211,7 +211,6 @@
         }
         content.addEventListener('load', imageChanged, true);
         content.addEventListener('error', imageChanged, true);
-        content.addEventListener('ownmail-images-changed', refresh);
         window.addEventListener('resize', refresh);
         if (document.fonts) document.fonts.ready.then(refresh);
         if (window.ResizeObserver) {

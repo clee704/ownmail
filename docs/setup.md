@@ -120,10 +120,12 @@ use the same running server, so this does not provide a separate offline copy.
 ## HTML and remote images
 
 Ownmail sanitizes email HTML through [DOMPurify](https://github.com/cure53/DOMPurify)
-in a Node.js sidecar before displaying it. Image blocking is enabled by default,
-but some CSS images and responsive image sources can still contact remote servers.
-Use **Load images** for one message or **Always trust this sender** to remember a
-sender. Loading remote content can reveal your request to the remote server.
+in a Node.js sidecar before displaying it. Image blocking is enabled by default
+and stops every remote image, including CSS and responsive images. It does not
+block other remote content, such as fonts that message styles request. Use
+**Load images** to reload one message with its images, or **Always trust this
+sender** to remember a sender. Loading remote content can reveal your request to
+the remote server.
 
 For live template and Python changes during development, see
 [Running locally](../CONTRIBUTING.md#running-locally).

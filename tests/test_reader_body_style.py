@@ -13,7 +13,7 @@ spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("quoted", [False, True])
-def test_body_background_covers_trailing_content_and_keeps_image_controls(
+def test_body_background_covers_trailing_content_and_keeps_images_blocked(
     shell_app, contrast_browser, spacing_sanitizer, theme, quoted
 ):
     app, archive = shell_app
@@ -64,15 +64,10 @@ def test_body_background_covers_trailing_content_and_keeps_image_controls(
         }
         assert(!requests.has('https://fixture.test/pixel.svg'));
         assert(!requests.has('https://fixture.test/background.svg'));
-        assert.equal(await content.getAttribute('data-bg-urls'), 'https://fixture.test/background.svg');
-        await page.locator('#load-images-btn').click();
-        await settle();
-        assert.equal(await content.getAttribute('data-bg-urls'), null);
         assert((await content.evaluate(el => getComputedStyle(el).backgroundImage)).includes('https://fixture.test/background.svg'));
-        assert(requests.has('https://fixture.test/background.svg'));
-        assert(requests.has('https://fixture.test/pixel.svg'));
         """,
         theme=theme,
         viewport=(390, 900),
         rendered_page=response.get_data(as_text=True),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
     )

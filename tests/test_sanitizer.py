@@ -457,11 +457,11 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "<td" in result
         assert "Cell" in result
 
-    def test_keeps_data_src_attribute(self):
-        """Test that data-src attribute is preserved (used by image blocking)."""
-        html = '<img data-src="https://example.com/img.jpg" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==">'
+    def test_keeps_data_attributes(self):
+        """Test that data-* attributes are preserved."""
+        html = '<div data-note="kept">Content</div>'
         result, *_ = self.sanitizer.sanitize(html)
-        assert "data-src" in result
+        assert 'data-note="kept"' in result
 
     def test_preserves_bgcolor(self):
         """Test that bgcolor attribute is preserved (common in email HTML)."""

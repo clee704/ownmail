@@ -16,7 +16,6 @@ from ownmail.web import (
     _get_server_timezone_name,
     _resolve_timezone,
     _to_local_datetime,
-    block_external_images,
     create_app,
     decode_header,
     parse_email_address,
@@ -77,40 +76,6 @@ class TestDecodeHeader:
         result = decode_header(encoded)
         # Should return something, not crash
         assert isinstance(result, str)
-
-
-class TestBlockExternalImages:
-    """Tests for block_external_images function."""
-
-    def test_no_images(self):
-        """HTML without images should pass through unchanged."""
-        html = "<p>Hello World</p>"
-        result, has_external = block_external_images(html)
-        assert result == html
-        assert has_external is False
-
-    def test_external_http_image(self):
-        """External HTTP image should be blocked."""
-        html = '<img src="http://example.com/image.jpg">'
-        result, has_external = block_external_images(html)
-        assert "data-src" in result
-        assert 'data-src="http://example.com/image.jpg"' in result
-        assert has_external is True
-
-    def test_external_https_image(self):
-        """External HTTPS image should be blocked."""
-        html = '<img src="https://example.com/image.jpg">'
-        result, has_external = block_external_images(html)
-        assert "data-src" in result
-        assert 'data-src="https://example.com/image.jpg"' in result
-        assert has_external is True
-
-    def test_data_uri_not_blocked(self):
-        """Data URI images should not be blocked."""
-        html = '<img src="data:image/png;base64,abc123">'
-        result, has_external = block_external_images(html)
-        assert result == html
-        assert has_external is False
 
 
 class TestParseEmailAddress:
@@ -1100,101 +1065,8 @@ class TestTrustSenderWithConfig:
             assert "remove@example.com" not in config["web"]["trusted_senders"]
 
 
-class TestBlockImages:
-    """Tests for image blocking feature."""
-
-    def test_block_images_enabled(self, tmp_path):
-        """Images should be blocked when enabled."""
-        from unittest.mock import MagicMock
-
-        from ownmail.web import create_app
-
-        eml_content = b"""From: sender@example.com
-Subject: With Images
-Content-Type: text/html
-
-<html><body><img src="http://example.com/track.gif"></body></html>
-"""
-        eml_path = tmp_path / "emails" / "img.eml"
-        eml_path.parent.mkdir(parents=True)
-        eml_path.write_bytes(eml_content)
-
-        mock_archive = MagicMock()
-        mock_archive.archive_dir = tmp_path
-        mock_archive.db = mock_archive_db()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/img.eml", None, None, None, None)
-        mock_archive.db.get_email_count.return_value = 100
-
-        app = create_app(mock_archive, block_images=True)
-        with app.test_client() as client:
-            response = client.get("/email/msg1")
-            assert response.status_code == 200
-            # Image blocking banner should be shown
-            assert b"data-src" in response.data or b"blocked" in response.data.lower()
-
-    def test_trusted_sender_not_blocked(self, tmp_path):
-        """Images from trusted senders should not be blocked."""
-        from unittest.mock import MagicMock
-
-        from ownmail.web import create_app
-
-        eml_content = b"""From: trusted@example.com
-Subject: Trusted Images
-Content-Type: text/html
-
-<html><body><img src="http://example.com/logo.gif"></body></html>
-"""
-        eml_path = tmp_path / "emails" / "trusted.eml"
-        eml_path.parent.mkdir(parents=True)
-        eml_path.write_bytes(eml_content)
-
-        mock_archive = MagicMock()
-        mock_archive.archive_dir = tmp_path
-        mock_archive.db = mock_archive_db()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/trusted.eml", None, None, None, None)
-        mock_archive.db.get_email_count.return_value = 100
-
-        app = create_app(mock_archive, block_images=True, trusted_senders=["trusted@example.com"])
-        with app.test_client() as client:
-            response = client.get("/email/msg1")
-            assert response.status_code == 200
-            # Should NOT show blocking banner
-            assert b"Images are blocked" not in response.data or b"trusted" in response.data.lower()
-
-    def test_block_images_respects_runtime_config_change(self, tmp_path):
-        """Changing block_images via app.config should take effect immediately."""
-        from unittest.mock import MagicMock
-
-        from ownmail.web import create_app
-
-        eml_content = b"""From: sender@example.com
-Subject: Runtime Test
-Content-Type: text/html
-
-<html><body><img src="http://example.com/track.gif"></body></html>
-"""
-        eml_path = tmp_path / "emails" / "rt.eml"
-        eml_path.parent.mkdir(parents=True)
-        eml_path.write_bytes(eml_content)
-
-        mock_archive = MagicMock()
-        mock_archive.archive_dir = tmp_path
-        mock_archive.db = mock_archive_db()
-        mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/rt.eml", None, None, None, None)
-        mock_archive.db.get_email_count.return_value = 100
-
-        # Start with block_images=True
-        app = create_app(mock_archive, block_images=True)
-        with app.test_client() as client:
-            resp1 = client.get("/email/msg1")
-            assert b"data-src" in resp1.data or b"blocked" in resp1.data.lower()
-
-            # Simulate settings page toggling block_images off
-            app.config["block_images"] = False
-
-            resp2 = client.get("/email/msg1")
-            # The original src should be intact (not replaced with data-src)
-            assert b'src="http://example.com/track.gif"' in resp2.data
+class TestRuntimeConfig:
+    """Settings changed at runtime apply to the next request."""
 
     def test_page_size_respects_runtime_config_change(self, tmp_path):
         """Changing page_size via app.config should take effect immediately."""
@@ -1257,7 +1129,7 @@ class TestExtractBodyContent:
         assert result.count("<link ") == 1
         assert result.index("color:red") < result.index("<link ") < result.index("color:blue")
 
-    def test_extracts_only_body_styling_and_blocked_backgrounds(self):
+    def test_extracts_only_body_styling(self):
         source = (
             '<html><body class="sender" id="sender-id" onload="unsafe()" '
             'style="background:#eef1f4;margin:0;padding:0;font-family:&quot;Example&quot;" '
@@ -1265,10 +1137,7 @@ class TestExtractBodyContent:
         )
         result, attributes = _extract_body_content(source)
         assert result == "<p>Text</p>"
-        assert attributes == {
-            "style": 'background:#eef1f4;margin:0;padding:0;font-family:"Example"',
-            "data-bg-urls": "https://fixture.test/background.png",
-        }
+        assert attributes == {"style": 'background:#eef1f4;margin:0;padding:0;font-family:"Example"'}
 
     def test_fragment_passthrough(self):
         """HTML fragments without body tag pass through."""
@@ -1708,26 +1577,6 @@ class TestServerTimezoneName:
                 name = _get_server_timezone_name()
         assert name.startswith("UTC")
         assert ":" in name
-
-
-class TestBlockExternalImagesCss:
-    """Tests for CSS url() blocking in block_external_images."""
-
-    def test_inline_style_background_is_blocked(self):
-        """An external url() in a style attribute should be replaced and stashed."""
-        html = '<div style="background-image: url(https://tracker.example.com/px.png)">hi</div>'
-        result, has_external = block_external_images(html)
-        assert has_external is True
-        assert "tracker.example.com" not in result.split("data-bg-urls=")[0]
-        assert 'data-bg-urls="https://tracker.example.com/px.png"' in result
-        assert "url(data:image/gif;base64," in result
-
-    def test_inline_style_without_external_url_untouched(self):
-        """A style attribute with no external url() should be left alone."""
-        html = '<div style="color: red">hi</div>'
-        result, has_external = block_external_images(html)
-        assert has_external is False
-        assert result == html
 
 
 class TestCsrfCheck:
@@ -3186,63 +3035,6 @@ class TestInlineImagesAndSanitizer:
         with app.test_client() as client:
             client.get("/email/id1")
         sanitizer.sanitize.assert_not_called()
-
-    def test_external_images_blocked_for_untrusted_sender(self, archive):
-        """An untrusted sender's external images should be swapped for data-src."""
-        raw = (
-            b"From: spam@example.com\r\nSubject: S\r\nContent-Type: text/html\r\n\r\n"
-            b'<p><img src="https://tracker.example.com/px.gif"></p>\r\n'
-        )
-        self._store(archive, raw)
-        app = create_app(archive, block_images=True)
-        with app.test_client() as client:
-            response = client.get("/email/id1")
-        assert b'data-src="https://tracker.example.com/px.gif"' in response.data
-
-    def test_trusted_sender_images_are_not_blocked(self, archive):
-        """A trusted sender's images should be left intact."""
-        raw = (
-            b"From: friend@example.com\r\nSubject: S\r\nContent-Type: text/html\r\n\r\n"
-            b'<p><img src="https://cdn.example.com/pic.gif"></p>\r\n'
-        )
-        self._store(archive, raw)
-        app = create_app(archive, block_images=True, trusted_senders=["friend@example.com"])
-        with app.test_client() as client:
-            response = client.get("/email/id1")
-        assert b'src="https://cdn.example.com/pic.gif"' in response.data
-
-
-class TestBlockExternalImagesMore:
-    """Further tests for block_external_images."""
-
-    def test_multiple_images_all_blocked(self):
-        """Every external image in the document should be blocked."""
-        html = '<img src="https://a.example.com/1.png"><img src="http://b.example.com/2.png">'
-        result, has_external = block_external_images(html)
-        assert has_external is True
-        assert result.count("data-src=") == 2
-
-    def test_attributes_before_src_are_preserved(self):
-        """Attributes preceding src should survive the rewrite."""
-        html = '<img width="10" src="https://a.example.com/1.png">'
-        result, _ = block_external_images(html)
-        assert 'width="10"' in result
-        assert 'data-src="https://a.example.com/1.png"' in result
-
-    def test_relative_image_is_untouched(self):
-        """A relative image src is not external and should be left alone."""
-        html = '<img src="/local/pic.png">'
-        result, has_external = block_external_images(html)
-        assert result == html
-        assert has_external is False
-
-    def test_style_and_img_together(self):
-        """A document with both forms should have both blocked."""
-        html = '<div style="background:url(https://a.example.com/bg.png)"><img src="https://a.example.com/1.png"></div>'
-        result, has_external = block_external_images(html)
-        assert has_external is True
-        assert "data-src=" in result
-        assert "data-bg-urls=" in result
 
 
 class TestTimezoneOffsetHelpers:

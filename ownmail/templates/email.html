@@ -20,8 +20,11 @@
                 {% endif %}
                 {% if has_external_images %}
                 <hr class="ownmail-email-menu-divider">
-                <button type="button" id="menu-load-images" {% if not images_blocked %}style="display: none;"{% endif %} onclick="loadImages()">Load images</button>
-                <button type="button" id="menu-block-images" {% if images_blocked %}style="display: none;"{% endif %} onclick="blockImages()">Block images</button>
+                {% if images_blocked %}
+                <button type="button" id="menu-load-images" data-images-url="{{ url_for('view_email', email_id=email_id, images='load', return_to=back_url) }}">Load images</button>
+                {% else %}
+                <button type="button" id="menu-block-images" data-images-url="{{ url_for('view_email', email_id=email_id, images='block', return_to=back_url) }}">Block images</button>
+                {% endif %}
                 {% if sender_email %}
                 <button type="button" id="menu-trust-sender" {% if sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="trustSender()">Always trust this sender</button>
                 <button type="button" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="untrustSender()">Untrust this sender</button>
@@ -111,8 +114,8 @@
         <div class="ownmail-image-banner" id="ownmail-image-banner" data-has-banner="true">
             <span class="ownmail-image-banner-text" id="ownmail-image-banner-text">{{ icon('image') }} External images are blocked.</span>
             <div class="ownmail-image-banner-buttons">
-                <button id="load-images-btn" onclick="loadImages()">Load images</button>
-                {% if sender_email %}
+                <button type="button" id="load-images-btn" data-images-url="{{ url_for('view_email', email_id=email_id, images='load', return_to=back_url) }}">Load images</button>
+                {% if sender_email and not sender_is_trusted %}
                 <button class="ownmail-trust-btn" data-message-action onclick="trustSender()">Always trust this sender</button>
                 {% endif %}
             </div>
@@ -122,61 +125,14 @@
         <script>
         var senderEmail = {{ sender_email | tojson }};
 
-        function hideBanner() {
-            var banner = document.getElementById('ownmail-image-banner');
-            if (banner) banner.style.display = 'none';
-        }
-
-        function loadImages() {
-            var container = document.getElementById('ownmail-email-content');
-            if (!container) return;
-
-            // Restore <img data-src="...">
-            var imgs = Array.from(container.querySelectorAll('img[data-src]'));
-            imgs.forEach(function(img) {
-                img.src = img.getAttribute('data-src');
-                img.removeAttribute('data-src');
+        // The response's CSP decides which images the browser may request, so
+        // loading or blocking them reloads the message.
+        document.querySelectorAll('[data-images-url]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                showLoading();
+                location.replace(button.getAttribute('data-images-url'));
             });
-
-            // Restore CSS background-image from data-bg-urls
-            var bgEls = Array.from(container.querySelectorAll('[data-bg-urls]'));
-            if (container.hasAttribute('data-bg-urls')) bgEls.unshift(container);
-            bgEls.forEach(function(el) {
-                var urls = el.getAttribute('data-bg-urls').split(' ');
-                var style = el.getAttribute('style') || '';
-                // Replace placeholder data URIs back with original URLs
-                urls.forEach(function(url) {
-                    style = style.replace(
-                        /url\(\s*["']?data:image\/gif;base64,[A-Za-z0-9+\/=]+["']?\s*\)/,
-                        'url(' + url + ')'
-                    );
-                });
-                el.setAttribute('style', style);
-                el.removeAttribute('data-bg-urls');
-            });
-
-            hideBanner();
-            updateDropdownImageState(true);
-            container.dispatchEvent(new Event('ownmail-images-changed'));
-        }
-
-        function blockImages() {
-            var container = document.getElementById('ownmail-email-content');
-            if (!container) return;
-
-            // Block <img src="https://...">
-            var imgs = Array.from(container.querySelectorAll('img[src]'));
-            imgs.forEach(function(img) {
-                var src = img.getAttribute('src');
-                if (src && !src.startsWith('data:')) {
-                    img.setAttribute('data-src', src);
-                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                }
-            });
-
-            updateDropdownImageState(false);
-            container.dispatchEvent(new Event('ownmail-images-changed'));
-        }
+        });
 
         function trustSender() {
             ownmailMessageAction({
@@ -185,7 +141,7 @@
                 pending: 'Trusting sender…',
                 success: 'Sender trusted.',
                 failure: 'Could not trust this sender.',
-                onSuccess: function() { loadImages(); updateDropdownTrustState(true); }
+                navigate: function() { location.replace({{ url_for('view_email', email_id=email_id, return_to=back_url) | tojson }}); }
             });
         }
 
@@ -196,22 +152,11 @@
                 pending: 'Removing trusted sender…',
                 success: 'Sender removed from trusted senders.',
                 failure: 'Could not remove this trusted sender.',
-                onSuccess: function() { updateDropdownTrustState(false); }
+                onSuccess: function() {
+                    document.getElementById('menu-trust-sender').style.display = '';
+                    document.getElementById('menu-untrust-sender').style.display = 'none';
+                }
             });
-        }
-
-        function updateDropdownImageState(loaded) {
-            var loadItem = document.getElementById('menu-load-images');
-            var blockItem = document.getElementById('menu-block-images');
-            if (loadItem) loadItem.style.display = loaded ? 'none' : '';
-            if (blockItem) blockItem.style.display = loaded ? '' : 'none';
-        }
-
-        function updateDropdownTrustState(trusted) {
-            var trustItem = document.getElementById('menu-trust-sender');
-            var untrustItem = document.getElementById('menu-untrust-sender');
-            if (trustItem) trustItem.style.display = trusted ? 'none' : '';
-            if (untrustItem) untrustItem.style.display = trusted ? '' : 'none';
         }
         </script>
         {% endif %}

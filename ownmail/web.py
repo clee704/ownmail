@@ -17,7 +17,7 @@ from email.utils import parsedate_to_datetime
 from urllib.parse import quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
-from flask import Flask, abort, g, redirect, render_template, request, send_file
+from flask import Flask, abort, g, make_response, redirect, render_template, request, send_file
 
 from ownmail import roles
 from ownmail.archive import EmailArchive
@@ -25,17 +25,49 @@ from ownmail.parser import EmailParser, _validate_decoded_text, extract_attachme
 from ownmail.query import parse_query
 from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_web_config, serialize_config_writes
 
-# Regex to find external images in HTML
-EXTERNAL_IMAGE_RE = re.compile(
-    r'<img\s+([^>]*\s)?src\s*=\s*["\']?(https?://[^"\'>\s]+)["\']?',
-    re.IGNORECASE,
-)
+# While images are blocked, the browser refuses every image from another host,
+# whichever HTML or CSS feature asks for it. 'self' keeps the app's own icons
+# and data: keeps inline cid: images.
+IMAGE_BLOCKING_CSP = "img-src 'self' data:"
 
-# Regex to detect external URLs in CSS (background-image, etc.)
-CSS_EXTERNAL_URL_RE = re.compile(
-    r'url\(\s*["\']?(https?://[^"\')\s]+)["\']?\s*\)',
-    re.IGNORECASE,
-)
+# Shown in place of a blocked <img> so it keeps its authored size instead of
+# collapsing to its alt text
+BLOCKED_IMAGE_PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
+# A URL that leaves the archive's host: an http(s) scheme or a scheme-relative //
+REMOTE_URL_RE = re.compile(r"https?:|//", re.IGNORECASE)
+
+# Characters a browser trims from both ends of a URL: controls and space
+URL_TRIMMED_CHARACTERS = "".join(chr(code) for code in range(0x21))
+
+# One candidate URL of a srcset. A URL may contain commas, as data: URIs do,
+# so a candidate ends at whitespace.
+SRCSET_URL_RE = re.compile(r"(?:^|,)[\s,]*([^\s,]\S*)")
+
+# Attributes that fetch an image, by element. Any element but <body> may also
+# have a background; the reader drops body attributes other than style.
+IMAGE_URL_ATTRIBUTES = {
+    "img": ("src", "srcset"),
+    "input": ("src",),
+    "source": ("srcset",),
+    "video": ("poster",),
+}
+
+# The argument of a CSS url()
+CSS_URL_RE = re.compile(r"""url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))""", re.IGNORECASE)
+
+# The arguments of an image-set(), which also takes images as bare strings.
+# Strings elsewhere, such as in selectors and content, load nothing.
+CSS_IMAGE_SET_RE = re.compile(r"""image-set\(((?:[^()"']|"[^"]*"|'[^']*'|\([^()]*\))*)\)""", re.IGNORECASE)
+CSS_STRING_RE = re.compile(r""""([^"]*)"|'([^']*)'""")
+
+# CSS that names URLs without loading images: comments, fonts and imports
+CSS_WITHOUT_IMAGES_RE = re.compile(r"/\*.*?\*/|@font-face\s*\{[^}]*\}|@import[^;]*;?", re.IGNORECASE | re.DOTALL)
+
+# An <img> or <source> tag as the sanitizer serializes it: attribute values
+# are always double-quoted, and a quoted value may contain ">"
+IMAGE_TAG_RE = re.compile(r'<(img|source)\b(?:[^>"]|"[^"]*")*>', re.IGNORECASE)
+IMAGE_TAG_URL_RE = re.compile(r'\s(src|srcset)="([^"]*)"', re.IGNORECASE)
 
 # Content types served inline, so the browser renders them instead of saving
 # them. Everything absent from this set is downloaded.
@@ -293,7 +325,7 @@ def _extract_body_content(html: str) -> tuple[str, dict[str, str]]:
         html: Sanitized HTML document or fragment
 
     Returns:
-        Body content and the container's style and blocked-background attributes
+        Body content and the container's style attribute
     """
     if not html:
         return html, {}
@@ -313,7 +345,7 @@ def _extract_body_content(html: str) -> tuple[str, dict[str, str]]:
         content = body_match.group(1)
         body = lxml_html.document_fromstring(html).find("body")
         if body is not None:
-            body_attributes = {key: body.attrib[key] for key in ("style", "data-bg-urls") if key in body.attrib}
+            body_attributes = {"style": body.attrib["style"]} if "style" in body.attrib else {}
     else:
         # No <body> tag — might be a fragment, use as-is
         # Strip <html> and <head> wrappers if present
@@ -740,65 +772,62 @@ def _decode_html_body(payload: bytes, header_charset: str | None) -> str:
     return payload.decode("utf-8", errors="replace")
 
 
-def block_external_images(html: str) -> tuple[str, bool]:
-    """Block external images in HTML by replacing src with data-src.
+def _is_remote_url(url: str) -> bool:
+    """Whether a browser would fetch the URL from outside the archive's host."""
+    # Browsers drop tabs and newlines from a URL and read a backslash as a slash.
+    url = re.sub(r"[\t\n\r]", "", url).strip(URL_TRIMMED_CHARACTERS).replace("\\", "/")
+    return REMOTE_URL_RE.match(url) is not None
 
-    Handles both <img src="..."> and CSS url() in inline styles and
-    <style> blocks (background-image, list-style-image, etc.).
 
-    Args:
-        html: HTML content
+def _css_has_remote_images(css: str) -> bool:
+    """Whether CSS refers to an image outside the archive's host."""
+    css = CSS_WITHOUT_IMAGES_RE.sub("", css)
+    urls = [match[match.lastindex] for match in CSS_URL_RE.finditer(css)]
+    for image_set in CSS_IMAGE_SET_RE.finditer(css):
+        urls.extend(match[match.lastindex] for match in CSS_STRING_RE.finditer(image_set[1]))
+    return any(_is_remote_url(url) for url in urls)
 
-    Returns:
-        Tuple of (modified HTML, whether external images were found)
+
+def _has_remote_images(html: str) -> bool:
+    """Whether sanitized message HTML refers to images outside the archive's host.
+
+    This decides whether the reader offers to load or block images. The CSP
+    does the blocking, so a reference this misses stays blocked.
     """
-    from html import escape, unescape
+    from lxml import etree
+    from lxml import html as lxml_html
 
-    has_img = bool(EXTERNAL_IMAGE_RE.search(html))
-    has_css = bool(CSS_EXTERNAL_URL_RE.search(unescape(html)))
-    if not has_img and not has_css:
-        return html, False
+    for element in lxml_html.document_fromstring(html).iter(etree.Element):
+        urls = [] if element.tag == "body" else [element.get("background", "")]
+        for name in IMAGE_URL_ATTRIBUTES.get(element.tag, ()):
+            value = element.get(name, "")
+            urls.extend(SRCSET_URL_RE.findall(value) if name == "srcset" else [value])
+        css = (element.text or "") if element.tag == "style" else element.get("style", "")
+        if any(_is_remote_url(url) for url in urls) or _css_has_remote_images(css):
+            return True
+    return False
 
-    blocked_html = html
 
-    # Block <img src="https://...">
-    if has_img:
+def _hide_blocked_images(html: str) -> str:
+    """Replace remote <img> sources with a placeholder of the authored size.
 
-        def replace_src(match):
-            prefix = match.group(1) or ""
-            url = match.group(2)
-            return f'<img {prefix}data-src="{url}" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"'
+    The CSP already stops the requests; this only keeps the layout. Dropping a
+    remote srcset makes the browser fall back to the placeholder.
+    """
+    from html import unescape
 
-        blocked_html = EXTERNAL_IMAGE_RE.sub(replace_src, blocked_html)
+    def hide(tag):
+        def replace(attribute):
+            name, value = attribute[1].lower(), unescape(attribute[2])
+            if name == "srcset":
+                return "" if any(_is_remote_url(url) for url in SRCSET_URL_RE.findall(value)) else attribute[0]
+            if tag[1].lower() == "img" and _is_remote_url(value):
+                return f' src="{BLOCKED_IMAGE_PLACEHOLDER}"'
+            return attribute[0]
 
-    # Block CSS url(https://...) -> url() with data-bg attribute on the element
-    # For inline styles, replace url() with a transparent placeholder
-    if has_css:
+        return IMAGE_TAG_URL_RE.sub(replace, tag[0])
 
-        def replace_css_url(match):
-            return "url(data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)"
-
-        # Replace in inline style="..." attributes, preserving original in data-bg-urls
-        def replace_inline_style(match):
-            full = match.group(0)
-            style_val = unescape(match.group(1))
-            # Extract all external URLs from this style
-            urls = CSS_EXTERNAL_URL_RE.findall(style_val)
-            if not urls:
-                return full
-            new_style = CSS_EXTERNAL_URL_RE.sub(replace_css_url, style_val)
-            # Store originals in data attribute for restoration
-            url_str = " ".join(urls)
-            return f'style="{escape(new_style, quote=True)}" data-bg-urls="{escape(url_str, quote=True)}"'
-
-        blocked_html = re.sub(
-            r'(?<![\w:-])style="([^"]*)"',
-            replace_inline_style,
-            blocked_html,
-            flags=re.IGNORECASE,
-        )
-
-    return blocked_html, True
+    return IMAGE_TAG_RE.sub(hide, html)
 
 
 def _unquote_display_name(name: str) -> str:
@@ -1552,11 +1581,8 @@ def create_app(
             "is_trashed": is_trashed,
         }
 
-        # Block external images if configured
         body_html = email_data.get("body_html")
         cid_images = email_data.get("cid_images", {})
-        has_external_images = False
-        images_blocked = app.config["block_images"]
 
         # Replace cid: references with inline data URIs
         if body_html and cid_images:
@@ -1577,18 +1603,20 @@ def create_app(
         sender_name, sender_email = parse_email_address(email_data["sender"])
         recipients_parsed = parse_recipients(email_data["recipients"])
 
-        # Check if sender is trusted (skip image blocking for trusted senders)
+        # Images load by default when blocking is off or the sender is trusted;
+        # the reader's Load images and Block images actions override that.
         trusted_senders = app.config.get("trusted_senders", set())
-        sender_is_trusted = sender_email and sender_email.lower() in trusted_senders
-        if sender_is_trusted:
-            images_blocked = False
+        sender_is_trusted = bool(sender_email) and sender_email.lower() in trusted_senders
+        images = request.args.get("images")
+        if images in ("load", "block"):
+            images_blocked = images == "block"
+        else:
+            images_blocked = app.config["block_images"] and not sender_is_trusted
 
-        # Always detect external images so dropdown menu can show load/block actions
-        if body_html and (EXTERNAL_IMAGE_RE.search(body_html) or CSS_EXTERNAL_URL_RE.search(html.unescape(body_html))):
-            has_external_images = True
-
-        if body_html and images_blocked and has_external_images:
-            body_html, _ = block_external_images(body_html)
+        # Always detect external images so the menu can offer to load or block them
+        has_external_images = bool(body_html) and _has_remote_images(body_html)
+        if images_blocked and has_external_images:
+            body_html = _hide_blocked_images(body_html)
 
         # Extract just the body content for direct embedding
         # (strip <html>, <head>, <body> wrappers since we embed into our page)
@@ -1602,34 +1630,39 @@ def create_app(
         # Linkify plain text body for clickable URLs and emails
         body_linkified = _linkify(email_data["body"]) if email_data["body"] else ""
 
-        return render_template(
-            "email.html",
-            stats=stats,
-            email_id=email_id,
-            subject=email_data["subject"],
-            sender=email_data["sender"],
-            sender_name=sender_name,
-            sender_email=sender_email,
-            sender_search_url=sender_search_url(sender_name or email_data["sender"], sender_email),
-            recipients=email_data["recipients"],
-            recipients_parsed=recipients_parsed,
-            date=email_data["date"],
-            labels=email_data["labels"],
-            body=body_linkified,
-            body_html=body_html,
-            body_attributes=body_attributes,
-            attachments=email_data["attachments"],
-            images_blocked=images_blocked,
-            has_external_images=has_external_images,
-            sender_is_trusted=sender_is_trusted,
-            needs_padding=needs_padding,
-            supports_dark=supports_dark,
-            auto_scale=app.config["auto_scale"],
-            back_url=back_url,
-            is_trashed=email_data.get("is_trashed", False),
-            active=active,
-            cached_view=cached_view,
+        response = make_response(
+            render_template(
+                "email.html",
+                stats=stats,
+                email_id=email_id,
+                subject=email_data["subject"],
+                sender=email_data["sender"],
+                sender_name=sender_name,
+                sender_email=sender_email,
+                sender_search_url=sender_search_url(sender_name or email_data["sender"], sender_email),
+                recipients=email_data["recipients"],
+                recipients_parsed=recipients_parsed,
+                date=email_data["date"],
+                labels=email_data["labels"],
+                body=body_linkified,
+                body_html=body_html,
+                body_attributes=body_attributes,
+                attachments=email_data["attachments"],
+                images_blocked=images_blocked,
+                has_external_images=has_external_images,
+                sender_is_trusted=sender_is_trusted,
+                needs_padding=needs_padding,
+                supports_dark=supports_dark,
+                auto_scale=app.config["auto_scale"],
+                back_url=back_url,
+                is_trashed=email_data.get("is_trashed", False),
+                active=active,
+                cached_view=cached_view,
+            )
         )
+        if images_blocked:
+            response.headers["Content-Security-Policy"] = IMAGE_BLOCKING_CSP
+        return response
 
     @app.route("/labels/<email_id>", methods=["GET", "POST"])
     def local_labels(email_id: str):
