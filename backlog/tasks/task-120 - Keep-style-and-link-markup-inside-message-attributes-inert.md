@@ -1,10 +1,10 @@
 ---
 id: TASK-120
 title: Keep style and link markup inside message attributes inert
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-29 12:31'
-updated_date: '2026-09-29 16:34'
+updated_date: '2026-09-29 17:05'
 labels:
   - ui
 dependencies: []
@@ -26,15 +26,15 @@ Both reproduce with synthetic messages, and the matching predates TASK-117. Coll
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Style and link markup written inside attribute values stays attribute text after body extraction, and the message's real style and link elements keep their cascade order
-- [ ] #2 A browser test confirms that an event handler written inside an attribute this way does not run, with remote content blocked and loaded
+- [x] #1 Style and link markup written inside attribute values stays attribute text after body extraction, and the message's real style and link elements keep their cascade order
+- [x] #2 A browser test confirms that an event handler written inside an attribute this way does not run, with remote content blocked and loaded
 - [x] #3 The full pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review base: 1084a8e. Collect real <style>/<link> elements with a tag-aware scan (STYLE_LINK_TOKEN_RE) that consumes each tag's quoted attribute values, so markup the sanitizer keeps as inert attribute text is left in place instead of being lifted out. Kept body content string-based (not lxml re-serialization) to avoid regressing void elements like <source>. Unit tests for the two attribute cases plus a browser test that the injected handler never runs while blocked and loaded.
+Replace regex-based wrapper and style/link extraction with a single stdlib HTMLParser pass over the sanitizer output. Preserve serialized start tags, text, entity references, style/link order, and the body style attribute without reserializing HTML5 void elements through lxml. Extend the existing unit and browser regressions to body/html/head attributes, prove they fail on the current extractor, and run reader layout/font tests plus the full pre-push gate. Review the completed repair before committing.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -51,4 +51,12 @@ The 61 extraction and image-blocking tests pass with OWNMAIL_REQUIRE_BROWSER_TES
 Targeted validation: OWNMAIL_REQUIRE_BROWSER_TESTS=1 .venv/bin/pytest tests/test_web.py::TestExtractBodyContent tests/test_image_blocking.py -q. Browser setup prerequisites remain in CONTRIBUTING.md. This review does not implement the remaining fix.
 
 Full suite verification with required browser tests: 3,909 passed, 1 expected failure; coverage 96.44%.
+
+Repair in progress: replaced both the style/link scan and wrapper regexes with one HTMLParser pass over sanitized output. It keeps serialized start tags and entity references, collects real style/link elements in order, and copies only the body style attribute. This avoids lxml reserialization of HTML5 void elements and removes the unsafe body-boundary slicing.
+
+Extended the existing browser regression to paragraph, body, html, and head attributes in blocked and loaded modes. Added unit cases for wrapper attributes, void elements, and entity preservation; strengthened existing tests for body styling, CSS containing tag-like text, and fragments. Before the repair, all six wrapper unit cases, the body-style case, and all three added browser cases failed. They pass after the repair, along with reader fonts, body backgrounds, and spacing. Deliberate in-memory faults in entity decoding and source-element handling make both new preservation tests fail; no source mutations were left behind.
+
+Independent review found no remaining attribute-to-markup defect under the sanitizer contract. Its whitespace observation reproduced with a body using white-space:pre: a newline between head and body entered the message. Body parsing now clears only content collected before the real body start. The strengthened full-document test fails without this correction and passes with it, preserving whitespace inside the body.
+
+Repair complete. Full pre-push gate passed with browser tests required; coverage 96.45%. The parser, regression tests, and task record are included in the repair commit.
 <!-- SECTION:NOTES:END -->

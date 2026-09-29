@@ -14,6 +14,7 @@ import webbrowser
 from datetime import datetime
 from email.policy import default as email_policy
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
 from urllib.parse import quote, urlencode, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -77,19 +78,6 @@ CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 # are always double-quoted, and a quoted value may contain ">"
 IMAGE_TAG_RE = re.compile(r'<(img|source)\b(?:[^>"]|"[^"]*")*>', re.IGNORECASE)
 IMAGE_TAG_URL_RE = re.compile(r'\s(src|srcset)="([^"]*)"', re.IGNORECASE)
-
-# One tag, in document order: a <style> or <link>, or any other tag. Attribute
-# values are consumed as quoted runs so markup written inside one — a <link> or
-# <style> the sanitizer kept as inert attribute text — is swallowed by its
-# enclosing tag rather than mistaken for a real element.
-_ATTRIBUTE_RUN = r"""(?:"[^"]*"|'[^']*'|[^>"'])*"""
-STYLE_LINK_TOKEN_RE = re.compile(
-    rf"(?P<style><style\b{_ATTRIBUTE_RUN}>)"
-    rf"|(?P<link><link\b{_ATTRIBUTE_RUN}>)"
-    rf"|<[a-zA-Z/]{_ATTRIBUTE_RUN}>",
-    re.IGNORECASE | re.DOTALL,
-)
-STYLE_CLOSE_RE = re.compile(r"</style\s*>", re.IGNORECASE)
 
 # Content types served inline, so the browser renders them instead of saving
 # them. Everything absent from this set is downloaded.
@@ -336,42 +324,54 @@ def _format_date_long(dt: datetime, date_fmt: str | None = None) -> str:
     return dt.strftime(date_fmt or DETAIL_DATE_FORMAT)
 
 
-def _split_style_and_link_elements(html: str) -> tuple[list[str], str]:
-    """Split real <style> and <link> elements from the rest of the markup.
+class _MessageBodyParser(HTMLParser):
+    """Extract content from sanitized HTML without interpreting attribute text as tags."""
 
-    Walks the markup tag by tag so a <style> or <link> written inside an
-    attribute value — which the sanitizer keeps as inert text — is left in
-    place instead of being lifted out as a live element. Returns the collected
-    elements in document order and the markup with them removed; all other
-    bytes are preserved so the sender's cascade order survives.
-    """
-    styles: list[str] = []
-    spans: list[tuple[int, int]] = []
-    pos = 0
-    while match := STYLE_LINK_TOKEN_RE.search(html, pos):
-        if match.lastgroup == "link":
-            styles.append(match.group())
-            spans.append((match.start(), match.end()))
-            pos = match.end()
-        elif match.lastgroup == "style":
-            # A <style>'s CSS body may hold tag-like text; skip past its close.
-            close = STYLE_CLOSE_RE.search(html, match.end())
-            stop = close.end() if close else len(html)
-            styles.append(html[match.start() : stop])
-            spans.append((match.start(), stop))
-            pos = stop
-        else:
-            pos = match.end()
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.content: list[str] = []
+        self.styles: list[str] = []
+        self.body_attributes: dict[str, str] = {}
+        self._in_head = False
+        self._in_style = False
 
-    if not spans:
-        return styles, html
-    pieces = []
-    last = 0
-    for start, stop in spans:
-        pieces.append(html[last:start])
-        last = stop
-    pieces.append(html[last:])
-    return styles, "".join(pieces)
+    def handle_starttag(self, tag, attrs):
+        if tag == "head":
+            self._in_head = True
+        elif tag == "body":
+            self._in_head = False
+            # Whitespace outside the body must not enter preformatted messages.
+            self.content.clear()
+            style = dict(attrs).get("style")
+            if style is not None:
+                self.body_attributes = {"style": style}
+        elif tag in {"style", "link"}:
+            # DOMPurify has already scoped CSS and filtered font stylesheets.
+            self.styles.append(self.get_starttag_text())
+            self._in_style = tag == "style"
+        elif tag != "html":
+            # Keep serialized start tags so HTML5 void elements stay intact.
+            self.handle_data(self.get_starttag_text())
+
+    def handle_endtag(self, tag):
+        if tag == "head":
+            self._in_head = False
+        elif tag not in {"html", "body"}:
+            self.handle_data(f"</{tag}>")
+            if tag == "style":
+                self._in_style = False
+
+    def handle_data(self, data):
+        if self._in_style:
+            self.styles[-1] += data
+        elif not self._in_head:
+            self.content.append(data)
+
+    def handle_entityref(self, name):
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name):
+        self.handle_data(f"&#{name};")
 
 
 def _extract_body_content(html: str) -> tuple[str, dict[str, str]]:
@@ -390,31 +390,13 @@ def _extract_body_content(html: str) -> tuple[str, dict[str, str]]:
     if not html:
         return html, {}
 
-    # The sanitizer has already restricted links to trusted font stylesheets.
-    # Pull the real <style>/<link> elements out of the markup, leaving the rest
-    # byte-for-byte so cascade order is preserved.
-    styles, content_without_styles = _split_style_and_link_elements(html)
-
-    # Try to extract body content
-    body_match = re.search(r"<body[^>]*>(.*)</body>", content_without_styles, re.IGNORECASE | re.DOTALL)
-    body_attributes = {}
-    if body_match:
-        from lxml import html as lxml_html
-
-        content = body_match.group(1)
-        body = lxml_html.document_fromstring(html).find("body")
-        if body is not None:
-            body_attributes = {"style": body.attrib["style"]} if "style" in body.attrib else {}
-    else:
-        # No <body> tag — might be a fragment, use as-is
-        # Strip <html> and <head> wrappers if present
-        content = re.sub(r"</?html[^>]*>", "", content_without_styles, flags=re.IGNORECASE)
-        content = re.sub(r"<head[^>]*>[\s\S]*?</head>", "", content, flags=re.IGNORECASE)
-
-    # Prepend all collected styles
-    if styles:
-        return "\n".join(styles) + "\n" + content, body_attributes
-    return content, body_attributes
+    parser = _MessageBodyParser()
+    parser.feed(html)
+    parser.close()
+    content = "".join(parser.content)
+    if parser.styles:
+        content = "\n".join(parser.styles) + "\n" + content
+    return content, parser.body_attributes
 
 
 def decode_header(value) -> str:

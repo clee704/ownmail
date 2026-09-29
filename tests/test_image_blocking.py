@@ -317,34 +317,38 @@ def browser_message_app(tmp_path, spacing_sanitizer):
     return build
 
 
-def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_message_app, contrast_browser):
+@pytest.mark.parametrize("wrapper", ["p", "body", "html", "head"])
+def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_message_app, contrast_browser, wrapper):
     # A <link> the sender wrote inside an attribute value carries event handlers.
     # If body extraction lifts it out as a live element, the CSP allows inline
     # handlers, so onerror fires while blocked and onload fires once loaded.
     handler = "window.__ownmail_pwned=true"
-    markup = (
-        f'<p id="host" title="<link rel=stylesheet href=https://t.test/pwn.css '
-        f'onload={handler} onerror={handler}>">Hi</p>'
-    )
+    link = f"<link rel=stylesheet href=https://t.test/pwn.css onload={handler} onerror={handler}>"
+    prefix = {"p": "", "body": ">", "html": "<body>", "head": "<body>"}[wrapper]
+    markup = '<html><head></head><body><p id="host">Hi</p></body></html>'
+    start = '<p id="host">' if wrapper == "p" else f"<{wrapper}>"
+    markup = markup.replace(start, start[:-1] + f' title="{prefix}{link}">')
     run_image_browser(
         browser_message_app(markup),
         contrast_browser,
         "/email/synthetic",
         """
-        const fired = () => page.evaluate(() => window.__ownmail_pwned === true);
-        const links = () => page.locator('#ownmail-email-content link').count();
+        const assertInert = async () => {
+            assert.equal(await page.evaluate(() => window.__ownmail_pwned === true), false);
+            assert.equal(await page.locator('#ownmail-email-content link').count(), 0);
+            assert.equal(await page.locator('#host').textContent(), 'Hi');
+            const title = await page.locator('#host').getAttribute('title');
+            assert.equal(Boolean(title && title.includes('pwn.css')), __RETAINED__);
+            assertRequested([]);
+        };
         // Blocked (default): the CSP is active and allows inline handlers.
-        assert.equal(await fired(), false);
-        assert.equal(await links(), 0);
-        assert((await page.locator('#host').getAttribute('title')).includes('pwn.css'),
-            'The markup survives as inert attribute text');
+        await assertInert();
 
         await page.goto(input.base + '/email/synthetic?images=load');
         await settle();
         // Loaded: no CSP; a lifted <link> would fetch and fire onload instead.
-        assert.equal(await fired(), false);
-        assert.equal(await links(), 0);
-        """,
+        await assertInert();
+        """.replace("__RETAINED__", json.dumps(wrapper == "p")),
     )
 
 

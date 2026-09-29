@@ -1103,21 +1103,17 @@ class TestExtractBodyContent:
 
     def test_full_html_document(self):
         """Extract body from full HTML document."""
-        html = "<html><head><title>Hi</title></head><body><p>Hello</p></body></html>"
+        html = "<html><head><title>Hi</title></head>\n<body>  <p>Hello</p>\n</body></html>"
         result, attributes = _extract_body_content(html)
-        assert "<p>Hello</p>" in result
-        assert "<html>" not in result
-        assert "<head>" not in result
-        assert "<body>" not in result
+        assert result == "  <p>Hello</p>\n"
         assert attributes == {}
 
     def test_preserves_style_tags(self):
         """Style tags from head should be preserved."""
-        html = '<html><head><style>.red { color: red; }</style></head><body><p class="red">Hi</p></body></html>'
-        result, _ = _extract_body_content(html)
-        assert "<style>" in result
-        assert "color: red" in result
-        assert '<p class="red">Hi</p>' in result
+        css = '.red { color: red; --label: "<body><link> &amp; &#60;"; }'
+        source = f'<html><head><style>{css}</style></head><body><p class="red">Hi</p></body></html>'
+        result, _ = _extract_body_content(source)
+        assert result == f'<style>{css}</style>\n<p class="red">Hi</p>'
 
     def test_preserves_font_links_in_stylesheet_order(self):
         source = (
@@ -1147,21 +1143,38 @@ class TestExtractBodyContent:
         result, _ = _extract_body_content(source)
         assert result == ('<style>.x{color:red}</style>\n<p title="<style>">*{display:none}</p><p>after</p>')
 
+    @pytest.mark.parametrize(("wrapper", "prefix"), [("body", ">"), ("html", "<body>"), ("head", "<body>")])
+    @pytest.mark.parametrize("markup", ["<link rel=stylesheet href=https://t.test/x.css>", "<style>"])
+    def test_wrapper_attributes_cannot_become_body_content(self, wrapper, prefix, markup):
+        source = "<html><head></head><body><p>Message</p></body></html>"
+        source = source.replace(f"<{wrapper}>", f'<{wrapper} title="{prefix}{markup}">')
+        assert _extract_body_content(source) == ("<p>Message</p>", {})
+
     def test_extracts_only_body_styling(self):
         source = (
             '<html><body class="sender" id="sender-id" onload="unsafe()" '
-            'style="background:#eef1f4;margin:0;padding:0;font-family:&quot;Example&quot;" '
+            "style=\"background:#eef1f4;margin:0;padding:0;font-family:&quot;Example&quot;;--label:'<body> >'\" "
             'data-bg-urls="https://fixture.test/background.png"><p>Text</p></body></html>'
         )
         result, attributes = _extract_body_content(source)
         assert result == "<p>Text</p>"
-        assert attributes == {"style": 'background:#eef1f4;margin:0;padding:0;font-family:"Example"'}
+        assert attributes == {
+            "style": "background:#eef1f4;margin:0;padding:0;font-family:\"Example\";--label:'<body> >'"
+        }
 
-    def test_fragment_passthrough(self):
+    def test_preserves_html5_void_elements(self):
+        content = '<picture><source srcset="image.webp"><img src="image.png"></picture><p>After</p>'
+        assert _extract_body_content(f"<html><body>{content}</body></html>") == (content, {})
+
+    def test_preserves_text_entities(self):
+        content = "<p>&lt;body&gt; &amp; &#60;style&#62; &#x3c;link&#x3e; &nbsp;</p>"
+        assert _extract_body_content(f"<html><body>{content}</body></html>") == (content, {})
+
+    @pytest.mark.parametrize("html", ["<p>Just a paragraph</p>", '<p title="<html><head><body>">Text</p>'])
+    def test_fragment_passthrough(self, html):
         """HTML fragments without body tag pass through."""
-        html = "<p>Just a paragraph</p>"
         result, _ = _extract_body_content(html)
-        assert "<p>Just a paragraph</p>" in result
+        assert result == html
 
     def test_empty_html(self):
         """Empty content has no body attributes."""
