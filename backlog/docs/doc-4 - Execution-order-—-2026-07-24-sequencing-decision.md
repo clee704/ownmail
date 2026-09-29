@@ -225,6 +225,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 7 | TASK-80 | high | Attachments after an embedded message disappear, and downloads can return the wrong file |
 | 8 | TASK-72 | high | Remote images load while blocking is on |
 | 9 | TASK-67 | high | Sanitizer dependency advisories; DOMPurify is the HTML security boundary |
+| 9a | TASK-117 | medium | Follow-up to TASK-72: remote fonts and media still load while images are blocked |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
