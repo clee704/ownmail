@@ -1129,6 +1129,24 @@ class TestExtractBodyContent:
         assert result.count("<link ") == 1
         assert result.index("color:red") < result.index("<link ") < result.index("color:blue")
 
+    def test_link_markup_inside_an_attribute_stays_inert(self):
+        """A <link> written inside an attribute value is not lifted out as an element."""
+        source = (
+            '<html><head></head><body><p title="<link rel=stylesheet '
+            'href=https://t.test/x.css onerror=pwn()>">Hi</p></body></html>'
+        )
+        result, _ = _extract_body_content(source)
+        assert result == ('<p title="<link rel=stylesheet href=https://t.test/x.css onerror=pwn()>">Hi</p>')
+
+    def test_style_markup_inside_an_attribute_stays_inert(self):
+        """A <style> start inside an attribute does not pair with a later real close."""
+        source = (
+            '<html><head></head><body><p title="<style>">*{display:none}</p>'
+            "<style>.x{color:red}</style><p>after</p></body></html>"
+        )
+        result, _ = _extract_body_content(source)
+        assert result == ('<style>.x{color:red}</style>\n<p title="<style>">*{display:none}</p><p>after</p>')
+
     def test_extracts_only_body_styling(self):
         source = (
             '<html><body class="sender" id="sender-id" onload="unsafe()" '

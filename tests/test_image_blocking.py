@@ -299,6 +299,56 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 
 
 @pytest.fixture
+def browser_message_app(tmp_path, spacing_sanitizer):
+    def build(markup):
+        message = EmailMessage()
+        message["Subject"] = "Synthetic message"
+        message["From"] = "Sender <sender@example.com>"
+        message.set_content(markup, subtype="html")
+        (tmp_path / "synthetic.eml").write_bytes(message.as_bytes())
+        archive = MagicMock()
+        archive.archive_dir = tmp_path
+        archive.auto_expire_trash.return_value = 0
+        archive.search.return_value = []
+        archive.db = mock_archive_db()
+        archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", None, None, None, None)
+        return create_app(archive, block_images=True, sanitizer=spacing_sanitizer)
+
+    return build
+
+
+def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_message_app, contrast_browser):
+    # A <link> the sender wrote inside an attribute value carries event handlers.
+    # If body extraction lifts it out as a live element, the CSP allows inline
+    # handlers, so onerror fires while blocked and onload fires once loaded.
+    handler = "window.__ownmail_pwned=true"
+    markup = (
+        f'<p id="host" title="<link rel=stylesheet href=https://t.test/pwn.css '
+        f'onload={handler} onerror={handler}>">Hi</p>'
+    )
+    run_image_browser(
+        browser_message_app(markup),
+        contrast_browser,
+        "/email/synthetic",
+        """
+        const fired = () => page.evaluate(() => window.__ownmail_pwned === true);
+        const links = () => page.locator('#ownmail-email-content link').count();
+        // Blocked (default): the CSP is active and allows inline handlers.
+        assert.equal(await fired(), false);
+        assert.equal(await links(), 0);
+        assert((await page.locator('#host').getAttribute('title')).includes('pwn.css'),
+            'The markup survives as inert attribute text');
+
+        await page.goto(input.base + '/email/synthetic?images=load');
+        await settle();
+        // Loaded: no CSP; a lifted <link> would fetch and fire onload instead.
+        assert.equal(await fired(), false);
+        assert.equal(await links(), 0);
+        """,
+    )
+
+
+@pytest.fixture
 def image_app(tmp_path, spacing_sanitizer):
     message = EmailMessage()
     message["Subject"] = "Synthetic message"
