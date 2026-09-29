@@ -226,6 +226,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 8 | TASK-72 | high | Remote images load while blocking is on |
 | 9 | TASK-67 | high | Sanitizer dependency advisories; DOMPurify is the HTML security boundary |
 | 9a | TASK-117 | medium | Follow-up to TASK-72: remote fonts and media still load while images are blocked |
+| 9b | TASK-118 | medium | Follow-up to TASK-67: installs that keep node_modules never pick up raised sanitizer dependency floors |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
@@ -237,6 +238,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 17 | TASK-44 | medium | Trusted-sender save failures report success |
 | 18 | TASK-99 | medium | Post-scan download progress is hard to observe |
 | 19 | TASK-13 | medium | Email addresses inside URLs produce broken links |
+| 19a | TASK-119 | medium | Whole style blocks are dropped when wrapped in HTML comments or holding markup-like text; same worker CSS path as TASK-56 |
 | 20 | TASK-56 | medium | Body-qualified CSS selectors never match |
 | 21 | TASK-93 | medium | Padding detection misses class-styled and nested backgrounds |
 | 22 | TASK-111 | medium | JSON search output for scripts and assistants |
