@@ -248,6 +248,9 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 25 | TASK-64 | low | CLI Trash listing crashes when Trash is not empty; web Trash works |
 | 26 | TASK-12 | low | --verbose before the subcommand is ignored |
 | 26a | TASK-115 | low | Unused query helpers in ArchiveDatabase; deletion only |
+| 26b | TASK-121 | low | Found in TASK-118: a worker that exits before it is ready gives no reason; the refusal's advice covers the likely causes |
+| 26c | TASK-122 | low | Found in TASK-118: serve exits 0 when it refuses to start, and the --debug refusal still follows startup side effects |
+| 26d | TASK-123 | low | Found in TASK-118: duplicate sanitize, kill and stop tests; deletion only |
 | 27 | TASK-8 | low | Only a download-header test remains |
 | 28 | TASK-50 | low | iPhone Home Screen polish |
 | 29 | TASK-19 | low | Decision on excluding recurring labels at capture |
