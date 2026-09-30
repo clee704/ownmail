@@ -102,8 +102,8 @@ The first launch downloads the sanitizer dependencies through npm, and so does
 the first launch after an update that raises their required versions. Otherwise
 local reading and search can work without internet, though remote content and
 external links still need their respective servers. If the sanitizer cannot
-start, ownmail does not start the server. It prints the reason and, when the
-dependencies could not be installed, an npm command that installs them by hand.
+start, ownmail does not start the server. It prints the reason and what to do,
+including an npm command that installs the dependencies by hand when npm failed.
 
 To reach the server from a phone on a trusted network:
 

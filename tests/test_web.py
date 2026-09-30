@@ -2009,7 +2009,7 @@ class TestRunServer:
         san_patch, run_patch, _ = self._patches(sanitizer)
         with san_patch, run_patch as mock_run:
             run_server(archive, debug=debug, reload=reload, open_browser=False)
-        sanitizer.start.assert_called_once()
+        sanitizer.start.assert_called_once_with()
         sanitizer.stop.assert_called_once()
         mock_run.assert_called_once()
         assert mock_run.call_args.kwargs["host"] == "127.0.0.1"
@@ -2044,6 +2044,7 @@ class TestRunServer:
         out = capsys.readouterr().out
         assert "❌ HTML sanitizer failed to start.\n   npm install failed.\n   Install them with:\n" in out
         assert "     npm --prefix /x install --omit=dev\n   Refusing to serve without sanitization.\n" in out
+        assert "web interface" not in out
         assert "Running at" not in out
 
     def test_debug_with_public_host_is_refused(self, archive, sanitizer, capsys):

@@ -8,9 +8,11 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import ownmail.sanitizer as sanitizer_module
+from ownmail.download_lock import ProcessLock
 from ownmail.sanitizer import HtmlSanitizer, _caret_floor, _satisfies
 
 
@@ -564,14 +566,16 @@ class TestSanitizerLifecycle(unittest.TestCase):
 
     def test_start_aborts_when_deps_unavailable(self):
         """A failed dependency install should leave the sanitizer unavailable."""
-        san = HtmlSanitizer()
-        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
-            with patch.object(san, "_ensure_deps", return_value=False) as mock_deps:
-                with patch("subprocess.Popen") as mock_popen:
-                    san.start()
-        self.assertFalse(san.available)
-        mock_deps.assert_called_once_with(True)
-        mock_popen.assert_not_called()
+        for install in (True, False):
+            with self.subTest(install=install):
+                san = HtmlSanitizer()
+                with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
+                    with patch.object(san, "_ensure_deps", return_value=False) as mock_deps:
+                        with patch("subprocess.Popen") as mock_popen:
+                            san.start(install=install)
+                self.assertFalse(san.available)
+                mock_deps.assert_called_once_with(install)
+                mock_popen.assert_not_called()
 
     def test_start_marks_available_on_ready_signal(self):
         """A worker that signals ready should mark the sanitizer available and clear an earlier error."""
@@ -684,6 +688,8 @@ class TestSanitizerDeps(unittest.TestCase):
         "dependencies": {"dompurify": "^3.4.16", "jsdom": "^26.0.0", "postcss": "^8.5.28"},
     }
     CURRENT = {"dompurify": "3.4.16", "jsdom": "26.1.0", "postcss": "8.5.28"}
+    STALE = dict(CURRENT, dompurify="3.3.1")
+    NETWORK_ARGS = ["--fetch-timeout=30000", "--fetch-retries=1", "--fetch-retry-mintimeout=2000"]
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(prefix="sanitizer dir ")
@@ -695,7 +701,6 @@ class TestSanitizerDeps(unittest.TestCase):
             ("ownmail.sanitizer._SANITIZER_DIR", self.dir),
             # A test that forgets to fake npm fails instead of installing anything.
             ("ownmail.sanitizer.subprocess.run", MagicMock(side_effect=AssertionError("npm ran"))),
-            ("sys.stdout", io.StringIO()),
         ):
             patcher = patch(target, value)
             patcher.start()
@@ -713,22 +718,32 @@ class TestSanitizerDeps(unittest.TestCase):
         for name, version in versions.items():
             self._write(os.path.join("node_modules", name, "package.json"), {"name": name, "version": version})
 
-    def _npm(self, returncode=0, stderr="", installs=None):
-        """Make npm install `installs` and exit with `returncode`."""
+    def _reset(self, **versions):
+        shutil.rmtree(self.node_modules, ignore_errors=True)
+        self._install(**versions)
+
+    def _npm(self, returncode=0, stderr="", installs=None, scope="--omit=dev"):
+        """Make npm install `installs` and exit with `returncode`, checking the marker it runs under."""
 
         def run(args, **kwargs):
-            self.assertTrue(os.path.exists(self.marker), "the marker must exist while npm runs")
+            with open(self.marker, encoding="utf-8") as f:
+                self.assertEqual(f.read(), scope, "npm must run under a marker that records its scope")
             self._install(**(installs or {}))
             return subprocess.CompletedProcess(args, returncode, "", stderr)
 
         self.run.side_effect = run
 
+    def _ensure(self, san=None, npm="/usr/bin/npm", **kwargs):
+        """Run _ensure_deps with `npm` on PATH, returning its result and printed output."""
+        san = san or HtmlSanitizer()
+        with patch("shutil.which", return_value=npm), patch("sys.stdout", new=io.StringIO()) as out:
+            return san._ensure_deps(**kwargs), out.getvalue()
+
     def test_satisfied_install_needs_no_npm(self):
         """Installed versions within every range start without npm, even when npm is missing."""
         self._install(dompurify="3.9.0", jsdom="26.0.0", postcss="8.5.28+build.1")
         san = HtmlSanitizer()
-        with patch("shutil.which", return_value=None):
-            self.assertTrue(san._ensure_deps())
+        self.assertEqual(self._ensure(san, npm=None), (True, ""))
         self.run.assert_not_called()
         self.assertIsNone(san.error)
 
@@ -736,133 +751,175 @@ class TestSanitizerDeps(unittest.TestCase):
         """Missing or out-of-range dependencies are installed, keeping a development tree's test dependencies."""
         cases = [
             ("first install", {}, "--omit=dev", "Installing HTML sanitizer dependencies from npm (one-time setup)"),
-            (
-                "stale",
-                dict(self.CURRENT, dompurify="3.3.1"),
-                "--omit=dev",
-                "Updating HTML sanitizer dependencies (dompurify)",
-            ),
+            ("stale", self.STALE, "--omit=dev", "Updating HTML sanitizer dependencies (dompurify) from npm"),
             ("missing", {"jsdom": "26.1.0"}, "--omit=dev", "Updating HTML sanitizer dependencies (dompurify, postcss)"),
-            (
-                "development tree",
-                dict(self.CURRENT, postcss="8.5.6", playwright="1.58.0"),
-                "--include=dev",
-                "(postcss)",
-            ),
+            ("development tree", dict(self.STALE, playwright="1.58.0"), "--include=dev", "(dompurify) from npm"),
         ]
         for label, installed, scope, progress in cases:
             with self.subTest(label):
-                shutil.rmtree(self.node_modules, ignore_errors=True)
-                self._install(**installed)
-                self._npm(installs=self.CURRENT)
-                with patch("shutil.which", return_value="/usr/bin/npm"), patch("sys.stdout", new=io.StringIO()) as out:
-                    self.assertTrue(HtmlSanitizer()._ensure_deps())
-                args, kwargs = self.run.call_args
-                self.assertEqual(
-                    args[0],
+                self._reset(**installed)
+                self._npm(installs=self.CURRENT, scope=scope)
+                ready, out = self._ensure()
+                self.assertTrue(ready)
+                self.run.assert_called_once_with(
                     ["/usr/bin/npm", "install", scope, "--no-fund", "--no-audit", "--no-update-notifier"]
-                    + sanitizer_module._NPM_NETWORK_ARGS,
+                    + self.NETWORK_ARGS,
+                    cwd=self.dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
                 )
-                self.assertEqual(kwargs["cwd"], self.dir)
-                self.assertIn(progress, out.getvalue())
-                self.assertIn("HTML sanitizer dependencies installed", out.getvalue())
+                self.run.reset_mock()
+                self.assertIn(progress, out)
+                self.assertIn("✓ HTML sanitizer dependencies installed", out)
                 self.assertFalse(os.path.exists(self.marker))
 
     def test_unfinished_install_is_redone(self):
-        """A marker left by an interrupted install removes node_modules and installs again."""
-        self._install(playwright="1.58.0", **self.CURRENT)
-        retired = os.path.join(self.node_modules, ".dompurify-6OOHNhdF")
-        os.makedirs(retired)
+        """A marker left by an interrupted install clears node_modules, keeping the marker, and installs again."""
+        # The scope comes from the marker when it recorded one, else from the tree.
+        for label, recorded, installed in (
+            ("recorded scope", "--include=dev", self.CURRENT),
+            ("unreadable scope", "", dict(self.CURRENT, playwright="1.58.0")),
+        ):
+            with self.subTest(label):
+                self._reset(**installed)
+                retired = os.path.join(self.node_modules, ".dompurify-6OOHNhdF")
+                os.makedirs(retired)
+                self._write(os.path.join("node_modules", ".package-lock.json"), "{}")
+                self._write(os.path.join("node_modules", sanitizer_module._INSTALL_MARKER), recorded)
+                self._npm(installs=self.CURRENT, scope="--include=dev")
+                ready, out = self._ensure()
+                self.assertTrue(ready)
+                self.assertEqual(sorted(os.listdir(self.node_modules)), sorted(self.CURRENT))
+                self.assertIn("--include=dev", self.run.call_args[0][0])
+                self.assertIn("Reinstalling HTML sanitizer dependencies after an unfinished install", out)
+                self.assertFalse(os.path.exists(self.marker))
+
+    def test_marker_counts_until_npm_completes_an_install(self):
+        """An install npm completes after the marker, such as the manual command, resolves it."""
+        self._install(**self.CURRENT)
         open(self.marker, "w").close()
-
-        def run(args, **kwargs):
-            self.assertFalse(os.path.exists(retired), "npm must start from an empty node_modules")
-            self._install(**self.CURRENT)
-            return subprocess.CompletedProcess(args, 0, "", "")
-
-        self.run.side_effect = run
-        with patch("shutil.which", return_value="/usr/bin/npm"), patch("sys.stdout", new=io.StringIO()) as out:
-            self.assertTrue(HtmlSanitizer()._ensure_deps())
-        self.assertIn("--include=dev", self.run.call_args[0][0])
-        self.assertIn("Reinstalling HTML sanitizer dependencies after an unfinished install", out.getvalue())
-        self.assertFalse(os.path.exists(self.marker))
+        lockfile = os.path.join(self.node_modules, ".package-lock.json")
+        open(lockfile, "w").close()
+        started = os.stat(self.marker).st_mtime_ns
+        for label, offset, unfinished in (("completed later", 1, False), ("same time", 0, True), ("earlier", -1, True)):
+            with self.subTest(label):
+                os.utime(lockfile, ns=(started + offset * 10**9, started + offset * 10**9))
+                self.assertIs(sanitizer_module._unfinished(self.node_modules), unfinished)
+        os.remove(lockfile)
+        self.assertTrue(sanitizer_module._unfinished(self.node_modules))
+        os.utime(self.marker, ns=(started - 10**9, started - 10**9))
+        open(lockfile, "w").close()
+        self.assertEqual(self._ensure(npm=None), (True, ""))
+        self.run.assert_not_called()
 
     def test_install_failures_are_reported(self):
-        """Each failed install leaves the sanitizer stopped with a reason, a remedy and a manual command."""
-        timeout = subprocess.TimeoutExpired("npm", sanitizer_module._NPM_TIMEOUT)
+        """Each failed install leaves the sanitizer stopped with a reason, a remedy and a manual command.
+
+        A tree npm rolled back is kept. One it may have left half-written is
+        cleared down to the marker, so the next start installs with the same scope.
+        """
         internet = "Check the internet connection"
+        crashed = "Check the internet connection and the npm output above"
         npm_error = "Fix the npm error shown above"
+        warning = "npm warn deprecated inflight@1.0.6: This module is not supported\n"
+        timeout = subprocess.TimeoutExpired("npm", 300)
+        network = ["ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EHOSTUNREACH"]
+        network += ["ENETDOWN", "ENETUNREACH", "ETIMEDOUT", "ECONNABORTED", "EIDLETIMEOUT"]
         cases = [
+            *[
+                (code, (1, f"{warning}npm error code {code}"), f"npm install failed with {code}", internet, "kept")
+                for code in network
+            ],
+            ("permissions", (1, "npm ERR! code EACCES"), "npm install failed with EACCES", npm_error, "kept"),
             (
-                "network error",
-                (1, "npm error code ECONNREFUSED\nnpm error errno ECONNREFUSED"),
-                "npm install failed with ECONNREFUSED",
-                internet,
-                False,
+                "crash",
+                (1, "npm error Exit handler never called!"),
+                "npm install exited with code 1",
+                crashed,
+                "removed",
             ),
-            (
-                "idle timeout",
-                (1, "npm error code EIDLETIMEOUT"),
-                "npm install failed with EIDLETIMEOUT",
-                internet,
-                False,
-            ),
-            ("permissions", (1, "npm ERR! code EACCES"), "npm install failed with EACCES", npm_error, False),
-            ("no error code", (1, "Killed"), "npm install exited with code 1", npm_error, False),
+            ("signal", (-9, ""), "npm install was stopped by signal 9", crashed, "removed"),
             (
                 "still unmet",
                 (0, ""),
                 "npm install finished but left dompurify outside the package.json ranges",
                 "Check the npm configuration",
-                False,
+                "kept",
             ),
-            (
-                "timeout",
-                timeout,
-                f"npm install did not finish within {sanitizer_module._NPM_TIMEOUT} seconds",
-                internet,
-                True,
-            ),
+            ("timeout", timeout, "npm install did not finish within 300 seconds", internet, "removed"),
             (
                 "npm cannot run",
                 OSError("Exec format error"),
-                "the install could not start (Exec format error)",
-                "Check that npm works",
-                True,
+                "npm could not run (Exec format error)",
+                "Check the npm installation",
+                "kept",
             ),
         ]
-        for label, outcome, reason, hint, marker_left in cases:
+        for label, outcome, reason, hint, tree in cases:
             with self.subTest(label):
-                shutil.rmtree(self.node_modules, ignore_errors=True)
-                self._install(**dict(self.CURRENT, dompurify="3.3.1"))
+                self._reset(**self.STALE)
                 if isinstance(outcome, Exception):
                     self.run.side_effect = outcome
                 else:
                     self._npm(*outcome)
                 san = HtmlSanitizer()
-                with (
-                    patch("shutil.which", return_value="/usr/bin/npm"),
-                    patch.object(sanitizer_module.logger, "warning") as warning,
-                ):
-                    self.assertFalse(san._ensure_deps())
+                with patch.object(sanitizer_module.logger, "warning") as warning_log:
+                    ready, out = self._ensure(san)
+                self.assertFalse(ready)
+                self.assertNotIn("dependencies installed", out)
                 cause, remedy, command = san.error.splitlines()
                 self.assertEqual(cause, f"The sanitizer dependencies (dompurify) could not be installed: {reason}.")
-                self.assertTrue(remedy.startswith(hint), remedy)
-                self.assertTrue(remedy.endswith(", then run ownmail serve again, or install them with:"), remedy)
+                self.assertEqual(remedy, f"{hint}, then run ownmail serve again, or install them with:")
                 self.assertEqual(shlex.split(command), ["npm", "--prefix", self.dir, "install", "--omit=dev"])
-                # The marker stays unless npm exited by itself.
-                self.assertEqual(os.path.exists(self.marker), marker_left)
+                if tree == "kept":
+                    self.assertFalse(os.path.exists(self.marker))
+                    self.assertEqual(sanitizer_module._installed_version("dompurify"), "3.3.1")
+                else:
+                    self.assertEqual(os.listdir(self.node_modules), [sanitizer_module._INSTALL_MARKER])
+                    with open(self.marker, encoding="utf-8") as f:
+                        self.assertEqual(f.read(), "--omit=dev")
                 # npm's own output is logged whenever it fails.
                 if isinstance(outcome, tuple) and outcome[0]:
-                    self.assertIn(outcome[1], warning.call_args.args)
+                    self.assertIn(outcome[1], warning_log.call_args.args)
                 else:
-                    warning.assert_not_called()
+                    warning_log.assert_not_called()
+
+    def test_development_tree_failure_suggests_its_scope(self):
+        """The manual command keeps a development tree's test dependencies."""
+        self._reset(**dict(self.STALE, playwright="1.58.0"))
+        self._npm(1, "npm error code ENOTFOUND", scope="--include=dev")
+        san = HtmlSanitizer()
+        with patch.object(sanitizer_module.logger, "warning"):
+            self.assertFalse(self._ensure(san)[0])
+        self.assertEqual(
+            shlex.split(san.error.splitlines()[-1]), ["npm", "--prefix", self.dir, "install", "--include=dev"]
+        )
+
+    def test_unremovable_half_written_install_keeps_marker(self):
+        """If a half-written install cannot be cleared, its marker stays so the next start clears it."""
+        self._reset(**self.STALE)
+        self.run.side_effect = subprocess.TimeoutExpired("npm", 300)
+        san = HtmlSanitizer()
+        with patch("ownmail.sanitizer._clear", side_effect=OSError("busy")):
+            self.assertFalse(self._ensure(san)[0])
+        self.assertTrue(os.path.exists(self.marker))
+        self.assertIn("did not finish within 300 seconds", san.error)
+
+    def test_install_that_cannot_start_is_reported(self):
+        """An unwritable node_modules is reported without running npm."""
+        self._write("node_modules", "not a directory")
+        san = HtmlSanitizer()
+        self.assertFalse(self._ensure(san)[0])
+        cause, remedy, _ = san.error.splitlines()
+        self.assertIn("could not be installed: the install could not start (", cause)
+        self.assertTrue(remedy.startswith(f"Check that {self.dir} is writable, then run ownmail serve again"))
+        self.run.assert_not_called()
 
     def test_missing_npm_is_reported(self):
         """Without npm, unmet dependencies are named and nothing runs."""
         san = HtmlSanitizer()
-        with patch("shutil.which", return_value=None):
-            self.assertFalse(san._ensure_deps())
+        self.assertFalse(self._ensure(san, npm=None)[0])
         self.assertEqual(
             san.error,
             "npm was not found, so the sanitizer dependencies (dompurify, jsdom, postcss) could not be installed.\n"
@@ -870,16 +927,53 @@ class TestSanitizerDeps(unittest.TestCase):
         )
         self.run.assert_not_called()
 
+    def test_concurrent_install_is_reported(self):
+        """While another process holds the install lock, nothing is installed or removed."""
+        self._install(**self.STALE)
+        san = HtmlSanitizer()
+        with ProcessLock(Path(self.dir, ".install.lock")):
+            self.assertFalse(self._ensure(san)[0])
+        self.assertEqual(
+            san.error,
+            "Another ownmail process is installing the sanitizer dependencies.\n"
+            "Wait for it to finish, then run ownmail serve again.",
+        )
+        self.run.assert_not_called()
+        self.assertEqual(sanitizer_module._installed_version("dompurify"), "3.3.1")
+
+    def test_install_finished_by_another_process_is_used(self):
+        """If another process finishes the install before the lock is taken, npm does not run again."""
+        self._install(**self.STALE)
+        test = self
+
+        class FinishedElsewhere(ProcessLock):
+            def __enter__(self):
+                test._install(**test.CURRENT)
+                return super().__enter__()
+
+        with patch("ownmail.sanitizer.ProcessLock", FinishedElsewhere):
+            self.assertEqual(self._ensure(), (True, ""))
+        self.run.assert_not_called()
+
+    def test_unwritable_lock_is_reported(self):
+        """A lock file that cannot be created is reported as an unwritable sanitizer directory."""
+        self._install(**self.STALE)
+        os.makedirs(os.path.join(self.dir, ".install.lock"))
+        san = HtmlSanitizer()
+        self.assertFalse(self._ensure(san)[0])
+        self.assertTrue(san.error.startswith("The sanitizer dependencies (dompurify) could not be installed ("))
+        self.assertTrue(san.error.endswith(f"Check that {self.dir} is writable, then run ownmail serve again."))
+        self.run.assert_not_called()
+
     def test_restart_never_installs(self):
         """With install False, unmet or unfinished dependencies are reported rather than installed."""
         for label in ("stale", "unfinished"):
             with self.subTest(label):
-                self._install(**dict(self.CURRENT, dompurify="3.3.1" if label == "stale" else "3.4.16"))
+                self._reset(**(self.STALE if label == "stale" else self.CURRENT))
                 if label == "unfinished":
                     open(self.marker, "w").close()
                 san = HtmlSanitizer()
-                with patch("shutil.which", return_value="/usr/bin/npm"):
-                    self.assertFalse(san._ensure_deps(install=False))
+                self.assertFalse(self._ensure(san, install=False)[0])
                 self.assertIn("changed while ownmail serve was running", san.error)
                 self.run.assert_not_called()
 
@@ -888,10 +982,15 @@ class TestSanitizerDeps(unittest.TestCase):
         self._install(**self.CURRENT)
         open(self.marker, "w").close()
         san = HtmlSanitizer()
-        with patch("shutil.which", return_value="/usr/bin/npm"), patch("shutil.rmtree", side_effect=OSError("busy")):
-            self.assertFalse(san._ensure_deps())
-        self.assertIn("the unfinished install could not be removed (busy)", san.error)
-        self.assertIn(f"Delete {self.node_modules}, then run ownmail serve again", san.error)
+        with patch("shutil.rmtree", side_effect=OSError("busy")):
+            self.assertFalse(self._ensure(san)[0])
+        self.assertEqual(
+            san.error,
+            "The sanitizer dependencies (dompurify, jsdom, postcss) could not be installed: "
+            "an unfinished install could not be removed (busy).\n"
+            f"Delete {self.node_modules}, then run ownmail serve again.",
+        )
+        self.assertTrue(os.path.exists(self.marker))
         self.run.assert_not_called()
 
     def test_unreadable_package_json_is_reported(self):
@@ -939,6 +1038,8 @@ class TestSanitizerDeps(unittest.TestCase):
             ("3.4.16", "~3.4.16", False),
             ("3.4.16", "3.4.16", False),
             ("3.4.16", ">=3.4.16", False),
+            ("3.4.16", "^3.4.16 || ^4.0.0", False),
+            ("3.4.16", "^3.4.16 - 3.9", False),
         ]
         for version, spec, expected in cases:
             with self.subTest(version=version, spec=spec):

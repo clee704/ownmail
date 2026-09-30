@@ -19,6 +19,9 @@ import shutil
 import subprocess
 import threading
 import time
+from pathlib import Path
+
+from ownmail.download_lock import LockHeld, ProcessLock
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +34,24 @@ _NPM_TIMEOUT = 300  # seconds
 # retries by default. Failing sooner lets npm roll back and report its own error.
 _NPM_NETWORK_ARGS = ["--fetch-timeout=30000", "--fetch-retries=1", "--fetch-retry-mintimeout=2000"]
 _NPM_ERROR_CODE = re.compile(r"^npm (?:error|ERR!) code (\S+)", re.MULTILINE)
-_NPM_NETWORK_CODES = {"ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "ETIMEDOUT"}
-# Written to node_modules while npm runs. An install stopped partway can leave
-# half-written packages that npm cannot repair, so the next start redoes it.
+_NPM_NETWORK_CODES = {
+    "ECONNABORTED",
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "EAI_AGAIN",
+    "EAI_FAIL",
+    "EHOSTUNREACH",
+    "ENETDOWN",
+    "ENETUNREACH",
+    "ENOTFOUND",
+    "ETIMEDOUT",
+}
+# Written to node_modules, holding the npm scope, while npm runs. An install
+# stopped partway can leave half-written packages that npm cannot repair, so a
+# start that finds the marker installs again from an empty node_modules.
 _INSTALL_MARKER = ".ownmail-install-incomplete"
+# npm writes this at the end of every install that completes.
+_NPM_HIDDEN_LOCKFILE = ".package-lock.json"
 # The only range form _satisfies understands; a test keeps package.json to it.
 _CARET_RANGE = re.compile(r"\^([1-9]\d*)\.(\d+)\.(\d+)")
 # npm ignores build metadata; a prerelease version does not match.
@@ -74,6 +91,39 @@ def _installed_version(name: str) -> object:
 def _unmet(dependencies: dict) -> list[str]:
     """Name each dependency whose installed version is outside its package.json range."""
     return [name for name, spec in dependencies.items() if not _satisfies(_installed_version(name), spec)]
+
+
+def _recorded_scope(marker: str) -> str | None:
+    """The npm scope an unfinished install recorded in its marker, or None."""
+    try:
+        with open(marker, encoding="utf-8") as f:
+            scope = f.read()
+    except OSError:
+        return None
+    return scope if scope in ("--include=dev", "--omit=dev") else None
+
+
+def _unfinished(node_modules: str) -> bool:
+    """Whether an install left its marker and npm has not completed one since, such as by hand."""
+    try:
+        started = os.stat(os.path.join(node_modules, _INSTALL_MARKER)).st_mtime_ns
+    except OSError:
+        return False
+    try:
+        return os.stat(os.path.join(node_modules, _NPM_HIDDEN_LOCKFILE)).st_mtime_ns <= started
+    except OSError:
+        return True
+
+
+def _clear(node_modules: str) -> None:
+    """Delete everything in node_modules but the install marker, so an interrupted delete still leaves it."""
+    for entry in os.scandir(node_modules):
+        if entry.name == _INSTALL_MARKER:
+            continue
+        if entry.is_dir(follow_symlinks=False):
+            shutil.rmtree(entry.path)
+        else:
+            os.remove(entry.path)
 
 
 class HtmlSanitizer:
@@ -129,11 +179,8 @@ class HtmlSanitizer:
             self._error = f"The sanitizer's package.json could not be read ({e}).\nReinstall ownmail."
             return False
         dependencies = manifest.get("dependencies", {})
-        node_modules = os.path.join(_SANITIZER_DIR, "node_modules")
-        marker = os.path.join(node_modules, _INSTALL_MARKER)
-        interrupted = os.path.exists(marker)
         unmet = _unmet(dependencies)
-        if not unmet and not interrupted:
+        if not unmet and not _unfinished(os.path.join(_SANITIZER_DIR, "node_modules")):
             return True
 
         if not install:
@@ -152,16 +199,47 @@ class HtmlSanitizer:
             )
             return False
 
+        try:
+            with ProcessLock(Path(_SANITIZER_DIR, ".install.lock")):
+                return self._install(npm, manifest)
+        except LockHeld:
+            self._error = (
+                "Another ownmail process is installing the sanitizer dependencies.\n"
+                "Wait for it to finish, then run ownmail serve again."
+            )
+        except OSError as e:
+            self._error = (
+                f"The sanitizer dependencies ({names}) could not be installed ({e}).\n"
+                f"Check that {_SANITIZER_DIR} is writable, then run ownmail serve again."
+            )
+        return False
+
+    def _install(self, npm: str, manifest: dict) -> bool:
+        """Run npm install while holding the install lock. Returns True if deps are ready."""
+        dependencies = manifest.get("dependencies", {})
+        node_modules = os.path.join(_SANITIZER_DIR, "node_modules")
+        marker = os.path.join(node_modules, _INSTALL_MARKER)
+        # Checked again under the lock, in case another process just finished.
+        unfinished = _unfinished(node_modules)
+        unmet = _unmet(dependencies)
+        if not unmet and not unfinished:
+            return True
+
+        names = ", ".join(unmet or dependencies)
         # --omit=dev would remove the test dependencies of a development tree.
         dev = any(os.path.isdir(os.path.join(node_modules, name)) for name in manifest.get("devDependencies", {}))
-        scope = "--include=dev" if dev else "--omit=dev"
-        if interrupted:
+        scope = _recorded_scope(marker) or ("--include=dev" if dev else "--omit=dev")
+        if unfinished:
             print("📦 Reinstalling HTML sanitizer dependencies after an unfinished install...", flush=True)
             try:
-                shutil.rmtree(node_modules)
+                _clear(node_modules)
             except OSError as e:
-                reason = f"the unfinished install could not be removed ({e})"
-                return self._install_failed(names, reason, f"Delete {node_modules}", scope)
+                self._error = (
+                    f"The sanitizer dependencies ({names}) could not be installed: "
+                    f"an unfinished install could not be removed ({e}).\n"
+                    f"Delete {node_modules}, then run ownmail serve again."
+                )
+                return False
         elif os.path.isdir(node_modules):
             print(f"📦 Updating HTML sanitizer dependencies ({names}) from npm...", flush=True)
         else:
@@ -169,7 +247,12 @@ class HtmlSanitizer:
 
         try:
             os.makedirs(node_modules, exist_ok=True)
-            open(marker, "w").close()
+            with open(marker, "w", encoding="utf-8") as f:
+                f.write(scope)
+        except OSError as e:
+            hint = f"Check that {_SANITIZER_DIR} is writable"
+            return self._install_failed(names, f"the install could not start ({e})", hint, scope)
+        try:
             result = subprocess.run(
                 [npm, "install", scope, "--no-fund", "--no-audit", "--no-update-notifier", *_NPM_NETWORK_ARGS],
                 cwd=_SANITIZER_DIR,
@@ -179,19 +262,23 @@ class HtmlSanitizer:
             )
         except subprocess.TimeoutExpired:
             reason = f"npm install did not finish within {_NPM_TIMEOUT} seconds"
-            return self._install_failed(names, reason, "Check the internet connection", scope)
+            return self._abandon(names, reason, "Check the internet connection", scope)
         except Exception as e:
-            hint = f"Check that npm works and {_SANITIZER_DIR} is writable"
-            return self._install_failed(names, f"the install could not start ({e})", hint, scope)
-        # npm exited by itself, and it rolls back an install that fails.
-        os.remove(marker)
+            os.remove(marker)
+            return self._install_failed(names, f"npm could not run ({e})", "Check the npm installation", scope)
 
+        code = _NPM_ERROR_CODE.search(result.stderr)
         if result.returncode != 0:
             logger.warning("npm install failed (exit %d): %s", result.returncode, result.stderr.strip())
-            code = _NPM_ERROR_CODE.search(result.stderr)
-            if not code:
+        if result.returncode < 0 or (result.returncode > 0 and not code):
+            # A signal, or a crash without an error code, can stop npm before it rolls back.
+            if result.returncode < 0:
+                reason = f"npm install was stopped by signal {-result.returncode}"
+            else:
                 reason = f"npm install exited with code {result.returncode}"
-                return self._install_failed(names, reason, "Fix the npm error shown above", scope)
+            return self._abandon(names, reason, "Check the internet connection and the npm output above", scope)
+        os.remove(marker)
+        if result.returncode != 0:
             code = code[1]
             network = code in _NPM_NETWORK_CODES or code.endswith("TIMEOUT")
             hint = "Check the internet connection" if network else "Fix the npm error shown above"
@@ -202,6 +289,18 @@ class HtmlSanitizer:
             return self._install_failed(names, reason, "Check the npm configuration", scope)
         print("✓ HTML sanitizer dependencies installed")
         return True
+
+    def _abandon(self, names: str, reason: str, hint: str, scope: str) -> bool:
+        """Remove an install npm may have left half-written, then record why it failed. Returns False.
+
+        The marker stays, so the next start installs with the same scope
+        unless npm completes an install first.
+        """
+        try:
+            _clear(os.path.join(_SANITIZER_DIR, "node_modules"))
+        except OSError:
+            pass  # The next start clears what is left.
+        return self._install_failed(names, reason, hint, scope)
 
     def _install_failed(self, names: str, reason: str, hint: str, scope: str) -> bool:
         """Record why an install failed, with the command that installs by hand. Returns False."""

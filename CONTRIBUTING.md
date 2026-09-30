@@ -78,10 +78,13 @@ OWNMAIL_REQUIRE_BROWSER_TESTS=1 pytest tests/test_email_contrast.py
 ```
 
 These tests skip when Playwright or its browser is unavailable locally. CI
-requires them on Python 3.12. After `package.json` raises a dependency's
-version, the first test run or `ownmail serve` updates the installed packages
-through npm, keeping Playwright when it is installed. Set `OWNMAIL_BROWSER_ENGINE=webkit` to check WebKit
+requires them on Python 3.12. Set `OWNMAIL_BROWSER_ENGINE=webkit` to check WebKit
 after installing it with `playwright install webkit`.
+
+When `package.json` raises a version under `dependencies`, the first test run or
+`ownmail serve` updates the installed packages through npm and keeps Playwright
+if it is installed. A new Playwright version still needs the `npm install`
+command above.
 
 ### Code Coverage
 
