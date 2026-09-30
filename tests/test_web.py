@@ -2023,7 +2023,7 @@ class TestRunServer:
         san_patch, run_patch, _ = self._patches(sanitizer)
         with san_patch, run_patch as mock_run:
             run_server(archive, debug=debug, reload=reload, open_browser=False)
-        sanitizer.start.assert_called_once()
+        sanitizer.start.assert_called_once_with()
         sanitizer.stop.assert_called_once()
         mock_run.assert_called_once()
         assert mock_run.call_args.kwargs["host"] == "127.0.0.1"
@@ -2043,21 +2043,27 @@ class TestRunServer:
         sanitizer.stop.assert_called_once()
 
     def test_refuses_to_serve_without_sanitizer(self, archive, sanitizer, capsys):
-        """An unavailable sanitizer should abort startup before app.run."""
+        """An unavailable sanitizer should abort startup, with its reason, before the app is created."""
+        from unittest.mock import patch
+
         from ownmail.web import run_server
 
         sanitizer.available = False
+        sanitizer.error = "npm install failed.\nInstall them with:\n  npm --prefix /x install --omit=dev"
         san_patch, run_patch, _ = self._patches(sanitizer)
-        with san_patch, run_patch as mock_run:
+        with san_patch, run_patch as mock_run, patch("ownmail.web.create_app") as mock_create:
             run_server(archive, open_browser=False)
         mock_run.assert_not_called()
+        mock_create.assert_not_called()
         out = capsys.readouterr().out
-        assert "Refusing to serve without sanitization" in out
-        assert "Install Node.js and npm" in out
-        assert "retry ownmail serve" in out
-        assert "pipx reinstall ownmail" in out
-        assert "npm --prefix ownmail/sanitizer install --omit=dev" in out
-        assert "npm needs network access for a refresh" in out
+        assert "❌ HTML sanitizer failed to start.\n   npm install failed.\n   Install them with:\n" in out
+        assert (
+            "     npm --prefix /x install --omit=dev\n"
+            "   For pipx installs, repair the environment with: pipx reinstall ownmail\n"
+            "   Refusing to serve without sanitization.\n"
+        ) in out
+        assert "web interface" not in out
+        assert "Running at" not in out
 
     def test_debug_with_public_host_is_refused(self, archive, sanitizer, capsys):
         """--debug on a non-localhost host must not start the server."""

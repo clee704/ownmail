@@ -45,3 +45,4 @@ Thumbs.db
 # Node.js (HTML sanitizer sidecar)
 ownmail/sanitizer/node_modules/
 ownmail/sanitizer/package-lock.json
+ownmail/sanitizer/.install.lock

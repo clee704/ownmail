@@ -81,6 +81,11 @@ These tests skip when Playwright or its browser is unavailable locally. CI
 requires them on Python 3.12. Set `OWNMAIL_BROWSER_ENGINE=webkit` to check WebKit
 after installing it with `playwright install webkit`.
 
+When `package.json` raises a version under `dependencies`, the first test run or
+`ownmail serve` updates the installed packages through npm and keeps Playwright
+if it is installed. A new Playwright version still needs the `npm install`
+command above.
+
 ### Code Coverage
 
 We enforce a coverage barrier to prevent regressions. Run tests with coverage:

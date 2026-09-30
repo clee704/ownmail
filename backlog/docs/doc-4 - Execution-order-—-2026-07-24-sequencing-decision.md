@@ -227,7 +227,10 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 9 | TASK-67 | high | Sanitizer dependency advisories; DOMPurify is the HTML security boundary |
 | 9a | TASK-117 | medium | Follow-up to TASK-72: remote fonts and media still load while images are blocked |
 | 9b | TASK-120 | high | Found in TASK-117 review: link markup inside a message attribute becomes a live element whose event handlers run when the message opens |
-| 9c | TASK-118 | medium | Follow-up to TASK-67: installs that keep node_modules never pick up raised sanitizer dependency floors |
+| 9c | TASK-124 | high | Found in TASK-120 audit: blocked-image rewriting matches image markup inside attribute values, the pattern TASK-120 removed from body extraction |
+| 9d | TASK-118 | medium | Follow-up to TASK-67: installs that keep node_modules never pick up raised sanitizer dependency floors |
+| 9e | TASK-125 | medium | Follow-up to TASK-120: the message page's inline scripts keep 'unsafe-inline' in the blocking policy, and loaded messages carry no policy at all |
+| 9f | TASK-127 | high | Explicit local reconciliation assignment after TASK-118 and TASK-40: retain upstream install locking/recovery together with strict local validation before later integration |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
@@ -248,6 +251,9 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 25 | TASK-64 | low | CLI Trash listing crashes when Trash is not empty; web Trash works |
 | 26 | TASK-12 | low | --verbose before the subcommand is ignored |
 | 26a | TASK-115 | low | Unused query helpers in ArchiveDatabase; deletion only |
+| 26b | TASK-121 | low | Found in TASK-118: a worker that exits before it is ready gives no reason; the refusal's advice covers the likely causes |
+| 26c | TASK-122 | low | Found in TASK-118: serve exits 0 when it refuses to start, and the --debug refusal still follows startup side effects |
+| 26d | TASK-123 | low | Found in TASK-118: duplicate sanitize, kill and stop tests; deletion only |
 | 27 | TASK-8 | low | Only a download-header test remains |
 | 28 | TASK-50 | low | iPhone Home Screen polish |
 | 29 | TASK-19 | low | Decision on excluding recurring labels at capture |

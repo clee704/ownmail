@@ -4,7 +4,7 @@ title: Keep style and link markup inside message attributes inert
 status: Done
 assignee: []
 created_date: '2026-09-29 12:31'
-updated_date: '2026-09-29 17:05'
+updated_date: '2026-09-30 03:16'
 labels:
   - ui
 dependencies: []
@@ -40,7 +40,7 @@ Replace regex-based wrapper and style/link extraction with a single stdlib HTMLP
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Fixed in ownmail/web.py: _extract_body_content now delegates style/link collection to _split_style_and_link_elements, which walks the markup one tag at a time (STYLE_LINK_TOKEN_RE consumes each tag's quoted attribute runs). A <link> or <style> the sanitizer keeps as inert attribute text is swallowed by its enclosing tag, so it is no longer lifted into a live element; real style/link elements keep document (cascade) order. Body content stays string-based rather than re-serialized through lxml, which would have regressed void elements such as <source> inside <picture>. Comment handling was left out because DOMPurify strips comments before this runs. Tests: two unit cases in tests/test_web.py and a browser test in tests/test_image_blocking.py asserting the injected onload/onerror never fires with remote content blocked and loaded; all three fail against the pre-fix code. Full pre-push gate green at 96.44% coverage.
+First fix (f76d495, superseded by the repair below): _extract_body_content delegated style/link collection to _split_style_and_link_elements, which walks the markup one tag at a time (STYLE_LINK_TOKEN_RE consumes each tag's quoted attribute runs). A <link> or <style> the sanitizer keeps as inert attribute text is swallowed by its enclosing tag, so it is no longer lifted into a live element; real style/link elements keep document (cascade) order. Body content stays string-based rather than re-serialized through lxml, which would have regressed void elements such as <source> inside <picture>. Comment handling was left out because DOMPurify strips comments before this runs. Tests: two unit cases in tests/test_web.py and a browser test in tests/test_image_blocking.py asserting the injected onload/onerror never fires with remote content blocked and loaded; all three fail against the pre-fix code. Full pre-push gate green at 96.44% coverage.
 
 Review of f76d495 on 2026-09-29: reopened because AC 1 and AC 2 are incomplete. The new style/link scan fixes the original paragraph-attribute case, but _extract_body_content still finds the body boundary with a regex that ignores quoted attribute values (ownmail/web.py:399). A greater-than sign followed by link markup inside a body title attribute is emitted as a live link. A body start marker followed by link markup inside an html or head title attribute has the same result.
 
@@ -52,11 +52,13 @@ Targeted validation: OWNMAIL_REQUIRE_BROWSER_TESTS=1 .venv/bin/pytest tests/test
 
 Full suite verification with required browser tests: 3,909 passed, 1 expected failure; coverage 96.44%.
 
-Repair in progress: replaced both the style/link scan and wrapper regexes with one HTMLParser pass over sanitized output. It keeps serialized start tags and entity references, collects real style/link elements in order, and copies only the body style attribute. This avoids lxml reserialization of HTML5 void elements and removes the unsafe body-boundary slicing.
+Repair: replaced both the style/link scan and wrapper regexes with one HTMLParser pass over sanitized output. It keeps serialized start tags and entity references, collects real style/link elements in order, and copies only the body style attribute. This avoids lxml reserialization of HTML5 void elements and removes the unsafe body-boundary slicing.
 
 Extended the existing browser regression to paragraph, body, html, and head attributes in blocked and loaded modes. Added unit cases for wrapper attributes, void elements, and entity preservation; strengthened existing tests for body styling, CSS containing tag-like text, and fragments. Before the repair, all six wrapper unit cases, the body-style case, and all three added browser cases failed. They pass after the repair, along with reader fonts, body backgrounds, and spacing. Deliberate in-memory faults in entity decoding and source-element handling make both new preservation tests fail; no source mutations were left behind.
 
 Independent review found no remaining attribute-to-markup defect under the sanitizer contract. Its whitespace observation reproduced with a body using white-space:pre: a newline between head and body entered the message. Body parsing now clears only content collected before the real body start. The strengthened full-document test fails without this correction and passes with it, preserving whitespace inside the body.
 
 Repair complete. Full pre-push gate passed with browser tests required; coverage 96.45%. The parser, regression tests, and task record are included in the repair commit.
+
+Audit on 2026-09-30 confirmed the result. Of the extraction and browser tests these commits added or changed, 15 fail against the original extractor and 11 against f76d495's. All pass at 654e88c with browser tests required, and the full pre-push gate passes. Real sanitizer output extracts identically on Python 3.10 through 3.13. Follow-ups filed: TASK-124 for the same regex pattern in blocked-image rewriting, and TASK-125 for removing 'unsafe-inline' from the message page's script policy.
 <!-- SECTION:NOTES:END -->

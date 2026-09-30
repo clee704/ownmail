@@ -2142,6 +2142,13 @@ def run_server(
 
     sanitizer = HtmlSanitizer(verbose=verbose)
     sanitizer.start()
+    if not sanitizer.available:
+        print("\n❌ HTML sanitizer failed to start.")
+        for line in sanitizer.error.splitlines():
+            print(f"   {line}")
+        print("   For pipx installs, repair the environment with: pipx reinstall ownmail")
+        print("   Refusing to serve without sanitization.\n")
+        return
 
     app = create_app(
         archive,
@@ -2178,14 +2185,6 @@ def run_server(
         print("   Remote content blocked by default")
     if trusted_senders:
         print(f"   Trusted senders: {len(trusted_senders)}")
-    if not sanitizer.available:
-        print("\n   ERROR: HTML sanitizer failed to start.")
-        print("   Install Node.js and npm (https://nodejs.org), then retry ownmail serve.")
-        print("   Dependencies are checked and refreshed automatically; npm needs network access for a refresh.")
-        print("   For pipx installs, repair the environment with: pipx reinstall ownmail")
-        print("   From a source checkout, run: npm --prefix ownmail/sanitizer install --omit=dev")
-        print("   Refusing to serve without sanitization.\n")
-        return
     print("   HTML sanitization enabled (DOMPurify)")
     print("   Press Ctrl+C to stop\n")
 

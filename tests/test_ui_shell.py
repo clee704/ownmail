@@ -143,7 +143,7 @@ def shell_browser():
         pytest.skip("Node.js is unavailable")
     sanitizer = HtmlSanitizer()
     if not sanitizer._ensure_deps():
-        pytest.skip("Browser test dependencies are unavailable")
+        pytest.skip(f"Browser test dependencies are unavailable: {sanitizer.error}")
     return Path(__file__).parents[1] / "ownmail" / "sanitizer"
 
 
