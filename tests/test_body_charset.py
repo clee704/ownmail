@@ -20,6 +20,13 @@ RECOVERY_CASES = [
     pytest.param("Привет", "cp1251", "windows-1251", "", id="declared-cyrillic"),
     pytest.param("Café", "utf-8", "iso-8859-1", "", id="utf8-declared-latin1"),
     pytest.param("한글", "euc-kr", None, "", id="short-undeclared-korean"),
+    pytest.param("Noël", "iso-8859-1", None, "", id="undeclared-western-noel"),
+    pytest.param("München", "iso-8859-1", None, "", id="undeclared-western-munich"),
+    pytest.param("façade", "iso-8859-1", None, "", id="undeclared-western-facade"),
+    pytest.param("Ärger", "iso-8859-1", None, "", id="undeclared-western-arger"),
+    pytest.param("Åland", "iso-8859-1", None, "", id="undeclared-western-aland"),
+    pytest.param("Álex", "iso-8859-1", None, "", id="undeclared-western-alex"),
+    pytest.param("똠방각하의 메시지를 확인하세요", "cp949", None, "", id="long-undeclared-cp949"),
     pytest.param(
         "안녕하세요 반갑습니다",
         "euc-kr",
@@ -34,6 +41,7 @@ LEGACY_CASES = [
     pytest.param("Café", "iso-8859-1", "latin1", id="latin1-alias"),
     pytest.param("Café “update”", "cp1252", "windows-1252", id="declared-windows1252"),
     pytest.param("한글", "euc-kr", "euc-kr", id="declared-korean"),
+    pytest.param("똠", "cp949", "cp949", id="declared-cp949-extension"),
     pytest.param("Ёжик Їжак Ў Ґ", "cp1251", "cp1251", id="cyrillic-letters-and-charset-alias"),
     # These bytes are also valid UTF-8; declarations other than Latin-1 win.
     pytest.param("Ã©", "cp1252", "windows-1252", id="ambiguous-windows1252"),

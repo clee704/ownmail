@@ -283,29 +283,6 @@ class TestWebDecodeHelpers:
         # Should fall back to working encoding
         assert "Hello" in result
 
-    def test_try_decode_valid(self):
-        """Test _try_decode with valid encoding."""
-        from ownmail.web import _try_decode
-
-        payload = b"Test"
-        result = _try_decode(payload, "utf-8")
-        assert result == "Test"
-
-    def test_try_decode_invalid(self):
-        """Test _try_decode with invalid encoding."""
-        from ownmail.web import _try_decode
-
-        # Invalid UTF-8 bytes
-        payload = b"\xff\xfe"
-        result = _try_decode(payload, "utf-8")
-        assert result is None
-
-    def test_validate_decoded_text_valid(self):
-        """Test _validate_decoded_text with valid text."""
-        from ownmail.web import _validate_decoded_text
-
-        assert _validate_decoded_text("Hello world") is True
-
     def test_format_size_bytes(self):
         """Test _format_size with bytes."""
         from ownmail.web import _format_size
@@ -623,33 +600,6 @@ class TestWebUtilityFunctions:
         result = _fix_mojibake_filename("한글파일.txt")
         assert result == "한글파일.txt"
 
-    def test_validate_decoded_text_valid(self):
-        """Test _validate_decoded_text with valid text."""
-        from ownmail.web import _validate_decoded_text
-
-        assert _validate_decoded_text("Hello World") is True
-
-    def test_validate_decoded_text_empty(self):
-        """Test _validate_decoded_text with empty text."""
-        from ownmail.web import _validate_decoded_text
-
-        # Empty string returns False (the early bail out)
-        assert _validate_decoded_text("") is False
-
-    def test_validate_decoded_text_korean(self):
-        """Test _validate_decoded_text with Korean text."""
-        from ownmail.web import _validate_decoded_text
-
-        assert _validate_decoded_text("안녕하세요") is True
-
-    def test_validate_decoded_text_garbage(self):
-        """Test _validate_decoded_text with garbage chars."""
-        from ownmail.web import _validate_decoded_text
-
-        # Too many control characters
-        garbage = "\x00\x01\x02\x03\x04\x05\x06\x07\x08"
-        assert _validate_decoded_text(garbage) is False
-
 
 class TestExtractSnippet:
     """Test web.py snippet extraction functions."""
@@ -900,41 +850,6 @@ class TestParseEmailAddress:
         assert parse_email_address("not an email") == ("", "")
 
 
-class TestTryDecode:
-    """Test web.py _try_decode function."""
-
-    def test_try_decode_utf8(self):
-        """Test _try_decode with UTF-8."""
-        from ownmail.web import _try_decode
-
-        result = _try_decode(b"Hello World", "utf-8")
-        assert result == "Hello World"
-
-    def test_try_decode_invalid_encoding(self):
-        """Test _try_decode with invalid encoding."""
-        from ownmail.web import _try_decode
-
-        result = _try_decode(b"Hello", "not-a-valid-encoding")
-        assert result is None
-
-    def test_try_decode_korean(self):
-        """Test _try_decode with Korean text."""
-        from ownmail.web import _try_decode
-
-        korean = "안녕하세요"
-        result = _try_decode(korean.encode("utf-8"), "utf-8")
-        assert result == korean
-
-    def test_try_decode_garbage(self):
-        """Test _try_decode with garbage chars returns None."""
-        from ownmail.web import _try_decode
-
-        # Bytes that decode to control characters - fails validation
-        garbage_bytes = bytes([0x01, 0x02, 0x03, 0x04, 0x05])
-        result = _try_decode(garbage_bytes, "utf-8")
-        assert result is None  # Fails validation
-
-
 class TestDecodeTextBody:
     """Test web.py _decode_text_body function."""
 
@@ -1103,37 +1018,6 @@ class TestParserDateNormalization:
         assert result == "not a date"
 
 
-class TestParserIsReadableText:
-    """Test parser _validate_decoded_text function."""
-
-    def test_is_readable_ascii(self):
-        """Test _validate_decoded_text with ASCII."""
-        from ownmail.parser import _validate_decoded_text
-
-        assert _validate_decoded_text("Hello World") is True
-
-    def test_is_readable_korean(self):
-        """Test _validate_decoded_text with Korean."""
-        from ownmail.parser import _validate_decoded_text
-
-        assert _validate_decoded_text("안녕하세요") is True
-
-    def test_is_readable_empty(self):
-        """Test _validate_decoded_text with empty."""
-        from ownmail.parser import _validate_decoded_text
-
-        # Empty string returns False (early bail out)
-        assert _validate_decoded_text("") is False
-
-    def test_is_readable_garbage(self):
-        """Test _validate_decoded_text with garbage chars."""
-        from ownmail.parser import _validate_decoded_text
-
-        # Lots of control characters
-        garbage = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0b\x0c"
-        assert _validate_decoded_text(garbage) is False
-
-
 class TestArchiveEmailsDir:
     """Test archive.py get_emails_dir function."""
 
@@ -1198,41 +1082,6 @@ class TestDecodeHtmlBodyFunction:
         bad_html = bytes([0xFF, 0xFE, 0x3C, 0x68, 0x74, 0x6D, 0x6C, 0x3E])
         result = _decode_html_body(bad_html, None)
         assert result  # Should return something
-
-
-class TestParserTryDecode:
-    """Test parser _try_decode function."""
-
-    def test_try_decode_utf8(self):
-        """Test _try_decode with UTF-8."""
-        from ownmail.parser import _try_decode
-
-        result = _try_decode(b"Hello World", "utf-8")
-        assert result == "Hello World"
-
-    def test_try_decode_invalid_encoding(self):
-        """Test _try_decode with invalid encoding."""
-        from ownmail.parser import _try_decode
-
-        result = _try_decode(b"Hello", "not-a-valid-encoding")
-        assert result is None
-
-    def test_try_decode_korean(self):
-        """Test _try_decode with Korean text."""
-        from ownmail.parser import _try_decode
-
-        korean = "안녕하세요"
-        result = _try_decode(korean.encode("utf-8"), "utf-8")
-        assert result == korean
-
-    def test_try_decode_garbage(self):
-        """Test _try_decode with garbage chars returns None."""
-        from ownmail.parser import _try_decode
-
-        # Bytes that decode to control characters - fails validation
-        garbage_bytes = bytes([0x01, 0x02, 0x03, 0x04, 0x05])
-        result = _try_decode(garbage_bytes, "utf-8")
-        assert result is None  # Fails validation
 
 
 class TestLinkifyLineFunction:

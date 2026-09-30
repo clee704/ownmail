@@ -1,11 +1,11 @@
 ---
 id: TASK-93
 title: Recognize HTML layouts beyond inline root backgrounds
-status: Done
+status: In Progress
 assignee:
-  - Ownmail IC2
+  - Ownmail audit IC4
 created_date: '2026-09-15 02:56'
-updated_date: '2026-09-30 12:59'
+updated_date: '2026-09-30 16:10'
 labels:
   - ui
 dependencies: []
@@ -25,6 +25,8 @@ The padding detector still misses sender backgrounds supplied by scoped CSS clas
 - [x] #1 Synthetic class-styled and nested layout canvases render without a second reader frame in both themes.
 - [x] #2 Simple HTML retains readable padding, including messages with decorative or hidden background elements.
 - [x] #3 Browser checks exercise the real sanitizer at phone and desktop widths and fail against the previous behavior.
+- [x] #4 An unmatched supported static selector inside conditional CSS does not add reader padding to an otherwise verified canvas; affecting conditional rules retain conservative padding.
+- [ ] #5 Audit follow-up receives independent review and the final combined repository gate before reclosure.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -55,10 +57,20 @@ Independent Astra Ultra re-review passed on implementation checkpoint 4213693f9c
 Final validation passed on clean checkpoint f8db26355e98877618c454451d4975bf5691e549 (product implementation 4213693f9c544b3381220a4d31069cf46140b3cb). All 16 actual-route reader-spacing cases pass at 390, 768 and 1440 pixels in both light/dark themes, retaining the original simple HTML/plain-text insets, authored geometry, containment, fitting and print assertions. The required pre-push gate exited 0: 4,076 passed, one pre-existing TASK-13 expected failure, no skips, and 96.65957098411658% combined statement/branch coverage against the unchanged 95% threshold. All 13 mandatory Chromium launch/close probes completed without timeout. The complete selection, existing timeouts/assertions and coverage threshold were preserved; maxfail=1 and a runtime-only observer supplied actionable diagnostics. Static checks and normal commit hooks pass.
 
 All three acceptance criteria are now verified, including five preserved red reproductions on the previous behavior and the green rendered matrix. Independent Astra Ultra review remains approved on the exact validated worker/test bytes, with all five findings resolved and 54 passing differential probes preserving sanitized HTML/dark-mode output. Author self-review passed against the original TASK-56 base. Unsupported or uncertain CSS/layouts deliberately retain reader padding. Browser validation has exited and the interval is released. This closure changes only the task ledger; all product/test files remain byte-identical to the fully validated checkpoint. TASK-121 lifecycle hunks are untouched. No integration, merge/rebase, publication, real mail/settings or trust-policy change. Task complete.
+
+Authorized audit follow-up, review base 47e54fd653f65a33b394f52207602476dc14126b, isolated branch fix/audit-reader-regressions. Existing closure evidence is preserved; this task is reopened only for verified audit findings. No real mail, providers, credentials or running systems; no dependency, schema or main-branch change. Independent review and final combined mandatory-browser gate remain with the coordinator/integration owner before reclosure. Plan: (1) extend existing sanitizer and real-reader spacing tests with a responsive rule whose static selector has no matching element; prove failure on the combined base; (2) use the existing matcher before marking a conditional rule uncertain and ignore proven no-target rules; (3) retain unsupported-selector and genuinely conditional layout fallbacks without adding a cascade framework; (4) run worker and leased browser checks with normal hooks and full-diff self-review, then hand off clean commits for independent review/combined gate.
+
+Audit correction checkpoint: actual worker regressions fail at the combined base for both an unmatched @media rule and an unmatched style[media] rule, while six matching/unsupported controls remain conservatively padded. The fix uses the existing literal matcher to establish targets first and ignores proven no-target rules before conditional uncertainty. The focused real-worker set passes, including all matching/unsupported controls. The real-reader spacing matrix now includes the exact audited newsletter case; its browser check, independent review and final combined gate remain pending. No cascade engine, sender-markup rewrite or startup/runtime change was added.
+
+The new real-reader test failed against exported unchanged combined-base production on the extra padding class. With the fix, the complete seventeen-case spacing matrix passes at phone/tablet/desktop widths, in both themes and print; all affected charset/spacing checks total 60 passes. The eight worker subcases retain conservative behavior for matching and unsupported selectors. AC4 is verified; independent review and the final combined repository gate remain pending. Browser commands exited and the interval was released.
+
+Full-task author review against combined base 47e54fd653f65a33b394f52207602476dc14126b confirms the only production change is ordering existing static target matching before conditional uncertainty. Matching/unknown selector fallback, sanitized HTML, dark-mode metadata, and all sanitizer startup/runtime code are preserved. Worker and rendered red/green evidence is complete; independent review and the integration owner final combined required gate remain outstanding.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Recognize class-styled, deeply wrapped and principal-cell message canvases without an extra reader frame. Preserve readable padding for simple HTML and decorative, hidden or genuinely ambiguous layouts, without changing sanitized markup, selector rewriting or dark-mode/trust behavior. All 16 rendered spacing cases pass at three widths in both themes; full required gate passes with 4,076 tests, one existing expected failure and 96.66% coverage. Independent Astra Ultra review has no open findings. Final closure is ledger-only; no integration or publication.
+
+Audit follow-up: inapplicable responsive rules no longer invalidate proven canvases; worker and real-reader regressions pass. Historical closure above is preserved. Status remains In Progress pending independent review and the final combined gate.
 <!-- SECTION:FINAL_SUMMARY:END -->

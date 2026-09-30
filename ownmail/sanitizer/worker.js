@@ -593,14 +593,15 @@ function paddingStyles(doc, container) {
     css.walkRules((rule) => {
       if (!rule.nodes.some((node) => node.type === "decl" &&
         (relevant.test(node.prop.toLowerCase()) || node.prop.includes("\\")))) return;
+      const selectors = rule.selectors.map(paddingSelector);
+      if (selectors.some((selector) => !selector)) { uncertain = true; return; }
+      const targets = elements.filter((element) => selectors.some((selector) => selector(element)));
+      if (!targets.length) return;
       if (rule.parent.type !== "root" || (style.getAttribute("media") || "all").toLowerCase() !== "all") {
         uncertain = true;
         return;
       }
-      const selectors = rule.selectors.map(paddingSelector);
-      if (selectors.some((selector) => !selector)) { uncertain = true; return; }
-      const targets = elements.filter((element) => selectors.some((selector) => selector(element)));
-      if (targets.length && !declarations(rule.nodes, targets)) uncertain = true;
+      if (!declarations(rule.nodes, targets)) uncertain = true;
     });
     if (uncertain) return null;
   }

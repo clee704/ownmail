@@ -291,9 +291,14 @@ def _decode_body(payload: bytes, header_charset: str | None, *, is_html: bool = 
             return result
 
     encodings = ["utf-8"]
-    # A short body or long ASCII preamble must not hide legacy CJK bytes.
-    if not payload.isascii():
+    # Recover short EUC-KR bodies without letting codecs such as CP949 or
+    # GBK consume a Western accent and the ASCII letter after it. Retain the
+    # broader CJK fallback's threshold, counting beyond long ASCII preambles.
+    high_bytes = sum(byte >= 0x80 for byte in payload)
+    if high_bytes > 10:
         encodings.extend(["cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"])
+    elif high_bytes:
+        encodings.append("euc-kr")
     encodings.extend(["iso-8859-1", "cp1252"])
     for encoding in encodings:
         result = _try_decode(payload, encoding)

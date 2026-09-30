@@ -44,6 +44,15 @@ def spacing_sanitizer(contrast_browser):
             id="newsletter-after-hidden-preheaders",
         ),
         pytest.param(
+            "<style>@media (max-width:600px) {.unused {width:100%}}</style>"
+            '<table id="panel" width="100%" bgcolor="#eef1f4" cellpadding="0" cellspacing="0">'
+            '<tr><td style="padding:24px"><p id="copy" style="margin:0">Newsletter copy</p>'
+            "</td></tr></table>",
+            False,
+            24,
+            id="newsletter-with-unmatched-responsive-rule",
+        ),
+        pytest.param(
             '<div style="display:none;background:#eef1f4">Hidden preview</div>'
             '<div style="display:none !important;background:#eef1f4">Hidden preview spacer</div>'
             '<p id="copy">Simple formatted message</p>',

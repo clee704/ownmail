@@ -28,12 +28,6 @@ from ownmail.parser import (
     extract_attachment_filename,
     is_attachment,
 )
-from ownmail.parser import (
-    _try_decode as _try_decode,
-)
-from ownmail.parser import (
-    _validate_decoded_text as _validate_decoded_text,
-)
 from ownmail.query import parse_query
 from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_web_config, serialize_config_writes
 
