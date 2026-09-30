@@ -611,22 +611,18 @@ QUOTE_RE = re.compile(r"^(&gt;)+")
 
 def _linkify_line(line: str) -> str:
     """Linkify a single line of text (already HTML-escaped)."""
-    # Replace URLs with links
-    line = URL_RE.sub(r'<a href="\1" target="_blank" rel="noopener noreferrer">\1</a>', line)
 
-    # Replace email addresses with mailto links
-    # But not if they're already inside an href (from URL linking)
     def replace_email(match):
         email_addr = match.group(1)
-        start = match.start()
-        preceding = line[:start]
-        last_href = preceding.rfind('href="')
-        last_close = max(preceding.rfind(">"), preceding.rfind('"'))
-        if last_href > last_close:
-            return email_addr
         return f'<a href="mailto:{email_addr}" rel="noopener noreferrer">{email_addr}</a>'
 
-    return EMAIL_RE.sub(replace_email, line)
+    # URL_RE's captured matches alternate with original text outside the URLs.
+    return "".join(
+        f'<a href="{part}" target="_blank" rel="noopener noreferrer">{part}</a>'
+        if index % 2
+        else EMAIL_RE.sub(replace_email, part)
+        for index, part in enumerate(URL_RE.split(line))
+    )
 
 
 def _linkify(text: str) -> str:

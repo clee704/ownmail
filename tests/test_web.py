@@ -2280,15 +2280,25 @@ class TestViewEmailRendering:
             archive,
             b"From: Alice <alice@example.com>\r\nTo: bob@example.com\r\n"
             b"Subject: Hello\r\nDate: Mon, 1 Jan 2024 10:00:00 +0000\r\n\r\n"
-            b"This is the body text.\r\n",
+            b"This is the body text.\r\n"
+            b"Visit https://example.test/unsubscribe?email=alice@example.com&confirm=yes\r\n"
+            b"Contact helper@example.test\r\n",
         )
-        app = create_app(archive)
+        sanitizer = MagicMock()
+        app = create_app(archive, sanitizer=sanitizer)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert response.status_code == 200
         assert b"Hello" in response.data
         assert b"alice@example.com" in response.data
         assert b"This is the body text." in response.data
+        body = html.fromstring(response.data).get_element_by_id("ownmail-email-content")
+        url = "https://example.test/unsubscribe?email=alice@example.com&confirm=yes"
+        assert [(link.get("href"), link.text_content()) for link in body.xpath(".//a")] == [
+            (url, url),
+            ("mailto:helper@example.test", "helper@example.test"),
+        ]
+        sanitizer.sanitize.assert_not_called()
 
     def test_missing_file_is_404(self, archive):
         """A DB row whose file is gone should 404 rather than error."""
@@ -2791,43 +2801,105 @@ class TestCleanSnippetText:
 class TestLinkify:
     """Tests for _linkify."""
 
-    def test_urls_become_links(self):
+    @pytest.mark.parametrize("url", ["https://example.com/page", "HTTP://example.test/page"])
+    def test_urls_become_links(self, url):
         """A bare URL should be wrapped in an anchor."""
         from ownmail.web import _linkify
 
-        result = _linkify("Visit https://example.com/page today")
-        assert '<a href="https://example.com/page"' in result
-        assert 'rel="noopener noreferrer"' in result
+        result = html.fromstring(_linkify(f"Visit {url} today"))
+        (link,) = result.xpath(".//a")
+        assert link.attrib == {"href": url, "target": "_blank", "rel": "noopener noreferrer"}
+        assert link.text_content() == url
+        assert result.text_content() == f"Visit {url} today"
 
-    def test_emails_become_mailto_links(self):
-        """A bare email address should become a mailto link."""
+    @pytest.mark.parametrize(
+        ("address", "linked"),
+        [("alice@example.com", True), ("ALICE@Example.COM", True), ("reader@exampKe.test", False)],
+    )
+    def test_emails_become_mailto_links(self, address, linked):
+        """Keep existing ASCII email matching independently of URL case folding."""
         from ownmail.web import _linkify
 
-        assert '<a href="mailto:alice@example.com"' in _linkify("Contact alice@example.com now")
+        result = html.fromstring(_linkify(f"Contact {address} now"))
+        links = result.xpath(".//a")
+        assert len(links) == int(linked)
+        if linked:
+            assert links[0].attrib == {"href": f"mailto:{address}", "rel": "noopener noreferrer"}
+            assert links[0].text_content() == address
+        assert result.text_content() == f"Contact {address} now"
 
-    @pytest.mark.xfail(strict=True, reason="TASK-13: nested anchor inside href")
-    def test_email_inside_url_is_not_double_linked(self):
-        """An address already inside a link href must not be re-linked."""
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://example.com/unsubscribe?email=alice@example.com",
+            "https://example.test/preferences?email=alice@example.com&other=bob@example.test",
+            "https://example.test/users/alice@example.com/profile",
+            "https://example.test/#alice@example.com",
+            "HTTP://example.test/preferences?email=Alice@Example.COM",
+            "https://alice@example.com/path",
+        ],
+    )
+    def test_email_inside_url_is_not_double_linked(self, url):
+        """Keep the original URL intact in one anchor's href and display text."""
         from ownmail.web import _linkify
 
-        result = _linkify("https://example.com/unsubscribe?email=alice@example.com")
+        result = _linkify(url)
         assert "mailto:" not in result
+        assert result.count("<a ") == 1
+        (link,) = html.fromstring(result).xpath(".//a")
+        assert link.attrib == {"href": url, "target": "_blank", "rel": "noopener noreferrer"}
+        assert link.text_content() == url
+        assert not link.xpath(".//a")
+
+    def test_url_spans_leave_surrounding_emails_linkable(self):
+        """Adjacent text keeps email links while multiple URL spans stay atomic."""
+        from ownmail.web import _linkify
+
+        first = "https://example.test/?email=alice@example.com&confirm=yes"
+        second = "http://example.test/#bob@example.test"
+        text = f"Contact first@example.test ({first}) or second@example.test [{second}]"
+        result = _linkify(text)
+        assert result.count("<a ") == 4
+        tree = html.fromstring(result)
+        assert [(link.get("href"), link.text_content()) for link in tree.xpath(".//a")] == [
+            ("mailto:first@example.test", "first@example.test"),
+            (first, first),
+            ("mailto:second@example.test", "second@example.test"),
+            (second, second),
+        ]
+        assert tree.text_content() == text
 
     def test_html_is_escaped(self):
         """Raw HTML in the text must be escaped, not emitted."""
         from ownmail.web import _linkify
 
-        result = _linkify("<script>alert(1)</script>")
+        url = "https://example.test/?email=alice@example.com&confirm=yes"
+        text = f'<script>alert(1)</script> <img src=x onerror=alert(2)> & "quoted" {url}'
+        result = _linkify(text)
         assert "<script>" not in result
         assert "&lt;script&gt;" in result
+        tree = html.fromstring(result)
+        assert not tree.xpath(".//script | .//img | .//*[@onerror]")
+        assert tree.text_content() == text
+        (link,) = tree.xpath(".//a")
+        assert link.get("href") == url
 
     def test_quoted_lines_are_marked_up(self):
-        """Quote levels should be rendered rather than left as raw '>'."""
+        """URL and email linking preserves the quote and embedded-header wrappers."""
         from ownmail.web import _linkify
 
-        result = _linkify("> quoted reply\nnormal line")
-        assert "quoted reply" in result
-        assert "normal line" in result
+        url = "https://example.test/?email=alice@example.com&confirm=yes"
+        result = html.fragment_fromstring(
+            _linkify(f"> quoted reply {url}\nFrom: helper@example.test\nSubject: {url}\nnormal line"),
+            create_parent="div",
+        )
+        (quoted,) = result.find_class("ownmail-quote-content")
+        assert quoted.text_content() == f" quoted reply {url}"
+        assert quoted.xpath(".//a/@href") == [url]
+        labels = result.find_class("ownmail-email-header-label")
+        assert [label.text for label in labels] == ["From:", "Subject:"]
+        assert result.xpath(".//a/@href") == [url, "mailto:helper@example.test", url]
+        assert "normal line" in result.text_content()
 
 
 class TestSearchRoute:

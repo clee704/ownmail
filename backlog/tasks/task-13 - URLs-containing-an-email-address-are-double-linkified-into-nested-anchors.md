@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-07-24 21:07'
-updated_date: '2026-09-30 10:58'
+updated_date: '2026-09-30 11:04'
 labels: []
 dependencies: []
 priority: medium
@@ -40,8 +40,8 @@ Found while writing web tests for TASK-3.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 HTTP(S) URLs containing email addresses produce exactly one complete URL anchor with unchanged href and display text, without nested or embedded mailto anchors.
-- [ ] #2 Standalone email linking, existing URL/email regex meanings and flags, HTML escaping, link attributes, and quote/header rendering retain their behavior.
+- [x] #1 HTTP(S) URLs containing email addresses produce exactly one complete URL anchor with unchanged href and display text, without nested or embedded mailto anchors.
+- [x] #2 Standalone email linking, existing URL/email regex meanings and flags, HTML escaping, link attributes, and quote/header rendering retain their behavior.
 - [ ] #3 The former strict-xfail becomes a passing regression, synthetic plaintext-reader coverage verifies the complete link, and failing-before/passing-after evidence plus required repository validation are recorded.
 <!-- AC:END -->
 
@@ -59,5 +59,7 @@ Found while writing web tests for TASK-3.
 
 <!-- SECTION:NOTES:BEGIN -->
 Read-only preflight verified this next recorded task (doc-4 row 19, no dependencies) on dbe5bf90e9966b3e11ac02d582af5666db927e89. Source and independent Astra Ultra probes confirm that the email replacement pass rewrites generated URL attributes and display text; the current guard cannot detect its own opening href quote. Synthetic query/path/fragment cases reproduce the corruption, including quoted/header lines. An actual plaintext reader request returns HTTP 200 but no anchor with the expected complete URL, while an adjacent standalone email remains correctly linked. The existing strict-xfail encodes the known failure. The manager authorized this bounded fix while preserving existing URL/email regex meanings, escaping and link attributes. Scope is only _linkify_line, existing TestLinkify/necessary quote-header and plaintext reader regressions in tests/test_web.py, and this ledger. No new URL recognition policy, sanitizer/provider/progress/template/JavaScript changes, dependency/schema changes, real mail/config/credentials or external service operations are in scope. TASK-99 retains the next browser interval; blocked TASK-37/95/125 remain paused.
-Next action: commit this task-only acceptance/plan checkpoint with normal hooks, prepare source-bound private tooling, then demonstrate the strengthened regressions fail before implementation.
+
+Task-only acceptance/plan checkpoint de9e5b85e33a62b34cf7e31c1e5cb3c33a6a62b3 preceded all implementation and test edits. _linkify_line now uses captured original URL spans and applies the existing email regex only to intervening original text, removing the ineffective generated-href guard. Both regex definitions/flags and all escaping/link attributes remain unchanged; no production code outside the helper changed. The former strict xfail now asserts a single complete URL anchor with exact href/text and attributes for query, path, fragment and case variants. Existing tests also cover adjacent standalone emails, multiple URLs, escaped markup, quote/header wrappers and the actual plaintext reader route. Ten cases failed against the original helper; all 19 focused cases and all 389 retained web/config tests now pass without xfails. Ruff check, format-check, deptry and whitespace checks passed. Author review and independent Astra Ultra review found no correctness findings or blocking test gaps; additional isolated probes verified 19 unchanged-behavior and 12 atomic-URL cases. All inputs and message files were synthetic. The full required pre-push gate remains unrun pending the browser-only interval after TASK-99, so AC3 and task completion remain open.
+Next action: preserve the reviewed implementation checkpoint with normal hooks, then run the prepared complete mandatory-browser pre-push gate after TASK-99 releases Chromium; close only after that aggregate passes.
 <!-- SECTION:NOTES:END -->
