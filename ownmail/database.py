@@ -503,7 +503,7 @@ class ArchiveDatabase:
             Tuple of (email_id, filename, downloaded_at, content_hash, account, trashed_at)
             or None if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             result = conn.execute(
                 "SELECT email_id, filename, downloaded_at, content_hash, account, trashed_at FROM emails WHERE email_id = ?",
                 (email_id,),

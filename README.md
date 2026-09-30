@@ -228,6 +228,48 @@ contact mail servers. A missing or inconsistent index reports `unavailable`
 instead of repairing it. Concurrent Active changes also report `unavailable` so
 the command can be retried. The human-readable default is unchanged.
 
+### Read a search result
+
+Use the exact `id` from JSON search to read its locally available message:
+
+```bash
+ownmail read 'MESSAGE_ID'
+ownmail read 'MESSAGE_ID' --body-limit 5000
+```
+
+The command always emits one JSON document. Success includes `id`, decoded
+`sender`, `subject`, combined `recipients` (To/Cc/Bcc), `date`, `body`,
+`attachment_names`, `archived`, and `active`. Ownership and Active freshness use
+the same fields as search; an owned copy can also have an Active server copy.
+Reading an ID resolves that local copy directly, even if it no longer matches
+the earlier query. Missing or changed cached content reports an error; no server
+fetch is attempted. Each command takes a new snapshot.
+
+Body text prefers plain text and otherwise extracts text from HTML without
+loading images or other remote content. Attachment contents, including attached
+messages, are excluded; names remain separate list items even when they contain
+commas. Valid declared UTF-8 is decoded strictly, preserving all Unicode text;
+other declarations and malformed encodings use the existing recovery helpers.
+The body defaults to at most 20000 Unicode characters; `--body-limit` accepts
+1–100000. `body_limit` repeats the requested cap and `truncated` explicitly says
+whether body text was omitted. The cap applies to body text, not headers or the
+attachment-name list. Full message bytes must be locally readable to parse MIME.
+
+`original` contains the selected message's local `file:` URI and media type
+`message/rfc822`, so it can be opened in a mail client. This explicit reference
+includes its local archive/cache path; cached files may disappear after refresh.
+No attachment content or HTML is returned. Existing compatible indexes are
+required under the same live read-only contract as JSON search: normal SQLite
+WAL/SHM coordination writes are permitted, but substantive data is unchanged and
+no initialization, migration, cache rebuild or credential access occurs.
+
+Success exits 0. Errors use the same `error.code`/`error.message` envelope and
+exit 1: `invalid_id` for an empty ID, `invalid_limit` for a bad body cap,
+`not_found` for an unknown ID, `unavailable` for missing/unreadable files or
+prerequisites, `parse_failed` when MIME parsing fails, and `read_failed` for an
+unexpected failure. Ctrl-C returns `read_failed` and exit 130. Diagnostics go to
+stderr; CLI syntax/help retains normal argparse behavior.
+
 ## Export
 
 Export owned archive messages to a new mbox file that other mail clients can import:
