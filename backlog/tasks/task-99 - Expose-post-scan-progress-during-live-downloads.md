@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-21 04:08'
-updated_date: '2026-09-30 11:03'
+updated_date: '2026-09-30 11:05'
 labels: []
 dependencies: []
 references:
@@ -50,4 +50,6 @@ Owner: Ownmail IC2. Branch: fix/live-download-progress. Review base: e70af546998
 The task-only claim/plan was committed as 7a642365d9b92888a4fdbeaf383292bc9f583991 before implementation. Reporting now counts owned, discarded, excluded and date-filtered work, prints bounded post-scan totals without message identifiers, and flushes completed reconciliation batches before the next read. The web totals retain skipped counts during scanning, refreshing and completion. Live provider failures retain explicit exception causes while user-facing diagnostics remain fixed catalog messages; known timeout/connection categories survive wrapping, unknown failures stay generic. Capture eligibility, owned files, cache/cursor decisions, retries, successful batch members, individual 404 semantics and interruption remain unchanged.
 
 Regression evidence: 29 reporting cases failed on the original code; review identified an additional date-filtered reporting fallthrough and both terminal/web cases failed before its reporting-only fix. Provider provenance regressions failed 22 cases on original code. Provider self-review added a batch-level 404 regression that exposed an unsafe absence interpretation in the initial implementation; wrapping the batch error preserves retryability while only member-level 404 confirms absence. Final provider families pass 269 tests. Reporting, lifecycle, progress integration and shutdown families pass 154 tests. Both changed browser cases fail when the real synthetic UI receives original committed JavaScript, and all seven focused download UI browser tests pass with the fix. Repository Ruff check, explicit format-check and deptry pass. Author self-review and independent Astra Ultra review against the original base have no remaining findings; the date-filter reporting gap is resolved. All data and provider operations were synthetic. The focused browser interval was released after actual exit. ACs 1-3 are verified; the complete mandatory-browser pre-push coverage gate and final closure remain pending.
+
+The first complete pre-push attempt on implementation 47a5cc715cc92914ef025ecd3fdf9c08fab08bbb stopped after 101 passed tests on an existing Active-download UI exact-string expectation that omitted the newly required skipped count. Chromium startup and cleanup succeeded; this was a stale expectation, not a browser environment failure. The five exact totals assertions in tests/test_active_downloads.py are updated to include zero skipped while preserving every scan, completion, privacy and state assertion. No production change is needed. The failed aggregate evidence is retained, and the browser interval was released after exit. Next action: checkpoint this related-test correction with normal hooks and rerun the complete required gate; AC4 and Done remain pending.
 <!-- SECTION:NOTES:END -->
