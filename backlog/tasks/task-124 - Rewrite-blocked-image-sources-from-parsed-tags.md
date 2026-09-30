@@ -1,11 +1,11 @@
 ---
 id: TASK-124
 title: Rewrite blocked image sources from parsed tags
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC2
 created_date: '2026-09-30 03:15'
-updated_date: '2026-09-30 07:12'
+updated_date: '2026-09-30 07:30'
 labels:
   - ui
 dependencies: []
@@ -26,7 +26,7 @@ Found while auditing TASK-120. At minimum the rewrite alters attribute text the 
 <!-- AC:BEGIN -->
 - [x] #1 Image-tag text inside an attribute value is left unchanged, while real img and source elements still get the placeholder and lose remote srcset values as before
 - [x] #2 A regression test through the real sanitizer and message route shows attribute text containing image markup reaching the page unchanged with remote content blocked, and real remote images staying unrequested
-- [ ] #3 The full pre-push gate passes
+- [x] #3 The full pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -49,4 +49,6 @@ Next action: commit this task-only plan with normal hooks, then implement the ap
 The implementation now uses HTMLParser callbacks to locate only real img/source start tags and tokenizes complete sanitizer-serialized attributes before rewriting actual src/srcset values. Source spans are replaced directly in the original string, retaining unrelated attributes, text, comments, entities, case and line endings. The old global image-tag and URL-attribute regexes were removed. No production nodes outside the owned image helpers changed, and sanitizer/run_server/body extraction/README/config are unchanged. On the original implementation, ten new unit and real-sanitizer route cases failed while two original controls passed; the first sandboxed run could not launch the browser probe, then the same checks ran under narrow headless-test escalation without changing assertions. With the fix, all focused image-blocking and web tests passed: 401 passed, one existing TASK-13 expected failure. Mandatory Chromium covered the new exact DOM/attribute/src/srcset/request assertions as well as existing Load/Block/Trust behavior. Repository-wide Ruff check, format-check and deptry pass. Author self-review found no actionable introduced issue. AC1 and AC2 are verified; AC3 and closure remain pending the full gate on the final candidate incorporating any later reviewed TASK-127 fixes.
 
 Validation checkpoint: the first full required-browser pre-push run completed with 3,873 passing tests, one existing TASK-13 expected failure and 96 setup errors. Every error is the same Chromium launch probe timing out after 30 seconds; no product assertion failed. Ruff, format, dependency and hygiene hooks passed. An unchanged direct retry of both new browser regressions then passed in 4.18 seconds. The coordinated reconciliation gate observed the same startup problem. No test assertions or browser requirements were weakened. AC3 remains unchecked while the common browser startup condition is diagnosed; next action is rerunning the complete required gate after that condition is resolved. TASK-127 independent review passed on the exact claim base without source changes; its final closure checkpoint still needs explicit ancestry and product-equivalence verification.
+
+Completed validation: the full required-browser pre-push gate passed on implementation-equivalent checkpoint 1ad74d1040d29937e64d76a96298868e9b5335bc: 3,969 passed, one existing TASK-13 expected failure, and 96.56% branch-inclusive coverage against the unchanged 95% threshold. All 13 Chromium startup probes completed successfully with no timeout. A runtime-only observer recorded the unchanged probes; maxfail=1 retained complete test selection and all existing timeouts/assertions. The earlier startup errors remain recorded above; no specific root cause was established, and the passing aggregate used a coordinated browser-only interval. Author self-review of the full task diff found no actionable introduced issue. TASK-127 closure 8a2e1b25de4f4fac4fc4c5792abbb17366d3b909 was verified to descend from reviewed base 5028a03374b972b2e9365ee0b6b82ed19fa49c73 and to change only its own task ledger; every other file is identical, so this gate covers the final reviewed reconciliation product tree. No merge, rebase, default-branch mutation or public push was performed; coordinated integration remains separate. All acceptance criteria are verified, and the only closing change is this task ledger.
 <!-- SECTION:NOTES:END -->
