@@ -1,11 +1,11 @@
 ---
 id: TASK-129
 title: PDF export for archived messages
-status: In Progress
+status: Done
 assignee:
   - Ownmail backend IC
 created_date: '2026-09-30 16:53'
-updated_date: '2026-09-30 18:26'
+updated_date: '2026-09-30 18:55'
 labels: []
 milestone: m-4
 dependencies:
@@ -25,9 +25,9 @@ Split from TASK-9 under its explicit PDF alternative. Add PDF export for archive
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ownmail export --format pdf supports archived messages filtered with the existing --query syntax
-- [ ] #2 The selected PDF renderer and output behavior are documented, with any required runtime dependency approved before introduction
-- [ ] #3 Synthetic fixtures verify readable plain-text and HTML message output, headers, and clear attachment treatment without modifying source mail
+- [x] #1 ownmail export --format pdf supports archived messages filtered with the existing --query syntax
+- [x] #2 The selected PDF renderer and output behavior are documented, with any required runtime dependency approved before introduction
+- [x] #3 Synthetic fixtures verify readable plain-text and HTML message output, headers, and clear attachment treatment without modifying source mail
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -46,4 +46,6 @@ TASK9 is Done and integrated at b09e99c08c6af5e7c6d853a28340bda188022e29. Normal
 Renderer implementation checkpoint: added a lazily selected optional PDF module, bounded Node/Chromium runner and dedicated printable document. Selection, owned source reads and exclusive file publication reuse extracted TASK9 helpers; the reader MIME body extraction is AST-identical to the previous statements. Separate message contexts retain per-message styling, with JavaScript disabled, service workers blocked, offline routing, restrictive response CSP and explicit Chromium sandbox. Documents are staged locally, renderer output is validated before directory publication, and source read failures retain mbox-style partial reporting. Missing Node/browser or sanitizer failure is explicit; no installer or normal startup changes. Plain-text export does not start the HTML sanitizer. Initial extraction validation passed 381 retained mbox/reader tests. PDF plus retained mbox nonbrowser checks passed 66 cases; two added actual-process/missing-browser cases also passed, including synthetic Ctrl-C terminating its renderer child. Runtime-only sanitizer-failure and directory-race mutations each failed the intended regression; production files remain restored. Two actual Chromium/PDF validity/readability/security tests are written but queued behind TASK111's exclusive browser lease. Reviewed the disjoint CLI contribution b0dbf79 against its base: API/errors, lazy dispatch and preserved mbox scope agree; combine normally next. Independent renderer review, actual PDF/browser evidence and final unchanged full gate remain pending; keep In Progress and all ACs unchecked.
 
 Independent renderer review found one P2 in timeout cleanup: inherited pipes could keep the final unbounded communicate blocked, and a SIGTERM-resistant descendant could survive after its leader closed the pipes. Corrected diagnostic capture to a temporary regular file, removed Popen context-manager/unbounded pipe waits, kept every wait finite, and force-stopped the owned POSIX group even after the leader exits. A second bounded SIGTERM lets Playwright force its own detached browser closed before group escalation. Windows cleanup targets the launched renderer PID and descendant tree with the OS taskkill utility, without new packages. Added timeout/Ctrl-C regressions for both inherited and closed output descriptors plus a SIGTERM-resistant leader. The initial focused PDF batch passed 31 tests; the expanded five-case actual-process matrix passed all five, with owned process cleanup verified. Actual-browser results remain separate: the original two-case batch exited 1 with one pass and one mixed Latin/Korean whitespace assertion failure; both Chromium processes closed and profiles cleaned. Independent pdfinfo, layout text extraction and visual inspection confirmed valid 1-page plain and 3-page HTML PDFs, all 100 ordered paragraphs, both table edges, attachment labels and no malicious canaries. Corrected only extraction whitespace normalization and strengthened ordered paragraph verification; preserved original failed evidence. Browser rerun and same-reviewer correction recheck are pending before reconciliation with TASK111 main and the final required full gate.
+
+Same-reviewer correction recheck passed seven independent actual-process controls, including the original inherited/closed-pipe reproductions, Ctrl-C, resistant leader and bounded nonzero diagnostics; no remaining actionable finding. Both corrected actual PDF/security cases passed, with readable Latin/Korean text, all 100 paragraphs in order, table edges, attachment inventory, zero synthetic remote requests and no malicious canaries. All owned renderer/browser processes exited and private profiles were removed. The original whitespace-extraction failure remains preserved; layout-aware whitespace normalization retains meaningful text and security assertions. Native Windows process cleanup has not been verified on this Mac. Final integration validation: the reviewed PDF and bounded-reader heads were normally combined at ca2911c883ba7b0a178b22f4faac694a322360af, retaining the original commits and backup refs. Shared CLI/README overlap was independently checked and the automatic merges preserve both command paths. The unchanged mandatory pre-commit run -a --hook-stage pre-push passed on that exact combined tree with required Chromium and private profiles: 4373 passed in 283.64s (0:04:43); total branch-aware coverage 96.60%. No dependency or gate requirement was changed. Final ledger closure changes metadata only; source and tests remain exactly the tested tree. Normal local master integration follows verified clean ancestry; no public push, real mail or credential access.
 <!-- SECTION:NOTES:END -->
