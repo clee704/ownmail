@@ -20,6 +20,9 @@ RECOVERY_CASES = [
     pytest.param("Привет", "cp1251", "windows-1251", "", id="declared-cyrillic"),
     pytest.param("Café", "utf-8", "iso-8859-1", "", id="utf8-declared-latin1"),
     pytest.param("한글", "euc-kr", None, "", id="short-undeclared-korean"),
+    pytest.param("Noël", "iso-8859-1", None, "", id="undeclared-western-noel"),
+    pytest.param("München", "iso-8859-1", None, "", id="undeclared-western-munich"),
+    pytest.param("façade", "iso-8859-1", None, "", id="undeclared-western-facade"),
     pytest.param(
         "안녕하세요 반갑습니다",
         "euc-kr",
