@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-30 03:15'
-updated_date: '2026-09-30 06:59'
+updated_date: '2026-09-30 07:12'
 labels:
   - ui
 dependencies: []
@@ -47,4 +47,6 @@ The image helpers and test_image_blocking.py are identical between the tested up
 Next action: commit this task-only plan with normal hooks, then implement the approved narrow parser change. Later reviewed TASK-127 fixes must be present in the final combined gate before closure.
 
 The implementation now uses HTMLParser callbacks to locate only real img/source start tags and tokenizes complete sanitizer-serialized attributes before rewriting actual src/srcset values. Source spans are replaced directly in the original string, retaining unrelated attributes, text, comments, entities, case and line endings. The old global image-tag and URL-attribute regexes were removed. No production nodes outside the owned image helpers changed, and sanitizer/run_server/body extraction/README/config are unchanged. On the original implementation, ten new unit and real-sanitizer route cases failed while two original controls passed; the first sandboxed run could not launch the browser probe, then the same checks ran under narrow headless-test escalation without changing assertions. With the fix, all focused image-blocking and web tests passed: 401 passed, one existing TASK-13 expected failure. Mandatory Chromium covered the new exact DOM/attribute/src/srcset/request assertions as well as existing Load/Block/Trust behavior. Repository-wide Ruff check, format-check and deptry pass. Author self-review found no actionable introduced issue. AC1 and AC2 are verified; AC3 and closure remain pending the full gate on the final candidate incorporating any later reviewed TASK-127 fixes.
+
+Validation checkpoint: the first full required-browser pre-push run completed with 3,873 passing tests, one existing TASK-13 expected failure and 96 setup errors. Every error is the same Chromium launch probe timing out after 30 seconds; no product assertion failed. Ruff, format, dependency and hygiene hooks passed. An unchanged direct retry of both new browser regressions then passed in 4.18 seconds. The coordinated reconciliation gate observed the same startup problem. No test assertions or browser requirements were weakened. AC3 remains unchecked while the common browser startup condition is diagnosed; next action is rerunning the complete required gate after that condition is resolved. TASK-127 independent review passed on the exact claim base without source changes; its final closure checkpoint still needs explicit ancestry and product-equivalence verification.
 <!-- SECTION:NOTES:END -->
