@@ -34,123 +34,10 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         with patch("shutil.which", return_value=None):
             assert HtmlSanitizer.is_node_available() is False
 
-    def test_sanitize_without_node_returns_escaped(self):
-        """Test sanitize() returns escaped HTML when not available."""
-        import html as html_module
-
-        sanitizer = HtmlSanitizer()
-        html = "<script>alert(1)</script><p>Hello</p>"
-        result, needs_padding, supports_dark = sanitizer.sanitize(html)
-        assert result == html_module.escape(html)
-        assert needs_padding is True
-        assert supports_dark is False
-
-    def test_stop_without_start(self):
-        """Test stop() is safe to call without start()."""
-        sanitizer = HtmlSanitizer()
-        sanitizer.stop()  # Should not raise
-
     def test_available_property_default(self):
         """Test available property defaults to False."""
         sanitizer = HtmlSanitizer()
         assert sanitizer.available is False
-
-    def test_sanitize_with_mocked_process(self):
-        """Test sanitize() with a mocked running process."""
-        import io
-        import json
-
-        sanitizer = HtmlSanitizer()
-        sanitizer._available = True
-
-        response = (
-            json.dumps(
-                {
-                    "id": 1,
-                    "html": "<p>Clean</p>",
-                    "needsPadding": False,
-                    "supportsDarkMode": True,
-                }
-            )
-            + "\n"
-        )
-
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = io.StringIO(response)
-        sanitizer._process = mock_process
-
-        result_html, needs_padding, supports_dark = sanitizer.sanitize("<p>Clean</p>")
-        assert result_html == "<p>Clean</p>"
-        assert needs_padding is False
-        assert supports_dark is True
-
-    def test_sanitize_process_died(self):
-        """Test sanitize() handles dead process gracefully."""
-        import html as html_module
-        import io
-
-        sanitizer = HtmlSanitizer()
-        sanitizer._available = True
-
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = io.StringIO("")  # EOF = process died
-
-        sanitizer._process = mock_process
-
-        with patch.object(sanitizer, "_restart"):
-            result, needs_padding, _ = sanitizer.sanitize("<p>Test</p>")
-
-        assert result == html_module.escape("<p>Test</p>")
-
-    def test_sanitize_broken_pipe(self):
-        """Test sanitize() handles BrokenPipeError."""
-        import html as html_module
-
-        sanitizer = HtmlSanitizer()
-        sanitizer._available = True
-
-        mock_process = MagicMock()
-        mock_process.stdin.write.side_effect = BrokenPipeError("broken")
-        sanitizer._process = mock_process
-
-        with patch.object(sanitizer, "_restart"):
-            result, needs_padding, _ = sanitizer.sanitize("<p>Test</p>")
-
-        assert result == html_module.escape("<p>Test</p>")
-
-    def test_sanitize_dompurify_error(self):
-        """Test sanitize() handles DOMPurify errors from worker."""
-        import html as html_module
-        import io
-        import json
-
-        sanitizer = HtmlSanitizer()
-        sanitizer._available = True
-
-        response = json.dumps({"id": 1, "error": "parse failed"}) + "\n"
-
-        mock_process = MagicMock()
-        mock_process.stdin = MagicMock()
-        mock_process.stdout = io.StringIO(response)
-        sanitizer._process = mock_process
-
-        result, needs_padding, _ = sanitizer.sanitize("<p>Test</p>")
-        assert result == html_module.escape("<p>Test</p>")
-
-    def test_kill_process(self):
-        """Test _kill_process terminates the process."""
-        sanitizer = HtmlSanitizer()
-
-        mock_process = MagicMock()
-        sanitizer._process = mock_process
-
-        sanitizer._kill_process()
-
-        mock_process.stdin.close.assert_called_once()
-        mock_process.terminate.assert_called_once()
-        assert sanitizer._process is None
 
     def test_kill_process_handles_broken_pipe(self):
         """Test _kill_process handles BrokenPipeError on stdin.close."""
@@ -162,22 +49,6 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
 
         sanitizer._kill_process()
         mock_process.terminate.assert_called_once()
-        assert sanitizer._process is None
-
-    def test_kill_process_handles_timeout(self):
-        """Test _kill_process uses kill() after wait timeout."""
-        sanitizer = HtmlSanitizer()
-
-        mock_process = MagicMock()
-        # First wait(timeout=3) times out, second wait(timeout=1) succeeds
-        mock_process.wait.side_effect = [
-            subprocess.TimeoutExpired("node", 3),
-            None,
-        ]
-        sanitizer._process = mock_process
-
-        sanitizer._kill_process()
-        mock_process.kill.assert_called_once()
         assert sanitizer._process is None
 
     def test_restart_calls_stop_and_start(self):
@@ -808,7 +679,9 @@ class TestSanitizerLifecycle(unittest.TestCase):
                     san.start()
         san.stop()
         self.assertFalse(san.available)
+        proc.stdin.close.assert_called_once()
         proc.terminate.assert_called_once()
+        self.assertIsNone(san._process)
 
     def test_kill_escalates_to_sigkill_on_timeout(self):
         """A worker that ignores terminate should be killed."""
@@ -821,6 +694,7 @@ class TestSanitizerLifecycle(unittest.TestCase):
                     san.start()
         san.stop()
         proc.kill.assert_called_once()
+        self.assertIsNone(san._process)
 
     def test_stop_without_worker_is_a_noop(self):
         """Stopping a sanitizer that never started should not raise."""
@@ -1329,24 +1203,26 @@ class TestSanitizeErrorHandling(unittest.TestCase):
     def test_unavailable_sanitizer_escapes_input(self):
         """With no worker, HTML must be escaped rather than passed through."""
         san = HtmlSanitizer()
-        result, needs_padding, dark = san.sanitize("<script>alert(1)</script>")
-        self.assertNotIn("<script>", result)
-        self.assertIn("&lt;script&gt;", result)
-        self.assertTrue(needs_padding)
-        self.assertFalse(dark)
+        result, needs_padding, dark = san.sanitize("<script>alert(1)</script><p>Hello</p>")
+        self.assertEqual(result, "&lt;script&gt;alert(1)&lt;/script&gt;&lt;p&gt;Hello&lt;/p&gt;")
+        self.assertIs(needs_padding, True)
+        self.assertIs(dark, False)
 
     def test_successful_response_is_returned(self):
         """A matching response should be returned with its flags."""
         san = HtmlSanitizer(verbose=True)
         self._ready(san, ['{"id": 1, "html": "<p>ok</p>", "needsPadding": false, "supportsDarkMode": true}\n'])
-        self.assertEqual(san.sanitize("<p>ok</p>"), ("<p>ok</p>", False, True))
+        result, needs_padding, dark = san.sanitize("<p>ok</p>")
+        self.assertEqual(result, "<p>ok</p>")
+        self.assertIs(needs_padding, False)
+        self.assertIs(dark, True)
 
     def test_worker_error_field_escapes_input(self):
         """An error from DOMPurify should fall back to escaped HTML."""
         san = HtmlSanitizer()
         self._ready(san, ['{"id": 1, "error": "jsdom exploded"}\n'])
         result, needs_padding, dark = san.sanitize("<b>hi</b>")
-        self.assertIn("&lt;b&gt;", result)
+        self.assertEqual(result, "&lt;b&gt;hi&lt;/b&gt;")
         self.assertTrue(needs_padding)
 
     def test_invalid_json_lines_are_skipped(self):
@@ -1368,7 +1244,7 @@ class TestSanitizeErrorHandling(unittest.TestCase):
         with patch.object(san, "start") as mock_start:
             result, needs_padding, dark = san.sanitize("<b>hi</b>")
         mock_start.assert_called_once()
-        self.assertIn("&lt;b&gt;", result)
+        self.assertEqual(result, "&lt;b&gt;hi&lt;/b&gt;")
 
     def test_broken_pipe_triggers_restart(self):
         """A broken stdin pipe should restart the worker and escape output."""
@@ -1378,7 +1254,7 @@ class TestSanitizeErrorHandling(unittest.TestCase):
         with patch.object(san, "start") as mock_start:
             result, _, _ = san.sanitize("<b>hi</b>")
         mock_start.assert_called_once()
-        self.assertIn("&lt;b&gt;", result)
+        self.assertEqual(result, "&lt;b&gt;hi&lt;/b&gt;")
 
     def test_timeout_triggers_restart(self):
         """A worker that never answers should time out and be restarted."""
