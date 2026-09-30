@@ -145,18 +145,19 @@ def test_message_menu_contains_trash_or_restore_and_permanent_delete(reader, tra
     assert not toolbar.xpath("./button")
     assert not toolbar.xpath('./span[@class="ownmail-reader-action-divider"]')
     menu = toolbar.find("details")
-    action, label = ("restoreEmail", "Restore from trash") if trashed else ("trashEmail", "Move to trash")
-    buttons = menu.xpath(f".//button[@onclick=\"{action}('message')\"]")
+    action, label = ("restore", "Restore from trash") if trashed else ("trash", "Move to trash")
+    buttons = menu.xpath(f'.//button[@data-reader-action="{action}"]')
+    assert toolbar.get("data-email-id") == "message"
     assert len(buttons) == 1
     button = buttons[0]
     assert button.get("aria-label") == button.get("title") == label
     assert button.text_content().strip() == label
     assert "data-message-action" in button.attrib
-    permanent_delete = menu.xpath(".//button[@onclick=\"deleteForever('message')\"]")
+    permanent_delete = menu.xpath('.//button[@data-reader-action="delete-forever"]')
     assert bool(permanent_delete) is trashed
 
 
-_POSITION_TEMPLATE = Path(__file__).parents[1] / "ownmail" / "templates" / "_result_state.html"
+_POSITION_SCRIPT = Path(__file__).parents[1] / "ownmail" / "static" / "result-state.js"
 _POSITION_HARNESS = """
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
@@ -229,7 +230,7 @@ def run_position_script(assertions):
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js not available")
-    source = "const SOURCE = " + json.dumps(html.fragment_fromstring(_POSITION_TEMPLATE.read_text()).text) + ";\n"
+    source = "const SOURCE = " + json.dumps(_POSITION_SCRIPT.read_text()) + ";\n"
     subprocess.run([node, "-e", source + _POSITION_HARNESS + assertions], check=True, capture_output=True, text=True)
 
 
@@ -346,13 +347,12 @@ const scrolls = [];
 const scriptErrors = [];
 const virtualConsole = new VirtualConsole();
 virtualConsole.on('jsdomError', error => scriptErrors.push(error.message));
-class UnavailableResources extends ResourceLoader {
-    fetch() { return null; }
-}
+__SCRIPT_LOADER__
+(async () => {
 const dom = new JSDOM(PAGE, {
     url: 'http://localhost' + PATH,
     runScripts: 'dangerously',
-    resources: new UnavailableResources(),
+    resources: new LocalScripts(),
     virtualConsole,
     beforeParse(window) {
         window.matchMedia = () => ({ matches: false, addEventListener() {} });
@@ -371,6 +371,7 @@ const dom = new JSDOM(PAGE, {
         };
     }
 });
+await new Promise(resolve => dom.window.addEventListener('load', resolve));
 assert.deepEqual(scriptErrors, []);
 assert.deepEqual(scrolls, [{
     x: 0, y: 648, readyState: 'loading', rows: 2,
@@ -380,8 +381,11 @@ assert.equal(dom.window.sessionStorage.getItem('ownmail-result-position'), null)
 dom.window.dispatchEvent(new dom.window.Event('pageshow'));
 assert.equal(scrolls.length, 1);
 dom.window.close();
+})().catch(error => { console.error(error); process.exitCode = 1; });
 """
-    script = script.replace("PAGE", json.dumps(page)).replace("PATH", json.dumps(path))
+    script = test_ui_shell.with_local_scripts(
+        script.replace("PAGE", json.dumps(page)).replace("PATH", json.dumps(path))
+    )
     result = subprocess.run(["node", "-e", script], cwd=shell_browser, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
 
@@ -396,10 +400,12 @@ def run_fit_browser(reader, browser_dir, auto_scale, width, assertions):
     page = client.get("/email/message").data.decode()
     script = """
 const assert = require('node:assert/strict');
-const { JSDOM } = require('jsdom');
+const { JSDOM, ResourceLoader } = require('jsdom');
+__SCRIPT_LOADER__
+(async () => {
 let contentWidth = WIDTH;
 const dom = new JSDOM(PAGE, {
-    url: 'http://localhost/email/message', runScripts: 'dangerously',
+    url: 'http://localhost/email/message', runScripts: 'dangerously', resources: new LocalScripts(),
     beforeParse(window) {
         window.matchMedia = () => ({ matches: false, addEventListener() {} });
         Object.defineProperty(window.HTMLElement.prototype, 'clientWidth', {
@@ -410,6 +416,7 @@ const dom = new JSDOM(PAGE, {
         });
     }
 });
+await new Promise(resolve => dom.window.addEventListener('load', resolve));
 const { window } = dom;
 const { document } = window;
 const content = document.getElementById('ownmail-email-content');
@@ -418,8 +425,11 @@ const button = document.getElementById('ownmail-fit-message');
 const menu = document.querySelector('.ownmail-email-menu');
 ASSERTIONS
 dom.window.close();
+})().catch(error => { console.error(error); process.exitCode = 1; });
 """
-    script = script.replace("WIDTH", str(width)).replace("PAGE", json.dumps(page)).replace("ASSERTIONS", assertions)
+    script = test_ui_shell.with_local_scripts(
+        script.replace("WIDTH", str(width)).replace("PAGE", json.dumps(page)).replace("ASSERTIONS", assertions)
+    )
     result = subprocess.run(["node", "-e", script], cwd=browser_dir, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
 

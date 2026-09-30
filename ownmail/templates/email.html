@@ -4,7 +4,7 @@
 {% block body_class %}ownmail-reader-page{% endblock %}
 
 {% block content %}
-    <div class="ownmail-reader-actions">
+    <div class="ownmail-reader-actions" id="ownmail-reader-actions" data-email-id="{{ email_id }}" data-sender="{{ sender_email }}" data-reload-url="{{ url_for('view_email', email_id=email_id, return_to=back_url) }}">
         <a class="ownmail-back-to-results" id="ownmail-back-to-results" href="{{ back_url or ('/trash' if is_trashed else '/search') }}" title="Back to results">
             {{ icon('arrow-left') }}<span class="ownmail-sr-only">Back to results</span>
         </a>
@@ -26,17 +26,17 @@
                 <button type="button" id="menu-block-images" data-images-url="{{ url_for('view_email', email_id=email_id, images='block', return_to=back_url) }}">Block remote content</button>
                 {% endif %}
                 {% if sender_email %}
-                <button type="button" id="menu-trust-sender" {% if sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="trustSender()">Always trust this sender</button>
-                <button type="button" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} data-message-action onclick="untrustSender()">Untrust this sender</button>
+                <button type="button" id="menu-trust-sender" {% if sender_is_trusted %}style="display: none;"{% endif %} data-message-action data-reader-action="trust">Always trust this sender</button>
+                <button type="button" id="menu-untrust-sender" {% if not sender_is_trusted %}style="display: none;"{% endif %} data-message-action data-reader-action="untrust">Untrust this sender</button>
                 {% endif %}
                 {% endif %}
                 {% if not cached_view %}
                 <hr class="ownmail-email-menu-divider">
                 {% if is_trashed %}
-                <button type="button" data-message-action onclick="restoreEmail('{{ email_id }}')" aria-label="Restore from trash" title="Restore from trash">{{ icon('refresh') }}<span>Restore from trash</span></button>
-                <button type="button" class="ownmail-menu-danger" data-message-action onclick="deleteForever('{{ email_id }}')">Delete forever</button>
+                <button type="button" data-message-action data-reader-action="restore" aria-label="Restore from trash" title="Restore from trash">{{ icon('refresh') }}<span>Restore from trash</span></button>
+                <button type="button" class="ownmail-menu-danger" data-message-action data-reader-action="delete-forever">Delete forever</button>
                 {% else %}
-                <button type="button" class="ownmail-menu-danger" data-message-action onclick="trashEmail('{{ email_id }}')" aria-label="Move to trash" title="Move to trash">{{ icon('trash') }}<span>Move to trash</span></button>
+                <button type="button" class="ownmail-menu-danger" data-message-action data-reader-action="trash" aria-label="Move to trash" title="Move to trash">{{ icon('trash') }}<span>Move to trash</span></button>
                 {% endif %}
                 {% endif %}
             </div>
@@ -46,18 +46,18 @@
         <header class="ownmail-email-header">
             <h2 class="ownmail-reader-subject">{{ subject or '(No subject)' }}</h2>
             <div class="ownmail-reader-byline">
-                <span class="ownmail-reader-sender">{% if sender_search_url %}<a href="{{ sender_search_url }}" title="{{ sender_email or sender_name or sender }}" onclick="showLoading(event)">{{ sender_name or sender_email or sender }}</a>{% else %}{{ sender or '(Unknown sender)' }}{% endif %}</span>
+                <span class="ownmail-reader-sender">{% if sender_search_url %}<a href="{{ sender_search_url }}" title="{{ sender_email or sender_name or sender }}" data-show-loading>{{ sender_name or sender_email or sender }}</a>{% else %}{{ sender or '(Unknown sender)' }}{% endif %}</span>
                 <button type="button" class="ownmail-reader-date" id="ownmail-message-details-toggle" aria-expanded="false" aria-controls="ownmail-message-metadata" aria-label="Message details: {{ date or 'No date' }}" title="Show message details">
                     <span>{{ date or 'No date' }}</span><span class="ownmail-metadata-chevron">{{ icon('chevron-right', 12) }}</span>
                 </button>
             </div>
             <dl class="ownmail-message-metadata" id="ownmail-message-metadata" hidden>
                 <dt>From</dt>
-                <dd>{% if sender_name and sender_email %}{{ sender_name }} &lt;<a href="{{ sender_search_url }}" onclick="showLoading(event)">{{ sender_email }}</a>&gt;{% elif sender_search_url %}<a href="{{ sender_search_url }}" onclick="showLoading(event)">{{ sender_email or sender_name or sender }}</a>{% else %}{{ sender }}{% endif %}</dd>
+                <dd>{% if sender_name and sender_email %}{{ sender_name }} &lt;<a href="{{ sender_search_url }}" data-show-loading>{{ sender_email }}</a>&gt;{% elif sender_search_url %}<a href="{{ sender_search_url }}" data-show-loading>{{ sender_email or sender_name or sender }}</a>{% else %}{{ sender }}{% endif %}</dd>
                 <dt>To</dt>
                 <dd>{% for rcpt in recipients_parsed %}
                     {% if not loop.first %}, {% endif %}
-                    {% if rcpt.name and rcpt.email %}{{ rcpt.name }} &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ rcpt.email }}</a>&gt;{% elif rcpt.email %}<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" onclick="showLoading(event)">{{ rcpt.email }}</a>{% else %}{{ rcpt.raw }}{% endif %}
+                    {% if rcpt.name and rcpt.email %}{{ rcpt.name }} &lt;<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" data-show-loading>{{ rcpt.email }}</a>&gt;{% elif rcpt.email %}<a href="/search?q=to:{{ rcpt.email | urlencode }}&sort=date_desc" data-show-loading>{{ rcpt.email }}</a>{% else %}{{ rcpt.raw }}{% endif %}
                 {% endfor %}</dd>
                 <dt>Date</dt>
                 <dd>{{ date }}</dd>
@@ -65,7 +65,7 @@
                 <dt>Labels</dt>
                 <dd class="ownmail-labels">
                     {% for label in labels %}
-                    <a href="{{ label.url }}" class="ownmail-label ownmail-clickable-label" title="{{ label.raw | join(', ') }}" onclick="showLoading(event)">{{ label.name }}</a>
+                    <a href="{{ label.url }}" class="ownmail-label ownmail-clickable-label" title="{{ label.raw | join(', ') }}" data-show-loading>{{ label.name }}</a>
                     {% endfor %}
                 </dd>
                 {% endif %}
@@ -116,103 +116,20 @@
             <div class="ownmail-image-banner-buttons">
                 <button type="button" id="load-images-btn" data-images-url="{{ url_for('view_email', email_id=email_id, images='load', return_to=back_url) }}">Load remote content</button>
                 {% if sender_email and not sender_is_trusted %}
-                <button class="ownmail-trust-btn" data-message-action onclick="trustSender()">Always trust this sender</button>
+                <button class="ownmail-trust-btn" data-message-action data-reader-action="trust">Always trust this sender</button>
                 {% endif %}
             </div>
         </div>
         {% endif %}
         {% if has_remote_content %}
-        <script>
-        var senderEmail = {{ sender_email | tojson }};
-
-        // The response's CSP decides what the browser may request from other
-        // hosts, so loading or blocking remote content reloads the message.
-        document.querySelectorAll('[data-images-url]').forEach(function(button) {
-            button.addEventListener('click', function() {
-                showLoading();
-                location.replace(button.getAttribute('data-images-url'));
-            });
-        });
-
-        function trustSender() {
-            ownmailMessageAction({
-                url: '/trust-sender',
-                request: {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'email=' + encodeURIComponent(senderEmail)},
-                pending: 'Trusting sender…',
-                success: 'Sender trusted.',
-                failure: 'Could not trust this sender.',
-                navigate: function() { location.replace({{ url_for('view_email', email_id=email_id, return_to=back_url) | tojson }}); }
-            });
-        }
-
-        function untrustSender() {
-            ownmailMessageAction({
-                url: '/untrust-sender',
-                request: {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'email=' + encodeURIComponent(senderEmail)},
-                pending: 'Removing trusted sender…',
-                success: 'Sender removed from trusted senders.',
-                failure: 'Could not remove this trusted sender.',
-                onSuccess: function() {
-                    document.getElementById('menu-trust-sender').style.display = '';
-                    document.getElementById('menu-untrust-sender').style.display = 'none';
-                }
-            });
-        }
-        </script>
+        <script src="/static/email-remote-content.js"></script>
         {% endif %}
 
         {% if body_html %}
-            <div id="ownmail-email-viewport">
+            <div id="ownmail-email-viewport" data-auto-scale="{{ 'true' if auto_scale else 'false' }}">
                 <div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}"{{ body_attributes | default({}) | xmlattr }}>{{ body_html | safe }}</div>
             </div>
-            <script>
-            (function() {
-                var viewport = document.getElementById('ownmail-email-viewport');
-                var content = document.getElementById('ownmail-email-content');
-                var fitButton = document.getElementById('ownmail-fit-message');
-                var fitToWidth = {{ auto_scale | tojson }};
-
-                function scaleToFit() {
-                    // Measure the authored width before applying the reader's zoom.
-                    var scrollLeft = viewport.scrollLeft;
-                    content.style.zoom = '';
-                    content.style.overflow = 'visible';
-                    viewport.style.minHeight = '';
-                    viewport.style.overflow = 'clip visible';
-                    void content.offsetWidth;
-
-                    var cw = viewport.clientWidth;
-                    var sw = viewport.scrollWidth;
-                    var wide = sw > cw + 1 && cw > 0;
-                    fitButton.hidden = !wide;
-                    fitButton.textContent = fitToWidth ? 'Show actual size' : 'Fit to width';
-
-                    if (wide && fitToWidth) {
-                        var scale = cw / sw;
-                        content.style.zoom = scale;
-                    } else if (wide) {
-                        viewport.style.overflow = 'auto hidden';
-                    }
-
-                    // Reserve overflow space without changing sender percentage heights.
-                    if (viewport.scrollHeight > viewport.clientHeight) {
-                        var borderHeight = viewport.offsetHeight - viewport.clientHeight;
-                        viewport.style.minHeight = (viewport.scrollHeight + borderHeight) + 'px';
-                    }
-                    if (wide && !fitToWidth) viewport.scrollLeft = scrollLeft;
-                }
-
-                fitButton.addEventListener('click', function() {
-                    fitToWidth = !fitToWidth;
-                    scaleToFit();
-                });
-                scaleToFit();
-                content.addEventListener('load', scaleToFit, true);
-                window.addEventListener('load', scaleToFit);
-                window.addEventListener('resize', scaleToFit);
-                if (document.fonts) document.fonts.ready.then(scaleToFit);
-            })();
-            </script>
+            <script src="/static/email-fit.js"></script>
         {% else %}
             <div id="ownmail-email-content" class="ownmail-email-content-plain">
                 <pre class="ownmail-email-body">{{ body | safe }}</pre>
@@ -247,124 +164,6 @@
     </article>
 
 <script src="{{ url_for('static', filename='email-contrast.js') }}"></script>
-<script>
-document.getElementById('ownmail-message-details-toggle').addEventListener('click', function() {
-    var expanded = this.getAttribute('aria-expanded') !== 'true';
-    this.setAttribute('aria-expanded', String(expanded));
-    this.title = expanded ? 'Hide message details' : 'Show message details';
-    document.getElementById('ownmail-message-metadata').hidden = !expanded;
-});
-
-{% if active %}
-(function() {
-    var toggle = document.getElementById('ownmail-active-status-toggle');
-    var panel = document.getElementById('ownmail-active-status');
-    var menu = toggle.closest('details');
-    toggle.addEventListener('click', function() {
-        panel.hidden = false;
-        toggle.setAttribute('aria-expanded', 'true');
-        menu.open = false;
-        panel.focus();
-    });
-    function closeStatus() {
-        panel.hidden = true;
-        toggle.setAttribute('aria-expanded', 'false');
-        menu.querySelector('summary').focus();
-    }
-    document.getElementById('ownmail-active-status-close').addEventListener('click', closeStatus);
-    panel.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            closeStatus();
-        }
-    });
-})();
-{% endif %}
-
-var originalEmailStyles = new WeakMap();
-function applyEmailTheme(siteIsDark) {
-    var area = document.querySelector('.ownmail-email-content-area');
-    if (!area) return;
-    var supportsDark = area.getAttribute('data-supports-dark') === 'true';
-    area.classList.toggle('ownmail-email-dark', siteIsDark && supportsDark);
-
-    // Override @media (prefers-color-scheme: dark) blocks in email CSS
-    // so they follow the ownmail theme, not the OS preference.
-    if (!supportsDark) return;
-    var content = document.getElementById('ownmail-email-content');
-    if (!content) return;
-    var styles = content.querySelectorAll('style');
-    for (var i = 0; i < styles.length; i++) {
-        var el = styles[i];
-        // Save original CSS on first call
-        if (!originalEmailStyles.has(el)) originalEmailStyles.set(el, el.textContent);
-        var original = originalEmailStyles.get(el);
-        if (original.indexOf('prefers-color-scheme') === -1) continue;
-        var updated;
-        if (siteIsDark) {
-            // Dark mode: unwrap @media dark blocks so rules always apply
-            updated = original.replace(
-                /@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}/gi,
-                '$1'
-            );
-        } else {
-            // Light mode: remove @media dark blocks entirely
-            updated = original.replace(
-                /@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gi,
-                ''
-            );
-        }
-        if (el.textContent !== updated) el.textContent = updated;
-    }
-}
-var emailContrast = window.ownmailEmailContrast && window.ownmailEmailContrast(
-    document.getElementById('ownmail-email-content'), applyEmailTheme
-);
-// Called by base.html whenever the app theme changes.
-function updateEmailDarkMode(siteIsDark) {
-    if (emailContrast) emailContrast.update(siteIsDark);
-    else applyEmailTheme(siteIsDark);
-}
-// Apply on load
-(function() {
-    var pref = localStorage.getItem('ownmail-theme') || 'auto';
-    var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    updateEmailDarkMode(dark);
-})();
-
-function trashEmail(emailId) {
-    if (!confirm('Move this email to trash?')) return;
-    ownmailMessageAction({
-        url: '/trash/' + emailId,
-        request: {method: 'POST'},
-        pending: 'Moving message to trash…',
-        success: 'Message moved to trash.',
-        failure: 'Could not move this message to trash.',
-        navigate: function() { document.getElementById('ownmail-back-to-results').click(); }
-    });
-}
-function restoreEmail(emailId) {
-    ownmailMessageAction({
-        url: '/restore/' + emailId,
-        request: {method: 'POST'},
-        pending: 'Restoring message…',
-        success: 'Message restored from trash.',
-        failure: 'Could not restore this message.',
-        navigate: function() { location.href = location.href; }
-    });
-}
-function deleteForever(emailId) {
-    if (!confirm('Permanently delete this email? This cannot be undone.')) return;
-    ownmailMessageAction({
-        url: '/delete-forever',
-        request: {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'ids=' + encodeURIComponent(emailId)},
-        pending: 'Deleting message forever…',
-        success: 'Message deleted forever.',
-        failure: 'Could not delete this message forever.',
-        navigate: function() { window.location.href = '/trash'; }
-    });
-}
-</script>
+<script src="/static/email-reader.js"></script>
 <script src="{{ url_for('static', filename='label-editor.js') }}"></script>
 {% endblock %}

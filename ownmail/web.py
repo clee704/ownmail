@@ -34,9 +34,10 @@ from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_w
 # While remote content is blocked, the page loads only from the archive's host
 # and data: URIs, so the browser refuses every remote image, font, stylesheet,
 # audio and video, whichever HTML or CSS feature asks for it. data: keeps
-# inline cid: images; 'unsafe-inline' keeps the reader's inline scripts and
-# the message's styles.
-IMAGE_BLOCKING_CSP = "default-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+# inline cid: images; style-src 'unsafe-inline' keeps the message's styles.
+# Loaded messages restrict scripts without limiting other remote content.
+MESSAGE_CSP = "script-src 'self'"
+IMAGE_BLOCKING_CSP = f"default-src 'self' data:; {MESSAGE_CSP}; style-src 'self' 'unsafe-inline'"
 
 # Shown in place of a blocked <img> so it keeps its authored size instead of
 # collapsing to its alt text
@@ -1609,8 +1610,7 @@ def create_app(
                 cached_view=cached_view,
             )
         )
-        if images_blocked:
-            response.headers["Content-Security-Policy"] = IMAGE_BLOCKING_CSP
+        response.headers["Content-Security-Policy"] = IMAGE_BLOCKING_CSP if images_blocked else MESSAGE_CSP
         return response
 
     @app.route("/labels/<email_id>", methods=["GET", "POST"])
