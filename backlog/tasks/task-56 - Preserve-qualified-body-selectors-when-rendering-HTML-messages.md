@@ -1,11 +1,11 @@
 ---
 id: TASK-56
 title: Preserve qualified body selectors when rendering HTML messages
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC2
 created_date: '2026-09-13 06:30'
-updated_date: '2026-09-30 12:08'
+updated_date: '2026-09-30 12:16'
 labels: []
 dependencies: []
 priority: medium
@@ -53,4 +53,12 @@ All three independent-review findings are now resolved in the revised implementa
 Revision evidence: all 116 sanitizer tests and all 22 actual-route body-style browser cases pass. The new predicate tests first reproduced 50 failing worker subtests with 106 controls passing; all eight new predicate browser cases also fail against the preserved pre-fix worker and pass on the revision. Earlier core, inline-hook and malformed-selector red evidence remains preserved. Original-browser comparisons verify absence/null behavior, ASCII versus NBSP tokens, empty operands, case rules, syntax validity and unchanged outside controls. Repository Ruff check/format-check, deptry and diff checks pass. Fresh independent Astra Ultra re-review resolved all three P2s and found no new correctness/security issue; it reran the original 85 probes and passed 80 additional asserted boundary cases. Author self-review against the original TASK-119 base confirms only the approved four files changed. The full pre-push gate remains pending.
 
 Normative matching references: https://html.spec.whatwg.org/multipage/semantics-other.html#case-sensitivity-of-selectors and https://www.w3.org/TR/selectors-4/#attribute-selectors . Browser evidence independently verifies the implemented cases.
+
+Final required pre-push gate passed on committed implementation 8821187b97ef151d8ef98239e0c16668f1bebd39: 4,065 tests passed, one pre-existing TASK-13 expected failure, no skips, and 96.65957098411658% combined statement/branch coverage (95% required). All 13 mandatory Chromium launch/close probes passed without timeout; the runtime-only observer and maxfail=1 left complete test selection, assertions, thresholds and timeouts unchanged. Ruff check, format-check, deptry, hygiene and commit-message hooks passed. The fresh independent Astra Ultra reviewer verified the committed worker/test hashes against the reviewed full diff, confirmed all three P2 findings resolved and found no new correctness/security issue. Author self-review also passed against the original TASK-119 base. Both acceptance criteria are verified through the actual worker and synthetic message route/browser. Browser validation has exited and its interval is released. Only this task ledger changes after the validated implementation; unsupported escaped/dynamic root selectors retain their prior fallback. No main/integration/publication, real mailbox or security-setting changes were made. Task complete; final closure is a ledger-only commit.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Qualified literal body class, ID and attribute selectors now retain their intended scoped styling after body extraction, including specificity and source matching semantics. Invalid/nonmatching predicates remain inactive and styles cannot reach the app shell. TASK-119 style-text protections and existing sanitizer filters remain intact. Full gate: 4,065 passed, one existing expected failure, 96.66% coverage; mandatory browser tests and independent security/correctness review passed.
+<!-- SECTION:FINAL_SUMMARY:END -->
