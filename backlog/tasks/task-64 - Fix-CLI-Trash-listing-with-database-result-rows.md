@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-09-13 08:07'
-updated_date: '2026-09-30 11:45'
+updated_date: '2026-09-30 11:51'
 labels:
   - cli
 dependencies: []
@@ -22,8 +22,8 @@ The trash command unpacks six values from get_trashed_emails, although the datab
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The trash command lists a nonempty Trash using rows returned by ArchiveDatabase, including the correct trash date, sender, and subject.
-- [ ] #2 A regression test uses the real database row shape and fails against the old unpacking.
+- [x] #1 The trash command lists a nonempty Trash using rows returned by ArchiveDatabase, including the correct trash date, sender, and subject.
+- [x] #2 A regression test uses the real database row shape and fails against the old unpacking.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -43,5 +43,9 @@ Premise and worth verified before claim on 1126bfa054c47c10d431536496a4a06fe7e56
 
 The manager explicitly assigned TASK-64 after TASK-112's dependency on blocked TASK-111 and TASK-9's unresolved export scope were identified. TASK-64 itself is To Do/unassigned with no dependencies at claim. Owned scope is only cmd_trash listing unpacking in ownmail/cli.py, existing TestCmdTrash listing tests in tests/test_cli.py, and this ledger. All fixture data is synthetic; no physical email files or real trash actions are needed. TASK-56 retains the browser interval, and blocked TASK-37/95/111/125 plus integration/publication remain outside scope.
 
-Next action: commit this task-only claim and plan with normal hooks before editing tests or production code.
+Task-only claim/plan checkpoint 1503a65583aa391226bccf1bbcbd878fc7a390b3 was committed with normal hooks before any test or production edits. The existing TestCmdTrash listing test now obtains actual nine-field rows from a disposable ArchiveDatabase, with distinct message/trash dates, sender, subject, snippet and attachment flag. The other nonempty listing mocks now use the same row contract; placeholder checks remain, pagination verifies 50 displayed rows and get_trashed_emails(limit=50), and listing asserts deletion/expiration were not called. Against the unchanged production code, these tests produced three failures and three passes. The one-line unpacking fix then made all six cases pass. All 216 retained CLI/database tests passed; Ruff check, format-check, deptry and whitespace checks passed. The formatter only wrapped the owned test changes.
+
+Author review verified that production code differs from the fixed review base only in cmd_trash's listing unpacking. The existing nine-field contract matches the web Trash reader, and output formatting, limits, placeholders, empty-list handling and destructive-action dispatch are unchanged. Test changes are contained within TestCmdTrash. Fresh independent Astra Ultra review found no correctness findings, blocking test gaps or scope/approval issue. All fixtures were synthetic, with no physical email files or real account operations. A fresh private development environment and task-specific runtime directories are prepared. The complete required mandatory-browser pre-push gate remains unrun while TASK-56 owns Chromium, so the task remains In Progress despite verified acceptance behavior.
+
+Next action: run the prepared complete mandatory-browser pre-push gate after TASK-56 releases Chromium; record the actual aggregate result and close with normal hooks only when that gate passes.
 <!-- SECTION:NOTES:END -->

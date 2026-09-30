@@ -837,7 +837,7 @@ def cmd_trash(archive: EmailArchive, empty: bool = False, expire: bool = False) 
     print(f"\nTrash ({trash_count} email(s)):")
     print("-" * 70)
     for row in rows:
-        email_id, filename, subject, sender, trashed_at, original_filename = row
+        email_id, filename, subject, sender, date_str, snippet, trashed_at, original_filename, has_attachments = row
         subject = subject or "(No subject)"
         sender = sender or "(Unknown)"
         print(f"  {trashed_at[:10]}  {sender[:25]:<25}  {subject[:40]}")

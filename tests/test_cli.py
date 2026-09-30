@@ -1365,23 +1365,44 @@ class TestCmdTrash:
 
         assert "Trash is empty" in capsys.readouterr().out
 
-    def test_lists_trashed_emails(self, capsys):
+    def test_lists_trashed_emails(self, temp_dir, capsys):
         """Trashed emails should be listed with date, sender and subject."""
+        import sqlite3
+
         from ownmail.cli import cmd_trash
 
         archive = self._archive()
-        archive.db.get_trashed_emails.return_value = [
-            ("id1", "f1.eml", "Hello there", "someone@example.com", "2024-03-04T05:06:07", "o1.eml"),
-        ]
-        archive.db.get_trash_count.return_value = 1
+        archive.db = ArchiveDatabase(temp_dir)
+        email_id = _eid("trash-listing")
+        archive.db.mark_downloaded(email_id, "trash-listing", "original.eml")
+        archive.db.index_email(
+            email_id,
+            "Hello there",
+            "someone@example.com",
+            "reader@example.com",
+            "2024-01-15",
+            "Body snippet",
+            "report.pdf",
+        )
+        with sqlite3.connect(archive.db.db_path) as conn:
+            conn.execute(
+                "UPDATE emails SET trashed_at = ?, original_filename = filename, filename = ? WHERE email_id = ?",
+                ("2025-03-04T05:06:07", "trash/message.eml", email_id),
+            )
+        rows = archive.db.get_trashed_emails()
+        assert len(rows) == 1
+        assert len(rows[0]) == 9
 
         cmd_trash(archive)
 
         out = capsys.readouterr().out
         assert "Trash (1 email(s))" in out
-        assert "2024-03-04" in out
+        assert "2025-03-04" in out
+        assert "2024-01-15" not in out
         assert "someone@example.com" in out
         assert "Hello there" in out
+        archive.empty_trash.assert_not_called()
+        archive.auto_expire_trash.assert_not_called()
 
     def test_missing_subject_and_sender_get_placeholders(self, capsys):
         """Rows with no subject/sender should render placeholders."""
@@ -1389,7 +1410,7 @@ class TestCmdTrash:
 
         archive = self._archive()
         archive.db.get_trashed_emails.return_value = [
-            ("id1", "f1.eml", None, None, "2024-03-04T05:06:07", "o1.eml"),
+            ("id1", "f1.eml", None, None, "2024-01-15", "Body snippet", "2025-03-04T05:06:07", "o1.eml", 0),
         ]
         archive.db.get_trash_count.return_value = 1
 
@@ -1405,13 +1426,27 @@ class TestCmdTrash:
 
         archive = self._archive()
         archive.db.get_trashed_emails.return_value = [
-            (f"id{i}", f"f{i}.eml", "Subj", "a@example.com", "2024-03-04T05:06:07", f"o{i}.eml") for i in range(50)
+            (
+                f"id{i}",
+                f"f{i}.eml",
+                "Subj",
+                "a@example.com",
+                "2024-01-15",
+                "Body snippet",
+                "2025-03-04T05:06:07",
+                f"o{i}.eml",
+                0,
+            )
+            for i in range(50)
         ]
         archive.db.get_trash_count.return_value = 63
 
         cmd_trash(archive)
 
-        assert "... and 13 more" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "... and 13 more" in out
+        assert out.count("2025-03-04") == 50
+        archive.db.get_trashed_emails.assert_called_once_with(limit=50)
 
 
 class TestMainServeCommand:
