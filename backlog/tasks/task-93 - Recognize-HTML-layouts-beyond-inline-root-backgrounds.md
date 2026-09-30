@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-15 02:56'
-updated_date: '2026-09-30 12:43'
+updated_date: '2026-09-30 12:45'
 labels:
   - ui
 dependencies: []
@@ -49,4 +49,6 @@ Red evidence on the unchanged worker: all five requested defects reproduce in ac
 Fresh independent Astra Ultra review requested corrections before final validation: a combinatorial descendant matcher (719-byte input exceeded a six-second external probe while base completed in 0.309 seconds), uncertain modern/clip/masked paint, hidden/zero-sized content, competing image/table regions and uppercase CSS keywords. Author review additionally found sender BODY attributes affecting ephemeral matching, non-CSS style types and escaped declaration ambiguity. Regression evidence is preserved. Corrections memoize element/selector states, bound selector proof to the actual reader root, remove discarded BODY attributes from the disposable projection, ignore non-CSS style blocks, normalize supported keywords and default uncertain paint/visibility/structure to padding. Source is stabilized for independent re-review; no findings are claimed closed until that review returns.
 
 Current focused validation: 120 sanitizer tests pass, including all exact task cases, returned-markup assertions, retained TASK-56/TASK-119 tests, review regressions and a bounded subprocess performance regression. Node syntax, Ruff check, Ruff format-check, deptry and diff checks pass. All task acceptance criteria remain unchecked pending green browser geometry and full required pre-push validation. Next action: finish independent re-review and checkpoint the implementation with normal hooks, then run green rendered/full gates after the coordinated Chromium interval is available. No integration, publication or real mailbox/settings operations.
+
+Independent Astra Ultra re-review passed on implementation checkpoint 4213693f9c544b3381220a4d31069cf46140b3cb: all five findings resolved, no open correctness/UI issue. Fifty-four independent probes pass; the previous matcher timeout reproduction now completes in 0.216 seconds. All 54 differential comparisons preserve byte-identical sanitized HTML and unchanged dark-mode metadata; TASK-56/TASK-119 protections remain unchanged. Reviewed worker SHA-256: d665180fd6d20fb89155ada950e68fdba802266beaa2faa6a613de4f67ba66e9. Author self-review and normal checkpoint commit hooks also pass. Chromium process verification found no task-owned process; the interval is released for TASK-115. Remaining prerequisite: coordinated browser availability for green reader-spacing checks and the full mandatory pre-push gate; no acceptance criterion or Done status is claimed yet. No new design-policy blocker. Next action: resume rendered validation on this clean checkpoint after TASK-115 exits.
 <!-- SECTION:NOTES:END -->
