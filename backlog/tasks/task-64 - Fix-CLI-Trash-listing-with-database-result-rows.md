@@ -1,10 +1,11 @@
 ---
 id: TASK-64
 title: Fix CLI Trash listing with database result rows
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - Ownmail IC1
 created_date: '2026-09-13 08:07'
-updated_date: '2026-09-26 02:24'
+updated_date: '2026-09-30 11:45'
 labels:
   - cli
 dependencies: []
@@ -24,3 +25,23 @@ The trash command unpacks six values from get_trashed_emails, although the datab
 - [ ] #1 The trash command lists a nonempty Trash using rows returned by ArchiveDatabase, including the correct trash date, sender, and subject.
 - [ ] #2 A regression test uses the real database row shape and fails against the old unpacking.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Claim TASK-64 on isolated branch fix/cli-trash-listing-rows from clean tested review base 1126bfa054c47c10d431536496a4a06fe7e568b0. Commit this task-only plan with normal hooks before changing code or tests; retain this review base for final review.
+2. Extend the existing TestCmdTrash listing regression to use ArchiveDatabase rows from a disposable synthetic database, with distinct message and trash dates and populated metadata/attachment flag. Preserve a failing baseline against the six-field unpacking. Correct the other existing listing mocks to the documented nine-field row shape and retain placeholder, truncation and 50-row pagination assertions.
+3. Change only cmd_trash's listing unpacking to consume the existing nine-field database contract and display trashed_at. Preserve metadata formatting, empty-list output, result limit and remainder notice. Do not change database/schema or trash, delete, expire, restore, provider, credential or sanitizer behavior.
+4. Run focused and retained CLI/database checks with private runtime fixtures, Ruff check and format-check, deptry and author review. Review the complete task diff against the fixed base; use Astra Ultra review support if useful. Verify listing cannot invoke deletion/expiration and that the regression fails on the original code.
+5. Preserve a reviewed local implementation checkpoint, then run the complete required mandatory-browser pre-push gate after TASK-56 releases Chromium. Keep the existing coverage floor, test selection, assertions and timeouts. Close the task only after required checks pass, with accurate ledger evidence and normal hooks. No main changes, integration, rebase/merge, publication or next task.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Premise and worth verified before claim on 1126bfa054c47c10d431536496a4a06fe7e568b0: the actual ArchiveDatabase.get_trashed_emails returns nine fields, but cmd_trash's nonempty listing unpacks six and raises ValueError. A disposable synthetic database reproduced the crash with different message and trash dates, a subject/sender/snippet and an attachment flag; listing left database bytes unchanged and invoked neither deletion nor expiration. The three existing nonempty listing tests hide the mismatch by supplying six-field mock tuples. The web Trash reader already consumes the correct nine-field contract, so no database API or schema change is needed. Independent Astra Ultra preflight agrees this is a bounded ordinary fix with no unresolved owner-policy or STOP-list decision.
+
+The manager explicitly assigned TASK-64 after TASK-112's dependency on blocked TASK-111 and TASK-9's unresolved export scope were identified. TASK-64 itself is To Do/unassigned with no dependencies at claim. Owned scope is only cmd_trash listing unpacking in ownmail/cli.py, existing TestCmdTrash listing tests in tests/test_cli.py, and this ledger. All fixture data is synthetic; no physical email files or real trash actions are needed. TASK-56 retains the browser interval, and blocked TASK-37/95/111/125 plus integration/publication remain outside scope.
+
+Next action: commit this task-only claim and plan with normal hooks before editing tests or production code.
+<!-- SECTION:NOTES:END -->
