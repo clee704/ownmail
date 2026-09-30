@@ -5,14 +5,22 @@ import json
 import re
 from collections import Counter
 from email.parser import Parser
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import HttpMockSequence
 
 from ownmail.providers.gmail import GmailProvider
+
+
+@pytest.fixture(autouse=True)
+def batch_retry_sleep(monkeypatch):
+    sleep = MagicMock()
+    monkeypatch.setattr("time.sleep", sleep)
+    return sleep
 
 
 class GmailTransport:
@@ -41,6 +49,8 @@ class GmailTransport:
         self.requests = Counter()
         self.batch_sizes = []
         self.batch_formats = Counter()
+        self.batch_members = []
+        self.member_requests = Counter()
         self.errors = {}
         self.omitted = set()
         self.fail_batch = None
@@ -91,6 +101,7 @@ class GmailTransport:
             if len(self.batch_sizes) == self.fail_batch:
                 raise self.failure
             responses = []
+            requested_ids = []
             for part in reversed(parts):
                 verb, path, version = part.get_payload().splitlines()[0].split()
                 path = urlsplit(path)
@@ -106,11 +117,15 @@ class GmailTransport:
                     "alt": ["json"],
                 }
                 self.batch_formats[message_format] += 1
+                self.member_requests[message_format, message_id] += 1
+                requested_ids.append(message_id)
                 if message_format == "minimal":
                     self.metadata_ids.append(message_id)
                 if message_id in self.omitted:
                     continue
-                status = self.errors.get(message_id, 200)
+                status = self.errors.get((message_format, message_id), self.errors.get(message_id, 200))
+                if isinstance(status, list):
+                    status = status.pop(0) if status else 200
                 payload = (
                     {key: value for key, value in self.messages[message_id].items() if key in fields.split(",")}
                     if status == 200
@@ -122,6 +137,7 @@ class GmailTransport:
                     f"HTTP/1.1 {status} result\r\nContent-Type: application/json\r\n\r\n"
                     f"{json.dumps(payload)}\r\n"
                 )
+            self.batch_members.append(list(reversed(requested_ids)))
             content = "".join(responses) + "--response--\r\n"
             response_headers["content-type"] = 'multipart/mixed; boundary="response"'
         else:
@@ -193,8 +209,8 @@ def test_batches_observe_current_lifecycle_states_on_every_run():
     assert [message.state for message in second.messages] == ["discarded"] * 7
 
 
-@pytest.mark.parametrize("status", [403, 404, 429, 500])
-def test_failed_batch_member_preserves_other_observations_without_confirming_absence(status):
+@pytest.mark.parametrize("status", [403, 404, 429, 500, 503])
+def test_failed_batch_member_preserves_other_observations_without_confirming_absence(status, batch_retry_sleep):
     transport = GmailTransport(3)
     transport.errors["m1"] = status
     progress = []
@@ -203,6 +219,46 @@ def test_failed_batch_member_preserves_other_observations_without_confirming_abs
     assert [message.message_id for message in result.messages] == ["m0", "m2"]
     assert result.reason == "Some Gmail messages could not be checked"
     assert progress == [3]
+    attempts = 3 if status in {429, 503} else 1
+    assert transport.member_requests == {("minimal", "m0"): 1, ("minimal", "m1"): attempts, ("minimal", "m2"): 1}
+    assert transport.batch_members == [["m0", "m1", "m2"]] + [["m1"]] * (attempts - 1)
+    assert batch_retry_sleep.call_args_list == ([call(1.0), call(2.0)] if attempts == 3 else [])
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_transient_members_recover_without_repeating_successful_reads(status, batch_retry_sleep):
+    transport = GmailTransport(4)
+    transport.errors = {"m1": [status, 200], "m3": [status, status, 200]}
+    progress = []
+    result = provider_for(transport).list_live_messages(on_progress=progress.append)
+    assert result.complete
+    assert result.reason is None
+    assert [message.message_id for message in result.messages] == list(transport.messages)
+    assert transport.batch_members == [["m0", "m1", "m2", "m3"], ["m1", "m3"], ["m3"]]
+    assert transport.batch_sizes == [4, 2, 1]
+    assert transport.requests["GET", "/gmail/v1/users/me/labels"] == 1
+    assert progress == [4]
+    assert batch_retry_sleep.call_args_list == [call(1.0), call(2.0)]
+
+
+@pytest.mark.parametrize("raw", [False, True])
+@pytest.mark.parametrize("stage", ["backoff", "retry"])
+def test_member_retry_interrupt_stops_further_requests(raw, stage, batch_retry_sleep):
+    transport = GmailTransport(3)
+    transport.errors["m1"] = 429
+    if stage == "backoff":
+        batch_retry_sleep.side_effect = KeyboardInterrupt
+    else:
+        transport.fail_batch = 2
+        transport.failure = KeyboardInterrupt()
+    provider = provider_for(transport)
+    with pytest.raises(KeyboardInterrupt):
+        if raw:
+            provider.read_live_messages(list(transport.messages))
+        else:
+            provider.list_live_messages()
+    assert transport.batch_sizes == ([3] if stage == "backoff" else [3, 1])
+    batch_retry_sleep.assert_called_once_with(1.0)
 
 
 @pytest.mark.parametrize("change", [{"id": "other"}, {"threadId": None}, {"labelIds": "INBOX"}])
@@ -240,12 +296,23 @@ def test_batch_interrupt_propagates_without_reporting_unchecked_messages():
 
 
 @pytest.mark.parametrize("failure", ["missing", "duplicate", "unexpected", "exception"])
-def test_missing_or_ambiguous_callbacks_leave_snapshot_incomplete(failure):
+@pytest.mark.parametrize("after_retry", [False, True])
+def test_missing_or_ambiguous_callbacks_leave_snapshot_incomplete(failure, after_retry, batch_retry_sleep):
     provider = provider_for(GmailTransport(3))
+    attempts = []
 
     def new_batch(*, callback):
+        requested = []
+        attempts.append(requested)
+
         def execute():
-            for message_id in ["m2", "m0", "m1"]:
+            if after_retry and len(attempts) == 1:
+                for message_id in requested:
+                    response = {"id": message_id, "threadId": "thread", "labelIds": ["SENT"]}
+                    error = HttpError(MagicMock(status=429, reason="Throttled"), b"{}") if message_id == "m1" else None
+                    callback(message_id, response if error is None else None, error)
+                return
+            for message_id in reversed(requested):
                 if failure == "missing" and message_id == "m1":
                     continue
                 callback(message_id, {"id": message_id, "threadId": "thread", "labelIds": ["SENT"]}, None)
@@ -257,6 +324,7 @@ def test_missing_or_ambiguous_callbacks_leave_snapshot_incomplete(failure):
                 callback("other", {"id": "other", "threadId": "thread"}, None)
 
         batch = MagicMock()
+        batch.add.side_effect = lambda request, request_id: requested.append(request_id)
         batch.execute.side_effect = execute
         return batch
 
@@ -265,6 +333,8 @@ def test_missing_or_ambiguous_callbacks_leave_snapshot_incomplete(failure):
     assert not result.complete
     expected = ["m0", "m2"] if failure in {"missing", "duplicate"} else ["m0", "m1", "m2"]
     assert [message.message_id for message in result.messages] == expected
+    assert attempts == [["m0", "m1", "m2"]] + ([["m1"]] if after_retry else [])
+    assert batch_retry_sleep.call_count == int(after_retry)
 
 
 def test_catalog_failure_is_incomplete_even_without_emitted_labels():

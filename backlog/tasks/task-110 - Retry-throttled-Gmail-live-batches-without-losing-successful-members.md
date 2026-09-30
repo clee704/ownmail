@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-09-22 05:48'
-updated_date: '2026-09-30 07:53'
+updated_date: '2026-09-30 08:05'
 labels: []
 dependencies: []
 priority: medium
@@ -21,8 +21,8 @@ Live refreshes can receive per-message HTTP 429 responses inside a successful Gm
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Transient member failures are retried within a bounded budget without repeating successful reads.
-- [ ] #2 Exhausted and permanent failures preserve retryable state and report an incomplete refresh.
+- [x] #1 Transient member failures are retried within a bounded budget without repeating successful reads.
+- [x] #2 Exhausted and permanent failures preserve retryable state and report an incomplete refresh.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -39,5 +39,7 @@ Live refreshes can receive per-message HTTP 429 responses inside a successful Gm
 
 <!-- SECTION:NOTES:BEGIN -->
 Premise verified on cbb90b81e5b0b1ad87164bc5998643302a8b0a69 using the real Google client over the existing synthetic GmailTransport with network, authentication and keyring access forbidden. A transient m1 member 429 leaves metadata incomplete and raw m1 failed after one batch; m0/m2 succeed, no automatic backoff occurs, and a second explicit call recovers m1 while rereading all members. Independent Astra Ultra read-only preflight confirms the shared missing behavior is live_gmail._message_batch. The manager accepted the bounded policy supported by existing capture retry evidence: explicit 429/503 only, three total attempts, delays 1s/2s, and unchanged live-50 contract. Capture whole-batch result clearing and batch10/delay0.2 behavior are not copied or changed. Whole-batch exceptions and missing/duplicate/unexpected callbacks remain conservative rather than becoming new retry causes. No new runtime dependencies, schema, OAuth/token/credential handling or real-message operations are in scope. Exact owned files: ownmail/providers/live_gmail.py (batch helper and required time import), tests/test_live_gmail_batch.py, tests/test_live_gmail_content.py and this task ledger. Review base remains cbb90b81e5b0b1ad87164bc5998643302a8b0a69 across all checkpoints.
-Next action: prepare a fresh source-bound private environment and commit this task-only plan with normal hooks before implementation.
+
+The task-only plan was committed as dcbffaf1d52beb5eb8a0eef372623c36c64ebd47 before implementation. The bounded helper now retries only explicit 429/503 members, retains successful/permanent results, and stops retrying on missing/duplicate/unexpected callbacks or whole-batch exceptions. Tests assert exact member IDs, 1s/2s backoff, three-attempt exhaustion, unchanged batch50, interruption propagation, and cached bytes/capture cursor preservation followed by later recovery. New regressions failed against the original helper (12 failures, plus eight retry-callback cases) and the implemented focused suite passed 68 tests. The broader provider/live-sync/recovery suite passed 408 tests. Ruff check, Ruff format-check and deptry passed. Author review against the original review base and a fresh independent Astra Ultra review found no actionable issues; 13 additional mocked helper probes passed. No product code outside the assigned helper/import or real service operations changed.
+Next action: run the complete required pre-push gate with mandatory headless browser coverage, unchanged coverage threshold and a runtime-only lifecycle observer; retain logs, then close only after the aggregate passes.
 <!-- SECTION:NOTES:END -->

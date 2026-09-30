@@ -5,6 +5,7 @@ unconfirmed; the public API does not specify every scheduled-mail state.
 """
 
 import base64
+import time
 from dataclasses import replace
 
 from googleapiclient.errors import HttpError
@@ -135,41 +136,60 @@ def read_message(provider, message_id: str) -> LiveMessage | None:
 
 def _message_batch(provider, message_ids, *, raw=False, allow_not_found=False):
     responses = {}
-    seen = set()
+    errors = set()
     failed = False
+    pending = message_ids
 
-    def callback(request_id, response, exception):
-        nonlocal failed
-        if request_id not in message_ids or request_id in seen:
-            failed = True
-            responses.pop(request_id, None)
-            return
-        seen.add(request_id)
-        if exception is not None:
-            if not (allow_not_found and isinstance(exception, HttpError) and exception.resp.status == 404):
+    for attempt in range(3):
+        current = {}
+        seen = set()
+
+        def callback(request_id, response, exception, *, pending=pending, seen=seen, current=current):
+            nonlocal failed
+            if request_id not in pending or request_id in seen:
                 failed = True
-            responses[request_id] = exception
-        else:
-            responses[request_id] = response
+                current.pop(request_id, None)
+                return
+            seen.add(request_id)
+            errors.discard(request_id)
+            if exception is not None:
+                if not (allow_not_found and isinstance(exception, HttpError) and exception.resp.status == 404):
+                    errors.add(request_id)
+                current[request_id] = exception
+            else:
+                current[request_id] = response
 
-    try:
-        batch = provider._service.new_batch_http_request(callback=callback)
-        for message_id in message_ids:
-            batch.add(
-                provider._service.users()
-                .messages()
-                .get(
-                    userId="me",
-                    id=message_id,
-                    format="raw" if raw else "minimal",
-                    fields="id,threadId,labelIds,historyId" + (",raw" if raw else ""),
-                ),
-                request_id=message_id,
-            )
-        batch.execute()
-    except Exception:
-        failed = True
-    return responses, failed or len(responses) != len(message_ids)
+        try:
+            batch = provider._service.new_batch_http_request(callback=callback)
+            for message_id in pending:
+                batch.add(
+                    provider._service.users()
+                    .messages()
+                    .get(
+                        userId="me",
+                        id=message_id,
+                        format="raw" if raw else "minimal",
+                        fields="id,threadId,labelIds,historyId" + (",raw" if raw else ""),
+                    ),
+                    request_id=message_id,
+                )
+            batch.execute()
+        except Exception:
+            failed = True
+        for message_id in pending:
+            responses.pop(message_id, None)
+        responses.update(current)
+        if failed or len(current) != len(pending):
+            break
+        pending = [
+            message_id
+            for message_id in pending
+            if isinstance(current[message_id], HttpError) and current[message_id].resp.status in (429, 503)
+        ]
+        if not pending or attempt == 2:
+            break
+        time.sleep(2.0**attempt)
+    return responses, failed or bool(errors) or len(responses) != len(message_ids)
 
 
 def read_messages(provider, message_ids: list[str]) -> dict[str, LiveMessage | None | Exception]:

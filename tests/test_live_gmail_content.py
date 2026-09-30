@@ -1,14 +1,18 @@
 """Content refreshes share catalog reads while preserving each fresh observation."""
 
 import base64
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
+from googleapiclient.errors import HttpError
 
 from ownmail.archive import EmailArchive
 from ownmail.live import LiveLookupError, LiveMessage
+from tests import test_live_gmail_batch
 from tests.test_live_gmail_batch import GmailTransport, provider_for
 from tests.test_live_providers import gmail
+
+batch_retry_sleep = test_live_gmail_batch.batch_retry_sleep
 
 
 def test_normal_downloads_batch_initial_content_reuse_unchanged_cache_and_fetch_one_change(tmp_path):
@@ -96,8 +100,8 @@ def test_raw_batch_refreshes_lifecycle_labels_and_revision_after_listing():
     assert [message.content_revision for message in messages.values()] == ["10", "11", "12"]
 
 
-@pytest.mark.parametrize("status", [403, 404, 429, 500])
-def test_content_batch_only_member_not_found_confirms_absence(status):
+@pytest.mark.parametrize("status", [403, 404, 429, 500, 503])
+def test_content_batch_only_member_not_found_confirms_absence(status, batch_retry_sleep):
     transport = GmailTransport(3)
     transport.errors["m1"] = status
     messages = provider_for(transport).read_live_messages(list(transport.messages))
@@ -108,6 +112,52 @@ def test_content_batch_only_member_not_found_confirms_absence(status):
     else:
         assert isinstance(messages["m1"], LiveLookupError)
         assert "private" not in str(messages["m1"])
+    attempts = 3 if status in {429, 503} else 1
+    assert transport.member_requests == {("raw", "m0"): 1, ("raw", "m1"): attempts, ("raw", "m2"): 1}
+    assert batch_retry_sleep.call_args_list == ([call(1.0), call(2.0)] if attempts == 3 else [])
+
+
+def test_content_retries_preserve_successes_and_permanent_member_results(batch_retry_sleep):
+    transport = GmailTransport(5)
+    transport.errors = {"m1": [429, 200], "m2": 403, "m3": 404, "m4": [503, 503, 200]}
+    messages = provider_for(transport).read_live_messages(list(transport.messages))
+    assert [key for key, value in messages.items() if isinstance(value, LiveMessage)] == ["m0", "m1", "m4"]
+    assert isinstance(messages["m2"], LiveLookupError)
+    assert messages["m3"] is None
+    assert transport.batch_members == [["m0", "m1", "m2", "m3", "m4"], ["m1", "m4"], ["m4"]]
+    assert transport.requests["GET", "/gmail/v1/users/me/labels"] == 1
+    assert batch_retry_sleep.call_args_list == [call(1.0), call(2.0)]
+
+
+def test_exhausted_content_retry_preserves_cached_bytes_and_capture_cursor(tmp_path, batch_retry_sleep):
+    transport = GmailTransport(1)
+    transport.messages["m0"]["labelIds"] = ["INBOX", "Label_1"]
+    provider = provider_for(transport)
+    archive = EmailArchive(tmp_path / "archive")
+    assert archive.backup(provider, active_downloads=True)["active_complete"]
+    cache = archive.active_cache()
+    entry = cache.list_entries()[0]
+    original = cache.read(entry["id"])
+    cursor = cache.source_status(provider.source_name, provider.account)["capture_state"]
+    changed = b"From: sender@example.test\r\nSubject: changed\r\n\r\nChanged body"
+    transport.messages["m0"].update(raw=base64.urlsafe_b64encode(changed).decode(), historyId="100001")
+    transport.history_id = "100001"
+    transport.errors["raw", "m0"] = 429
+    transport.member_requests.clear()
+    failed = archive.backup(provider, active_downloads=True)
+    assert not failed["active_complete"]
+    assert failed["error_count"] == 1
+    assert failed["success_count"] == 0
+    assert transport.member_requests["raw", "m0"] == 3
+    assert cache.read(entry["id"]) == original
+    assert cache.source_status(provider.source_name, provider.account)["capture_state"] == cursor
+    assert batch_retry_sleep.call_args_list == [call(1.0), call(2.0)]
+    del transport.errors["raw", "m0"]
+    recovered = archive.backup(provider, active_downloads=True)
+    assert recovered["active_complete"]
+    assert recovered["error_count"] == 0
+    assert cache.read(entry["id"]) == changed
+    assert cache.source_status(provider.source_name, provider.account)["capture_state"] != cursor
 
 
 @pytest.mark.parametrize(
@@ -165,13 +215,23 @@ def test_failed_content_batch_preserves_other_batches_and_never_implies_absence(
 
 
 @pytest.mark.parametrize("failure", ["missing", "duplicate", "unexpected", "exception"])
-def test_content_callback_failures_preserve_unambiguous_results(failure):
+@pytest.mark.parametrize("after_retry", [False, True])
+def test_content_callback_failures_preserve_unambiguous_results(failure, after_retry, batch_retry_sleep):
     transport = GmailTransport(3)
     provider = provider_for(transport)
+    attempts = []
 
     def new_batch(*, callback):
+        requested = []
+        attempts.append(requested)
+
         def execute():
-            for message_id in ["m2", "m0", "m1"]:
+            if after_retry and len(attempts) == 1:
+                for message_id in requested:
+                    error = HttpError(MagicMock(status=429, reason="Throttled"), b"{}") if message_id == "m1" else None
+                    callback(message_id, transport.messages[message_id] if error is None else None, error)
+                return
+            for message_id in reversed(requested):
                 if failure == "missing" and message_id == "m1":
                     continue
                 callback(message_id, transport.messages[message_id], None)
@@ -183,6 +243,7 @@ def test_content_callback_failures_preserve_unambiguous_results(failure):
                 callback("other", transport.messages["m0"], None)
 
         batch = MagicMock()
+        batch.add.side_effect = lambda request, request_id: requested.append(request_id)
         batch.execute.side_effect = execute
         return batch
 
@@ -193,6 +254,8 @@ def test_content_callback_failures_preserve_unambiguous_results(failure):
     expected = LiveLookupError if failure in {"missing", "duplicate"} else LiveMessage
     assert isinstance(messages["m1"], expected)
     assert list(messages) == ["m0", "m1", "m2"]
+    assert attempts == [["m0", "m1", "m2"]] + ([["m1"]] if after_retry else [])
+    assert batch_retry_sleep.call_count == int(after_retry)
 
 
 @pytest.mark.parametrize("include_labels", [True, False])
