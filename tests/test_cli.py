@@ -1422,6 +1422,40 @@ class TestMainServeCommand:
         config.write_text(body)
         return config
 
+    @pytest.mark.parametrize("verbose", [False, True])
+    @pytest.mark.parametrize("refusal", ["sanitizer", "debug-host"])
+    def test_serve_refusal_exits_nonzero(self, temp_dir, monkeypatch, capsys, verbose, refusal):
+        """The actual server guards must propagate failure through the CLI."""
+        from ownmail.cli import main
+
+        self._write_config(temp_dir, "archive_root: .\n")
+        monkeypatch.chdir(temp_dir)
+        argv = ["ownmail", "serve"]
+        if verbose:
+            argv.append("--verbose")
+        if refusal == "debug-host":
+            argv.extend(["--debug", "--host", "0.0.0.0"])
+        sanitizer = MagicMock(available=refusal != "sanitizer", error="Synthetic startup failure")
+        with (
+            patch.object(sys, "argv", argv),
+            patch("ownmail.cli.EmailArchive") as mock_archive,
+            patch("ownmail.sanitizer.HtmlSanitizer", return_value=sanitizer),
+            patch("ownmail.web.create_app") as mock_create,
+            patch("flask.Flask.run") as mock_run,
+            patch("threading.Timer") as mock_timer,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 1
+        mock_create.assert_not_called()
+        mock_archive.return_value.auto_expire_trash.assert_not_called()
+        mock_run.assert_not_called()
+        mock_timer.assert_not_called()
+        out = capsys.readouterr().out
+        expected_error = "Refusing to serve" if refusal == "sanitizer" else "remote code execution"
+        assert expected_error in out
+        assert "Running at" not in out
+
     def test_serve_passes_web_config_through(self, temp_dir, monkeypatch):
         """Values from config.yaml [web] should reach run_server."""
         from ownmail.cli import main

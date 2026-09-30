@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex-ic2'
 created_date: '2026-09-30 02:12'
-updated_date: '2026-09-30 13:10'
+updated_date: '2026-09-30 13:14'
 labels:
   - web
 dependencies: []
@@ -25,8 +25,8 @@ run_server returns normally when it refuses to start, both when the HTML sanitiz
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each refusal exits with a non-zero status
-- [ ] #2 The --debug and non-localhost refusal happens before create_app and before the banner
+- [x] #1 Each refusal exits with a non-zero status
+- [x] #2 The --debug and non-localhost refusal happens before create_app and before the banner
 - [ ] #3 Tests cover both refusals and the full pre-push gate passes
 <!-- AC:END -->
 
@@ -45,4 +45,8 @@ Review base: 247aaa08aaa74c8200b763c32aa10c94613c4c12 (completed TASK-93); isola
 <!-- SECTION:NOTES:BEGIN -->
 Premise confirmed through eight synthetic subprocess observations of the actual CLI/server functions: both entry points exit 0 for sanitizer unavailability and public-host debug refusal. The latter reaches app creation, mocked trash expiration and the Running at banner before refusing. Local-debug/public-reload controls reach the mocked server normally. No real archive, worker, browser or server operations were used.
 Scope: ownmail/web.py run_server refusal guards, existing TestRunServer and TestMainServeCommand regressions, and this task record only. TASK-121 owns sanitizer lifecycle code/tests on a separate branch; it is not a technical dependency. A later coordinated combined validation must include its final checkpoint; this task does not merge it. No host/debug policy, archive deletion, credentials, dependencies or security settings change.
+
+Implementation and focused verification: both existing refusal paths now raise SystemExit(1). The unchanged debug-host guard runs before sanitizer construction, app creation or the startup banner. Allowed localhost debug, public-host reload and successful shutdown behavior are preserved.
+Red evidence: the original implementation fails 8 refusal regressions while 21 controls pass. An exit-code-only intermediate change still fails 5 startup-order regressions while 24 controls pass. Final focused startup, CLI error-handling and download-shutdown coverage passes all 41 tests. Eight synthetic subprocess entrypoint checks confirm refusal status 1, no refused app/server/trash-expiration/banner activity and status 0 on accepted controls; public-debug refusal never starts the mocked sanitizer.
+Ruff check, Ruff format --check, deptry and diff whitespace checks pass. Author self-review and independent Astra Ultra read-only support review found no correctness, policy or cleanup issues in the complete task diff. The old debug-refusal shutdown expectation was replaced with no sanitizer construction/start/stop because the guard now executes before startup. Full required pre-push/browser/coverage gate is pending release of TASK-121's exclusive Chromium interval; TASK-122 remains In Progress.
 <!-- SECTION:NOTES:END -->

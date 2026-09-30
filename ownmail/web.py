@@ -2135,6 +2135,11 @@ def run_server(
         open_browser: Open the web interface in a browser once the server is up
         reload: Reload Python source and templates without enabling debug mode
     """
+    if debug and host not in ("127.0.0.1", "localhost", "::1"):
+        print("   ERROR: --debug cannot be used with non-localhost --host")
+        print("   The Werkzeug debugger allows remote code execution.")
+        raise SystemExit(1)
+
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
     import signal
 
@@ -2148,7 +2153,7 @@ def run_server(
             print(f"   {line}")
         print("   For pipx installs, repair the environment with: pipx reinstall ownmail")
         print("   Refusing to serve without sanitization.\n")
-        return
+        raise SystemExit(1)
 
     app = create_app(
         archive,
@@ -2174,11 +2179,6 @@ def run_server(
         print("\n   ⚠️  WARNING: Binding to non-localhost address!")
         print("   Your email archive will be accessible to anyone on the network.")
         print("   Consider using --host 127.0.0.1 instead.\n")
-    if debug and host not in ("127.0.0.1", "localhost", "::1"):
-        print("   ERROR: --debug cannot be used with non-localhost --host")
-        print("   The Werkzeug debugger allows remote code execution.")
-        sanitizer.stop()
-        return
     if verbose:
         print("   Verbose logging enabled")
     if block_images:
