@@ -13,6 +13,62 @@ spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 
 @pytest.mark.parametrize("style_location", ["head", "body"])
+def test_malformed_body_qualifiers_do_not_activate_rules(
+    shell_app, contrast_browser, spacing_sanitizer, style_location
+):
+    app, archive = shell_app
+    app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
+    css = """
+        body .probe {width:17px;}
+        body.123 .probe {width:101px;}
+        body#123 .probe {width:102px;}
+        body.- .probe {width:103px;}
+        body[data-number=123] .probe {width:104px;}
+        body[data-hyphen=-] .probe {width:105px;}
+        body[data-negative=-1] .probe {width:106px;}
+        body[data-number="123"] .quoted {border-top:3px solid black;}
+        body[data-valid=--1] .valid {border-top:5px solid black;}
+    """
+    style = f"<style>{css}</style>"
+    source = (
+        f"<html><head>{style if style_location == 'head' else ''}</head>"
+        '<body class="123 -" id="123" data-number="123" data-hyphen="-" data-negative="-1" data-valid="--1">'
+        f"{style if style_location == 'body' else ''}"
+        '<div class="probe quoted valid">Synthetic</div></body></html>'
+    )
+    message = EmailMessage()
+    message["Subject"] = "Synthetic malformed body selectors"
+    message["From"] = "sender@example.com"
+    message.set_content(source, subtype="html")
+    (archive.archive_dir / "synthetic.eml").write_bytes(message.as_bytes())
+    archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", None, None, None, None)
+    response = app.test_client().get("/email/synthetic")
+    assert response.status_code == 200
+    test_email_contrast.run_contrast_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        r"""
+        const reference = await browser.newPage();
+        try {
+            await reference.setContent(__SOURCE__);
+            const read = el => ({width:getComputedStyle(el).width, border:getComputedStyle(el).borderTopWidth});
+            const expected = await reference.locator('.probe').evaluate(read);
+            assert.deepEqual(expected, {width:'17px', border:'5px'});
+            assert.deepEqual(await page.locator('#ownmail-email-content .probe').evaluate(read), expected,
+                'Invalid source selectors must remain invalid instead of activating a rule');
+        } finally {
+            await reference.close();
+        }
+        """.replace("__SOURCE__", json.dumps(source)),
+        theme="light",
+        rendered_page=response.get_data(as_text=True),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )
+
+
+@pytest.mark.parametrize("style_location", ["head", "body"])
 def test_qualified_body_rules_keep_matching_cascade_and_message_scope(
     shell_app, contrast_browser, spacing_sanitizer, style_location
 ):

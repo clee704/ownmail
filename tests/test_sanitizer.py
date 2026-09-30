@@ -575,6 +575,32 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                     assert f":is(:where(*), {compound})" not in stylesheet
                 assert "#ownmail-email-content:is(:where(*), body.main) .probe { color: red; }" in stylesheet
 
+    def test_qualified_body_selectors_use_final_inline_style(self):
+        """Head/body styles see the same attribute after inline CSS cleanup."""
+        for inline, compound, matches in (
+            ("font-family: Roboto", 'body[style*="sans-serif"]', True),
+            ("width: expression(alert(1))", 'body[style*="expression"]', False),
+        ):
+            for placement in ("head", "body"):
+                with self.subTest(inline=inline, placement=placement):
+                    style = f"<style>{compound} .probe {{ color: red; }}</style>"
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{style if placement == 'head' else ''}</head>"
+                        f'<body style="{inline}">{style if placement == "body" else ""}'
+                        '<p class="probe">Text</p></body></html>'
+                    )
+                    tree = lxml_html.fromstring(result)
+                    final_style = tree.xpath("//body")[0].get("style")
+                    assert "expression" not in final_style
+                    if matches:
+                        assert "sans-serif" in final_style
+                    prefix = (
+                        f"#ownmail-email-content:is(:where(*), {compound})"
+                        if matches
+                        else f"#ownmail-email-content {compound}"
+                    )
+                    assert tree.xpath("//style")[0].text_content() == prefix + " .probe { color: red; }"
+
     def test_qualified_body_selectors_keep_author_scoped_rules_unchanged(self):
         """Deferred head styles must retain the provenance of already-scoped rules."""
         scoped_rules = (

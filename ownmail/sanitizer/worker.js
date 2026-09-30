@@ -301,17 +301,6 @@ function sanitizeInlineStyle(css) {
 const pendingBodyStyles = new WeakMap();
 const sanitizedBodies = new WeakSet();
 
-purify.addHook("afterSanitizeAttributes", (node) => {
-  if (node.tagName !== "BODY") return;
-  sanitizedBodies.add(node);
-  for (const style of node.ownerDocument.querySelectorAll("style")) {
-    const original = pendingBodyStyles.get(style);
-    if (original === undefined) continue;
-    style.textContent = scopeAndSanitizeCSS(original, node);
-    pendingBodyStyles.delete(style);
-  }
-});
-
 // Hook into DOMPurify to sanitize and scope CSS, and filter <link> tags
 purify.addHook("uponSanitizeElement", (node, data) => {
   if (data.tagName === "style" && node.textContent) {
@@ -343,6 +332,18 @@ purify.addHook("afterSanitizeAttributes", (node) => {
   if (node.hasAttribute && node.hasAttribute("style")) {
     const style = node.getAttribute("style");
     node.setAttribute("style", sanitizeInlineStyle(style));
+  }
+
+  if (node.tagName === "BODY") {
+    // Body predicates must see the final inline CSS, including removed unsafe
+    // values and added font fallbacks, just like styles encountered in the body.
+    sanitizedBodies.add(node);
+    for (const style of node.ownerDocument.querySelectorAll("style")) {
+      const original = pendingBodyStyles.get(style);
+      if (original === undefined) continue;
+      style.textContent = scopeAndSanitizeCSS(original, node);
+      pendingBodyStyles.delete(style);
+    }
   }
 
   // Force links and forms to open in new tab

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-13 06:30'
-updated_date: '2026-09-30 11:49'
+updated_date: '2026-09-30 11:56'
 labels: []
 dependencies: []
 priority: medium
@@ -21,8 +21,8 @@ The CSS sanitizer scopes a selector such as body[class=main] .logo under the rea
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 A synthetic message with a qualified body selector retains the intended descendant styling after sanitization and body extraction.
-- [x] #2 The preserved styles remain scoped to message content.
+- [ ] #1 A synthetic message with a qualified body selector retains the intended descendant styling after sanitization and body extraction.
+- [ ] #2 The preserved styles remain scoped to message content.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -43,4 +43,8 @@ Owner: Ownmail IC2. Branch: fix/body-qualified-selectors. Review base: e234cbd69
 Implemented bounded static leading body qualifier resolution in worker.js. Class, ID and attribute predicates are evaluated only after DOMPurify sanitizes body attributes. Matching compounds are mapped to the existing reader container while retaining their specificity and original descendant/child suffix. Original head stylesheet sources are retained weakly until sanitized body context is available, preserving sender-authored already-scoped selector behavior. No attributes are copied into the app wrapper and no layout wrapper is added. Root sibling relationships, nonmatches, dynamic pseudo-classes and escaped/unsupported root compounds keep the existing fallback.
 
 Red/green evidence: the unchanged actual worker failed 20 new subtests while 25 controls passed; both rendered head/body cases failed on lost qualified styling. With the implementation, all 110 sanitizer tests and all 12 body-style browser cases pass, including the complete retained TASK-119 cases. New coverage checks class/ID/attribute/combined/uppercase predicates, exact attribute values, ID-versus-class cascade, head/body placement, extraction structure, sanitized-away IDs/event attributes, author-scoped provenance, unsupported syntax, root sibling exclusion, and successive request isolation. Browser assertions compare authored synthetic CSS with actual route output and unchanged outside controls. Repository Ruff check, Ruff format-check, deptry and diff checks pass. Author self-review against the original base confirms the four approved paths only. Independent fresh Astra Ultra security/correctness review and the complete pre-push gate remain pending. No integration, publication or real mailbox operations performed.
+
+Independent Astra Ultra review found three P2 correctness issues in implementation checkpoint 03a405ff957a35bd9e560ea13fed8fff044c3822 before the full gate. (1) Head body-style predicates ran before final inline CSS cleanup. This is fixed by resolving BODY after sanitizeInlineStyle in the existing hook; a regression first failed two head subcases, then all 111 sanitizer tests passed. (2) jsdom accepts malformed numeric/hyphen class/ID/unquoted attribute tokens, and the forgiving :is projection activates rules browsers reject. Two actual-route browser regressions reproduce this: width becomes 106px instead of the original 17px. (3) jsdom falsely matches absent attributes against null-like values and class/ID names, empty substring operands and non-ASCII token whitespace; static predicate evaluation needs a bounded browser-faithful correction. Findings (2) and (3) remain open. The first implementation's green core tests are not final validation; the new malformed-selector browser tests currently fail.
+
+The last focused browser run exited and its interval was released for the queued TASK-64 full gate. No TASK-56 full gate has started. Current work remains In Progress, with original base and checkpoints preserved. Next action: replace the forgiving projection with a fail-closed specificity-preserving form, correct bounded static predicate matching, obtain fresh review of the full revised diff and rerun focused/full browser gates when the interval is available. No main changes or publication.
 <!-- SECTION:NOTES:END -->
