@@ -2246,6 +2246,12 @@ def run_server(
 
     sanitizer = HtmlSanitizer(verbose=verbose)
     sanitizer.start()
+    if not sanitizer.available:
+        print("\n❌ HTML sanitizer failed to start.")
+        for line in sanitizer.error.splitlines():
+            print(f"   {line}")
+        print("   Refusing to serve without sanitization.\n")
+        return
 
     app = create_app(
         archive,
@@ -2282,11 +2288,6 @@ def run_server(
         print("   Remote content blocked by default")
     if trusted_senders:
         print(f"   Trusted senders: {len(trusted_senders)}")
-    if not sanitizer.available:
-        print("\n   ERROR: HTML sanitizer failed to start.")
-        print("   Install Node.js and run: cd ownmail/sanitizer && npm install")
-        print("   Refusing to serve without sanitization.\n")
-        return
     print("   HTML sanitization enabled (DOMPurify)")
     print("   Press Ctrl+C to stop\n")
 

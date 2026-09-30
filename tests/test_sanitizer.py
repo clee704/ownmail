@@ -1,13 +1,17 @@
 """Tests for the HTML sanitizer (DOMPurify sidecar)."""
 
+import io
+import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from ownmail.sanitizer import HtmlSanitizer
+import ownmail.sanitizer as sanitizer_module
+from ownmail.sanitizer import HtmlSanitizer, _caret_floor, _satisfies
 
 
 def node_available():
@@ -28,13 +32,6 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         with patch("shutil.which", return_value=None):
             assert HtmlSanitizer.is_node_available() is False
 
-    def test_start_without_node(self):
-        """Test start() gracefully handles missing Node.js."""
-        sanitizer = HtmlSanitizer()
-        with patch.object(HtmlSanitizer, "is_node_available", return_value=False):
-            sanitizer.start()
-        assert sanitizer.available is False
-
     def test_sanitize_without_node_returns_escaped(self):
         """Test sanitize() returns escaped HTML when not available."""
         import html as html_module
@@ -54,124 +51,6 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
     def test_available_property_default(self):
         """Test available property defaults to False."""
         sanitizer = HtmlSanitizer()
-        assert sanitizer.available is False
-
-    @patch("ownmail.sanitizer.subprocess.run")
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_runs_npm_install(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps runs npm install when node_modules missing."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-        mock_run.return_value = MagicMock(returncode=0, stderr="")
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-
-        assert result is True
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        assert "install" in call_args[0][0]
-
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=True)
-    def test_ensure_deps_skips_if_exists(self, mock_isdir):
-        """Test _ensure_deps skips npm install when node_modules exists."""
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is True
-
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which", return_value=None)
-    def test_ensure_deps_no_npm(self, mock_which, mock_isdir):
-        """Test _ensure_deps returns False when npm not found."""
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
-
-    @patch("ownmail.sanitizer.subprocess.run")
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_npm_install_fails(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps returns False when npm install fails."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-        mock_run.return_value = MagicMock(returncode=1, stderr="permission denied")
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
-
-    @patch("ownmail.sanitizer.subprocess.run", side_effect=subprocess.TimeoutExpired("npm", 60))
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_npm_timeout(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps returns False on npm timeout."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
-
-    @patch("ownmail.sanitizer.subprocess.run", side_effect=OSError("disk full"))
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_npm_exception(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps returns False on unexpected exception."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
-
-    def test_start_with_mocked_process(self):
-        """Test start() with a mocked Node.js process that sends ready signal."""
-        import io
-
-        sanitizer = HtmlSanitizer()
-
-        mock_process = MagicMock()
-        mock_process.stdout = io.StringIO('{"ready": true}\n')
-        mock_process.stderr = io.StringIO("")
-
-        with (
-            patch.object(HtmlSanitizer, "is_node_available", return_value=True),
-            patch.object(sanitizer, "_ensure_deps", return_value=True),
-            patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process),
-        ):
-            sanitizer.start()
-
-        assert sanitizer.available is True
-        sanitizer.stop()
-
-    def test_start_worker_no_ready_signal(self):
-        """Test start() when worker doesn't send ready signal."""
-        import io
-
-        sanitizer = HtmlSanitizer()
-
-        mock_process = MagicMock()
-        mock_process.stdout = io.StringIO("")
-        mock_process.stderr = io.StringIO("")
-        mock_process.terminate.return_value = None
-        mock_process.wait.return_value = 0
-
-        with (
-            patch.object(HtmlSanitizer, "is_node_available", return_value=True),
-            patch.object(sanitizer, "_ensure_deps", return_value=True),
-            patch("ownmail.sanitizer.subprocess.Popen", return_value=mock_process),
-        ):
-            sanitizer.start()
-
-        assert sanitizer.available is False
-
-    def test_start_deps_fail(self):
-        """Test start() when _ensure_deps fails."""
-        sanitizer = HtmlSanitizer()
-
-        with (
-            patch.object(HtmlSanitizer, "is_node_available", return_value=True),
-            patch.object(sanitizer, "_ensure_deps", return_value=False),
-        ):
-            sanitizer.start()
-
         assert sanitizer.available is False
 
     def test_sanitize_with_mocked_process(self):
@@ -300,7 +179,7 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         assert sanitizer._process is None
 
     def test_restart_calls_stop_and_start(self):
-        """Test _restart kills and restarts the process."""
+        """Test _restart kills and restarts the process without installing dependencies."""
         sanitizer = HtmlSanitizer()
         sanitizer._available = True
 
@@ -309,21 +188,7 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
 
         mock_kill.assert_called_once()
         assert sanitizer._available is False
-        mock_start.assert_called_once()
-
-    def test_verbose_ensure_deps(self):
-        """Test verbose mode output during _ensure_deps failure."""
-        sanitizer = HtmlSanitizer(verbose=True)
-
-        mock_run = MagicMock(returncode=1, stderr="verbose error msg")
-        with (
-            patch("ownmail.sanitizer.subprocess.run", return_value=mock_run),
-            patch("ownmail.sanitizer.os.path.isdir", return_value=False),
-            patch("shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
-        ):
-            result = sanitizer._ensure_deps()
-
-        assert result is False
+        mock_start.assert_called_once_with(install=False)
 
 
 @unittest.skipUnless(node_available(), "Node.js not available")
@@ -336,7 +201,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         cls.sanitizer = HtmlSanitizer(timeout=10.0)
         cls.sanitizer.start()
         if not cls.sanitizer.available:
-            raise unittest.SkipTest("Sanitizer failed to start")
+            raise unittest.SkipTest(f"Sanitizer failed to start: {cls.sanitizer.error}")
 
     @classmethod
     def tearDownClass(cls):
@@ -695,25 +560,29 @@ class TestSanitizerLifecycle(unittest.TestCase):
         with patch.object(HtmlSanitizer, "is_node_available", return_value=False):
             san.start()
         self.assertFalse(san.available)
+        self.assertIn("Node.js was not found", san.error)
 
     def test_start_aborts_when_deps_unavailable(self):
         """A failed dependency install should leave the sanitizer unavailable."""
         san = HtmlSanitizer()
         with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
-            with patch.object(san, "_ensure_deps", return_value=False):
+            with patch.object(san, "_ensure_deps", return_value=False) as mock_deps:
                 with patch("subprocess.Popen") as mock_popen:
                     san.start()
         self.assertFalse(san.available)
+        mock_deps.assert_called_once_with(True)
         mock_popen.assert_not_called()
 
     def test_start_marks_available_on_ready_signal(self):
-        """A worker that signals ready should mark the sanitizer available."""
+        """A worker that signals ready should mark the sanitizer available and clear an earlier error."""
         san = HtmlSanitizer(verbose=True)
+        san._error = "earlier failure"
         with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
             with patch.object(san, "_ensure_deps", return_value=True):
                 with patch("subprocess.Popen", return_value=self._worker()):
                     san.start()
         self.assertTrue(san.available)
+        self.assertIsNone(san.error)
 
     def test_start_without_ready_signal_kills_worker(self):
         """A worker that never signals ready should be terminated."""
@@ -725,6 +594,8 @@ class TestSanitizerLifecycle(unittest.TestCase):
                     san.start()
         self.assertFalse(san.available)
         proc.terminate.assert_called_once()
+        self.assertIn("The sanitizer worker did not start", san.error)
+        self.assertIn(os.path.join(sanitizer_module._SANITIZER_DIR, "node_modules"), san.error)
 
     def test_start_with_garbage_ready_line_kills_worker(self):
         """Non-JSON on the ready line should be treated as a failed start."""
@@ -737,6 +608,7 @@ class TestSanitizerLifecycle(unittest.TestCase):
                 with patch("subprocess.Popen", return_value=proc):
                     san.start()
         self.assertFalse(san.available)
+        self.assertIn("The sanitizer worker did not start", san.error)
 
     def test_start_handles_missing_node_binary(self):
         """A FileNotFoundError from Popen should degrade gracefully."""
@@ -746,6 +618,7 @@ class TestSanitizerLifecycle(unittest.TestCase):
                 with patch("subprocess.Popen", side_effect=FileNotFoundError):
                     san.start()
         self.assertFalse(san.available)
+        self.assertIn("Node.js was not found", san.error)
 
     def test_start_handles_unexpected_error(self):
         """Any other spawn failure should degrade gracefully."""
@@ -755,6 +628,7 @@ class TestSanitizerLifecycle(unittest.TestCase):
                 with patch("subprocess.Popen", side_effect=OSError("no fork")):
                     san.start()
         self.assertFalse(san.available)
+        self.assertEqual(san.error, "The sanitizer worker could not start (no fork).")
 
     def test_stop_terminates_worker(self):
         """stop() should terminate the process and clear availability."""
@@ -802,56 +676,283 @@ class TestSanitizerLifecycle(unittest.TestCase):
 
 
 class TestSanitizerDeps(unittest.TestCase):
-    """Tests for _ensure_deps."""
+    """Tests for _ensure_deps over a temporary sanitizer directory, with npm faked."""
 
-    def test_existing_node_modules_short_circuits(self):
-        """An existing node_modules directory means nothing to install."""
+    MANIFEST = {
+        "private": True,
+        "devDependencies": {"playwright": "1.58.0"},
+        "dependencies": {"dompurify": "^3.4.16", "jsdom": "^26.0.0", "postcss": "^8.5.28"},
+    }
+    CURRENT = {"dompurify": "3.4.16", "jsdom": "26.1.0", "postcss": "8.5.28"}
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="sanitizer dir ")
+        self.addCleanup(tmp.cleanup)
+        self.dir = tmp.name
+        self.node_modules = os.path.join(self.dir, "node_modules")
+        self.marker = os.path.join(self.node_modules, sanitizer_module._INSTALL_MARKER)
+        for target, value in (
+            ("ownmail.sanitizer._SANITIZER_DIR", self.dir),
+            # A test that forgets to fake npm fails instead of installing anything.
+            ("ownmail.sanitizer.subprocess.run", MagicMock(side_effect=AssertionError("npm ran"))),
+            ("sys.stdout", io.StringIO()),
+        ):
+            patcher = patch(target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.run = sanitizer_module.subprocess.run
+        self._write("package.json", self.MANIFEST)
+
+    def _write(self, path, data):
+        path = os.path.join(self.dir, path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(data if isinstance(data, str) else json.dumps(data))
+
+    def _install(self, **versions):
+        for name, version in versions.items():
+            self._write(os.path.join("node_modules", name, "package.json"), {"name": name, "version": version})
+
+    def _npm(self, returncode=0, stderr="", installs=None):
+        """Make npm install `installs` and exit with `returncode`."""
+
+        def run(args, **kwargs):
+            self.assertTrue(os.path.exists(self.marker), "the marker must exist while npm runs")
+            self._install(**(installs or {}))
+            return subprocess.CompletedProcess(args, returncode, "", stderr)
+
+        self.run.side_effect = run
+
+    def test_satisfied_install_needs_no_npm(self):
+        """Installed versions within every range start without npm, even when npm is missing."""
+        self._install(dompurify="3.9.0", jsdom="26.0.0", postcss="8.5.28+build.1")
         san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=True):
-            with patch("subprocess.run") as mock_run:
-                self.assertTrue(san._ensure_deps())
-        mock_run.assert_not_called()
+        with patch("shutil.which", return_value=None):
+            self.assertTrue(san._ensure_deps())
+        self.run.assert_not_called()
+        self.assertIsNone(san.error)
 
-    def test_missing_npm_fails(self):
-        """Without npm, dependency setup cannot proceed."""
-        san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value=None):
-                self.assertFalse(san._ensure_deps())
+    def test_unmet_dependencies_are_installed(self):
+        """Missing or out-of-range dependencies are installed, keeping a development tree's test dependencies."""
+        cases = [
+            ("first install", {}, "--omit=dev", "Installing HTML sanitizer dependencies from npm (one-time setup)"),
+            (
+                "stale",
+                dict(self.CURRENT, dompurify="3.3.1"),
+                "--omit=dev",
+                "Updating HTML sanitizer dependencies (dompurify)",
+            ),
+            ("missing", {"jsdom": "26.1.0"}, "--omit=dev", "Updating HTML sanitizer dependencies (dompurify, postcss)"),
+            (
+                "development tree",
+                dict(self.CURRENT, postcss="8.5.6", playwright="1.58.0"),
+                "--include=dev",
+                "(postcss)",
+            ),
+        ]
+        for label, installed, scope, progress in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.node_modules, ignore_errors=True)
+                self._install(**installed)
+                self._npm(installs=self.CURRENT)
+                with patch("shutil.which", return_value="/usr/bin/npm"), patch("sys.stdout", new=io.StringIO()) as out:
+                    self.assertTrue(HtmlSanitizer()._ensure_deps())
+                args, kwargs = self.run.call_args
+                self.assertEqual(
+                    args[0],
+                    ["/usr/bin/npm", "install", scope, "--no-fund", "--no-audit", "--no-update-notifier"]
+                    + sanitizer_module._NPM_NETWORK_ARGS,
+                )
+                self.assertEqual(kwargs["cwd"], self.dir)
+                self.assertIn(progress, out.getvalue())
+                self.assertIn("HTML sanitizer dependencies installed", out.getvalue())
+                self.assertFalse(os.path.exists(self.marker))
 
-    def test_successful_install(self):
-        """A zero exit code from npm install means deps are ready."""
-        san = HtmlSanitizer()
-        result = MagicMock(returncode=0, stderr="")
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", return_value=result):
-                    self.assertTrue(san._ensure_deps())
+    def test_unfinished_install_is_redone(self):
+        """A marker left by an interrupted install removes node_modules and installs again."""
+        self._install(playwright="1.58.0", **self.CURRENT)
+        retired = os.path.join(self.node_modules, ".dompurify-6OOHNhdF")
+        os.makedirs(retired)
+        open(self.marker, "w").close()
 
-    def test_failed_install(self):
-        """A non-zero npm exit code should report failure."""
-        san = HtmlSanitizer(verbose=True)
-        result = MagicMock(returncode=1, stderr="EACCES")
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", return_value=result):
+        def run(args, **kwargs):
+            self.assertFalse(os.path.exists(retired), "npm must start from an empty node_modules")
+            self._install(**self.CURRENT)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        self.run.side_effect = run
+        with patch("shutil.which", return_value="/usr/bin/npm"), patch("sys.stdout", new=io.StringIO()) as out:
+            self.assertTrue(HtmlSanitizer()._ensure_deps())
+        self.assertIn("--include=dev", self.run.call_args[0][0])
+        self.assertIn("Reinstalling HTML sanitizer dependencies after an unfinished install", out.getvalue())
+        self.assertFalse(os.path.exists(self.marker))
+
+    def test_install_failures_are_reported(self):
+        """Each failed install leaves the sanitizer stopped with a reason, a remedy and a manual command."""
+        timeout = subprocess.TimeoutExpired("npm", sanitizer_module._NPM_TIMEOUT)
+        internet = "Check the internet connection"
+        npm_error = "Fix the npm error shown above"
+        cases = [
+            (
+                "network error",
+                (1, "npm error code ECONNREFUSED\nnpm error errno ECONNREFUSED"),
+                "npm install failed with ECONNREFUSED",
+                internet,
+                False,
+            ),
+            (
+                "idle timeout",
+                (1, "npm error code EIDLETIMEOUT"),
+                "npm install failed with EIDLETIMEOUT",
+                internet,
+                False,
+            ),
+            ("permissions", (1, "npm ERR! code EACCES"), "npm install failed with EACCES", npm_error, False),
+            ("no error code", (1, "Killed"), "npm install exited with code 1", npm_error, False),
+            (
+                "still unmet",
+                (0, ""),
+                "npm install finished but left dompurify outside the package.json ranges",
+                "Check the npm configuration",
+                False,
+            ),
+            (
+                "timeout",
+                timeout,
+                f"npm install did not finish within {sanitizer_module._NPM_TIMEOUT} seconds",
+                internet,
+                True,
+            ),
+            (
+                "npm cannot run",
+                OSError("Exec format error"),
+                "the install could not start (Exec format error)",
+                "Check that npm works",
+                True,
+            ),
+        ]
+        for label, outcome, reason, hint, marker_left in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.node_modules, ignore_errors=True)
+                self._install(**dict(self.CURRENT, dompurify="3.3.1"))
+                if isinstance(outcome, Exception):
+                    self.run.side_effect = outcome
+                else:
+                    self._npm(*outcome)
+                san = HtmlSanitizer()
+                with (
+                    patch("shutil.which", return_value="/usr/bin/npm"),
+                    patch.object(sanitizer_module.logger, "warning") as warning,
+                ):
                     self.assertFalse(san._ensure_deps())
+                cause, remedy, command = san.error.splitlines()
+                self.assertEqual(cause, f"The sanitizer dependencies (dompurify) could not be installed: {reason}.")
+                self.assertTrue(remedy.startswith(hint), remedy)
+                self.assertTrue(remedy.endswith(", then run ownmail serve again, or install them with:"), remedy)
+                self.assertEqual(shlex.split(command), ["npm", "--prefix", self.dir, "install", "--omit=dev"])
+                # The marker stays unless npm exited by itself.
+                self.assertEqual(os.path.exists(self.marker), marker_left)
+                # npm's own output is logged whenever it fails.
+                if isinstance(outcome, tuple) and outcome[0]:
+                    self.assertIn(outcome[1], warning.call_args.args)
+                else:
+                    warning.assert_not_called()
 
-    def test_install_timeout(self):
-        """A hung npm install should time out rather than block forever."""
+    def test_missing_npm_is_reported(self):
+        """Without npm, unmet dependencies are named and nothing runs."""
         san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("npm", 60)):
-                    self.assertFalse(san._ensure_deps())
+        with patch("shutil.which", return_value=None):
+            self.assertFalse(san._ensure_deps())
+        self.assertEqual(
+            san.error,
+            "npm was not found, so the sanitizer dependencies (dompurify, jsdom, postcss) could not be installed.\n"
+            "Install Node.js with npm from https://nodejs.org, then run ownmail serve again.",
+        )
+        self.run.assert_not_called()
 
-    def test_install_unexpected_error(self):
-        """Any other npm failure should report failure, not raise."""
+    def test_restart_never_installs(self):
+        """With install False, unmet or unfinished dependencies are reported rather than installed."""
+        for label in ("stale", "unfinished"):
+            with self.subTest(label):
+                self._install(**dict(self.CURRENT, dompurify="3.3.1" if label == "stale" else "3.4.16"))
+                if label == "unfinished":
+                    open(self.marker, "w").close()
+                san = HtmlSanitizer()
+                with patch("shutil.which", return_value="/usr/bin/npm"):
+                    self.assertFalse(san._ensure_deps(install=False))
+                self.assertIn("changed while ownmail serve was running", san.error)
+                self.run.assert_not_called()
+
+    def test_unremovable_unfinished_install_is_reported(self):
+        """If an unfinished install cannot be removed, the error says which directory to delete."""
+        self._install(**self.CURRENT)
+        open(self.marker, "w").close()
         san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", side_effect=OSError("boom")):
-                    self.assertFalse(san._ensure_deps())
+        with patch("shutil.which", return_value="/usr/bin/npm"), patch("shutil.rmtree", side_effect=OSError("busy")):
+            self.assertFalse(san._ensure_deps())
+        self.assertIn("the unfinished install could not be removed (busy)", san.error)
+        self.assertIn(f"Delete {self.node_modules}, then run ownmail serve again", san.error)
+        self.run.assert_not_called()
+
+    def test_unreadable_package_json_is_reported(self):
+        """A broken shipped package.json stops the sanitizer instead of raising."""
+        self._write("package.json", "{")
+        san = HtmlSanitizer()
+        self.assertFalse(san._ensure_deps())
+        self.assertIn("The sanitizer's package.json could not be read", san.error)
+
+    def test_unreadable_installed_versions_are_unmet(self):
+        """An installed package.json that is missing, invalid or has no string version counts as unmet."""
+        target = os.path.join("node_modules", "dompurify", "package.json")
+        for contents in ("{", "[]", "{}", '{"version": 3}', '{"version": "3.4.16-beta.1"}'):
+            with self.subTest(contents):
+                self._write(target, contents)
+                self.assertEqual(sanitizer_module._unmet({"dompurify": "^3.4.16"}), ["dompurify"])
+        self.assertEqual(sanitizer_module._unmet({"absent": "^1.0.0"}), ["absent"])
+
+    def test_windows_command_uses_windows_quoting(self):
+        """The manual command quotes the path for cmd.exe on Windows."""
+        san = HtmlSanitizer()
+        with patch("ownmail.sanitizer.os.name", "nt"):
+            san._install_failed(
+                "dompurify", "npm install failed with EPERM", "Fix the npm error shown above", "--omit=dev"
+            )
+        expected = subprocess.list2cmdline(["npm", "--prefix", self.dir, "install", "--omit=dev"])
+        self.assertEqual(san.error.splitlines()[-1], f"  {expected}")
+        self.assertIn(f'"{self.dir}"', expected)
+
+    def test_version_ranges(self):
+        """Caret ranges keep the major version and never match a prerelease."""
+        cases = [
+            ("3.4.16", "^3.4.16", True),
+            ("3.10.0", "^3.4.16", True),
+            ("3.4.16+build.7", "^3.4.16", True),
+            ("3.4.15", "^3.4.16", False),
+            ("3.3.99", "^3.4.16", False),
+            ("4.0.0", "^3.4.16", False),
+            ("3.5.0-rc.1", "^3.4.16", False),
+            ("26.1.0", "^26.0.0", True),
+            (None, "^3.4.16", False),
+            (3, "^3.4.16", False),
+            # Ranges the check does not understand count as unmet, so npm decides.
+            ("0.2.5", "^0.2.3", False),
+            ("3.4.16", "~3.4.16", False),
+            ("3.4.16", "3.4.16", False),
+            ("3.4.16", ">=3.4.16", False),
+        ]
+        for version, spec, expected in cases:
+            with self.subTest(version=version, spec=spec):
+                self.assertIs(_satisfies(version, spec), expected)
+
+    def test_shipped_package_json_is_checkable(self):
+        """The shipped package.json uses only what the dependency check understands."""
+        with open(os.path.join(os.path.dirname(sanitizer_module.__file__), "package.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+        # The check reads only dependencies; a field such as overrides would go unchecked.
+        self.assertLessEqual(set(manifest), {"private", "dependencies", "devDependencies"})
+        for name, spec in manifest["dependencies"].items():
+            with self.subTest(name):
+                self.assertIsNotNone(_caret_floor(spec), f"{name}: {spec} is not a ^X.Y.Z range with X >= 1")
 
 
 class TestSanitizeErrorHandling(unittest.TestCase):
@@ -930,10 +1031,18 @@ class TestSanitizeErrorHandling(unittest.TestCase):
         self.assertIn("&lt;b&gt;", result)
 
     def test_restart_failure_is_survivable(self):
-        """If restarting also fails, sanitize should still return escaped HTML."""
-        san = HtmlSanitizer()
-        self._ready(san, [""])
-        with patch.object(san, "start", side_effect=OSError("no fork")):
-            result, _, _ = san.sanitize("<b>hi</b>")
-        self.assertIn("&lt;b&gt;", result)
-        self.assertFalse(san.available)
+        """If restarting also fails, sanitize should still return escaped HTML and log why."""
+
+        def fail_start(install):
+            san._error = "The sanitizer dependencies changed while ownmail serve was running."
+
+        for failure in (OSError("no fork"), fail_start):
+            with self.subTest(failure=failure):
+                san = HtmlSanitizer()
+                self._ready(san, [""])
+                with patch.object(san, "start", side_effect=failure):
+                    with self.assertLogs("ownmail.sanitizer", "WARNING") as logs:
+                        result, _, _ = san.sanitize("<b>hi</b>")
+                self.assertIn("&lt;b&gt;", result)
+                self.assertFalse(san.available)
+                self.assertIn(f"Failed to restart HTML sanitizer: {san.error}", logs.output[-1])

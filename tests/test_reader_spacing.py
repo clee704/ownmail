@@ -16,7 +16,7 @@ def spacing_sanitizer(contrast_browser):
     sanitizer = HtmlSanitizer()
     sanitizer.start()
     try:
-        assert sanitizer.available, "Reader spacing checks require the real HTML sanitizer"
+        assert sanitizer.available, f"Reader spacing checks require the real HTML sanitizer: {sanitizer.error}"
         yield sanitizer
     finally:
         sanitizer.stop()

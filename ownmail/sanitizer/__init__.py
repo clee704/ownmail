@@ -13,6 +13,8 @@ import html as html_module
 import json
 import logging
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import threading
@@ -22,6 +24,56 @@ logger = logging.getLogger(__name__)
 
 # Directory containing this module (and worker.js, package.json)
 _SANITIZER_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# A last resort: the network limits below end most failed installs sooner.
+_NPM_TIMEOUT = 300  # seconds
+# npm waits up to 5 minutes for a stalled download and about 70 seconds for
+# retries by default. Failing sooner lets npm roll back and report its own error.
+_NPM_NETWORK_ARGS = ["--fetch-timeout=30000", "--fetch-retries=1", "--fetch-retry-mintimeout=2000"]
+_NPM_ERROR_CODE = re.compile(r"^npm (?:error|ERR!) code (\S+)", re.MULTILINE)
+_NPM_NETWORK_CODES = {"ECONNREFUSED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "ETIMEDOUT"}
+# Written to node_modules while npm runs. An install stopped partway can leave
+# half-written packages that npm cannot repair, so the next start redoes it.
+_INSTALL_MARKER = ".ownmail-install-incomplete"
+# The only range form _satisfies understands; a test keeps package.json to it.
+_CARET_RANGE = re.compile(r"\^([1-9]\d*)\.(\d+)\.(\d+)")
+# npm ignores build metadata; a prerelease version does not match.
+_RELEASE_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z.-]+)?")
+
+_NODE_MISSING = (
+    "Node.js was not found.\n"
+    "Install a Node.js LTS release with npm from https://nodejs.org, then run ownmail serve again."
+)
+
+
+def _caret_floor(spec: str) -> tuple[int, ...] | None:
+    """The lowest version a range such as ^3.4.16 allows, or None for any other range."""
+    match = _CARET_RANGE.fullmatch(spec)
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def _satisfies(version: object, spec: str) -> bool:
+    """Whether an installed version is within a package.json range, as far as _caret_floor understands it."""
+    floor = _caret_floor(spec)
+    match = _RELEASE_VERSION.fullmatch(version) if isinstance(version, str) else None
+    if not floor or not match:
+        return False
+    installed = tuple(int(part) for part in match.groups())
+    return installed >= floor and installed[0] == floor[0]
+
+
+def _installed_version(name: str) -> object:
+    """The version in an installed package's package.json, or None if it cannot be read."""
+    try:
+        with open(os.path.join(_SANITIZER_DIR, "node_modules", name, "package.json"), encoding="utf-8") as f:
+            return json.load(f)["version"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _unmet(dependencies: dict) -> list[str]:
+    """Name each dependency whose installed version is outside its package.json range."""
+    return [name for name, spec in dependencies.items() if not _satisfies(_installed_version(name), spec)]
 
 
 class HtmlSanitizer:
@@ -35,8 +87,9 @@ class HtmlSanitizer:
         finally:
             sanitizer.stop()
 
-    If Node.js is not installed, start() logs a warning and sanitize()
-    returns the original HTML unchanged.
+    If Node.js or the worker's dependencies are unavailable, start() leaves
+    the sanitizer unavailable with the reason in error, and sanitize()
+    returns the HTML escaped.
     """
 
     def __init__(self, timeout: float = 5.0, verbose: bool = False):
@@ -52,6 +105,7 @@ class HtmlSanitizer:
         self._lock = threading.Lock()
         self._request_id = 0
         self._available = False
+        self._error: str | None = None
         self._stderr_thread: threading.Thread | None = None
 
     @staticmethod
@@ -59,49 +113,106 @@ class HtmlSanitizer:
         """Check if Node.js is installed and accessible."""
         return shutil.which("node") is not None
 
-    def _ensure_deps(self) -> bool:
-        """Install npm dependencies if not already present.
+    def _ensure_deps(self, install: bool = True) -> bool:
+        """Make the installed npm dependencies meet package.json.
 
-        Returns True if deps are ready, False on failure.
+        npm runs only when a dependency is missing or outside its range, or
+        an earlier install did not finish. With install False, that is
+        reported instead.
+
+        Returns True if deps are ready. On failure, sets error.
         """
+        try:
+            with open(os.path.join(_SANITIZER_DIR, "package.json"), encoding="utf-8") as f:
+                manifest = json.load(f)
+        except (OSError, ValueError) as e:
+            self._error = f"The sanitizer's package.json could not be read ({e}).\nReinstall ownmail."
+            return False
+        dependencies = manifest.get("dependencies", {})
         node_modules = os.path.join(_SANITIZER_DIR, "node_modules")
-        if os.path.isdir(node_modules):
+        marker = os.path.join(node_modules, _INSTALL_MARKER)
+        interrupted = os.path.exists(marker)
+        unmet = _unmet(dependencies)
+        if not unmet and not interrupted:
             return True
 
-        npm = shutil.which("npm")
-        if not npm:
-            logger.warning(
-                "npm not found — cannot install HTML sanitizer dependencies. "
-                "Install Node.js (https://nodejs.org) for HTML sanitization."
+        if not install:
+            self._error = (
+                "The sanitizer dependencies changed while ownmail serve was running.\n"
+                "Restart ownmail serve to install them."
             )
             return False
 
-        print("📦 Installing HTML sanitizer dependencies (one-time setup)...")
+        names = ", ".join(unmet or dependencies)
+        npm = shutil.which("npm")
+        if not npm:
+            self._error = (
+                f"npm was not found, so the sanitizer dependencies ({names}) could not be installed.\n"
+                "Install Node.js with npm from https://nodejs.org, then run ownmail serve again."
+            )
+            return False
+
+        # --omit=dev would remove the test dependencies of a development tree.
+        dev = any(os.path.isdir(os.path.join(node_modules, name)) for name in manifest.get("devDependencies", {}))
+        scope = "--include=dev" if dev else "--omit=dev"
+        if interrupted:
+            print("📦 Reinstalling HTML sanitizer dependencies after an unfinished install...", flush=True)
+            try:
+                shutil.rmtree(node_modules)
+            except OSError as e:
+                reason = f"the unfinished install could not be removed ({e})"
+                return self._install_failed(names, reason, f"Delete {node_modules}", scope)
+        elif os.path.isdir(node_modules):
+            print(f"📦 Updating HTML sanitizer dependencies ({names}) from npm...", flush=True)
+        else:
+            print("📦 Installing HTML sanitizer dependencies from npm (one-time setup)...", flush=True)
+
         try:
+            os.makedirs(node_modules, exist_ok=True)
+            open(marker, "w").close()
             result = subprocess.run(
-                [npm, "install", "--production", "--no-fund", "--no-audit"],
+                [npm, "install", scope, "--no-fund", "--no-audit", "--no-update-notifier", *_NPM_NETWORK_ARGS],
                 cwd=_SANITIZER_DIR,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=_NPM_TIMEOUT,
             )
-            if result.returncode != 0:
-                logger.warning(
-                    "npm install failed (exit %d): %s",
-                    result.returncode,
-                    result.stderr.strip(),
-                )
-                if self._verbose:
-                    print(f"[verbose] npm install stderr: {result.stderr.strip()}", flush=True)
-                return False
-            print("✓ HTML sanitizer ready")
-            return True
         except subprocess.TimeoutExpired:
-            logger.warning("npm install timed out after 60 seconds")
-            return False
+            reason = f"npm install did not finish within {_NPM_TIMEOUT} seconds"
+            return self._install_failed(names, reason, "Check the internet connection", scope)
         except Exception as e:
-            logger.warning("npm install failed: %s", e)
-            return False
+            hint = f"Check that npm works and {_SANITIZER_DIR} is writable"
+            return self._install_failed(names, f"the install could not start ({e})", hint, scope)
+        # npm exited by itself, and it rolls back an install that fails.
+        os.remove(marker)
+
+        if result.returncode != 0:
+            logger.warning("npm install failed (exit %d): %s", result.returncode, result.stderr.strip())
+            code = _NPM_ERROR_CODE.search(result.stderr)
+            if not code:
+                reason = f"npm install exited with code {result.returncode}"
+                return self._install_failed(names, reason, "Fix the npm error shown above", scope)
+            code = code[1]
+            network = code in _NPM_NETWORK_CODES or code.endswith("TIMEOUT")
+            hint = "Check the internet connection" if network else "Fix the npm error shown above"
+            return self._install_failed(names, f"npm install failed with {code}", hint, scope)
+        unmet = _unmet(dependencies)
+        if unmet:
+            reason = f"npm install finished but left {', '.join(unmet)} outside the package.json ranges"
+            return self._install_failed(names, reason, "Check the npm configuration", scope)
+        print("✓ HTML sanitizer dependencies installed")
+        return True
+
+    def _install_failed(self, names: str, reason: str, hint: str, scope: str) -> bool:
+        """Record why an install failed, with the command that installs by hand. Returns False."""
+        command = ["npm", "--prefix", _SANITIZER_DIR, "install", scope]
+        command = subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
+        self._error = (
+            f"The sanitizer dependencies ({names}) could not be installed: {reason}.\n"
+            f"{hint}, then run ownmail serve again, or install them with:\n"
+            f"  {command}"
+        )
+        return False
 
     def _drain_stderr(self) -> None:
         """Read stderr from the worker in a background thread to prevent blocking."""
@@ -116,20 +227,19 @@ class HtmlSanitizer:
             # Process closed
             pass
 
-    def start(self) -> None:
+    def start(self, install: bool = True) -> None:
         """Start the DOMPurify sidecar process.
 
-        If Node.js is not available or setup fails, sanitize() will
-        return HTML unchanged (graceful degradation).
+        Installs or updates its npm dependencies first, unless install is
+        False. If Node.js is not available or setup fails, error says why
+        and what to do, and sanitize() returns HTML escaped.
         """
+        self._error = None
         if not self.is_node_available():
-            logger.warning(
-                "Node.js not found — HTML sanitization disabled. "
-                "Install Node.js (https://nodejs.org) for sanitized email rendering."
-            )
+            self._error = _NODE_MISSING
             return
 
-        if not self._ensure_deps():
+        if not self._ensure_deps(install):
             return
 
         worker_path = os.path.join(_SANITIZER_DIR, "worker.js")
@@ -165,13 +275,17 @@ class HtmlSanitizer:
                     pass
 
             # If we get here, the worker didn't signal ready
-            logger.warning("HTML sanitizer worker did not send ready signal")
             self._kill_process()
+            self._error = (
+                "The sanitizer worker did not start. Check that Node.js is a supported LTS release (node --version).\n"
+                f"If it is, delete {os.path.join(_SANITIZER_DIR, 'node_modules')} and run ownmail serve again "
+                "to reinstall the sanitizer dependencies."
+            )
 
         except FileNotFoundError:
-            logger.warning("Node.js not found — HTML sanitization disabled")
+            self._error = _NODE_MISSING
         except Exception as e:
-            logger.warning("Failed to start HTML sanitizer: %s", e)
+            self._error = f"The sanitizer worker could not start ({e})."
             self._kill_process()
 
     def sanitize(self, html: str) -> tuple[str, bool, bool]:
@@ -182,7 +296,7 @@ class HtmlSanitizer:
 
         Returns:
             Tuple of (sanitized HTML, needs_padding, supports_dark_mode).
-            Returns (original HTML, True, False) if sanitizer is unavailable or on error.
+            Returns (escaped HTML, True, False) if sanitizer is unavailable or on error.
         """
         if not self._available or self._process is None:
             return html_module.escape(html), True, False
@@ -241,13 +355,18 @@ class HtmlSanitizer:
                 return html_module.escape(html), True, False
 
     def _restart(self) -> None:
-        """Restart the worker process after a failure."""
+        """Restart the worker process after a failure.
+
+        Never runs npm: an install would hold the lock that every render waits on.
+        """
         self._kill_process()
         self._available = False
         try:
-            self.start()
+            self.start(install=False)
         except Exception as e:
-            logger.warning("Failed to restart HTML sanitizer: %s", e)
+            self._error = str(e)
+        if self._error:
+            logger.warning("Failed to restart HTML sanitizer: %s", self._error)
 
     def _kill_process(self) -> None:
         """Terminate the worker process."""
@@ -276,3 +395,8 @@ class HtmlSanitizer:
     def available(self) -> bool:
         """Whether the sanitizer is running and available."""
         return self._available
+
+    @property
+    def error(self) -> str | None:
+        """Why the last start() left the sanitizer unavailable and what to do, or None."""
+        return self._error

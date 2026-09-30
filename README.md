@@ -97,7 +97,8 @@ Choose IMAP for a provider that accepts an app password, or Gmail API with OAuth
 for read-only Gmail access. See [provider setup and configuration](docs/setup.md).
 
 The browser opens at <http://127.0.0.1:8080>. The first launch installs the HTML
-sanitizer's Node.js dependencies and needs internet access. Once installed, local
+sanitizer's Node.js dependencies and needs internet access, as does the first
+launch after an update that requires newer versions of them. Otherwise local
 reading and search work without internet; keep `ownmail serve` running while you
 browse. A phone also needs a connection to that server. See
 [browser and mobile access](docs/setup.md#browser-and-mobile-access).

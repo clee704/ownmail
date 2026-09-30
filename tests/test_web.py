@@ -2029,15 +2029,22 @@ class TestRunServer:
         sanitizer.stop.assert_called_once()
 
     def test_refuses_to_serve_without_sanitizer(self, archive, sanitizer, capsys):
-        """An unavailable sanitizer should abort startup before app.run."""
+        """An unavailable sanitizer should abort startup, with its reason, before the app is created."""
+        from unittest.mock import patch
+
         from ownmail.web import run_server
 
         sanitizer.available = False
+        sanitizer.error = "npm install failed.\nInstall them with:\n  npm --prefix /x install --omit=dev"
         san_patch, run_patch, _ = self._patches(sanitizer)
-        with san_patch, run_patch as mock_run:
+        with san_patch, run_patch as mock_run, patch("ownmail.web.create_app") as mock_create:
             run_server(archive, open_browser=False)
         mock_run.assert_not_called()
-        assert "Refusing to serve without sanitization" in capsys.readouterr().out
+        mock_create.assert_not_called()
+        out = capsys.readouterr().out
+        assert "❌ HTML sanitizer failed to start.\n   npm install failed.\n   Install them with:\n" in out
+        assert "     npm --prefix /x install --omit=dev\n   Refusing to serve without sanitization.\n" in out
+        assert "Running at" not in out
 
     def test_debug_with_public_host_is_refused(self, archive, sanitizer, capsys):
         """--debug on a non-localhost host must not start the server."""

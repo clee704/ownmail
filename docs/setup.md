@@ -98,10 +98,12 @@ It opens <http://127.0.0.1:8080> automatically. Use `--no-browser` to suppress t
 step or `--port 8081` to choose another port. Keep the process running while using
 the interface.
 
-The first launch downloads the sanitizer dependencies through npm. Later local
-reading and search can work without internet, though remote content and external
-links still need their respective servers. If the sanitizer cannot start,
-ownmail refuses to serve message HTML; check that Node.js and npm are available.
+The first launch downloads the sanitizer dependencies through npm, and so does
+the first launch after an update that raises their required versions. Otherwise
+local reading and search can work without internet, though remote content and
+external links still need their respective servers. If the sanitizer cannot
+start, ownmail does not start the server. It prints the reason and, when the
+dependencies could not be installed, an npm command that installs them by hand.
 
 To reach the server from a phone on a trusted network:
 
