@@ -1,9 +1,11 @@
 ---
 id: TASK-111
 title: Add bounded JSON output to CLI search
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - Ownmail audit IC4
 created_date: '2026-09-24 18:44'
+updated_date: '2026-09-30 16:55'
 labels: []
 dependencies: []
 references:
@@ -30,3 +32,15 @@ Scripts and assistants need compact search results without parsing terminal outp
 - [ ] #4 Search performs no network calls or writes to the index, email files, Active cache, configuration, or credentials, including no implicit creation or migration.
 - [ ] #5 CLI documentation and synthetic-fixture tests cover pagination, invalid input, empty results, archive/Active results, clean JSON output, and absence of writes.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Pinned review base: 95251cc64f328890362757de49d194fa8ca256fe; isolated branch feat/bounded-search-json. This checkpoint implements only the decision-independent pure JSON formatter and synthetic tests. Add ownmail/search_json.py and tests/test_search_json.py; no shared argparse, command dispatch, database, Active cache, provider or export/sync edits. Reuse existing seven-field search tuples and active_infos metadata, preserve supplied search order, bound pages to 500 rows (existing web maximum) and snippets to 200 Unicode characters, and use one lookahead row for has_more/next_offset. Serialize results/pagination or a structured error envelope with no I/O. Document null/default behavior and Active freshness, retaining stable IDs without exposing file paths. Add failure-capable tests for the whole schema, limits/offsets, truncation, lookahead, empty pages, archive/Active/matched ownership, incomplete freshness, Unicode/control escaping and errors. Run only focused tests and normal commit hooks, review and commit cleanly. Acquisition is explicitly blocked on the user choice between live SQLite coordination writes and a prepared immutable snapshot; retain AC4 unchanged and leave every end-to-end AC and the full gate open.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+User decision is pending. Do not assume permission for WAL/SHM writes or silently omit committed WAL data. Parent explicitly authorized this independent pure-formatting slice while settling acquisition. Proposed JSON contract uses results plus pagination; archived is a boolean and active is null or a whitelisted copy of existing freshness fields. Defined errors use error.code and error.message. Default limit remains the CLI existing 50, with cap 500 matching web settings; offset is nonnegative. No production command will invoke this formatter until acquisition and stdout/stderr/exit handling are completed and validated.
+<!-- SECTION:NOTES:END -->
