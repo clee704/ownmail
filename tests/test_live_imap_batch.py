@@ -214,10 +214,29 @@ def test_metadata_failed_batch_retains_successful_batch_and_counts_every_uid():
     assert counts[-1] == 501
 
 
+@pytest.mark.parametrize("failure", [TimeoutError, ConnectionError, RuntimeError])
+def test_folder_listing_failure_retains_cause_without_confirming_absence(failure, monkeypatch):
+    provider = provider_for({"Projects": [1, 2]})
+    error = failure("private folder listing details")
+    monkeypatch.setattr(provider._conn, "list", MagicMock(side_effect=error))
+    ids = [_message_id("Projects", "10", uid) for uid in (1, 2)]
+    result = provider.read_live_messages(ids)
+    assert list(result) == ids
+    for value in result.values():
+        assert isinstance(value, LiveLookupError)
+        assert value.__cause__ is error
+        assert "private" not in str(value)
+    assert provider._conn.commands == []
+
+
 @pytest.mark.parametrize("method", ["list_live_messages", "read_live_messages"])
-def test_batch_interrupts_propagate(method):
+@pytest.mark.parametrize("stage", ["fetch", "list"])
+def test_batch_interrupts_propagate(method, stage, monkeypatch):
     provider = provider_for({"Projects": [1]})
-    provider._conn.fetch_error = KeyboardInterrupt()
+    if stage == "fetch":
+        provider._conn.fetch_error = KeyboardInterrupt()
+    else:
+        monkeypatch.setattr(provider._conn, "list", MagicMock(side_effect=KeyboardInterrupt()))
     args = [] if method == "list_live_messages" else [[_message_id("Projects", "10", 1)]]
     with pytest.raises(KeyboardInterrupt):
         getattr(provider, method)(*args)

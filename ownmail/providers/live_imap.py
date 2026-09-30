@@ -567,8 +567,11 @@ def read_messages(provider, message_ids):
             result[message_id] = LiveLookupError("Invalid IMAP identity")
     try:
         folders = _folders(provider)
-    except Exception:
-        return {message_id: LiveLookupError("IMAP folder listing failed") for message_id in message_ids}
+    except Exception as error:
+        for message_id in message_ids:
+            result[message_id] = LiveLookupError("IMAP folder listing failed")
+            result[message_id].__cause__ = error
+        return result
     checked_groups = []
     for (folder, validity), ids in groups.items():
         try:

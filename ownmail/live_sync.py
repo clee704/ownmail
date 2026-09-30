@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from ownmail import sidecar
 from ownmail.active_search import OwnedLookup, capture_id, owned_match
 from ownmail.database import ArchiveDatabase
+from ownmail.download_progress import FAILURE_REASONS
 from ownmail.live import LiveLookupError, LiveMessage, LiveSnapshot
 
 
@@ -159,10 +160,12 @@ def _batch_size(provider) -> int:
     return size if type(size) is int and 1 <= size <= 500 else 1
 
 
-def _read_messages(provider, message_ids):
+def _read_messages(provider, message_ids, *, progress=None):
     """Yield bounded read results without losing successful earlier batches."""
     size = _batch_size(provider)
     reader = getattr(provider, "read_live_messages", None)
+    if progress:
+        progress.flush()
     for start in range(0, len(message_ids), size):
         batch = message_ids[start : start + size]
         if not callable(reader):
@@ -172,6 +175,8 @@ def _read_messages(provider, message_ids):
                 except Exception as error:
                     value = error
                 yield message_id, value
+            if progress:
+                progress.flush()
             continue
         try:
             results = reader(batch)
@@ -184,6 +189,9 @@ def _read_messages(provider, message_ids):
             if value is not None and not isinstance(value, (LiveMessage, Exception)):
                 value = LiveLookupError("Server returned an invalid content batch result")
             yield message_id, value
+        if progress:
+            # Publish completed work before the next network batch can block.
+            progress.flush()
 
 
 def sync_live(archive, provider, *, since=None, until=None, progress=None) -> dict:
@@ -227,6 +235,8 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
     reasons = []
     capture_pending = False
     checked = 0
+    skipped_count = 0
+    failure_reason = None
     last_report = time.monotonic()
 
     def scan_progress(count):
@@ -239,35 +249,66 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             print(f"  Scanning live mail: {checked} messages checked...", flush=True)
             last_report = now
 
+    def report_progress(*, downloaded=0, skipped=0, active_refreshed=0):
+        nonlocal skipped_count, last_report
+        skipped_count += skipped
+        if progress:
+            progress.advance(downloaded=downloaded, skipped=skipped, active_refreshed=active_refreshed or None)
+        now = time.monotonic()
+        if now - last_report >= 1:
+            processed = result["success_count"] + result["active_refreshed"] + skipped_count + result["error_count"]
+            print(
+                f"  Refreshing live mail: {processed} processed; {result['success_count']} archived; "
+                f"{result['active_refreshed']} Active refreshed; {skipped_count} skipped; "
+                f"{result['error_count']} failed...",
+                flush=True,
+            )
+            last_report = now
+
     def failure(message_id, error):
+        nonlocal failure_reason
         result["error_count"] += 1
         result["failed_ids"].append(message_id)
         reasons.append("Some server messages could not be refreshed or captured")
-        print(f"Could not refresh or capture {message_id}; it remains retryable.")
+        cause = error
+        seen = set()
+        while isinstance(cause, LiveLookupError) and cause.__cause__ is not None and id(cause) not in seen:
+            seen.add(id(cause))
+            cause = cause.__cause__
+        if isinstance(cause, TimeoutError):
+            reason = "timeout"
+        elif isinstance(cause, ConnectionError):
+            reason = "network"
+        elif isinstance(error, sqlite3.Error):
+            reason = "index"
+        elif isinstance(error, OSError):
+            reason = "storage"
+        else:
+            reason = "active_refresh"
+        failure_reason = FAILURE_REASONS[reason]
         if progress:
-            if isinstance(error, (sqlite3.Error, OSError)):
-                progress.fail_exception(error, context="archive", errors=1)
-            else:
-                progress.fail("active_refresh", errors=1)
+            progress.fail(reason, errors=1)
+        report_progress()
 
     def refresh_messages(messages, lookup):
         pending = []
 
         def read_pending():
-            for listed, (_, value) in zip(pending, _read_messages(provider, [item.message_id for item in pending])):
+            for listed, (_, value) in zip(
+                pending, _read_messages(provider, [item.message_id for item in pending], progress=progress)
+            ):
                 yield listed, value
             if pending and progress:
-                # Publish completed saves before the next network batch can block.
                 progress.flush()
             pending.clear()
 
         for listed in messages:
             if _known_owned(archive, provider, listed, lookup):
-                if progress:
-                    progress.advance(skipped=1)
+                report_progress(skipped=1)
                 continue
             if not listed.download_allowed:
                 reasons.append("Some folders are excluded from downloads")
+                report_progress(skipped=1)
                 continue
             if not listed.active_allowed and listed.state in {"active", "unknown"}:
                 try:
@@ -275,8 +316,7 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
                 except Exception as error:
                     failure(listed.message_id, error)
                     continue
-                if progress:
-                    progress.advance(skipped=1)
+                report_progress(skipped=1)
                 continue
             prior = previous.get(listed.identity_token)
             if (
@@ -317,8 +357,7 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             if listed.identity_token in previous:
                 cache.remove(previous[listed.identity_token]["id"])
                 del previous[listed.identity_token]
-            if progress:
-                progress.advance(skipped=1)
+            report_progress(skipped=1)
             return
         if message.identity_token != listed.identity_token or message.message_id != listed.message_id:
             raise ValueError("Server identity changed during refresh")
@@ -327,12 +366,15 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             if prior:
                 cache.remove(prior["id"])
                 del previous[message.identity_token]
+            report_progress(skipped=1)
             return
         if not message.download_allowed:
             reasons.append("Some folders are excluded from downloads")
+            report_progress(skipped=1)
             return
         if not message.active_allowed and message.state in {"active", "unknown"}:
             defer_capture(message)
+            report_progress(skipped=1)
             return
         if message.raw is None or not isinstance(message.raw, bytes):
             raise ValueError("Message content is unavailable")
@@ -343,15 +385,13 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             if prior:
                 cache.remove(prior["id"])
                 del previous[message.identity_token]
-            if progress:
-                progress.advance(downloaded=int(captured), skipped=int(not captured))
+            report_progress(downloaded=int(captured), skipped=int(not captured))
         elif message.active_allowed and message.state in {"active", "unknown", "eligible"}:
             if owned_match(archive, _entry(provider, message), lookup=lookup):
                 if prior:
                     cache.remove(prior["id"])
                     del previous[message.identity_token]
-                if progress:
-                    progress.advance(skipped=1)
+                report_progress(skipped=1)
                 return
             cache.put(
                 source_name=provider.source_name,
@@ -369,8 +409,9 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             result["active_refreshed"] += 1
             if message.state == "unknown":
                 reasons.append(message.reason or "Some message states are unconfirmed")
-            if progress:
-                progress.advance(active_refreshed=1)
+            report_progress(active_refreshed=1)
+        else:
+            report_progress(skipped=1)
 
     try:
         print("Scanning live mail before capture...", flush=True)
@@ -396,6 +437,7 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
         print(f"Live scan {'complete' if snapshot.complete else 'incomplete'}: {checked} messages checked.", flush=True)
         if progress:
             progress.set_phase("refreshing")
+        last_report = time.monotonic()
         if not snapshot.complete:
             reasons.append(snapshot.reason or "Server listing was incomplete")
         observed = {listed.identity_token for listed in snapshot.messages}
@@ -411,7 +453,7 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
             for identity, entry in previous.items()
             if identity not in observed and in_scope(entry)
         }
-        for message_id, message in _read_messages(provider, list(missing)):
+        for message_id, message in _read_messages(provider, list(missing), progress=progress):
             entry = missing[message_id]
             try:
                 listed = LiveMessage(message_id, identity_token=entry["identity"])
@@ -456,6 +498,9 @@ def sync_live(archive, provider, *, since=None, until=None, progress=None) -> di
         progress.set_active_complete(result["active_complete"])
     print(
         f"Archived: {result['success_count']}; Active refreshed: {result['active_refreshed']}; "
+        f"{skipped_count} skipped; {result['error_count']} failed; "
         f"Active refresh {'complete' if result['active_complete'] else 'incomplete'}."
     )
+    if failure_reason:
+        print(failure_reason)
     return result
