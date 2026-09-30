@@ -1,0 +1,40 @@
+---
+id: TASK-128
+title: Enforce sanitizer pipe response deadlines
+status: In Progress
+assignee:
+  - Ownmail backend audit
+created_date: '2026-09-30 16:04'
+labels: []
+dependencies: []
+references:
+  - ownmail/sanitizer/__init__.py
+priority: medium
+type: bug
+ordinal: 111000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+The sanitizer checks elapsed time before blocking stdout.readline, so a worker that accepts a request but never completes its reply can hold rendering past the configured deadline. A bounded synthetic OS-pipe reproduction fails on both the common baseline and the reviewed integration candidate. Bound the response read using only portable standard-library primitives, retain escaped fallback and no-install restart, and ensure replacement readiness cannot turn a timeout into another unbounded wait. Remove the write-only stderr thread field left by TASK-121 while preserving its worker-local diagnostic thread.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 A positive response deadline handles both silent and incomplete-line workers, returns fully escaped input, and lets a replacement worker handle the next request.
+- [ ] #2 Replacement readiness is bounded, reader results are scoped to their original process/read, and EOF, invalid JSON, mismatched IDs, I/O failures and bounded stderr diagnostics retain their existing behavior.
+- [ ] #3 Real synthetic subprocess/pipe regressions fail against the old behavior; independent focused review and the complete mandatory-browser pre-push gate pass without new dependencies or relaxed checks.
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Review base: 47e54fd653f65a33b394f52207602476dc14126b. Own only the Python sanitizer adapter and relevant sanitizer tests; preserve reader-side work and existing refs. 2. Commit this task plan before edits. Add bounded actual-pipe regressions for silent and partial replies, replacement usability and silent startup. Confirm red baseline. 3. Add a small worker-bound one-shot Queue/thread read helper with a deadline, reuse it for ready and reply reads, retain the total per-response budget, escaped fallback and no-npm restart. Remove the unused instance stderr-thread assignment; retain local binding and diagnostic limits. Do not redesign worker.js, dependency installation, protocol, schema or security policy. 4. Run focused adapter/actual-pipe tests and static checks, review the entire task against the fixed base, and obtain independent focused review via the coordinator. Commit with normal hooks. 5. Combine with separately reviewed reader corrections, run one unchanged complete required gate with the coordinated private Chromium interval, then close only on evidence and integrate locally as authorized. No remote or real-mail operations.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Selected directly from verified audit evidence under the user-authorized correction scope. The timeout is a baseline defect, not attributed to TASK-121 or TASK-123. A selector-only solution is unsuitable for Windows pipes; a small one-shot reader avoids a persistent stdout service and new lifecycle queues. The request write remains outside the response-read timeout contract; request/protocol redesign is excluded.
+<!-- SECTION:NOTES:END -->

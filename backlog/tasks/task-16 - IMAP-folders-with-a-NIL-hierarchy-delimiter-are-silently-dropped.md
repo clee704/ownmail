@@ -1,11 +1,11 @@
 ---
 id: TASK-16
 title: IMAP folders with a NIL hierarchy delimiter are silently dropped
-status: Done
+status: In Progress
 assignee:
-  - Ownmail IC2
+  - Ownmail backend audit
 created_date: '2026-07-25 05:24'
-updated_date: '2026-09-30 06:30'
+updated_date: '2026-09-30 16:04'
 labels: []
 dependencies: []
 priority: medium
@@ -28,6 +28,7 @@ Fix: accept NIL as well as a quoted delimiter, and treat it as an empty delimite
 - [x] #2 Non-byte entries, genuinely malformed rows and nonselectable folders retain the existing skip behavior; a valid NIL row is no longer classified as malformed.
 - [x] #3 NIL folders use whole-name role matching and existing SPECIAL-USE, configured-folder and role-exclusion rules without changing those policies.
 - [x] #4 Synthetic parser and mocked-provider regressions show eligible NIL folders reach archive listing/scanning and role discovery while excluded folders remain excluded; the valid-NIL regression fails against the original parser, with existing quoted-delimiter coverage preserved.
+- [ ] #5 NIL delimiter tokens are accepted regardless of ASCII case in parser and full/incremental mocked archive scans, while names, flags, quoted delimiters and exclusions remain unchanged.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -62,6 +63,8 @@ Implementation now accepts NIL alongside the existing quoted delimiter and norma
 The coordinator removed the validation-slot prerequisite for isolated worktrees and authorized immediate local full validation and commit hooks. The task runtime uses its own venv, sanitizer node_modules, temporary files, cache and browser profiles; its reusable hook cache belongs only to IC2. Browser tests render private synthetic content, and the local test HTTP server requests an ephemeral port. Proceed with the implementation checkpoint and full required-browser pre-push gate on this branch. Integration/rebase/merge and public push remain coordinator-owned and have not occurred.
 
 Full required validation passed on implementation commit 8a7cf051a8d93e4f83dc2d3183680aaaf07b0139: pre-commit run -a --hook-stage pre-push passed all hooks with mandatory Chromium browser coverage enabled. Pytest reported 3,978 passed and the one pre-existing TASK-13 expected failure; no browser tests were skipped. Aggregate coverage including branches was 96.52%, above the 95% gate. Repository-wide ruff check, ruff format --check and deptry passed. Final author review covered the complete task scope from the recorded review base; an optional read-only Astra Ultra support audit also found no actionable introduced issue. The only production change is parse_list_response. No role policy, live parser, credentials, real mailbox, schema, dependencies or shared README changed. Local implementation is committed and verified; default-branch integration, upstream reconciliation and publication remain coordinated separately.
+
+Authorized audit follow-up from fixed review base 47e54fd653f65a33b394f52207602476dc14126b. The uppercase NIL fix remains useful, but lowercase and mixed-case protocol tokens are still skipped as in the baseline. Add a case-insensitive group for the NIL token only, parameterize existing parser and full/incremental scan cases, prove the new cases fail first, then obtain independent focused review and the combined required gate before restoring Done. Preserve folder-name/flag spelling and role policy. Scope is parse_list_response and existing IMAP tests only. No real server or credential operations.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
