@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-11 10:43'
-updated_date: '2026-09-30 16:10'
+updated_date: '2026-09-30 16:29'
 labels: []
 dependencies: []
 priority: high
@@ -37,6 +37,7 @@ Review charset selection and validation for these cases. Keep display and indexi
 - [x] #5 Undeclared short Western plain/HTML bodies preserve Noel, Munich and facade accent bytes through display and indexing while retained Korean, declared-charset and garbage-rejection controls pass.
 - [x] #6 Web no longer reexports decoder helpers solely for tests; canonical parser helper tests retain unique assertions without duplicate helper families.
 - [ ] #7 Audit follow-up receives independent review and the final combined repository gate before reclosure.
+- [x] #8 Short undeclared Western uppercase accents (Ärger, Åland and Álex) remain correct alongside original short/late EUC-KR, declared CP949 and long undeclared CP949 controls.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -84,6 +85,10 @@ Audit correction checkpoint: new exact Western regressions failed for all three 
 Affected mandatory-browser matrix passed: 60 tests, including all nine recovered-body browser cases and seventeen spacing cases. The three Western bodies render correctly; short/late Korean, declared Cyrillic and UTF-8 recovery controls remain intact. Browser processes exited and the exclusive interval was released. AC5 is verified. Helper-test consolidation and independent review/final combined gate remain pending.
 
 Helper consolidation complete: removed only the two test-only decoder reexports from web.py, consolidated 46 prior helper test methods into canonical parser families, and preserved unique valid/invalid codec, empty/control, CJK/kana/Latin, UTF-8 alias and authored-U+FFFD assertions. The former permissive invalid-decode assertion is strengthened to exact None. A semantic mapping is retained in private evidence; all unrelated test ASTs and every remaining web.py AST node are identical to the prior checkpoint. Focused decoder/charset/fixture checks pass: 210 tests. Four runtime-only mutations are rejected by the canonical assertions (valid-result loss, omitted validation, rejection of authored U+FFFD, unconditional text acceptance). No source mutation was used for those checks. Full-task self-review against the pinned combined base found no remaining introduced issue; declared charset precedence and garbage rejection are unchanged. AC6 is verified. Independent review and the integration owner final combined required gate remain outstanding; do not close from this checkpoint alone.
+
+Independent backend review of frozen bdc8191 identified the same TASK-40 regression remaining in CP949: undeclared Latin-1 Ärger, Åland and Álex are consumed as Korean because CP949 permits ASCII trail bytes. Original task AC3 explicitly requires short EUC-KR and late EUC-KR recovery, not inference of short undeclared CP949 extensions. Follow-up plan: add all three plain/HTML display/index regressions and declared/long CP949 controls; keep the original CP949-first broader fallback only when high-byte count exceeds ten, use strict EUC-KR alone for shorter non-ASCII bodies; rerun affected nonbrowser controls and hand off for independent recheck plus the combined mandatory-browser gate. No general encoding inference, policy expansion or other code scope.
+
+Independent-review correction implemented: only strict EUC-KR is attempted for one through ten high bytes, while CP949 retains its prior first position above that threshold; MIME/meta declarations and UTF-8 precedence are unchanged. All six new uppercase-Western plain/HTML regressions failed at bdc8191 while declared/long CP949 controls passed. Corrected focused parser/web/fixture/charset checks: 220 passed. Original short and late EUC-KR, long undeclared CP949 extensions, short declared CP949, UTF-8/Cyrillic/Latin declaration ambiguity and garbage rejection remain covered. Exact bytes and decoder candidates are preserved in private evidence. AC8 verified; independent recheck and final combined mandatory-browser gate remain pending under AC7. The earlier claim of complete Western correction was too broad and is superseded by these bounded tests.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
