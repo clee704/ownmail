@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-24 18:44'
-updated_date: '2026-09-30 16:55'
+updated_date: '2026-09-30 16:59'
 labels: []
 dependencies: []
 references:
@@ -43,4 +43,6 @@ Pinned review base: 95251cc64f328890362757de49d194fa8ca256fe; isolated branch fe
 
 <!-- SECTION:NOTES:BEGIN -->
 User decision is pending. Do not assume permission for WAL/SHM writes or silently omit committed WAL data. Parent explicitly authorized this independent pure-formatting slice while settling acquisition. Proposed JSON contract uses results plus pagination; archived is a boolean and active is null or a whitelisted copy of existing freshness fields. Defined errors use error.code and error.message. Default limit remains the CLI existing 50, with cap 500 matching web settings; offset is nonnegative. No production command will invoke this formatter until acquisition and stdout/stderr/exit handling are completed and validated.
+
+Formatting-only implementation is complete: ownmail/search_json.py accepts existing seven-field result tuples and matching active_infos metadata, emits results/pagination or an error envelope, preserves row order/null headers, caps pages at 500 and snippets at 200 Unicode characters, and derives next_offset only from lookahead. Missing metadata for an Active-only result raises an acquisition error rather than falsely reporting archive ownership. Pure validation is reusable before any source open. Dedicated synthetic suite: 34 passed. Runtime-only mutations removing the row cap, inventing a next page for a full terminal page, and discarding incomplete Active freshness are all detected. No owner source, index, cache, config, credentials or network are accessed by the formatter. No shared argparse, existing CLI function or command dispatch hunk changed. Self-review and Ruff checks passed. This is a deliberately partial checkpoint: no CLI flag is exposed yet; stdout/stderr/exit integration, safe acquisition, end-to-end fixture tests, user documentation and full required gate remain open. All original ACs remain unchecked and AC4 unchanged pending the user operating-contract decision.
 <!-- SECTION:NOTES:END -->
