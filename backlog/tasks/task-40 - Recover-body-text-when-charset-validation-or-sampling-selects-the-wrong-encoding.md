@@ -3,11 +3,11 @@ id: TASK-40
 title: >-
   Recover body text when charset validation or sampling selects the wrong
   encoding
-status: Done
+status: In Progress
 assignee:
-  - Ownmail IC2
+  - Ownmail audit IC4
 created_date: '2026-09-11 10:43'
-updated_date: '2026-09-30 05:27'
+updated_date: '2026-09-30 15:58'
 labels: []
 dependencies: []
 priority: high
@@ -34,6 +34,9 @@ Review charset selection and validation for these cases. Keep display and indexi
 - [x] #2 Conflicting Latin-1 declarations have a documented recovery rule, with regression coverage for UTF-8 payloads and correctly labelled legacy text.
 - [x] #3 Undeclared short EUC-KR content and EUC-KR content after a long ASCII HTML preamble decode correctly in display and indexing.
 - [x] #4 Synthetic regression tests cover all four reproductions and pass with the required repository checks.
+- [ ] #5 Undeclared short Western plain/HTML bodies preserve Noel, Munich and facade accent bytes through display and indexing while retained Korean, declared-charset and garbage-rejection controls pass.
+- [ ] #6 Web no longer reexports decoder helpers solely for tests; canonical parser helper tests retain unique assertions without duplicate helper families.
+- [ ] #7 Audit follow-up receives independent review and the final combined repository gate before reclosure.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -73,6 +76,8 @@ Final combined validation passed after the authorized clean rebase onto integrat
 Author self-review of the final combined diff found no remaining actionable introduced findings. Integrated TASK-118 run_server/TestRunServer behavior and sanitizer implementation/tests are preserved. Header decoding, dependencies, real mail files and running systems were not changed. TASK-126 remains the separately recorded pre-existing Cyrillic whitelist limitation; this task does not claim every legacy charset is correct.
 
 Implementation and follow-up are committed locally on fix/body-charset-recovery; tested implementation revision: 698d10ac4da989433aa1ffedc33a3d35bc18c8b5. All acceptance criteria are verified. The manager owns subsequent integration and the shared README proposal; no push or publication is required or authorized. No TASK-40 blocker remains.
+
+Authorized audit follow-up, review base 47e54fd653f65a33b394f52207602476dc14126b, isolated branch fix/audit-reader-regressions. Existing closure evidence is preserved; this task is reopened only for verified audit findings. No real mail, providers, credentials or running systems; no dependency, schema or main-branch change. Independent review and final combined mandatory-browser gate remain with the coordinator/integration owner before reclosure. Plan: (1) add failing synthetic Western cases to existing shared body regression matrix; (2) restrict newly added short-payload fallback to the verified Korean path while keeping the previous broad-CJK threshold over the complete payload; (3) remove only web.py lines 31-36 helper reexports and consolidate their callers into canonical parser tests, preserving unique character/alias/control cases; (4) run focused red/green, retained decoder and fixture checks, normal commit hooks and self-review; (5) hand off clean commits and exact evidence for independent review/combined gate.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
