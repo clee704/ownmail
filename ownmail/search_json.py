@@ -7,6 +7,7 @@ internal cache metadata are omitted. Active presence describes a cached server
 copy; ``complete`` and ``reason`` retain the existing freshness qualification.
 
 Pages default to the CLI's 50 rows and cap at the web UI's maximum of 500.
+Offsets range from 0 to 2147483647, keeping pagination values safely bounded.
 Snippets are at most 200 Unicode characters, including any truncation ellipsis.
 The caller supplies the already-offset page plus one lookahead row, in existing
 search order. No total count is implied. These functions perform no I/O; data
@@ -17,6 +18,7 @@ import json
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 500
+MAX_OFFSET = 2**31 - 1
 MAX_SNIPPET_LENGTH = 200
 
 
@@ -24,8 +26,8 @@ def validate_search_pagination(limit: int, offset: int) -> None:
     """Reject invalid page values before the caller acquires search data."""
     if type(limit) is not int or not 1 <= limit <= MAX_LIMIT:
         raise ValueError(f"limit must be an integer from 1 to {MAX_LIMIT}")
-    if type(offset) is not int or offset < 0:
-        raise ValueError("offset must be a nonnegative integer")
+    if type(offset) is not int or not 0 <= offset <= MAX_OFFSET:
+        raise ValueError(f"offset must be a nonnegative integer at most {MAX_OFFSET}")
 
 
 def search_results_json(

@@ -65,7 +65,7 @@ def owned_match(archive, entry: dict, *, include_trash: bool = True, lookup: Own
     if lookup is not None:
         candidates = lookup.candidates(entry)
     else:
-        with sqlite3.connect(archive.db.db_path) as conn:
+        with archive.db._connect() as conn:
             candidates = conn.execute(
                 f"SELECT {_OWNED_COLUMNS} "
                 "FROM emails WHERE account = ? AND (content_hash = ? OR provider_id IN (?, ?))",
@@ -201,7 +201,7 @@ def search(archive, query: str, *, account=None, limit=50, offset=0, sort="relev
         archived += archive.db.search(f"{query} is:active", _active_ids=set(links.values()), **options)
     live = cache.db.search(query, _active_ids=None, _archived_ids=set(links), **options)
     rows = {row[0]: row for row in archived}
-    with sqlite3.connect(archive.db.db_path) as conn:
+    with archive.db._connect() as conn:
         for row in live:
             archive_id = links.get(row[0])
             if archive_id:

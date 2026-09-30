@@ -783,6 +783,57 @@ def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
         print()
 
 
+def cmd_search_json(args) -> int:
+    """Return one bounded JSON result/error document without opening writable data."""
+    import sqlite3
+    from contextlib import redirect_stdout
+
+    from ownmail.search_json import search_error_json, search_results_json, validate_search_pagination
+    from ownmail.search_readonly import SearchUnavailable, open_search_archive
+
+    try:
+        limit, offset = int(args.limit), int(args.offset)
+        validate_search_pagination(limit, offset)
+    except (TypeError, ValueError) as error:
+        print(search_error_json("invalid_pagination", str(error)))
+        return 1
+    parsed = parse_query(args.query)
+    if parsed.has_error():
+        print(search_error_json("invalid_query", parsed.error))
+        return 1
+    try:
+        with redirect_stdout(sys.stderr):
+            try:
+                if args.config is not None and not args.config.is_file():
+                    raise SearchUnavailable("Requested configuration file is unavailable")
+                config = load_config(args.config, SCRIPT_DIR)
+                errors = validate_config(config)
+                if errors:
+                    raise SearchUnavailable("Invalid configuration: " + "; ".join(errors))
+            except SearchUnavailable:
+                raise
+            except Exception as error:
+                raise SearchUnavailable("Configuration could not be read") from error
+            archive_root = args.archive_root or get_archive_root(config, DEFAULT_ARCHIVE_DIR)
+            with open_search_archive(archive_root, config) as archive:
+                rows = archive.search(args.query, limit=limit + 1, offset=offset)
+                result = search_results_json(rows, archive.active_infos(), limit=limit, offset=offset)
+    except ValueError as error:
+        result = search_error_json("invalid_query", str(error))
+    except (SearchUnavailable, OSError, sqlite3.Error) as error:
+        result = search_error_json("unavailable", str(error))
+    except KeyboardInterrupt:
+        print(search_error_json("search_failed", "Search interrupted"))
+        return 130
+    except Exception as error:
+        result = search_error_json("search_failed", str(error))
+    else:
+        print(result)
+        return 0
+    print(result)
+    return 1
+
+
 def cmd_stats(archive: EmailArchive, config: dict, source_name: str | None = None) -> None:
     """Show archive statistics."""
     print("\n" + "=" * 50)
@@ -1020,7 +1071,9 @@ Examples:
         description="Full-text search across all downloaded emails.",
     )
     search_parser.add_argument("query", help="Search query")
-    search_parser.add_argument("--limit", type=int, default=50, help="Maximum results")
+    search_parser.add_argument("--limit", default=50, help="Maximum results (JSON: 1–500, default: 50)")
+    search_parser.add_argument("--json", action="store_true", help="Emit bounded JSON using existing read-only indexes")
+    search_parser.add_argument("--offset", default=0, help="JSON result offset (nonnegative, default: 0)")
     _add_global_opts(search_parser)
 
     # export command
@@ -1234,6 +1287,19 @@ Examples:
     if not args.command:
         parser.print_help()
         sys.exit(1)
+
+    if args.command == "search":
+        if args.json:
+            status = cmd_search_json(args)
+            if status:
+                sys.exit(status)
+            return
+        try:
+            args.limit = int(args.limit)
+        except ValueError:
+            parser.error("argument --limit: expected an integer")
+        if args.offset != 0:
+            parser.error("--offset requires --json")
 
     progress = DownloadProgress(args.progress_file) if args.command == "download" and args.progress_file else None
     operation = "config"

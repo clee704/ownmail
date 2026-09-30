@@ -1,4 +1,4 @@
-"""Pure JSON search contract, independent of the pending acquisition policy."""
+"""Pure JSON search contract, independent of data acquisition."""
 
 import copy
 import json
@@ -98,7 +98,7 @@ def test_page_cap_and_order_remain_bounded_with_excess_input():
     assert result["pagination"] == {"limit": 500, "offset": 1000, "has_more": True, "next_offset": 1500}
 
 
-@pytest.mark.parametrize("limit,offset", [(1, 0), (500, 123)])
+@pytest.mark.parametrize("limit,offset", [(1, 0), (500, 123), (500, 2147483647)])
 def test_valid_pagination_boundaries(limit, offset):
     assert validate_search_pagination(limit, offset) is None
 
@@ -111,7 +111,7 @@ def test_invalid_limit_is_rejected_before_formatting(limit):
         search_results_json([], {}, limit=limit)
 
 
-@pytest.mark.parametrize("offset", [-1, True, False, 1.5, "0", None])
+@pytest.mark.parametrize("offset", [-1, True, False, 1.5, "0", None, 2147483648])
 def test_invalid_offset_is_rejected_before_formatting(offset):
     with pytest.raises(ValueError, match="offset must be a nonnegative integer"):
         validate_search_pagination(50, offset)

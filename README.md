@@ -194,6 +194,40 @@ ownmail search 'label:"Receipts, 2026"'
 
 The web interface includes search help with supported operators and examples.
 
+For scripts, JSON mode searches the existing archive and cached Active view:
+
+```bash
+ownmail search 'invoice' --json --limit 50 --offset 0
+ownmail search --json -- '-is:active'
+```
+
+Stdout is one JSON document; configuration and search diagnostics go to stderr.
+Success contains `results` and `pagination`. Each result has `id`, `sender`,
+`subject`, `date`, `snippet`, `has_attachments`, `archived`, and `active`. Indexed
+headers can be null. Snippets are capped at 200 Unicode characters; file paths
+and full bodies are omitted. `active` is null for archive-only messages, otherwise
+it contains `complete`, `checked_at`, `content_at`, `reason`, and `refresh_error`.
+An archived copy can also have Active status; incomplete freshness stays explicit.
+
+`--limit` defaults to 50 and accepts 1–500. JSON-only `--offset` accepts integers
+from 0 to 2147483647. Pagination repeats these values and reports `has_more` plus
+`next_offset` (null on the last page), using one lookahead row rather than an
+expensive total. Ordering and Trash/date exclusions match ordinary search. Each
+invocation takes its own read snapshots, so later pages can change if mail changes.
+Empty results succeed with exit status 0. Query/FTS errors, bad pagination, missing
+prerequisites, and unexpected failures return `{"error":{"code":"...","message":"..."}}`
+with codes `invalid_query`, `invalid_pagination`, `unavailable`, or `search_failed`
+and exit status 1; Ctrl-C returns `search_failed` and status 130. CLI syntax/help
+handling retains the normal argparse behavior.
+
+JSON search requires existing compatible indexes. It opens live SQLite data
+read-only, including committed WAL contents; normal WAL/SHM coordination files
+may be updated. It does not initialize or migrate databases, rebuild the Active
+index, modify substantive archive/cache/configuration/credential contents, or
+contact mail servers. A missing or inconsistent index reports `unavailable`
+instead of repairing it. Concurrent Active changes also report `unavailable` so
+the command can be retried. The human-readable default is unchanged.
+
 ## Export
 
 Export owned archive messages to a new mbox file that other mail clients can import:
