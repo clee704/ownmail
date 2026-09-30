@@ -20,6 +20,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from queue import Empty, Queue
 
 from ownmail.download_lock import LockHeld, ProcessLock
 
@@ -135,6 +136,25 @@ def _clear(node_modules: str) -> None:
             os.remove(entry.path)
 
 
+def _readline(process: subprocess.Popen, timeout: float) -> str:
+    """Read one worker line within a deadline, including on Windows pipes."""
+    result: Queue[str | Exception] = Queue(maxsize=1)
+
+    def read() -> None:
+        try:
+            result.put(process.stdout.readline())
+        except Exception as error:
+            result.put(error)
+
+    # A timed-out read belongs only to this pipe and queue; it cannot consume
+    # a replacement's output. The reader exits when its pipe closes.
+    threading.Thread(target=read, daemon=True).start()
+    line = result.get(timeout=timeout)
+    if isinstance(line, Exception):
+        raise line
+    return line
+
+
 class HtmlSanitizer:
     """HTML sanitizer backed by DOMPurify running in a Node.js sidecar.
 
@@ -155,7 +175,7 @@ class HtmlSanitizer:
         """Initialize sanitizer.
 
         Args:
-            timeout: Seconds to wait for sanitization response.
+            timeout: Seconds to wait for worker readiness or a sanitization response.
             verbose: Print detailed timing and activity logs.
         """
         self._process: subprocess.Popen | None = None
@@ -165,7 +185,6 @@ class HtmlSanitizer:
         self._request_id = 0
         self._available = False
         self._error: str | None = None
-        self._stderr_thread: threading.Thread | None = None
 
     @staticmethod
     def is_node_available() -> bool:
@@ -381,13 +400,13 @@ class HtmlSanitizer:
             )
 
             # Start stderr drain thread
-            self._stderr_thread = stderr_thread = threading.Thread(
+            stderr_thread = threading.Thread(
                 target=self._drain_stderr, args=(process, diagnostic, capturing), daemon=True
             )
             stderr_thread.start()
 
             # Wait for ready signal
-            ready_line = process.stdout.readline()
+            ready_line = _readline(process, self._timeout)
             if ready_line:
                 try:
                     msg = json.loads(ready_line)
@@ -420,6 +439,9 @@ class HtmlSanitizer:
             if diagnostic:
                 self._error = diagnostic[0] + "\n" + self._error
 
+        except Empty:
+            self._error = f"The sanitizer worker did not become ready within {self._timeout:g} seconds."
+            self._kill_process()
         except FileNotFoundError:
             self._error = _NODE_MISSING
         except Exception as e:
@@ -457,11 +479,9 @@ class HtmlSanitizer:
                 while True:
                     elapsed = time.monotonic() - start
                     if elapsed >= self._timeout:
-                        logger.warning("HTML sanitization timed out after %.1fs", self._timeout)
-                        self._restart()
-                        return html_module.escape(html), True, False
+                        raise Empty
 
-                    line = self._process.stdout.readline()
+                    line = _readline(self._process, self._timeout - elapsed)
                     if not line:
                         # Process died
                         logger.warning("HTML sanitizer process died unexpectedly")
@@ -489,6 +509,10 @@ class HtmlSanitizer:
                             )
                         return result_html, needs_padding, supports_dark
 
+            except Empty:
+                logger.warning("HTML sanitization timed out after %.1fs", self._timeout)
+                self._restart()
+                return html_module.escape(html), True, False
             except (BrokenPipeError, OSError) as e:
                 logger.warning("Sanitizer communication error: %s", e)
                 self._restart()

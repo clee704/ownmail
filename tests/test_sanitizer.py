@@ -6,7 +6,10 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1045,6 +1048,7 @@ class TestSanitizerLifecycle(unittest.TestCase):
             patch.object(san, "_ensure_deps", return_value=True),
             patch("subprocess.Popen", return_value=proc),
             patch("ownmail.sanitizer.threading.Thread", side_effect=factory),
+            patch("ownmail.sanitizer._readline", side_effect=lambda process, timeout: process.stdout.readline()),
         ):
             san.start()
 
@@ -1179,6 +1183,7 @@ class TestSanitizerLifecycle(unittest.TestCase):
             patch.object(san, "_ensure_deps", return_value=True) as deps,
             patch("subprocess.Popen", side_effect=[old, new]),
             patch("ownmail.sanitizer.threading.Thread", side_effect=factory),
+            patch("ownmail.sanitizer._readline", side_effect=lambda process, timeout: process.stdout.readline()),
             patch("ownmail.sanitizer.logger.debug") as debug,
         ):
             san.start()
@@ -1844,18 +1849,23 @@ class TestSanitizeErrorHandling(unittest.TestCase):
         mock_start.assert_called_once()
         self.assertEqual(result, "&lt;b&gt;hi&lt;/b&gt;")
 
-    def test_broken_pipe_triggers_restart(self):
-        """A broken stdin pipe should restart the worker and escape output."""
-        san = HtmlSanitizer()
-        proc = self._ready(san, [])
-        proc.stdin.write.side_effect = BrokenPipeError("gone")
-        with patch.object(san, "start") as mock_start:
-            result, _, _ = san.sanitize("<b>hi</b>")
-        mock_start.assert_called_once()
-        self.assertEqual(result, "&lt;b&gt;hi&lt;/b&gt;")
+    def test_pipe_errors_trigger_restart(self):
+        """Both write failures and errors from the reader restart and escape."""
+        for operation in ("write", "read"):
+            with self.subTest(operation=operation):
+                san = HtmlSanitizer()
+                proc = self._ready(san, [])
+                if operation == "write":
+                    proc.stdin.write.side_effect = BrokenPipeError("gone")
+                else:
+                    proc.stdout.readline.side_effect = OSError("pipe read failed")
+                with patch.object(san, "start") as mock_start:
+                    result, _, _ = san.sanitize("<b>hi</b>")
+                mock_start.assert_called_once()
+                self.assertEqual(result, "&lt;b&gt;hi&lt;/b&gt;")
 
     def test_timeout_triggers_restart(self):
-        """A worker that never answers should time out and be restarted."""
+        """An already-expired budget restarts without consuming a response."""
         san = HtmlSanitizer()
         san._timeout = 0
         self._ready(san, ['{"id": 1, "html": "too late"}\n'])
@@ -1880,3 +1890,95 @@ class TestSanitizeErrorHandling(unittest.TestCase):
                 self.assertIn("&lt;b&gt;", result)
                 self.assertFalse(san.available)
                 self.assertIn(f"Failed to restart HTML sanitizer: {san.error}", logs.output[-1])
+
+
+class TestSanitizerPipeTimeouts(unittest.TestCase):
+    """Real OS pipes must obey positive deadlines and keep replacements isolated."""
+
+    def _start_worker(self, san, script, *, ready=True):
+        processes = []
+        watchdogs = []
+        expired = threading.Event()
+        popen = subprocess.Popen
+
+        def spawn(command, **kwargs):
+            process = popen([sys.executable, "-u", "-c", script], **kwargs)
+            processes.append(process)
+
+            def stop_stalled_test():
+                if process.poll() is None:
+                    expired.set()
+                    process.kill()
+
+            watchdog = threading.Timer(3, stop_stalled_test)
+            watchdog.start()
+            watchdogs.append(watchdog)
+            return process
+
+        def cleanup_processes():
+            for watchdog in watchdogs:
+                watchdog.cancel()
+            san.stop()
+            for process in processes:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=2)
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    stream.close()
+
+        self.addCleanup(cleanup_processes)
+        # Keep process creation patched for the real restart after a timeout.
+        patches = [
+            patch.object(san, "is_node_available", return_value=True),
+            patch.object(san, "_ensure_deps", return_value=True),
+            patch("ownmail.sanitizer.subprocess.Popen", side_effect=spawn),
+        ]
+        for context in patches:
+            context.start()
+            self.addCleanup(context.stop)
+        san.start()
+        if ready:
+            self.assertTrue(san.available)
+        return processes, expired
+
+    def _response_deadline(self, partial):
+        san = HtmlSanitizer(timeout=0.5)
+        script = """
+import json, sys, time
+print('{"ready":true}', flush=True)
+for line in sys.stdin:
+    request = json.loads(line)
+    if request['html'] == '<b>stall</b>':
+        if PARTIAL:
+            sys.stdout.write('{"id":'); sys.stdout.flush()
+        time.sleep(10)
+    else:
+        print(json.dumps({'id':request['id'], 'html':'<p>fresh</p>'}), flush=True)
+""".replace("PARTIAL", repr(partial))
+        processes, expired = self._start_worker(san, script)
+        start = time.monotonic()
+        result = san.sanitize("<b>stall</b>")
+        self.assertLess(time.monotonic() - start, 2.5)
+        self.assertFalse(expired.is_set(), "outer safety watchdog, not sanitizer, ended the wait")
+        self.assertEqual(result, ("&lt;b&gt;stall&lt;/b&gt;", True, False))
+        self.assertEqual(len(processes), 2)
+        self.assertIsNotNone(processes[0].poll())
+        self.assertTrue(san.available)
+        self.assertEqual(san.sanitize("safe"), ("<p>fresh</p>", True, False))
+        san.stop()
+
+    def test_positive_response_deadline_restarts_silent_worker(self):
+        self._response_deadline(False)
+
+    def test_positive_response_deadline_restarts_partial_worker(self):
+        self._response_deadline(True)
+
+    def test_silent_startup_has_a_positive_deadline(self):
+        san = HtmlSanitizer(timeout=0.1)
+        start = time.monotonic()
+        processes, expired = self._start_worker(san, "import time; time.sleep(10)", ready=False)
+        self.assertLess(time.monotonic() - start, 2.5)
+        self.assertFalse(expired.is_set())
+        self.assertFalse(san.available)
+        self.assertIn("ready", san.error)
+        self.assertIsNotNone(processes[0].poll())
