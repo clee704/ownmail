@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-11 10:43'
-updated_date: '2026-09-30 16:05'
+updated_date: '2026-09-30 16:10'
 labels: []
 dependencies: []
 priority: high
@@ -35,7 +35,7 @@ Review charset selection and validation for these cases. Keep display and indexi
 - [x] #3 Undeclared short EUC-KR content and EUC-KR content after a long ASCII HTML preamble decode correctly in display and indexing.
 - [x] #4 Synthetic regression tests cover all four reproductions and pass with the required repository checks.
 - [x] #5 Undeclared short Western plain/HTML bodies preserve Noel, Munich and facade accent bytes through display and indexing while retained Korean, declared-charset and garbage-rejection controls pass.
-- [ ] #6 Web no longer reexports decoder helpers solely for tests; canonical parser helper tests retain unique assertions without duplicate helper families.
+- [x] #6 Web no longer reexports decoder helpers solely for tests; canonical parser helper tests retain unique assertions without duplicate helper families.
 - [ ] #7 Audit follow-up receives independent review and the final combined repository gate before reclosure.
 <!-- AC:END -->
 
@@ -82,10 +82,14 @@ Authorized audit follow-up, review base 47e54fd653f65a33b394f52207602476dc14126b
 Audit correction checkpoint: new exact Western regressions failed for all three undeclared examples in both plain and HTML bodies at the combined base. The bounded fix preserves the shared declaration/UTF-8 rules, always tries the existing Korean candidates for non-ASCII bodies, and retains the broader CJK fallback threshold of more than ten high bytes over the complete payload. This restores prior Western fallback behavior without sacrificing short/late Korean recovery. Focused charset and real-worker sanitizer checks pass: 154 tests and 368 subtests; no browser was used. Helper-test consolidation, affected browser checks, independent review and final combined gate remain pending. No claim of universal encoding inference is made.
 
 Affected mandatory-browser matrix passed: 60 tests, including all nine recovered-body browser cases and seventeen spacing cases. The three Western bodies render correctly; short/late Korean, declared Cyrillic and UTF-8 recovery controls remain intact. Browser processes exited and the exclusive interval was released. AC5 is verified. Helper-test consolidation and independent review/final combined gate remain pending.
+
+Helper consolidation complete: removed only the two test-only decoder reexports from web.py, consolidated 46 prior helper test methods into canonical parser families, and preserved unique valid/invalid codec, empty/control, CJK/kana/Latin, UTF-8 alias and authored-U+FFFD assertions. The former permissive invalid-decode assertion is strengthened to exact None. A semantic mapping is retained in private evidence; all unrelated test ASTs and every remaining web.py AST node are identical to the prior checkpoint. Focused decoder/charset/fixture checks pass: 210 tests. Four runtime-only mutations are rejected by the canonical assertions (valid-result loss, omitted validation, rejection of authored U+FFFD, unconditional text acceptance). No source mutation was used for those checks. Full-task self-review against the pinned combined base found no remaining introduced issue; declared charset precedence and garbage rejection are unchanged. AC6 is verified. Independent review and the integration owner final combined required gate remain outstanding; do not close from this checkpoint alone.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Completed body charset recovery for display and indexing through one shared selector. Authored UTF-8 U+FFFD is preserved while surrounding text validation still rejects garbage. Complete readable UTF-8 takes precedence over a Latin-1 declaration; other usable declarations retain precedence. The fallback no longer misses short Korean bodies or non-ASCII bytes after long ASCII preambles. Combined required-browser pre-push coverage passed at 96.506%, focused regressions passed, and final author self-review found no remaining introduced issue. Pre-existing Cyrillic validation is tracked separately in TASK-126. Work is committed locally for manager integration.
+
+Audit follow-up: the bounded Western regression correction and decoder-helper consolidation are implemented and locally verified. Historical closure above is preserved. Status remains In Progress pending the newly added independent-review and final combined gate criterion.
 <!-- SECTION:FINAL_SUMMARY:END -->

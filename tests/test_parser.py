@@ -901,6 +901,59 @@ class TestValidateDecodedText:
 
         assert _validate_decoded_text("안녕하세요 반갑습니다") is True
 
+    def test_cjk_and_kana_are_readable(self):
+        from ownmail.parser import _validate_decoded_text
+
+        assert _validate_decoded_text("漢字 안녕 ひらがな カタカナ") is True
+
+    def test_control_characters_fail(self):
+        from ownmail.parser import _validate_decoded_text
+
+        assert _validate_decoded_text("\x00\x01\x02\x03\x04\x05\x06\x07") is False
+
+    def test_latin_extended_is_readable(self):
+        from ownmail.parser import _validate_decoded_text
+
+        assert _validate_decoded_text("café naïve résumé") is True
+
+
+class TestTryDecode:
+    """Shared decoder helper behavior, independent of its display/index callers."""
+
+    @pytest.mark.parametrize("text", ["Hello World", "안녕하세요"])
+    def test_valid_decode(self, text):
+        from ownmail.parser import _try_decode
+
+        assert _try_decode(text.encode(), "utf-8") == text
+
+    @pytest.mark.parametrize("payload", [b"\xff\xfe", "안녕".encode("euc-kr")])
+    def test_invalid_bytes_are_rejected(self, payload):
+        from ownmail.parser import _try_decode
+
+        assert _try_decode(payload, "utf-8") is None
+
+    def test_unknown_encoding_is_rejected(self):
+        from ownmail.parser import _try_decode
+
+        assert _try_decode(b"Hello", "not-a-valid-encoding") is None
+
+    def test_control_garbage_is_rejected(self):
+        from ownmail.parser import _try_decode
+
+        assert _try_decode(b"\x01\x02\x03\x04\x05", "utf-8") is None
+
+    @pytest.mark.parametrize("encoding", ["utf-8", "UTF8", "utf_8"])
+    @pytest.mark.parametrize("body", ["Café �", "�"])
+    def test_literal_replacement_character_is_preserved(self, encoding, body):
+        from ownmail.parser import _try_decode
+
+        assert _try_decode(body.encode(), encoding) == body
+
+    def test_literal_replacement_character_does_not_accept_control_garbage(self):
+        from ownmail.parser import _try_decode
+
+        assert _try_decode(("\x01" * 20 + "�").encode(), "utf-8") is None
+
 
 class TestSafeGetContentCharsets:
     """Tests for EmailParser._safe_get_content charset handling."""

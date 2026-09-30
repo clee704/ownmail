@@ -353,24 +353,6 @@ class TestParserDecodeGrouped:
         assert "테스트" in result
 
 
-class TestParserValidateText:
-    """Tests for parser _validate_decoded_text."""
-
-    def test_validate_good_text(self):
-        """Test validating good text."""
-        from ownmail.parser import _validate_decoded_text
-
-        result = _validate_decoded_text("This is valid English text.")
-        assert result is True
-
-    def test_validate_replacement_chars(self):
-        """Test validating text with replacement chars."""
-        from ownmail.parser import _validate_decoded_text
-
-        result = _validate_decoded_text("Bad \ufffd\ufffd\ufffd text")
-        assert result is False
-
-
 class TestParserDetectCharset:
     """Tests for parser _detect_charset."""
 
@@ -647,38 +629,6 @@ class TestWebCleanSnippetTextV3:
         assert result == ""
 
 
-class TestWebValidateDecodedText:
-    """Tests for web _validate_decoded_text."""
-
-    def test_validate_good_ascii(self):
-        """Test validating good ASCII text."""
-        from ownmail.web import _validate_decoded_text
-
-        result = _validate_decoded_text("Hello World! This is a test.")
-        assert result is True
-
-    def test_validate_replacement_chars(self):
-        """Test rejecting replacement characters."""
-        from ownmail.web import _validate_decoded_text
-
-        result = _validate_decoded_text("Bad \ufffd text")
-        assert result is False
-
-    def test_validate_cjk(self):
-        """Test validating CJK text."""
-        from ownmail.web import _validate_decoded_text
-
-        result = _validate_decoded_text("한글 테스트")
-        assert result is True
-
-    def test_validate_empty(self):
-        """Test validating empty text."""
-        from ownmail.web import _validate_decoded_text
-
-        result = _validate_decoded_text("")
-        assert result is False
-
-
 class TestWebParseEmailAddress:
     """Tests for web parse_email_address."""
 
@@ -751,24 +701,6 @@ class TestWebDecodeHeader:
 
         result = decode_header(None)
         assert result == ""
-
-
-class TestParserTryDecode:
-    """Tests for parser _try_decode."""
-
-    def test_try_decode_utf8(self):
-        """Test decoding UTF-8."""
-        from ownmail.parser import _try_decode
-
-        result = _try_decode(b"Hello World", "utf-8")
-        assert result == "Hello World"
-
-    def test_try_decode_invalid(self):
-        """Test decoding with invalid bytes."""
-        from ownmail.parser import _try_decode
-
-        result = _try_decode(b"\xff\xfe", "utf-8")
-        assert result is None
 
 
 class TestCommandsSyncCheck:
@@ -901,24 +833,6 @@ Body text.
 """
         result = EmailParser.parse_file(content=content)
         assert result is not None
-
-
-class TestWebTryDecode:
-    """Tests for web _try_decode."""
-
-    def test_try_decode_utf8(self):
-        """Test decoding UTF-8."""
-        from ownmail.web import _try_decode
-
-        result = _try_decode(b"Hello World", "utf-8")
-        assert result == "Hello World"
-
-    def test_try_decode_invalid_encoding(self):
-        """Test decoding with invalid encoding."""
-        from ownmail.web import _try_decode
-
-        result = _try_decode(b"\xff\xfe\x00\x01", "utf-8")
-        assert result is None
 
 
 class TestWebDecodeTextBody:

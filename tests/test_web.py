@@ -448,69 +448,6 @@ class TestDecodeHtmlBody:
         assert _decode_html_body(b"<p>Hello</p>", "not-a-real-charset") == "<p>Hello</p>"
 
 
-class TestValidateDecodedText:
-    """Tests for _validate_decoded_text function."""
-
-    def test_valid_ascii_text(self):
-        """Valid ASCII text should pass."""
-        from ownmail.web import _validate_decoded_text
-
-        assert _validate_decoded_text("Hello World") is True
-
-    def test_valid_korean_text(self):
-        """Valid Korean text should pass."""
-        from ownmail.web import _validate_decoded_text
-
-        assert _validate_decoded_text("안녕하세요") is True
-
-    def test_replacement_characters_fail(self):
-        """Text with replacement characters should fail."""
-        from ownmail.web import _validate_decoded_text
-
-        assert _validate_decoded_text("Hello\ufffd\ufffd") is False
-
-    def test_empty_text(self):
-        """Empty text should fail."""
-        from ownmail.web import _validate_decoded_text
-
-        assert _validate_decoded_text("") is False
-
-
-class TestTryDecode:
-    """Tests for _try_decode function."""
-
-    def test_valid_decode(self):
-        """Valid decoding should return text."""
-        from ownmail.web import _try_decode
-
-        result = _try_decode(b"Hello", "utf-8")
-        assert result == "Hello"
-
-    def test_invalid_decode(self):
-        """Invalid decoding should return None."""
-        from ownmail.web import _try_decode
-
-        # EUC-KR bytes that won't decode as UTF-8
-        korean_bytes = "안녕".encode("euc-kr")
-        result = _try_decode(korean_bytes, "utf-8")
-        # Should return None or invalid result
-        assert result is None or "\ufffd" not in result
-
-    @pytest.mark.parametrize("encoding", ["utf-8", "UTF8", "utf_8"])
-    @pytest.mark.parametrize("body", ["Café �", "�"])
-    def test_literal_replacement_character_is_preserved(self, encoding, body):
-        """Strict UTF-8 accepts authored U+FFFD, including charset aliases."""
-        from ownmail.web import _try_decode
-
-        assert _try_decode(body.encode(), encoding) == body
-
-    def test_literal_replacement_character_does_not_accept_control_garbage(self):
-        """An authored U+FFFD must not bypass the surrounding text validation."""
-        from ownmail.web import _try_decode
-
-        assert _try_decode(("\x01" * 20 + "�").encode(), "utf-8") is None
-
-
 class TestRawEmailRoute:
     """Tests for /raw/<email_id> route."""
 
@@ -3448,35 +3385,6 @@ class TestDecodeHtmlBodyCharsetEdges:
         from ownmail.web import _decode_html_body
 
         assert isinstance(_decode_html_body(bytes(range(0x80, 0x100)) * 2, None), str)
-
-
-class TestValidateDecodedTextWeb:
-    """Tests for web._validate_decoded_text character classes."""
-
-    def _validate(self, text, ratio=0.7):
-        from ownmail.web import _validate_decoded_text
-
-        return _validate_decoded_text(text, ratio)
-
-    def test_empty_text_is_not_readable(self):
-        """Empty text carries no readable content."""
-        assert self._validate("") is False
-
-    def test_replacement_characters_fail(self):
-        """U+FFFD means decoding already failed."""
-        assert self._validate("hel�lo") is False
-
-    def test_cjk_and_kana_are_readable(self):
-        """CJK, Hangul and kana should all count as readable."""
-        assert self._validate("漢字 안녕 ひらがな カタカナ") is True
-
-    def test_control_characters_fail(self):
-        """A run of control bytes should not validate as text."""
-        assert self._validate("\x00\x01\x02\x03\x04\x05\x06\x07") is False
-
-    def test_latin_extended_is_readable(self):
-        """Accented Latin text should validate."""
-        assert self._validate("café naïve résumé") is True
 
 
 class TestDecodeHeaderCharsetChain:
