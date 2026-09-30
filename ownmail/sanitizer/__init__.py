@@ -65,6 +65,12 @@ _NODE_MISSING = (
     "Install a Node.js LTS release with npm from https://nodejs.org, then run ownmail serve again."
 )
 
+# Node may print a source location and excerpt before the actual error summary.
+_STARTUP_ERROR = re.compile(r"^[A-Za-z]*Error(?: \[[A-Z0-9_]+\])?:")
+_STDERR_CHUNK_SIZE = 1024
+_STARTUP_STDERR_LINES = 32
+_STARTUP_ERROR_LENGTH = 512
+
 
 def _caret_floor(spec: object) -> tuple[int, ...] | None:
     """The lowest version a range such as ^3.4.16 allows, or None for any other range."""
@@ -320,15 +326,24 @@ class HtmlSanitizer:
         )
         return False
 
-    def _drain_stderr(self) -> None:
-        """Read stderr from the worker in a background thread to prevent blocking."""
+    def _drain_stderr(self, process: subprocess.Popen, diagnostic: list[str], capturing: threading.Event) -> None:
+        """Drain this worker's stderr, retaining only a bounded startup summary."""
+        remaining = _STARTUP_STDERR_LINES
+        continuation = False
         try:
-            assert self._process is not None
-            assert self._process.stderr is not None
-            for line in self._process.stderr:
-                line = line.strip()
-                if line:
-                    logger.debug("[sanitizer] %s", line)
+            assert process.stderr is not None
+            while chunk := process.stderr.readline(_STDERR_CHUNK_SIZE):
+                if not continuation and capturing.is_set() and remaining:
+                    remaining -= 1
+                    line = chunk.strip()
+                    if not diagnostic and _STARTUP_ERROR.match(line):
+                        line = "".join(char for char in line if char.isprintable())
+                        if len(line) > _STARTUP_ERROR_LENGTH:
+                            line = line[: _STARTUP_ERROR_LENGTH - 3] + "..."
+                        diagnostic.append(line)
+                        logger.debug("[sanitizer] %s", line)
+                # Keep draining, but never treat an overlong line's tail as a new error.
+                continuation = not chunk.endswith("\n")
         except (ValueError, OSError):
             # Process closed
             pass
@@ -349,10 +364,13 @@ class HtmlSanitizer:
             return
 
         worker_path = os.path.join(_SANITIZER_DIR, "worker.js")
+        diagnostic: list[str] = []
+        capturing = threading.Event()
+        capturing.set()
         try:
             if self._verbose:
                 print(f"[verbose] Starting sanitizer: node {worker_path}", flush=True)
-            self._process = subprocess.Popen(
+            self._process = process = subprocess.Popen(
                 ["node", worker_path],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -363,15 +381,18 @@ class HtmlSanitizer:
             )
 
             # Start stderr drain thread
-            self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
-            self._stderr_thread.start()
+            self._stderr_thread = stderr_thread = threading.Thread(
+                target=self._drain_stderr, args=(process, diagnostic, capturing), daemon=True
+            )
+            stderr_thread.start()
 
             # Wait for ready signal
-            ready_line = self._process.stdout.readline()
+            ready_line = process.stdout.readline()
             if ready_line:
                 try:
                     msg = json.loads(ready_line)
                     if msg.get("ready"):
+                        capturing.clear()
                         self._available = True
                         if self._verbose:
                             print("[verbose] HTML sanitizer sidecar ready (DOMPurify + jsdom)", flush=True)
@@ -381,18 +402,31 @@ class HtmlSanitizer:
                     pass
 
             # If we get here, the worker didn't signal ready
+            exited = process.poll() is not None
+            if not ready_line and not exited:
+                # EOF can precede poll's exit report; the normal cleanup confirms it.
+                self._kill_process()
+                exited = process.poll() is not None
+            if exited:
+                # Its pipe may outlive it through a descendant; never join indefinitely.
+                stderr_thread.join(timeout=1)
+            capturing.clear()
             self._kill_process()
             self._error = (
                 "The sanitizer worker did not start. Check that Node.js is a supported LTS release (node --version).\n"
                 f"If it is, delete {os.path.join(_SANITIZER_DIR, 'node_modules')} and run ownmail serve again "
                 "to reinstall the sanitizer dependencies."
             )
+            if diagnostic:
+                self._error = diagnostic[0] + "\n" + self._error
 
         except FileNotFoundError:
             self._error = _NODE_MISSING
         except Exception as e:
             self._error = f"The sanitizer worker could not start ({e})."
             self._kill_process()
+        finally:
+            capturing.clear()
 
     def sanitize(self, html: str) -> tuple[str, bool, bool]:
         """Sanitize HTML content using DOMPurify.

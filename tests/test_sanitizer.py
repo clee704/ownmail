@@ -545,16 +545,46 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 class TestSanitizerLifecycle(unittest.TestCase):
     """Tests for start/stop/restart with the Node worker mocked out."""
 
-    def _worker(self, ready=True, lines=None):
+    def _worker(self, ready=True, lines=None, stderr="", returncode=None):
         """Build a fake Popen whose stdout replays `lines` after a ready signal."""
         proc = MagicMock()
-        proc.stderr = iter(())
+        proc.stderr = io.StringIO(stderr)
+        proc.poll.return_value = returncode
         out = []
         if ready:
             out.append('{"ready": true}\n')
         out.extend(lines or [])
         proc.stdout.readline.side_effect = out + [""] * 10
         return proc
+
+    def _threads(self):
+        """Defer each drain until join, or until a test explicitly schedules it."""
+        threads = []
+
+        def factory(target, args=(), daemon=False):
+            thread = MagicMock()
+            thread.run.side_effect = lambda: target(*args)
+            thread.join.side_effect = lambda timeout: thread.run()
+            threads.append(thread)
+            return thread
+
+        return threads, factory
+
+    def _start(self, san, proc, factory):
+        with (
+            patch.object(san, "is_node_available", return_value=True),
+            patch.object(san, "_ensure_deps", return_value=True),
+            patch("subprocess.Popen", return_value=proc),
+            patch("ownmail.sanitizer.threading.Thread", side_effect=factory),
+        ):
+            san.start()
+
+    def _fallback(self):
+        return (
+            "The sanitizer worker did not start. Check that Node.js is a supported LTS release (node --version).\n"
+            f"If it is, delete {os.path.join(sanitizer_module._SANITIZER_DIR, 'node_modules')} "
+            "and run ownmail serve again to reinstall the sanitizer dependencies."
+        )
 
     def test_start_without_node_stays_unavailable(self):
         """With no node on PATH, start() should degrade rather than raise."""
@@ -589,30 +619,164 @@ class TestSanitizerLifecycle(unittest.TestCase):
         self.assertIsNone(san.error)
 
     def test_start_without_ready_signal_kills_worker(self):
-        """A worker that never signals ready should be terminated."""
-        san = HtmlSanitizer()
-        proc = self._worker(ready=False)
-        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
-            with patch.object(san, "_ensure_deps", return_value=True):
-                with patch("subprocess.Popen", return_value=proc):
-                    san.start()
-        self.assertFalse(san.available)
-        proc.terminate.assert_called_once()
-        self.assertIn("The sanitizer worker did not start", san.error)
-        self.assertIn(os.path.join(sanitizer_module._SANITIZER_DIR, "node_modules"), san.error)
+        """No recognizable error preserves the complete generic repair advice."""
+        for stderr in ("", "\n/synthetic/worker.js:1\n  throw problem;\nwarning only\n"):
+            with self.subTest(stderr=stderr):
+                san = HtmlSanitizer()
+                proc = self._worker(ready=False, stderr=stderr, returncode=1)
+                threads, factory = self._threads()
+                self._start(san, proc, factory)
+                self.assertFalse(san.available)
+                proc.terminate.assert_called_once()
+                self.assertEqual(san.error, self._fallback())
+                threads[0].join.assert_called_once_with(timeout=1)
 
     def test_start_with_garbage_ready_line_kills_worker(self):
-        """Non-JSON on the ready line should be treated as a failed start."""
+        """A live invalid worker must not wait for or synchronously read stderr."""
         san = HtmlSanitizer()
-        proc = MagicMock()
-        proc.stderr = iter(())
-        proc.stdout.readline.return_value = "not json\n"
-        with patch.object(HtmlSanitizer, "is_node_available", return_value=True):
-            with patch.object(san, "_ensure_deps", return_value=True):
-                with patch("subprocess.Popen", return_value=proc):
-                    san.start()
+        proc = self._worker(ready=False, lines=["not json\n"], returncode=None)
+        proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = AssertionError("synchronous stderr read")
+        threads, factory = self._threads()
+        self._start(san, proc, factory)
         self.assertFalse(san.available)
-        self.assertIn("The sanitizer worker did not start", san.error)
+        self.assertEqual(san.error, self._fallback())
+        proc.terminate.assert_called_once()
+        proc.stderr.readline.assert_not_called()
+        proc.stderr.read.assert_not_called()
+        threads[0].join.assert_not_called()
+
+    def test_exited_worker_reports_first_error_after_preamble(self):
+        """An exited worker's delayed drain supplies its first actual error."""
+        for diagnostic in (
+            "Error: Cannot find module 'synthetic-missing-package'",
+            "Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'synthetic-missing-package'",
+            "SyntaxError: Unexpected token '}'",
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                stderr = f"/synthetic/worker.js:7\n    throw err;\n    ^\n\n{diagnostic}\n"
+                stderr += "    at syntheticStackFrame\nError: later failure\n"
+                proc = self._worker(ready=False, stderr=stderr, returncode=1)
+                san = HtmlSanitizer()
+                threads, factory = self._threads()
+                self._start(san, proc, factory)
+                self.assertEqual(san.error, diagnostic + "\n" + self._fallback())
+                self.assertFalse(san.available)
+                threads[0].join.assert_called_once_with(timeout=1)
+                proc.terminate.assert_called_once()
+
+    def test_exited_worker_with_unfinished_drain_uses_bounded_wait(self):
+        """An inherited open pipe must not make startup wait indefinitely."""
+        san = HtmlSanitizer()
+        proc = self._worker(ready=False, returncode=1)
+        thread = MagicMock()  # A timed join returns with the drain still pending.
+        thread.is_alive.return_value = True
+        self._start(san, proc, MagicMock(return_value=thread))
+        thread.join.assert_called_once_with(timeout=1)
+        self.assertEqual(san.error, self._fallback())
+        proc.terminate.assert_called_once()
+
+    def test_stdout_eof_before_exit_keeps_diagnostic_through_cleanup(self):
+        """EOF may arrive before poll sees exit; cleanup can confirm it for the drain."""
+        san = HtmlSanitizer()
+        proc = self._worker(ready=False, stderr="SyntaxError: startup failed\n")
+
+        def finish_exit(timeout):
+            proc.poll.return_value = 1
+
+        proc.wait.side_effect = finish_exit
+        threads, factory = self._threads()
+        self._start(san, proc, factory)
+        self.assertFalse(san.available)
+        self.assertEqual(san.error, "SyntaxError: startup failed\n" + self._fallback())
+        proc.terminate.assert_called_once()
+        proc.wait.assert_called_once_with(timeout=3)
+        threads[0].join.assert_called_once_with(timeout=1)
+
+    def test_restart_keeps_delayed_old_drain_on_its_own_worker(self):
+        """A late old drain cannot steal or contaminate the replacement's error."""
+        old = self._worker(stderr="Error: stale worker detail\n")
+        new = self._worker(ready=False, stderr="Error: replacement failed\n", returncode=1)
+        threads, factory = self._threads()
+
+        def read_replacement_ready():
+            threads[0].run()
+            return ""
+
+        new.stdout.readline.side_effect = read_replacement_ready
+        san = HtmlSanitizer()
+        with (
+            patch.object(san, "is_node_available", return_value=True),
+            patch.object(san, "_ensure_deps", return_value=True) as deps,
+            patch("subprocess.Popen", side_effect=[old, new]),
+            patch("ownmail.sanitizer.threading.Thread", side_effect=factory),
+            patch("ownmail.sanitizer.logger.debug") as debug,
+        ):
+            san.start()
+            self.assertTrue(san.available)
+            san._restart()
+        self.assertEqual([call.args for call in deps.call_args_list], [(True,), (False,)])
+        self.assertEqual(old.stderr.tell(), len(old.stderr.getvalue()))
+        self.assertEqual(new.stderr.tell(), len(new.stderr.getvalue()))
+        self.assertEqual(san.error, "Error: replacement failed\n" + self._fallback())
+        self.assertFalse(san.available)
+        debug.assert_called_once_with("[sanitizer] %s", "Error: replacement failed")
+
+    def test_ready_worker_does_not_capture_or_log_runtime_payload(self):
+        """Once ready, stderr is drained without retaining message-like content."""
+        proc = self._worker(stderr="Error: synthetic private message and credential marker\n")
+        san = HtmlSanitizer()
+        threads, factory = self._threads()
+        with patch("ownmail.sanitizer.logger.debug") as debug:
+            self._start(san, proc, factory)
+            self.assertTrue(san.available)
+            threads[0].run()
+        self.assertIsNone(san.error)
+        self.assertEqual(proc.stderr.tell(), len(proc.stderr.getvalue()))
+        threads[0].join.assert_not_called()
+        debug.assert_not_called()
+
+    def test_startup_diagnostic_reads_and_summary_are_bounded(self):
+        """Bound allocation, ignore continuation fragments, and keep one summary."""
+
+        class BoundedPipe(io.StringIO):
+            def __init__(self, text):
+                super().__init__(text)
+                self.sizes = []
+
+            def readline(self, size=-1):
+                assert 0 < size <= 1024
+                self.sizes.append(size)
+                return super().readline(size)
+
+        raw = "x" * 1024 + "Error: continuation is not a new error\n"
+        raw += "Error: " + "z" * 2000 + " synthetic trailing detail\nError: later failure\n"
+        proc = self._worker(ready=False, returncode=1)
+        proc.stderr = BoundedPipe(raw)
+        san = HtmlSanitizer()
+        _, factory = self._threads()
+        with patch("ownmail.sanitizer.logger.debug") as debug:
+            self._start(san, proc, factory)
+        summary = san.error.splitlines()[0]
+        self.assertTrue(summary.startswith("Error: z"))
+        self.assertLessEqual(len(summary), 512)
+        self.assertNotIn("continuation", san.error)
+        self.assertNotIn("trailing detail", san.error)
+        self.assertNotIn("later failure", san.error)
+        self.assertTrue(proc.stderr.sizes)
+        self.assertEqual(proc.stderr.tell(), len(raw))
+        debug.assert_called_once_with("[sanitizer] %s", summary)
+
+    def test_startup_capture_stops_after_line_budget_but_keeps_draining(self):
+        raw = "preamble\n" * 32 + "Error: outside startup diagnostic budget\n"
+        proc = self._worker(ready=False, stderr=raw, returncode=1)
+        san = HtmlSanitizer()
+        _, factory = self._threads()
+        with patch("ownmail.sanitizer.logger.debug") as debug:
+            self._start(san, proc, factory)
+        self.assertEqual(san.error, self._fallback())
+        self.assertEqual(proc.stderr.tell(), len(raw))
+        debug.assert_not_called()
 
     def test_start_handles_missing_node_binary(self):
         """A FileNotFoundError from Popen should degrade gracefully."""
@@ -667,16 +831,14 @@ class TestSanitizerLifecycle(unittest.TestCase):
     def test_drain_stderr_logs_and_survives_close(self):
         """The stderr drain should tolerate the pipe closing mid-read."""
         san = HtmlSanitizer()
-        proc = MagicMock()
-
-        def lines():
-            yield "  worker warning  "
-            yield ""
-            raise ValueError("closed")
-
-        proc.stderr = lines()
-        san._process = proc
-        san._drain_stderr()  # must not raise
+        proc = self._worker(ready=False, returncode=1)
+        proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = ["  Error: worker\x00 warning  \n", "\n", ValueError("closed")]
+        _, factory = self._threads()
+        with patch("ownmail.sanitizer.logger.debug") as debug:
+            self._start(san, proc, factory)
+        self.assertEqual(san.error, "Error: worker warning\n" + self._fallback())
+        debug.assert_called_once_with("[sanitizer] %s", "Error: worker warning")
 
 
 class TestSanitizerDeps(unittest.TestCase):

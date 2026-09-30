@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-09-30 02:12'
-updated_date: '2026-09-30 13:01'
+updated_date: '2026-09-30 13:16'
 labels:
   - web
 dependencies: []
@@ -24,8 +24,8 @@ HtmlSanitizer._drain_stderr logs the worker's stderr at debug level, and no logg
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 When the worker exits before signaling ready, the refusal names the worker's first error line, such as a missing module or a syntax error
-- [ ] #2 A worker that is still running but sends an invalid ready line is reported without waiting on its stderr
+- [x] #1 When the worker exits before signaling ready, the refusal names the worker's first error line, such as a missing module or a syntax error
+- [x] #2 A worker that is still running but sends an invalid ready line is reported without waiting on its stderr
 - [ ] #3 Tests cover both paths and the full pre-push gate passes
 <!-- AC:END -->
 
@@ -50,4 +50,18 @@ Authorized ownership is sanitizer/__init__.py startup/drain lifecycle, TestSanit
 Only one recognized startup error summary will be retained/reported, with bounded scanning/length and printable output. Startup occurs before any mail request; capture stops before successful readiness is published. Arbitrary preambles, full stacks and runtime message text will be drained without being copied into diagnostics or debug output. No credential/environment collection, schema/dependency changes, new query/API behavior, security-policy relaxation or process/ready-timeout redesign is included.
 
 Next action: commit this task-only claim/plan with normal hooks before adding the synthetic failing regressions.
+
+Implementation checkpoint chronology: task-only claim/plan 038d913a26eaf857e16a7bc7d71804089d2b0cd8 was committed with normal hooks before tests or production edits. The first synthetic regression run against unchanged production recorded 11 failures and 11 passes; the initial bounded implementation then passed all 17 lifecycle tests.
+
+Implemented worker-bound stderr drains with fresh local capture state, fixed-size reads, physical-line and printable-summary bounds, first recognized error only, and capture disabled before readiness and after unsuccessful starts. Generic fallback and repair text remain exact. Live nonempty invalid readiness performs no synchronous stderr read or drain join. Mocked actual run_server calls verified missing-module and syntax-error summaries appear in the refusal, retain pipx repair guidance and prevent app creation without editing web code.
+
+Independent Astra Ultra implementation review identified an EOF/exit timing race: stdout can close just before poll reports exit. A targeted regression failed before correction. The EOF path now uses the already-required process cleanup to confirm exit, then performs the same bounded join only after re-polling the original process. Live invalid readiness remains unchanged. Printable filtering is now asserted through a synthetic NUL-bearing error summary. No process-wait timeout or readiness protocol was changed.
+
+Current validation: 122 retained sanitizer and TestRunServer tests passed, including the new EOF race regression; Ruff check, Ruff format-check, deptry and whitespace checks passed. Scope verification proves tests outside TestSanitizerLifecycle are byte-identical and all sanitizer AST outside startup/drain and four diagnostic constants is unchanged. Full required browser/pre-push gate remains pending, so AC 3 is unchecked and the task remains In Progress.
+
+Next action: finish author/independent review, commit the reviewed implementation with normal hooks, then run the granted complete mandatory-browser pre-push gate before closure.
+
+Author full-diff review completed against the fixed review base; no unrelated paths, supported behavior removals or weakened assertions were found. Independent Astra Ultra re-review confirmed the EOF-race correction and printable-output regression, with no remaining findings. TASK-122 is ready for its browser gate, so the unused browser interval was released before launching any TASK-121 browser process. This is a reviewed implementation checkpoint, not task completion.
+
+Next action: run the prepared full mandatory-browser pre-push gate after TASK-122 releases Chromium; then close only if every required check passes.
 <!-- SECTION:NOTES:END -->
