@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-13 04:50'
-updated_date: '2026-09-30 18:57'
+updated_date: '2026-09-30 19:14'
 labels:
   - ui
   - mobile
@@ -53,4 +53,8 @@ Pinned code/review base is reviewed combined candidate ca2911c883ba7b0a178b22f4f
 
 <!-- SECTION:NOTES:BEGIN -->
 Premise inspected against the execution order and exact task: manifest/root scope/icons and most list navigation already exist in completed TASK49/50.1/51/52/53. Missing code includes theme colors, app-managed message reading-position recovery, bounded unresolved requests and explicit recovery controls. Preserve the prior verified navigation fixes; do not redesign the shell or infer a cutout defect merely from the default viewport. Source ownership is base.html/email.html plus a reader-only unavailable template; app-preferences.js, app-shell.js, result-state.js, message-actions.js and label-editor.js; narrow shared feedback styles; web.py manifest and view_email hunks; relevant tests/docs and TASK50. Frozen PDF/export and JSON-reader implementation remain unchanged. Physical iPhone Home Screen checks, any device access and a trusted deployed HTTPS origin are not implied by the code authorization. No acceptance criterion is marked complete from emulation or existing partial evidence.
+
+The branch was reconciled with completed master 625aa4258d7ab738bd597f5155e00e9700bc3b6d using a non-rewriting merge; the original reviewed candidate remains preserved. Implemented theme metadata using the existing light/dark palette, one session-only reader identity/version/vertical-offset checkpoint, and a reader-only unavailable-message view with a validated local return. Shared action and label loading now bound fetch plus JSON waits to 30 seconds and suppress late success; Retry is an explicit safe navigation/reload, never a replayed mutation. Native page loading has a cancellable 30-second deadline and the latest destination owns Retry. No mail bodies, attachments, service worker, HTTPS setup, network/security setting or private source state were added or changed. README distinguishes loaded-page recovery from the browser error screen on an unavailable cold launch and documents trusted HTTPS plus a future static-only fallback boundary.
+
+Verification checkpoint: original metadata/action-timeout/unavailable-reader regressions produced 8 red cases; missing reading restoration/cleanup produced 2 red with 15 controls; native navigation recovery produced 3 red; a self-review caught and corrected stale Retry destinations with another red/green case. Four private-source safety mutations were caught (stale version, uncancelled navigation deadline, unsafe POST retry destination and JSON outside the deadline). Focused synthetic Flask/JSDOM checks pass; actual-browser restoration/Retry and retained browser/CSP/navigation checks are prepared but await the exclusive browser lease, independent review and mandatory pre-push gate. Original task acceptance criteria remain unchanged and unchecked. Actual iPhone Home Screen cold launch, background/resume, keyboard, cutout/orientation and connection checks with an iOS version remain required; no emulation is claimed as that evidence. Next action is focused independent review and the browser-leased gate, then an honest open device-validation checkpoint.
 <!-- SECTION:NOTES:END -->

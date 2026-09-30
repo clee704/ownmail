@@ -361,6 +361,28 @@ make it reachable from other devices, control access through a trusted network
 or an authenticated proxy. Home Screen access uses the same server; it does not
 store an offline archive on the phone.
 
+The Home Screen manifest uses the configured app name, root navigation scope,
+app icons, and the existing theme colors. A loaded reader saves only its local
+URL, message-file version, and vertical scroll offset in session storage. A
+reload restores that position only for the same unchanged message; browser
+Back/Forward restoration and new user movement take precedence. No message
+body or attachment is cached for offline reading.
+
+While an app page is open, navigation and message-action requests stop showing
+pending feedback after 30 seconds. Retry opens the requested page again, or
+reloads the current page after an unconfirmed action. Check its current state
+before repeating an action: a lost response does not prove the server did
+nothing. Retry never automatically repeats a mutation. A cold launch while the
+server is unavailable still uses the browser's connection-error screen.
+
+A future cached offline fallback requires a trusted HTTPS origin for phone/LAN
+access (the localhost secure-context exception does not cover a LAN address).
+Its intended scope is static app-shell/reconnection guidance, not private
+messages, search results, or attachments. No service worker or offline cache is
+installed yet. Actual iPhone Home Screen, keyboard, cutout, and background/resume
+verification remains tracked in TASK-50; desktop browser emulation does not
+complete those checks.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and repository rules,

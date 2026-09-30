@@ -11,23 +11,13 @@
         input.dispatchEvent(new Event('input', {bubbles: true}));
     });
 })();
-function isDarkMode() {
-    var pref = localStorage.getItem('ownmail-theme') || 'auto';
-    return pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-}
-function applyTheme() {
-    var dark = isDarkMode();
-    document.documentElement.classList.toggle('ownmail-dark', dark);
-    if (typeof updateEmailDarkMode === 'function') updateEmailDarkMode(dark);
-}
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 applyTheme();
 
 var sidebar = document.getElementById('ownmail-sidebar');
 var sidebarToggle = document.getElementById('ownmail-sidebar-toggle');
 sidebarToggle.addEventListener('click', toggleSidebar);
 document.getElementById('ownmail-nav-backdrop').addEventListener('click', closeMobileNavigation);
-sidebar.querySelectorAll('[data-show-loading]').forEach(function(link) {
+sidebar.querySelectorAll('a[href]').forEach(function(link) {
     link.addEventListener('click', showLoading);
 });
 var navigationBreakpoint = window.matchMedia('(max-width: 900px)');
@@ -106,6 +96,8 @@ document.addEventListener('keydown', function(event) {
     });
 });
 var loadingTimer = null;
+var loadingDeadline = null;
+var loadingUrl = null;
 var loadingRow = null;
 var loadingOverlay = document.getElementById('ownmail-loading-overlay');
 var loadingStatus = document.getElementById('ownmail-loading-status');
@@ -116,10 +108,28 @@ function showLoading(event) {
     }
     var link = event && event.target && event.target.closest && event.target.closest('.ownmail-email-row-link');
     var row = link ? link.closest('.ownmail-email-row') : null;
-    if (row === loadingRow && (loadingTimer !== null ||
+    var retryUrl = location.href;
+    var target = event && event.target && event.target.closest && event.target.closest('a[href], form');
+    if (target) {
+        var destination = new URL(target.tagName === 'FORM' ? target.action : target.href, location.href);
+        if (destination.origin === location.origin) {
+            if (target.tagName !== 'FORM') retryUrl = destination.href;
+            else if (target.method.toLowerCase() === 'get') {
+                destination.search = new URLSearchParams(new FormData(target)).toString();
+                retryUrl = destination.href;
+            }
+        }
+    }
+    if (retryUrl === loadingUrl && row === loadingRow && (loadingTimer !== null ||
             (row ? row.classList.contains('ownmail-loading') : loadingOverlay.classList.contains('ownmail-active')))) return;
     hideLoading();
     loadingRow = row;
+    loadingUrl = retryUrl;
+    loadingDeadline = setTimeout(function() {
+        window.stop();
+        hideLoading();
+        window.ownmailConnectionError('Could not open this page. Check the server connection and retry.', retryUrl);
+    }, 30000);
     // Keep native navigation immediate; fast responses need no feedback.
     loadingTimer = setTimeout(function() {
         loadingTimer = null;
@@ -132,6 +142,9 @@ function showLoading(event) {
     }, 200);
 }
 function hideLoading() {
+    clearTimeout(loadingDeadline);
+    loadingDeadline = null;
+    loadingUrl = null;
     clearTimeout(loadingTimer);
     loadingTimer = null;
     if (loadingRow) loadingRow.classList.remove('ownmail-loading');

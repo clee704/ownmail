@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Message unavailable - {{ brand_name }}{% endblock %}
+{% block content %}
+    <section id="ownmail-reader-unavailable">
+        <h1>Message unavailable</h1>
+        <p>This message is no longer available at this address. Return to your results to choose another message.</p>
+        <a class="ownmail-button" id="ownmail-back-to-results" href="{{ back_url }}">Back to results</a>
+    </section>
+{% endblock %}

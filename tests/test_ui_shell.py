@@ -79,6 +79,8 @@ def test_home_screen_manifest_keeps_reader_and_utility_routes_in_scope(shell_app
     assert response.mimetype == "application/manifest+json"
     manifest = response.get_json()
     assert manifest["name"] == "Archive Desk"
+    assert manifest["theme_color"] == "#ffffff"
+    assert manifest["background_color"] == "#ffffff"
     assert manifest["id"] == "/"
     assert manifest["start_url"] == "/search"
     assert manifest["display"] == "standalone"
@@ -307,9 +309,11 @@ selected.click();
 assert.equal(window.localStorage.getItem('ownmail-theme'), PREFERENCE);
 assert.equal(document.documentElement.classList.contains('ownmail-dark'), DARK);
 assert.equal(readerDark, DARK);
+assert.equal(document.head.querySelector('meta[name="theme-color"]').content, DARK ? '#202124' : '#ffffff');
 system.change(!DARK);
 assert.equal(document.documentElement.classList.contains('ownmail-dark'), DARK);
 assert.equal(readerDark, DARK);
+assert.equal(document.head.querySelector('meta[name="theme-color"]').content, DARK ? '#202124' : '#ffffff');
 """.replace("PREFERENCE", json.dumps(preference)).replace("DARK", json.dumps(dark)),
         path="/settings",
         theme=preference,
@@ -374,21 +378,21 @@ const click = new window.MouseEvent('click', {cancelable: true});
 window.showLoading(click);
 assert(!click.defaultPrevented);
 assert(!visible());
-assert.equal(timers.size, 1);
+assert.equal(timers.size, 2);
 advance(100);
 window.showLoading();
-assert.equal(nextTimer, 1);
+assert.equal(nextTimer, 2);
 advance(99);
 assert(!visible());
 advance(1);
 assert(visible());
-assert.equal(timers.size, 0);
+assert.equal(timers.size, 1); // Only the connection deadline remains.
 window.showLoading();
-assert.equal(nextTimer, 1);
+assert.equal(nextTimer, 2);
 window.dispatchEvent(new window.Event(COMPLETION_EVENT));
 assert(!visible());
 window.showLoading();
-assert.equal(timers.size, 1);
+assert.equal(timers.size, 2);
 advance(100);
 window.dispatchEvent(new window.Event(COMPLETION_EVENT));
 assert.equal(timers.size, 0);

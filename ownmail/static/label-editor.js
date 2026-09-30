@@ -63,10 +63,8 @@
         announce('Loading labels…');
         close.focus();
         try {
-            var response = await fetch(editor.dataset.url);
-            var data = await response.json();
+            var data = await window.ownmailRequest(editor.dataset.url, undefined, true);
             if (current !== attempt) return;
-            if (!response.ok) throw new Error(data.error || 'Could not load labels.');
             if (!Array.isArray(data.labels) || !data.labels.every(function(label) { return typeof label === 'string'; })) {
                 throw new Error('Could not read the saved labels.');
             }
@@ -76,7 +74,10 @@
             announce('');
             input.focus();
         } catch (error) {
-            if (current === attempt) announce(error.message + ' Close the editor and try again.', true);
+            if (current === attempt) {
+                announce(error.message + ' Close the editor and try again.', true);
+                window.ownmailConnectionError('Could not load labels. Retry to reload the message.');
+            }
         }
     });
 
@@ -130,8 +131,8 @@
             pending: 'Saving labels…',
             success: 'Labels saved.',
             failure: 'Could not confirm the label save.',
-            onSuccess: async function(response) {
-                var result = await response.json();
+            json: true,
+            onSuccess: function(result) {
                 if (result.indexed) {
                     window.location.reload();
                 } else {

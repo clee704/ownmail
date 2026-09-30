@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" type="image/vnd.microsoft.icon" sizes="16x16 32x32 48x48" href="/favicon.ico?v=2">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=2">
@@ -20,6 +21,7 @@
     <div class="ownmail-sr-only" id="ownmail-loading-status" role="status" aria-live="polite" aria-atomic="true"></div>
     <div class="ownmail-action-feedback" id="ownmail-action-feedback" role="status" aria-live="polite" aria-atomic="true" hidden>
         <span id="ownmail-action-message"></span>
+        <a class="ownmail-button" id="ownmail-action-retry" href="" hidden>Retry</a>
         <button type="button" class="ownmail-icon-button" id="ownmail-action-dismiss" aria-label="Dismiss notification" title="Dismiss notification">{{ icon('close') }}</button>
     </div>
     <script src="/static/message-actions.js"></script>
@@ -43,9 +45,9 @@
                     {% set all_mail_active = request.path == '/' or (request.path.startswith('/search') and not request.args.get('q')) %}
                     <li><a href="/" class="{% if all_mail_active %}active{% endif %}"{% if all_mail_active %} aria-current="page"{% endif %} title="All Mail" aria-label="All Mail">{{ icon('mail') }}<span class="ownmail-sidebar-label">All Mail</span></a></li>
                     {% set active_mail_selected = request.path == '/search' and request.args.get('q', '').strip() == 'is:active' %}
-                    <li><a href="/search?q=is%3Aactive" class="{% if active_mail_selected %}active{% endif %}"{% if active_mail_selected %} aria-current="page"{% endif %} title="Active messages on the mail server" aria-label="Active" data-show-loading>{{ icon('inbox') }}<span class="ownmail-sidebar-label">Active</span><span class="ownmail-sidebar-badge">{{ stats.active_count }}</span></a></li>
+                    <li><a href="/search?q=is%3Aactive" class="{% if active_mail_selected %}active{% endif %}"{% if active_mail_selected %} aria-current="page"{% endif %} title="Active messages on the mail server" aria-label="Active">{{ icon('inbox') }}<span class="ownmail-sidebar-label">Active</span><span class="ownmail-sidebar-badge">{{ stats.active_count }}</span></a></li>
                     {% for entry in label_nav.system %}
-                    <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}"{% if entry.active %} aria-current="page"{% endif %} title="{{ entry.name }} — {{ entry.count }}" aria-label="{{ entry.name }}" data-show-loading>{{ icon(entry.icon) }}<span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
+                    <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}"{% if entry.active %} aria-current="page"{% endif %} title="{{ entry.name }} — {{ entry.count }}" aria-label="{{ entry.name }}">{{ icon(entry.icon) }}<span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
                     {% endfor %}
                     <li><a href="/trash" class="{% if request.path == '/trash' %}active{% endif %}"{% if request.path == '/trash' %} aria-current="page"{% endif %} title="Trash in this archive" aria-label="Trash in this archive">{{ icon('trash') }}<span class="ownmail-sidebar-label">Trash</span>{% if stats.trash_count %}<span class="ownmail-sidebar-badge">{{ stats.trash_count }}</span>{% endif %}</a></li>
                 </ul>
@@ -53,7 +55,7 @@
                 <div class="ownmail-sidebar-heading">Labels</div>
                 <ul class="ownmail-sidebar-nav ownmail-sidebar-labels">
                     {% for entry in label_nav.user %}
-                    <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}"{% if entry.active %} aria-current="page"{% endif %} title="{{ entry.name }} — {{ entry.count }}" aria-label="{{ entry.name }}" data-show-loading>{{ icon(entry.icon) }}<span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
+                    <li><a href="{{ entry.url }}" class="{% if entry.active %}active{% endif %}"{% if entry.active %} aria-current="page"{% endif %} title="{{ entry.name }} — {{ entry.count }}" aria-label="{{ entry.name }}">{{ icon(entry.icon) }}<span class="ownmail-sidebar-label">{{ entry.name }}</span><span class="ownmail-sidebar-badge">{{ entry.count_label }}</span></a></li>
                     {% endfor %}
                 </ul>
                 {% endif %}

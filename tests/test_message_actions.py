@@ -23,7 +23,7 @@ def run_action_script(browser_dir, assertions, page=None):
         <button data-message-action>Move to trash</button>
         <label class="ownmail-email-checkbox"><input type="checkbox" checked value="message"></label>
         <div id="ownmail-action-feedback" hidden><span id="ownmail-action-message"></span>
-            <button id="ownmail-action-dismiss">Dismiss</button></div>
+            <a id="ownmail-action-retry" hidden>Retry</a><button id="ownmail-action-dismiss">Dismiss</button></div>
     """
     )
     script = """
@@ -342,5 +342,88 @@ if (CONFIRMATION !== null) {
         .replace("ENDPOINT", json.dumps(endpoint))
         .replace("BODY", json.dumps(body))
         .replace("CONFIRMATION", json.dumps(confirmation)),
+        page=page,
+    )
+
+
+@pytest.mark.parametrize("wait_for_body", [False, True])
+def test_unconfirmed_action_times_out_without_late_success_or_replay(shell_browser, wait_for_body):
+    run_action_script(
+        shell_browser,
+        """
+let finish, calls = 0, succeeded = 0;
+const held = new Promise(resolve => finish = resolve);
+window.fetch = (url, options) => {
+    calls++;
+    assert(options.signal);
+    return BODY ? Promise.resolve({ok: true, json: () => held}) : held;
+};
+action.json = BODY;
+action.onSuccess = () => succeeded++;
+const pending = window.ownmailMessageAction(action);
+await new Promise(resolve => setImmediate(resolve));
+advance(30000);
+assert.equal(await pending, false);
+assert.equal(feedback.dataset.state, 'error');
+assert(!button.disabled);
+assert(checkbox.checked);
+assert.equal(succeeded, 0);
+assert.equal(calls, 1);
+const retry = document.getElementById('ownmail-action-retry');
+assert(!retry.hidden);
+assert.equal(retry.textContent, 'Retry');
+assert.equal(retry.href, 'http://localhost/search?q=project&page=2');
+assert.match(document.getElementById('ownmail-action-message').textContent, /Reload to check/);
+finish(BODY ? {indexed: true} : {ok: true});
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(feedback.dataset.state, 'error');
+assert.equal(succeeded, 0);
+assert.equal(calls, 1);
+assert.equal(timers.size, 0);
+window.fetch = () => Promise.resolve({ok: true, json: () => Promise.resolve({indexed: true})});
+assert.equal(await window.ownmailMessageAction(action), true);
+assert.equal(succeeded, 1);
+assert(retry.hidden);
+""".replace("BODY", json.dumps(wait_for_body)),
+    )
+
+
+def test_label_loading_deadline_covers_json_and_ignores_late_data(shell_app, shell_browser):
+    app, _ = shell_app
+    with app.test_request_context("/email/message"):
+        page = render_template("email.html", email_id="message", subject="Synthetic", sender_email="sender@example.com")
+    run_action_script(
+        shell_browser,
+        """
+window.eval(localScripts['http://localhost/static/label-editor.js']);
+const trigger = document.getElementById('ownmail-edit-labels');
+const editor = document.getElementById('ownmail-label-editor');
+const input = document.getElementById('ownmail-label-input');
+const status = document.getElementById('ownmail-label-status');
+let finish;
+window.fetch = () => Promise.resolve({ok:true, json:() => new Promise(resolve => finish = resolve)});
+trigger.click();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(status.textContent, 'Loading labels…');
+advance(30000);
+await new Promise(resolve => setImmediate(resolve));
+assert.match(status.textContent, /did not respond in time/);
+assert.equal(status.getAttribute('role'), 'alert');
+assert(input.disabled);
+assert(!document.getElementById('ownmail-label-close').disabled);
+assert(!document.getElementById('ownmail-action-retry').hidden);
+finish({labels:['late label']});
+await new Promise(resolve => setImmediate(resolve));
+assert(!editor.textContent.includes('late label'));
+document.getElementById('ownmail-label-close').click();
+assert(editor.hidden);
+window.fetch = () => Promise.resolve({ok:true, json:() => Promise.resolve({labels:['current label']})});
+trigger.click();
+await new Promise(resolve => setImmediate(resolve));
+assert(!input.disabled);
+assert(editor.textContent.includes('current label'));
+assert.equal(status.textContent, '');
+assert.equal(timers.size, 0);
+""",
         page=page,
     )

@@ -553,3 +553,32 @@ standalone.window.close();
 """.replace("STYLESHEET", json.dumps(stylesheet)).replace("IMAGE", json.dumps(image)),
         path="/email/message",
     )
+
+
+@pytest.mark.parametrize("missing", ["row", "file"])
+def test_missing_reader_keeps_a_safe_return_view(reader, missing):
+    client, archive = reader
+    if missing == "row":
+        archive.db.get_email_by_id.return_value = None
+    else:
+        (archive.archive_dir / "message.eml").unlink()
+    response = client.get("/email/message", query_string={"return_to": "/search?q=annual&page=3"})
+    assert response.status_code == 404
+    document = html.fromstring(response.data)
+    assert document.get_element_by_id("ownmail-reader-unavailable") is not None
+    assert document.get_element_by_id("ownmail-back-to-results").get("href") == "/search?q=annual&page=3"
+    assert client.get("/raw/message").status_code == 404
+    assert b"ownmail-reader-unavailable" not in client.get("/raw/message").data
+    unsafe = client.get("/email/message", query_string={"return_to": "https://foreign.test"})
+    assert html.fromstring(unsafe.data).get_element_by_id("ownmail-back-to-results").get("href") == "/search"
+
+
+def test_reader_version_changes_when_the_message_file_changes(reader):
+    client, archive = reader
+    before = html.fromstring(client.get("/email/message").data).get_element_by_id("ownmail-reader-actions")
+    version = before.get("data-reader-version")
+    assert version
+    with (archive.archive_dir / "message.eml").open("a") as stream:
+        stream.write("\nAnother paragraph.\n")
+    after = html.fromstring(client.get("/email/message").data).get_element_by_id("ownmail-reader-actions")
+    assert after.get("data-reader-version") != version

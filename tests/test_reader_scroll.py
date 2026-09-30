@@ -324,3 +324,62 @@ def test_sender_flex_layout_survives_fitting_and_actual_size(shell_app, contrast
         viewport=(390, 740),
         is_mobile=True,
     )
+
+
+def test_reader_reload_restores_session_position_after_fitting(shell_app, contrast_browser):
+    """A real layout verifies restoration; this is not a physical iPhone check."""
+    app, archive = shell_app
+    (archive.archive_dir / "message.eml").write_text(
+        "From: sender@example.com\nSubject: Long reader\nContent-Type: text/html\n\n"
+        '<div style="height:3600px">A long synthetic message.</div>'
+    )
+    archive.db.get_email_by_id.return_value = ("message", "message.eml", None, None, None, None)
+    response = app.test_client().get("/email/message")
+    assert response.status_code == 200
+    run_message_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        """
+        assert.equal(await page.locator('head meta[name="theme-color"]').getAttribute('content'), '#ffffff');
+        await setTheme('dark');
+        assert.equal(await page.locator('head meta[name="theme-color"]').getAttribute('content'), '#202124');
+        await page.addInitScript(() => { history.scrollRestoration = 'manual'; });
+        await page.evaluate(() => {
+            history.scrollRestoration = 'manual';
+            window.scrollTo(0, 870);
+            window.dispatchEvent(new PageTransitionEvent('pagehide'));
+        });
+        const saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('ownmail-reading-position')));
+        assert.equal(saved.scrollY, 870);
+        assert.deepEqual(Object.keys(saved).sort(), ['scrollY', 'url', 'version']);
+        await page.reload({waitUntil:'load'});
+        await settle();
+        assert.equal(await page.evaluate(() => window.scrollY), 870);
+        // A replaced file must not inherit the old file's checkpoint.
+        await page.route('http://ownmail.test/email/synthetic', route => route.fulfill({
+            contentType:'text/html', headers:input.pageHeaders,
+            body:input.page.replace(/data-reader-version="[^"]*"/, 'data-reader-version="changed"')
+        }));
+        await page.reload({waitUntil:'load'});
+        await settle();
+        assert.equal(await page.evaluate(() => window.scrollY), 0);
+        // Retry must make a new GET even when the current address has a fragment.
+        await page.evaluate(() => {
+            location.hash = 'resume';
+            ownmailConnectionError('Could not confirm the action. Reload to check the current state.');
+        });
+        const reloaded = page.waitForEvent('load');
+        await page.locator('#ownmail-action-retry').click();
+        await reloaded;
+        await settle();
+        assert(await page.locator('#ownmail-action-feedback').evaluate(el => el.hidden));
+        """,
+        theme="light",
+        viewport=(390, 740),
+        is_mobile=True,
+        auto_scale=True,
+        rendered_page=response.data.decode(),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )

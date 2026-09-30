@@ -248,6 +248,8 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-action-feedback { display: flex; align-items: center; gap: var(--ownmail-space-3); position: fixed; bottom: var(--ownmail-space-4); left: 50%; transform: translateX(-50%); z-index: 200; max-width: min(520px, calc(100vw - 24px)); padding: var(--ownmail-space-3) var(--ownmail-space-4); background: var(--ownmail-surface); border: 1px solid var(--ownmail-input-border); border-radius: 7px; box-shadow: var(--ownmail-shadow); }
 .ownmail-action-feedback[data-state="error"] { color: var(--ownmail-danger); background: var(--ownmail-danger-soft); }
 .ownmail-action-feedback[data-state="success"] { color: var(--ownmail-success); background: var(--ownmail-success-soft); }
+.ownmail-action-feedback > span { min-width: 0; overflow-wrap: anywhere; }
+.ownmail-action-feedback > a { flex: none; }
 .ownmail-action-feedback button { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: var(--ownmail-radius); background: transparent; color: inherit; }
 .ownmail-action-feedback button:hover { background: var(--ownmail-selected); }
 .ownmail-empty-action { display: inline-flex; margin-top: var(--ownmail-space-2); }

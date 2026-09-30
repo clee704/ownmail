@@ -1307,6 +1307,8 @@ def create_app(
             "start_url": "/search",
             "scope": "/",
             "display": "standalone",
+            "theme_color": "#ffffff",
+            "background_color": "#ffffff",
             "icons": [
                 {"src": "/static/icon-192.png?v=2", "sizes": "192x192", "type": "image/png"},
                 {"src": "/static/icon-512.png?v=2", "sizes": "512x512", "type": "image/png"},
@@ -1474,6 +1476,14 @@ def create_app(
             hide_relevance=not has_fts_terms,
         )
 
+    @app.errorhandler(404)
+    def unavailable_message(error):
+        if request.endpoint != "view_email":
+            return error
+        return render_template(
+            "email_unavailable.html", stats=get_stats(), back_url=get_back_to_search_url() or "/search"
+        ), 404
+
     @app.route("/email/<email_id>")
     def view_email(email_id: str):
         stats = get_stats()
@@ -1483,6 +1493,8 @@ def create_app(
             print(f"[verbose] Looking up email {email_id}...", flush=True)
             start = time.time()
         email_info, filepath = readable_email(email_id)
+        file_stat = filepath.stat()
+        reader_version = f"{file_stat.st_mtime_ns}:{file_stat.st_size}"
         if verbose:
             print(f"[verbose] DB lookup took {time.time() - start:.2f}s", flush=True)
         is_trashed = email_info[5] is not None  # trashed_at
@@ -1589,6 +1601,7 @@ def create_app(
                 "email.html",
                 stats=stats,
                 email_id=email_id,
+                reader_version=reader_version,
                 subject=email_data["subject"],
                 sender=email_data["sender"],
                 sender_name=sender_name,

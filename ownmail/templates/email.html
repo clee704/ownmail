@@ -4,7 +4,7 @@
 {% block body_class %}ownmail-reader-page{% endblock %}
 
 {% block content %}
-    <div class="ownmail-reader-actions" id="ownmail-reader-actions" data-email-id="{{ email_id }}" data-sender="{{ sender_email }}" data-reload-url="{{ url_for('view_email', email_id=email_id, return_to=back_url) }}">
+    <div class="ownmail-reader-actions" id="ownmail-reader-actions" data-email-id="{{ email_id }}" data-reader-version="{{ reader_version }}" data-sender="{{ sender_email }}" data-reload-url="{{ url_for('view_email', email_id=email_id, return_to=back_url) }}">
         <a class="ownmail-back-to-results" id="ownmail-back-to-results" href="{{ back_url or ('/trash' if is_trashed else '/search') }}" title="Back to results">
             {{ icon('arrow-left') }}<span class="ownmail-sr-only">Back to results</span>
         </a>
