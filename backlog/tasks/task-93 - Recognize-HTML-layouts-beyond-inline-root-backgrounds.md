@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-15 02:56'
-updated_date: '2026-09-30 15:58'
+updated_date: '2026-09-30 16:05'
 labels:
   - ui
 dependencies: []
@@ -25,7 +25,7 @@ The padding detector still misses sender backgrounds supplied by scoped CSS clas
 - [x] #1 Synthetic class-styled and nested layout canvases render without a second reader frame in both themes.
 - [x] #2 Simple HTML retains readable padding, including messages with decorative or hidden background elements.
 - [x] #3 Browser checks exercise the real sanitizer at phone and desktop widths and fail against the previous behavior.
-- [ ] #4 An unmatched supported static selector inside conditional CSS does not add reader padding to an otherwise verified canvas; affecting conditional rules retain conservative padding.
+- [x] #4 An unmatched supported static selector inside conditional CSS does not add reader padding to an otherwise verified canvas; affecting conditional rules retain conservative padding.
 - [ ] #5 Audit follow-up receives independent review and the final combined repository gate before reclosure.
 <!-- AC:END -->
 
@@ -59,6 +59,10 @@ Final validation passed on clean checkpoint f8db26355e98877618c454451d4975bf5691
 All three acceptance criteria are now verified, including five preserved red reproductions on the previous behavior and the green rendered matrix. Independent Astra Ultra review remains approved on the exact validated worker/test bytes, with all five findings resolved and 54 passing differential probes preserving sanitized HTML/dark-mode output. Author self-review passed against the original TASK-56 base. Unsupported or uncertain CSS/layouts deliberately retain reader padding. Browser validation has exited and the interval is released. This closure changes only the task ledger; all product/test files remain byte-identical to the fully validated checkpoint. TASK-121 lifecycle hunks are untouched. No integration, merge/rebase, publication, real mail/settings or trust-policy change. Task complete.
 
 Authorized audit follow-up, review base 47e54fd653f65a33b394f52207602476dc14126b, isolated branch fix/audit-reader-regressions. Existing closure evidence is preserved; this task is reopened only for verified audit findings. No real mail, providers, credentials or running systems; no dependency, schema or main-branch change. Independent review and final combined mandatory-browser gate remain with the coordinator/integration owner before reclosure. Plan: (1) extend existing sanitizer and real-reader spacing tests with a responsive rule whose static selector has no matching element; prove failure on the combined base; (2) use the existing matcher before marking a conditional rule uncertain and ignore proven no-target rules; (3) retain unsupported-selector and genuinely conditional layout fallbacks without adding a cascade framework; (4) run worker and leased browser checks with normal hooks and full-diff self-review, then hand off clean commits for independent review/combined gate.
+
+Audit correction checkpoint: actual worker regressions fail at the combined base for both an unmatched @media rule and an unmatched style[media] rule, while six matching/unsupported controls remain conservatively padded. The fix uses the existing literal matcher to establish targets first and ignores proven no-target rules before conditional uncertainty. The focused real-worker set passes, including all matching/unsupported controls. The real-reader spacing matrix now includes the exact audited newsletter case; its browser check, independent review and final combined gate remain pending. No cascade engine, sender-markup rewrite or startup/runtime change was added.
+
+The new real-reader test failed against exported unchanged combined-base production on the extra padding class. With the fix, the complete seventeen-case spacing matrix passes at phone/tablet/desktop widths, in both themes and print; all affected charset/spacing checks total 60 passes. The eight worker subcases retain conservative behavior for matching and unsupported selectors. AC4 is verified; independent review and the final combined repository gate remain pending. Browser commands exited and the interval was released.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

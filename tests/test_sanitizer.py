@@ -874,6 +874,27 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 assert lxml_html.tostring(tree.xpath("//body")[0], encoding="unicode") == f"<body>{body}</body>"
                 assert needs_padding is True
 
+    def test_conditional_padding_rules_require_possible_targets(self):
+        """Unused responsive rules cannot invalidate an otherwise solid canvas."""
+        body = '<div class="canvas" style="background:#eef1f4;padding:24px"><p>Copy</p></div>'
+        for selector, expected in (
+            (".unused", False),
+            (".canvas", True),
+            (".unused, .canvas", True),
+            (".unused:hover", True),  # Unsupported matching remains uncertain.
+        ):
+            rule = f"{selector} {{width:100%}}"
+            for style in (
+                f"<style>@media (max-width:600px) {{{rule}}}</style>",
+                f'<style media="(max-width:600px)">{rule}</style>',
+            ):
+                with self.subTest(selector=selector, style=style):
+                    result, needs_padding, _ = self.sanitizer.sanitize(style + body)
+                    assert needs_padding is expected
+                    tree = lxml_html.fromstring(result)
+                    assert lxml_html.tostring(tree.xpath("//body")[0], encoding="unicode") == f"<body>{body}</body>"
+                    assert "width:100%" in tree.xpath("//style")[0].text_content()
+
     def test_padding_selector_repeated_ancestors_finish(self):
         """An absent ancestor must not cause combinatorial matching retries."""
         source = (
