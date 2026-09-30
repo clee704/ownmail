@@ -3,8 +3,8 @@ id: doc-4
 title: Execution order — 2026-07-24 sequencing decision
 type: specification
 created_date: '2026-07-24 05:10'
+updated_date: '2026-09-30 13:53'
 ---
-
 ## Goal
 
 TASK-2 through TASK-7 were all filed in one session with no fixed sequencing
@@ -254,6 +254,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 26b | TASK-121 | low | Found in TASK-118: a worker that exits before it is ready gives no reason; the refusal's advice covers the likely causes |
 | 26c | TASK-122 | low | Found in TASK-118: serve exits 0 when it refuses to start, and the --debug refusal still follows startup side effects |
 | 26d | TASK-123 | low | Found in TASK-118: duplicate sanitize, kill and stop tests; deletion only |
+| 26e | TASK-126 | medium | Follow-up to TASK-40: correctly declared Cyrillic bodies fail readability validation |
 | 27 | TASK-8 | low | Only a download-header test remains |
 | 28 | TASK-50 | low | iPhone Home Screen polish |
 | 29 | TASK-19 | low | Decision on excluding recurring labels at capture |
