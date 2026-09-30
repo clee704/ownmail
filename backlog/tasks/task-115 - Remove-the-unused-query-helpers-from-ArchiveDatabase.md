@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-09-27 08:03'
-updated_date: '2026-09-30 12:28'
+updated_date: '2026-09-30 12:35'
 labels:
   - search
 dependencies: []
@@ -25,8 +25,8 @@ Found while fixing TASK-22.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 _parse_query and _convert_query are deleted along with their tests
-- [ ] #2 search() no longer carries the constant distinct placeholder
+- [x] #1 _parse_query and _convert_query are deleted along with their tests
+- [x] #2 search() no longer carries the constant distinct placeholder
 - [ ] #3 The pre-push gate passes
 <!-- AC:END -->
 
@@ -47,5 +47,13 @@ Premise and worth verified read-only on clean completed TASK-12 revision 75cd295
 
 Owned scope is the two obsolete methods and constant-empty distinct scaffolding in ownmail/database.py, the eight-test TestDatabaseQueryParsing class in tests/test_fixtures.py, and this task ledger. Keep import re: live address parsing still uses it. Keep all real parser/search/filter/sort/pagination tests. ArchiveDatabase is re-exported publicly, but these underscore-prefixed helpers have no documented public contract or repository production callers. Independent Astra Ultra preflight found no dependency, API-policy or STOP blocker. No schema, migration, credential, archive-file or runtime dependency change is needed. TASK-93 sanitizer scope and all held owner-policy/integration actions stay untouched.
 
-Next action: commit this task-only claim/plan before implementation, then capture the synthetic before/after search baseline.
+Task-only claim/plan checkpoint 72c46d0bdd6694310f71d658528698c3679e396d was committed with normal hooks before any production or test edits. A saved inventory of all 118 tracked Python files confirmed one internal helper call plus ten calls in the eight obsolete tests and no other callers. The actual-search baseline used five disposable synthetic metadata rows and nine cases spanning FTS/table-only paths, label/recipient/date/account filters, ordering, offset/limit pagination and a parse error. Each case asserted exact expected message IDs; obsolete-helper guards would raise if invoked, and neither guard was called.
+
+Deleted exactly the two obsolete private methods, the eight-test TestDatabaseQueryParsing class, and the two empty distinct assignments plus their stale comments/interpolations. Repeating the identical synthetic search matrix after deletion produced the same ordered result tuples and whitespace-normalized bound SELECT statements for all nine cases, with both obsolete-helper guards unused. No schema or supported query/API behavior was added or changed. The live re import and query.parse_query path remain intact.
+
+All 428 retained database, query and fixture tests passed. Ruff check, format-check, deptry and whitespace checks passed without formatting changes. Source comparison against the fixed review base verified the exact deletion boundaries and that all tests outside the obsolete class are byte-identical. No helper attribute references remain in tracked Python files. Author self-review and a fresh independent Astra Ultra review found no correctness or deletion-boundary findings. No tests of supported behavior were removed or weakened, and no new tests were needed for this deletion-only cleanup.
+
+Acceptance criteria 1 and 2 are verified. Criterion 3 remains unchecked and the task remains In Progress because the complete required mandatory-browser pre-push gate is unrun while TASK-93 owns Chromium. A private source-bound environment, task-specific runtime state and the full-gate command are prepared. No browser was launched. All baseline fixtures were synthetic and disposable; no real archive/configuration/credential operations, integration, publication or next task occurred.
+
+Next action: run the prepared complete mandatory-browser pre-push gate after TASK-93 releases the browser interval, preserving all tests, assertions, timeouts and the coverage floor; close only after that gate actually passes.
 <!-- SECTION:NOTES:END -->

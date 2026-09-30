@@ -1184,19 +1184,13 @@ class ArchiveDatabase:
                     order_by = "rank"
                 order_column = ", rank" if sort == "relevance" else ", e.email_date"
 
-                # Determine if we need DISTINCT
-                # Single-join cases never produce duplicates due to PKs on junction tables
-                # Multi-join (label + recipient) also safe: each email has at most one
-                # matching row per filter
-                distinct = ""
-
                 # JOIN with FTS using rowid
                 fts_params = [fts_query] + params + [limit, offset]
                 _t2 = time.time()
                 try:
                     results = conn.execute(
                         f"""
-                        SELECT {distinct}
+                        SELECT
                             e.email_id,
                             e.filename,
                             e.subject,
@@ -1227,14 +1221,8 @@ class ArchiveDatabase:
                 # No text search - query emails table only (fast with indexes)
                 _t2 = time.time()
 
-                # Determine if we need DISTINCT
-                # Single-join cases never produce duplicates due to PKs on junction tables
-                # Multi-join (label + recipient) also safe: each email has at most one
-                # matching row per filter
-                distinct = ""
-
                 sql = f"""
-                    SELECT {distinct}
+                    SELECT
                         e.email_id,
                         e.filename,
                         e.subject,
@@ -1256,90 +1244,6 @@ class ArchiveDatabase:
                 print(f"[db.search] Table query took {time.time() - _t2:.3f}s, {len(results)} results", flush=True)
 
             return results
-
-    def _parse_query(self, query: str) -> tuple:
-        """Parse query and extract special filters.
-
-        Returns:
-            Tuple of (fts_query, filters_dict)
-        """
-        filters = {}
-
-        # Extract before:YYYY-MM-DD or before:YYYYMMDD
-        before_match = re.search(r"\bbefore:(\d{4}-?\d{2}-?\d{2})\b", query)
-        if before_match:
-            date_str = before_match.group(1).replace("-", "")
-            # Convert to ISO 8601 format for email_date column comparison
-            year, month, day = date_str[:4], date_str[4:6], date_str[6:8]
-            filters["before"] = f"{year}-{month}-{day}"
-            query = query[: before_match.start()] + query[before_match.end() :]
-
-        # Extract after:YYYY-MM-DD or after:YYYYMMDD
-        after_match = re.search(r"\bafter:(\d{4}-?\d{2}-?\d{2})\b", query)
-        if after_match:
-            date_str = after_match.group(1).replace("-", "")
-            # Convert to ISO 8601 format for email_date column comparison
-            year, month, day = date_str[:4], date_str[4:6], date_str[6:8]
-            filters["after"] = f"{year}-{month}-{day}"
-            query = query[: after_match.start()] + query[after_match.end() :]
-
-        # Extract label:xxx or tag:xxx
-        label_match = re.search(r"\b(?:label|tag):(\S+)\b", query)
-        if label_match:
-            filters["label"] = label_match.group(1)
-            query = query[: label_match.start()] + query[label_match.end() :]
-
-        # Extract from:xxx or sender:xxx - use LIKE filter instead of FTS for much faster date-sorted queries
-        from_match = re.search(r"\b(?:from|sender):(\S+)\b", query)
-        if from_match:
-            filters["sender"] = from_match.group(1)
-            query = query[: from_match.start()] + query[from_match.end() :]
-
-        # Extract to:xxx or recipients:xxx - use LIKE filter instead of FTS for much faster date-sorted queries
-        to_match = re.search(r"\b(?:to|recipients):(\S+)\b", query)
-        if to_match:
-            filters["recipients"] = to_match.group(1)
-            query = query[: to_match.start()] + query[to_match.end() :]
-
-        # Clean up the remaining query
-        query = query.strip()
-
-        # Remove orphaned AND operators (AND is implicit in FTS5 anyway)
-        # e.g., "after:2025-01 AND before:2025-02" -> "AND" after extraction -> ""
-        # e.g., "after:2025-01 AND invoice" -> "AND invoice" -> "invoice"
-        # NOTE: We intentionally do NOT strip OR/NOT - if user writes "after:X OR text",
-        # they expect OR semantics which we don't support, so let it error clearly.
-        query = re.sub(r"^\s*AND\s+", "", query, flags=re.IGNORECASE)
-        query = re.sub(r"\s+AND\s*$", "", query, flags=re.IGNORECASE)
-        if query.upper() == "AND":
-            query = ""
-
-        # Convert remaining query to FTS5 syntax
-        fts_query = self._convert_query(query.strip())
-
-        return fts_query, filters
-
-    def _convert_query(self, query: str) -> str:
-        """Convert user query to FTS5 syntax."""
-        # Convert field prefixes
-        query = re.sub(r"\bfrom:", "sender:", query)
-        query = re.sub(r"\bto:", "recipients:", query)
-        query = re.sub(r"\battachment:", "attachments:", query)
-
-        # Quote values after field: prefixes that contain special characters
-        # FTS5 special chars: . @ - + * " ( ) : ^
-        def quote_field_value(match):
-            field = match.group(1)
-            value = match.group(2)
-            # If value contains special chars, quote it
-            if re.search(r'[.@\-+*"():^]', value):
-                # Escape any existing quotes and wrap in quotes
-                value = '"' + value.replace('"', '""') + '"'
-            return field + ":" + value
-
-        query = re.sub(r"\b(sender|recipients|subject|attachments):(\S+)", quote_field_value, query)
-
-        return query
 
     # -------------------------------------------------------------------------
     # Statistics
