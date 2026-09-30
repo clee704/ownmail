@@ -1,11 +1,11 @@
 ---
 id: TASK-118
 title: Refresh sanitizer dependencies when package.json changes
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC1
 created_date: '2026-09-29 06:39'
-updated_date: '2026-09-30 04:52'
+updated_date: '2026-09-30 04:56'
 labels:
   - web
 dependencies: []
@@ -26,7 +26,7 @@ The same path has two smaller problems. When the sanitizer fails to start, ownma
 <!-- AC:BEGIN -->
 - [x] #1 When installed dependencies no longer satisfy package.json, the next ownmail serve installs satisfying versions before starting the sanitizer, and an install that already satisfies it starts without running npm
 - [x] #2 When the refresh cannot run (npm missing, offline or a failed install), the outcome is defined, reported to the user and covered by tests
-- [ ] #3 Startup guidance for a failed sanitizer install works for pipx and source installs, and the full pre-push gate passes
+- [x] #3 Startup guidance for a failed sanitizer install works for pipx and source installs, and the full pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,14 +38,23 @@ Verify direct installed package metadata against the full current stable caret r
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Owner: Ownmail IC1. Reserved for TASK-118. Review base: 654e88c2836e1426732b46b87ec8fa5ea3ced40c. Branch: fix/sanitizer-dependency-refresh.
-Intended scope: ownmail/sanitizer/__init__.py, especially HtmlSanitizer._ensure_deps and startup failure reporting; ownmail/web.py run_server sanitizer-startup guidance only; tests/test_sanitizer.py dependency/startup cases and tests/test_web.py TestRunServer; this task file. Existing dependency declarations are inputs; no new runtime dependency or changed sanitizer security boundary is included.
-Ownmail IC2 owns body charset recovery in ownmail/parser.py and the web decoding functions and their tests. Both tasks touch ownmail/web.py and tests/test_web.py in separate function/test families. Preserve the other task's scope and fixtures. Implementation uses separate worktrees; integration is serialized in TASK-118 then TASK-40 order. Shared imports or helpers, overlapping test changes and unresolved security behavior must be reported before expanding scope. The integration checkout, README files and execution-order document are reserved for the manager. No real archive or server operation is included.
-Next action: Ownmail IC1 creates its isolated worktree from the common claim base, verifies the current dependency-refresh premise and existing alternatives, and records its bounded implementation plan before substantive work.
+Owner: Ownmail IC1. Branch: fix/sanitizer-dependency-refresh. Review base: common claim base c44eb0f620d79e9be10ff8449969408adac6341b. Implementation checkpoint: 69f35e0.
 
-Premise verified: existing node_modules currently bypasses all dependency checks. Runtime declarations remain unchanged. Review base for this isolated implementation is common claim base c44eb0f620d79e9be10ff8449969408adac6341b.
+Scope remained in sanitizer dependency setup, run_server startup guidance, sanitizer tests and TestRunServer. Dependency declarations, charset decoding, shared README and integration checkout were untouched. Manager owns serialized integration and the separate README wording proposal.
 
-Implementation validates each current stable nonzero-major caret requirement against direct installed metadata, including upper bounds and prerelease exclusion. Unsupported requirement syntax fails closed with a diagnostic. Satisfying metadata bypasses npm lookup and invocation; refresh uses --omit=dev and revalidates before worker startup. Missing npm, offline/install errors, timeout, filesystem errors and an ineffective successful install all leave the worker unavailable. Consolidated duplicate dependency tests into isolated fixtures; 129 sanitizer/startup tests passed including actual Node integration. Regression tests detected four deliberate mutations (old directory shortcut, omitted upper bound, accepted prereleases and skipped post-install verification), after which source was restored. Ruff check, format-check and deptry pass. Plan was recorded through backlog before substantive edits; its initial commit attempt was blocked by missing isolated dev tooling, and successful plan commit followed implementation edits. Required full browser/coverage/pre-push validation remains pending.
+Premise verified: existing node_modules bypassed current dependency declarations. Installed direct package metadata now must satisfy each full current stable nonzero-major caret range, including the incompatible upper bound and prerelease exclusion. Unknown range syntax or malformed/missing/unreadable metadata fails closed; future declaration syntax outside this grammar needs an explicit checker extension. Satisfying installations need neither npm lookup nor invocation. Missing/stale dependencies refresh with --omit=dev and are checked again before launching the worker. No runtime dependency was added and the sanitizer security boundary is unchanged.
 
-Required Chromium browser coverage passed with synthetic fixtures: 3939 passed, 1 expected xfailed, no skipped tests; branch-inclusive coverage 96.44%. A narrow headless-test escalation was needed after macOS sandbox browser bootstrap/kill restrictions; no product assertions or security settings changed. A disposable real-npm probe confirmed that a retained node_modules directory and old lockfile refresh after the manifest floor changes, a satisfying install runs without npm, and an offline stale refresh reports ENOTCACHED and fails safely. Author reviewed the full task diff from common claim base: edits remain in owned sanitizer/startup scopes, no runtime dependencies or security boundary changed. Exact final pre-push gate remains pending.
+Missing npm, offline/install failure, timeout, filesystem errors and ineffective successful installs leave the worker unavailable and serving refused. Startup prints retry and repair guidance usable from pipx and source installs.
+
+Planning chronology: the supported backlog --plan checkpoint was written before substantive edits. Its initial commit attempt preceded implementation but failed because isolated development tooling was not yet installed. The successful plan checkpoint commit (42a8983) followed implementation edits; that chronology is intentional and is not represented as a prior commit.
+
+Validation: 129 focused sanitizer/startup tests passed including actual Node integration. Four deliberate mutations were detected: directory-only trust, missing upper bound, prerelease acceptance and skipped post-install verification. Source was restored. Disposable real-npm probes verified stale node_modules plus old lockfile refresh, the no-npm satisfied path and safe ENOTCACHED offline failure. Required Chromium browser full suite passed: 3939 passed, 1 expected xfailed, zero skipped; branch-inclusive coverage 96.44%. Ruff check, format-check and deptry passed. Exact pre-commit run -a --hook-stage pre-push passed, including required browser coverage. Narrow headless execution escalation resolved the macOS sandbox bootstrap restriction; no product assertions or system settings changed.
+
+Author self-reviewed the entire task diff against the common claim base and found no outstanding issue. Per the current ordinary-fix review contract, an additional independent reviewer was not required. All acceptance criteria are verified. Final ledger closure commit follows the coordinated short measurement hold; manager then integrates TASK-118 before TASK-40 and applies the separately proposed README wording.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Sanitizer startup now refreshes missing or incompatible dependencies, preserves the offline no-npm fast path for satisfying installs, verifies installation results and reports usable pipx/source repair guidance. Full required browser/coverage/pre-push gates and meaningful regression mutation checks passed; no blockers remain.
+<!-- SECTION:FINAL_SUMMARY:END -->
