@@ -1,11 +1,11 @@
 ---
 id: TASK-16
 title: IMAP folders with a NIL hierarchy delimiter are silently dropped
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC2
 created_date: '2026-07-25 05:24'
-updated_date: '2026-09-30 05:46'
+updated_date: '2026-09-30 06:30'
 labels: []
 dependencies: []
 priority: medium
@@ -24,10 +24,10 @@ Fix: accept NIL as well as a quoted delimiter, and treat it as an empty delimite
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Valid LIST rows with a NIL hierarchy delimiter produce the original folder name and flags with an empty delimiter; quoted-delimiter rows and mixed quoted/NIL listings retain their existing results.
-- [ ] #2 Non-byte entries, genuinely malformed rows and nonselectable folders retain the existing skip behavior; a valid NIL row is no longer classified as malformed.
-- [ ] #3 NIL folders use whole-name role matching and existing SPECIAL-USE, configured-folder and role-exclusion rules without changing those policies.
-- [ ] #4 Synthetic parser and mocked-provider regressions show eligible NIL folders reach archive listing/scanning and role discovery while excluded folders remain excluded; the valid-NIL regression fails against the original parser, with existing quoted-delimiter coverage preserved.
+- [x] #1 Valid LIST rows with a NIL hierarchy delimiter produce the original folder name and flags with an empty delimiter; quoted-delimiter rows and mixed quoted/NIL listings retain their existing results.
+- [x] #2 Non-byte entries, genuinely malformed rows and nonselectable folders retain the existing skip behavior; a valid NIL row is no longer classified as malformed.
+- [x] #3 NIL folders use whole-name role matching and existing SPECIAL-USE, configured-folder and role-exclusion rules without changing those policies.
+- [x] #4 Synthetic parser and mocked-provider regressions show eligible NIL folders reach archive listing/scanning and role discovery while excluded folders remain excluded; the valid-NIL regression fails against the original parser, with existing quoted-delimiter coverage preserved.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,7 +36,7 @@ Fix: accept NIL as well as a quoted delimiter, and treat it as an empty delimite
 1. Independently reconfirm the valid-NIL drop with synthetic LIST responses and inspect parse_list_response, the existing live parser, role matching and provider regression helpers.
 2. Change only the archive LIST parser to accept NIL and return an empty delimiter, preserving quoted delimiters, names/flags and existing filtering. Reuse established conventions without refactoring the separate strict live lifecycle parser or changing role policy.
 3. Replace the existing NIL-as-unparseable assertion with valid-NIL coverage and retain a genuinely malformed-input regression. Cover mixed listings, non-byte entries, nonselectable folders, flat whole-name role matching, configured exclusions, role discovery and eligible NIL folders reaching mocked archive scans.
-4. Run focused provider/role tests, then the repository's complete coverage/browser/pre-push gate in the assigned validation slot; self-review the full task diff, record results, and close this task with normal hooks.
+4. Run focused provider/role tests, then the repository's complete coverage/browser/pre-push gate in the isolated worktree; self-review the full task diff, record results, and close this task with normal hooks.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -50,4 +50,22 @@ The current parser returns no folders for valid synthetic NIL listings. The live
 Start from the common committed claim base after both task claims. Use an isolated local worktree in the IC's own writable workspace. Integrate TASK-116 before TASK-16; serialize full suites, browser validation and commit hooks through the coordinator. Preserve every other task and implementation scope.
 Validation begins with pytest tests/test_imap_provider.py tests/test_roles.py. Complete the repository's full coverage and required-browser pre-push gate before closure; prove the NIL regression fails against the old parser. Do not exercise a real account or change credentials/OAuth, schema, dependencies, live lifecycle behavior, mail files or publication settings.
 Next action: IC2 rechecks the valid-NIL premise and existing parser/role contracts on the common claim base, then confirms or updates this bounded plan before implementation.
+
+IC2 rechecked the claim and confirmed the implementation plan on common base 705aa580b8c0b14905471942918834115329d533. Source inspection confirms the archive regex requires a quoted delimiter while the existing live parser maps NIL to an empty delimiter and role matching already treats that as a flat namespace. Keep the claim review base da018d5d1dd309ee5767ac8483fc746d7ff3155f; the intervening shared commits contain only the two task claims. The assigned quiet window postpones dynamic premise checks, environment preparation and hooks. Next action after release: reproduce the synthetic NIL drop, commit this task-only plan confirmation, then implement and test the minimal parser change.
+
+After the quiet-window release, a synthetic check against the unchanged common-base parser confirmed the premise: quoted Receipts/Sent rows return both original tuples, but the same rows with NIL return no parser tuples and no archive-provider folders. Existing role_for_imap_folder correctly classifies flat Trash and leaves flat Work/Trash unclassified. The missing route is therefore present and worth the bounded fix. No account was connected. Plan confirmed without scope changes; this task-only checkpoint precedes implementation.
+
+Checkpoint-only slot granted. Implementation remains paused while the coordinator checks newly discovered upstream commits for overlap with TASK-16 and TASK-116. Preserve this local plan and common-base worktree; do not independently rebase, merge or push. Next action: resume the bounded implementation only after the coordinator confirms the owned code scope can proceed.
+
+Implementation now accepts NIL alongside the existing quoted delimiter and normalizes its unmatched delimiter group to an empty string. All production code outside parse_list_response is unchanged. The incorrect NIL-as-malformed expectation was replaced because NIL is a valid LIST delimiter; separate malformed-row assertions remain. The new regressions first ran against the original parser: seven positive NIL cases failed while four selected controls passed. After the minimal fix, all 205 provider and role tests passed, including quoted/mixed listings, non-byte and Noselect filtering, whole-name roles, SPECIAL-USE/configured exclusions, discovery and full/incremental mocked scans with watermarks. Ruff check, repository format-check and deptry passed. Author self-review found no introduced issue; shared roles/live parser and README remain untouched. All AC-specific behavior is verified, but the task stays In Progress pending the stable reconciled integration base and assigned full coverage/required-browser/pre-push gate. No real account was contacted.
+
+The coordinator removed the validation-slot prerequisite for isolated worktrees and authorized immediate local full validation and commit hooks. The task runtime uses its own venv, sanitizer node_modules, temporary files, cache and browser profiles; its reusable hook cache belongs only to IC2. Browser tests render private synthetic content, and the local test HTTP server requests an ephemeral port. Proceed with the implementation checkpoint and full required-browser pre-push gate on this branch. Integration/rebase/merge and public push remain coordinator-owned and have not occurred.
+
+Full required validation passed on implementation commit 8a7cf051a8d93e4f83dc2d3183680aaaf07b0139: pre-commit run -a --hook-stage pre-push passed all hooks with mandatory Chromium browser coverage enabled. Pytest reported 3,978 passed and the one pre-existing TASK-13 expected failure; no browser tests were skipped. Aggregate coverage including branches was 96.52%, above the 95% gate. Repository-wide ruff check, ruff format --check and deptry passed. Final author review covered the complete task scope from the recorded review base; an optional read-only Astra Ultra support audit also found no actionable introduced issue. The only production change is parse_list_response. No role policy, live parser, credentials, real mailbox, schema, dependencies or shared README changed. Local implementation is committed and verified; default-branch integration, upstream reconciliation and publication remain coordinated separately.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Accept NIL hierarchy delimiters in archive IMAP LIST responses as an empty delimiter, preserving quoted delimiters, folder names/flags and existing filtering. Added meaningful parser/provider regressions for mixed listings, malformed/non-byte/Noselect rows, flat-name roles and exclusions, role discovery and full/incremental scans. Seven positive regressions failed with the original parser; all 205 focused tests and the complete required-browser pre-push gate passed (3,978 passed, one existing expected failure, 96.52% aggregate coverage). Author self-review is complete with no outstanding introduced findings. Local task complete; integration and push are coordinator-owned.
+<!-- SECTION:FINAL_SUMMARY:END -->

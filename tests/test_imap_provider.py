@@ -195,14 +195,15 @@ class TestImapProviderFolders:
         assert "Sent" in folders
         assert "Archive" in folders
 
-    def test_list_folders_excludes_noselect(self):
+    @pytest.mark.parametrize("delimiter", ['"/"', "NIL"])
+    def test_list_folders_excludes_noselect(self, delimiter):
         """Test that non-selectable folders are excluded."""
         provider = self._make_provider()
         provider._conn.list.return_value = (
             "OK",
             [
-                b'(\\Noselect \\HasChildren) "/" "[Gmail]"',
-                b'(\\HasNoChildren) "/" "[Gmail]/Sent Mail"',
+                f'(\\Noselect \\HasChildren) {delimiter} "[Gmail]"'.encode(),
+                f'(\\HasNoChildren) {delimiter} "[Gmail]/Sent Mail"'.encode(),
             ],
         )
 
@@ -367,26 +368,80 @@ class TestImapRoleExclusion:
         )
         assert provider._folder_roles == {"INBOX": "inbox", "Verzonden": "sent"}
 
+    def test_nil_delimiter_preserves_roles_and_configured_exclusions(self):
+        """Flat names are matched whole; flags and configured filters still apply."""
+        provider = self._make_provider(exclude_folders=["Receipts"], exclude_roles=["drafts"])
+        folders = self._listing(
+            provider,
+            [
+                b'(\\HasNoChildren) "/" "Work"',
+                b'(\\HasNoChildren) NIL "Receipts"',
+                b'(\\HasNoChildren) NIL "Sent"',
+                b'(\\HasNoChildren) NIL "Work/Trash"',
+                b'(\\HasNoChildren) NIL "INBOX.Trash"',
+                b'(\\HasNoChildren) NIL "Trash"',
+                b'(\\HasNoChildren \\Trash) NIL "Discarded"',
+                b'(\\HasNoChildren \\Junk) NIL "Unwanted"',
+                b'(\\HasNoChildren \\Drafts) NIL "Unfinished"',
+                b'(\\HasNoChildren) NIL "INBOX"',
+            ],
+        )
+        assert folders == ["Work", "Sent", "Work/Trash", "INBOX.Trash", "INBOX"]
+        assert provider._label_folders == ["Work", "Receipts", "Sent", "Work/Trash", "INBOX.Trash", "INBOX"]
+        assert provider._folder_roles == {
+            "Sent": "sent",
+            "Trash": "trash",
+            "Discarded": "trash",
+            "Unwanted": "spam",
+            "Unfinished": "drafts",
+            "INBOX": "inbox",
+        }
+
 
 class TestParseListResponse:
     def test_skips_non_bytes_entries(self):
         """imaplib mixes continuation tuples into the response list."""
         from ownmail.providers.imap import parse_list_response
 
-        parsed = parse_list_response([b'(\\HasNoChildren) "/" "INBOX"', (b"x", b"y"), None])
-        assert parsed == [("INBOX", "\\HasNoChildren", "/")]
+        parsed = parse_list_response(
+            [b'(\\HasNoChildren) "/" "INBOX"', (b"x", b"y"), None, '() NIL "Ignored"', b'() NIL "Receipts"']
+        )
+        assert parsed == [("INBOX", "\\HasNoChildren", "/"), ("Receipts", "", "")]
 
-    def test_skips_unparseable_lines(self):
-        """Includes NIL-delimiter listings — see TASK-16."""
+    def test_parses_mixed_quoted_and_nil_delimiters(self):
         from ownmail.providers.imap import parse_list_response
 
-        assert parse_list_response([b'(\\HasNoChildren) NIL "INBOX"']) == []
+        assert parse_list_response(
+            [
+                b'(\\HasNoChildren) "/" "Work/2026"',
+                b'(\\HasNoChildren \\Sent) NIL "Sent Mail"',
+                b"() NIL Receipts",
+                b'(\\HasNoChildren) "." "Projects.Notes"',
+                b'() "" "Flat"',
+            ]
+        ) == [
+            ("Work/2026", "\\HasNoChildren", "/"),
+            ("Sent Mail", "\\HasNoChildren \\Sent", ""),
+            ("Receipts", "", ""),
+            ("Projects.Notes", "\\HasNoChildren", "."),
+            ("Flat", "", ""),
+        ]
+
+    @pytest.mark.parametrize(
+        "line",
+        [b'(\\HasNoChildren NIL "Broken"', b'(\\HasNoChildren) / "Broken"', b"(\\HasNoChildren) NIL"],
+    )
+    def test_skips_unparseable_lines(self, line):
+        from ownmail.providers.imap import parse_list_response
+
+        assert parse_list_response([line]) == []
 
 
 class TestDiscoverRoleFolders:
     """Setup's live lookup of a server's real trash/spam folder names."""
 
-    def test_returns_matching_folders(self):
+    @pytest.mark.parametrize("delimiter", ['"/"', "NIL"])
+    def test_returns_matching_folders(self, delimiter):
         from ownmail import roles
         from ownmail.providers.imap import discover_role_folders
 
@@ -394,9 +449,10 @@ class TestDiscoverRoleFolders:
         conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) "/" "INBOX"',
-                b'(\\HasNoChildren \\Trash) "/" "Papierkorb"',
-                b'(\\HasNoChildren) "/" "Junk"',
+                f'(\\HasNoChildren) {delimiter} "INBOX"'.encode(),
+                f'(\\HasNoChildren \\Trash) {delimiter} "Papierkorb"'.encode(),
+                f'(\\HasNoChildren) {delimiter} "Junk"'.encode(),
+                b'(\\HasNoChildren) NIL "Work/Trash"',
             ],
         )
 
@@ -1788,6 +1844,47 @@ class TestImapIncrementalScan:
         conn.select.side_effect = select
         conn.uid.side_effect = uid
         return conn
+
+    @pytest.mark.parametrize("incremental", [False, True])
+    def test_nil_folders_reach_scans_without_admitting_excluded_mail(self, incremental):
+        conn = self._conn(
+            [],
+            {"Receipts": [1, 2], "Sent": [3], "Work": [4], "Private": [50], "Trash": [99], "Container": [88]},
+        )
+        conn.list.return_value = (
+            "OK",
+            [
+                b'(\\HasNoChildren) NIL "Receipts"',
+                b'(\\HasNoChildren \\Sent) NIL "Sent"',
+                b'(\\HasNoChildren) "/" "Work"',
+                b'(\\HasNoChildren) NIL "Private"',
+                b'(\\HasNoChildren \\Trash) NIL "Trash"',
+                b'(\\Noselect) NIL "Container"',
+            ],
+        )
+        provider = _imap_provider(conn, host="imap.example.test", exclude_folders=["Private"])
+        prior_state = json.dumps({"Receipts": {"max_uid": 1, "uidvalidity": "100"}}) if incremental else None
+
+        with patch("time.sleep"):
+            ids, state = provider.get_new_message_ids(prior_state)
+
+        assert ids == (
+            ["Receipts:2", "Sent:3", "Work:4"] if incremental else ["Receipts:1", "Receipts:2", "Sent:3", "Work:4"]
+        )
+        # Named exclusions still contribute labels; role exclusions do not.
+        assert {call.args[0].strip('"') for call in conn.select.call_args_list} == {
+            "Receipts",
+            "Sent",
+            "Work",
+            "Private",
+        }
+        if incremental:
+            assert _watermarks(state) == {
+                name: {"max_uid": uid, "uidvalidity": "100"}
+                for name, uid in [("Receipts", 2), ("Sent", 3), ("Work", 4), ("Private", 50)]
+            }
+        else:
+            assert state is None
 
     def test_only_uids_above_the_watermark_are_returned(self):
         """Messages at or below the stored max_uid should be skipped."""
