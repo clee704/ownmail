@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-15 02:56'
-updated_date: '2026-09-30 16:05'
+updated_date: '2026-09-30 16:10'
 labels:
   - ui
 dependencies: []
@@ -63,10 +63,14 @@ Authorized audit follow-up, review base 47e54fd653f65a33b394f52207602476dc14126b
 Audit correction checkpoint: actual worker regressions fail at the combined base for both an unmatched @media rule and an unmatched style[media] rule, while six matching/unsupported controls remain conservatively padded. The fix uses the existing literal matcher to establish targets first and ignores proven no-target rules before conditional uncertainty. The focused real-worker set passes, including all matching/unsupported controls. The real-reader spacing matrix now includes the exact audited newsletter case; its browser check, independent review and final combined gate remain pending. No cascade engine, sender-markup rewrite or startup/runtime change was added.
 
 The new real-reader test failed against exported unchanged combined-base production on the extra padding class. With the fix, the complete seventeen-case spacing matrix passes at phone/tablet/desktop widths, in both themes and print; all affected charset/spacing checks total 60 passes. The eight worker subcases retain conservative behavior for matching and unsupported selectors. AC4 is verified; independent review and the final combined repository gate remain pending. Browser commands exited and the interval was released.
+
+Full-task author review against combined base 47e54fd653f65a33b394f52207602476dc14126b confirms the only production change is ordering existing static target matching before conditional uncertainty. Matching/unknown selector fallback, sanitized HTML, dark-mode metadata, and all sanitizer startup/runtime code are preserved. Worker and rendered red/green evidence is complete; independent review and the integration owner final combined required gate remain outstanding.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Recognize class-styled, deeply wrapped and principal-cell message canvases without an extra reader frame. Preserve readable padding for simple HTML and decorative, hidden or genuinely ambiguous layouts, without changing sanitized markup, selector rewriting or dark-mode/trust behavior. All 16 rendered spacing cases pass at three widths in both themes; full required gate passes with 4,076 tests, one existing expected failure and 96.66% coverage. Independent Astra Ultra review has no open findings. Final closure is ledger-only; no integration or publication.
+
+Audit follow-up: inapplicable responsive rules no longer invalidate proven canvases; worker and real-reader regressions pass. Historical closure above is preserved. Status remains In Progress pending independent review and the final combined gate.
 <!-- SECTION:FINAL_SUMMARY:END -->
