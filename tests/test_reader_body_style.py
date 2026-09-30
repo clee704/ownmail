@@ -13,6 +13,147 @@ spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 
 @pytest.mark.parametrize("style_location", ["head", "body"])
+@pytest.mark.parametrize(
+    ("doctype", "body_attributes", "predicates"),
+    [
+        pytest.param(
+            "<!doctype html>",
+            'data-empty=""',
+            [
+                ("body.null", False),
+                ("body#null", False),
+                ('body[data-missing="null"]', False),
+                ('body[data-missing^="n"]', False),
+                ('body[data-missing*="u"]', False),
+                ('body[data-missing$="ll"]', False),
+                ('body[data-empty^=""]', False),
+                ('body[data-empty$=""]', False),
+                ('body[data-empty*=""]', False),
+                ('body[data-empty~=""]', False),
+                ('body[data-empty=""]', True),
+            ],
+            id="missing-and-empty-attributes",
+        ),
+        pytest.param(
+            "<!doctype html>",
+            'class="main\u00a0news" data-words="alpha beta" data-code="en-US" dir="RTL"',
+            [
+                ("body.main", False),
+                ('body[class~="main"]', False),
+                ('body[class="main\u00a0news"]', True),
+                ("body[data-words]", True),
+                ('body[data-words~="beta"]', True),
+                ('body[data-words^="alpha"]', True),
+                ('body[data-words$="beta"]', True),
+                ('body[data-words*="ha be"]', True),
+                ('body[data-code|="en"]', True),
+                ('body[data-code|="e"]', False),
+                ('body[dir="rtl"]', True),
+            ],
+            id="ascii-token-whitespace-and-attribute-operators",
+        ),
+        pytest.param(
+            "",
+            'class="main ä" id="message" data-case="ä" data-ascii="Alpha"',
+            [
+                ("body.MAIN", True),
+                ("body#MESSAGE", True),
+                ('body[class~="MAIN"]', False),
+                ("body.Ä", False),
+                ("body.ä", True),
+                ('body[data-case="Ä" i]', False),
+                ('body[data-case="ä" i]', True),
+                ('body[data-ascii="alpha"]', False),
+                ('body[data-ascii="alpha" i]', True),
+            ],
+            id="quirks-ascii-only-case-folding",
+        ),
+        pytest.param(
+            "<!doctype html>",
+            'class="main ä" id="message" data-case="ä" data-ascii="Alpha"',
+            [
+                ("body.MAIN", False),
+                ("body#MESSAGE", False),
+                ('body[class~="MAIN"]', False),
+                ("body.Ä", False),
+                ("body.ä", True),
+                ('body[data-case="Ä" i]', False),
+                ('body[data-case="ä" i]', True),
+                ('body[data-ascii="alpha"]', False),
+                ('body[data-ascii="alpha" i]', True),
+            ],
+            id="standards-case-sensitive-class-and-id",
+        ),
+    ],
+)
+def test_static_body_predicates_keep_original_browser_matching(
+    shell_app, contrast_browser, spacing_sanitizer, style_location, doctype, body_attributes, predicates
+):
+    app, archive = shell_app
+    app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
+    css = "body .probe {width:17px;}" + "".join(
+        f"{qualifier} .predicate-{index} {{width:37px;}}" for index, (qualifier, _) in enumerate(predicates)
+    )
+    body = "".join(f'<div class="probe predicate-{index}">Synthetic</div>' for index in range(len(predicates)))
+    style = f"<style>{css}</style>"
+    source = (
+        f"{doctype}<html><head>{style if style_location == 'head' else ''}</head>"
+        f"<body {body_attributes}>{style if style_location == 'body' else ''}{body}</body></html>"
+    )
+    message = EmailMessage()
+    message["Subject"] = "Synthetic static body predicates"
+    message["From"] = "sender@example.com"
+    message.set_content(source, subtype="html")
+    (archive.archive_dir / "synthetic.eml").write_bytes(message.as_bytes())
+    archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", None, None, None, None)
+    response = app.test_client().get("/email/synthetic")
+    assert response.status_code == 200
+    test_email_contrast.run_contrast_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        r"""
+        const predicates = __PREDICATES__;
+        const reference = await browser.newPage();
+        try {
+            await reference.setContent(__SOURCE__);
+            assert.equal(await reference.evaluate(() => document.compatMode), __COMPAT_MODE__);
+            const readWidth = el => getComputedStyle(el).width;
+            for (const [index, [qualifier, matches]] of predicates.entries()) {
+                const selector = '.predicate-' + index;
+                const expected = matches ? '37px' : '17px';
+                const original = await reference.locator(selector).evaluate(readWidth);
+                const rendered = await page.locator('#ownmail-email-content ' + selector).evaluate(readWidth);
+                assert.equal(original, expected, qualifier + ' must have the intended source match');
+                assert.equal(rendered, expected, qualifier + ' must retain its intended match after extraction');
+                assert.equal(rendered, original, qualifier + ' must agree with the original browser document');
+            }
+        } finally {
+            await reference.close();
+        }
+        await page.evaluate(body => {
+            const outside = document.createElement('div');
+            outside.id = 'outside-static-predicates';
+            outside.style.width = '123px';
+            outside.innerHTML = body;
+            document.getElementById('ownmail-email-content').after(outside);
+        }, __BODY__);
+        await settle();
+        const outsideWidths = await page.locator('#outside-static-predicates .probe')
+            .evaluateAll(elements => elements.map(el => getComputedStyle(el).width));
+        assert.deepEqual(outsideWidths, predicates.map(() => '123px'), 'Sender rules must remain scoped');
+        """.replace("__PREDICATES__", json.dumps(predicates))
+        .replace("__SOURCE__", json.dumps(source))
+        .replace("__COMPAT_MODE__", json.dumps("CSS1Compat" if doctype else "BackCompat"))
+        .replace("__BODY__", json.dumps(body)),
+        theme="light",
+        rendered_page=response.get_data(as_text=True),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )
+
+
+@pytest.mark.parametrize("style_location", ["head", "body"])
 def test_malformed_body_qualifiers_do_not_activate_rules(
     shell_app, contrast_browser, spacing_sanitizer, style_location
 ):

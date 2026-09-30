@@ -131,23 +131,68 @@ function prepareStyleText(css) {
   return wrapped ? result.replace(/^(\s*)<!--/, "$1") : result;
 }
 
+// Only literal identifiers/strings are resolved here; escaped and dynamic roots
+// keep the existing fallback. Do not use jsdom.matches: its predicate semantics
+// differ from browsers for missing attributes, whitespace and case folding.
+const CSS_IDENTIFIER = String.raw`(?:--|-?[A-Za-z_\u0080-\uFFFF])[-\w\u0080-\uFFFF]*`;
+const BODY_NAME = new RegExp(`^${CSS_IDENTIFIER}`);
+const BODY_ATTRIBUTE = new RegExp(
+  String.raw`^[\t\n\f\r ]*(${CSS_IDENTIFIER})[\t\n\f\r ]*(?:([~|^$*]?=)[\t\n\f\r ]*(?:"([^"\\\n\r\f]*)"|'([^'\\\n\r\f]*)'|(${CSS_IDENTIFIER}))([\t\n\f\r ]*)([isIS])?[\t\n\f\r ]*)?$`
+);
+
+// HTML defines these attribute values as ASCII-insensitive by default:
+// https://html.spec.whatwg.org/multipage/semantics-other.html#case-sensitivity-of-selectors
+const HTML_INSENSITIVE_ATTRIBUTES = new Set([
+  "accept", "accept-charset", "align", "alink", "axis", "bgcolor", "charset",
+  "checked", "clear", "codetype", "color", "compact", "declare", "defer", "dir",
+  "direction", "disabled", "enctype", "face", "frame", "hreflang", "http-equiv",
+  "lang", "language", "link", "media", "method", "multiple", "nohref", "noresize",
+  "noshade", "nowrap", "readonly", "rel", "rev", "rules", "scope", "scrolling",
+  "selected", "shape", "target", "text", "type", "valign", "valuetype", "vlink",
+]);
+
+function asciiLower(value) {
+  return value.replace(/[A-Z]/g, (char) => char.toLowerCase());
+}
+
+function matchesBodyValue(actual, operator, expected, insensitive) {
+  if (actual === null) return false;
+  if (!operator) return true;
+  if (insensitive) {
+    actual = asciiLower(actual);
+    expected = asciiLower(expected);
+  }
+  switch (operator) {
+    case "=": return actual === expected;
+    case "~=": return expected !== "" && actual.split(/[\t\n\f\r ]+/).includes(expected);
+    case "|=": return actual === expected || actual.startsWith(expected + "-");
+    case "^=": return expected !== "" && actual.startsWith(expected);
+    case "$=": return expected !== "" && actual.endsWith(expected);
+    case "*=": return expected !== "" && actual.includes(expected);
+    default: return false;
+  }
+}
+
 /** Resolve a static body compound without moving sender attributes into the app. */
 function scopeQualifiedBodySelector(selector, body) {
   if (!body || !/^body[.#\[]/i.test(selector)) return null;
+  const quirks = body.ownerDocument.compatMode === "BackCompat";
   let end = 4;
   while (end < selector.length) {
     const marker = selector[end];
     if (marker === "." || marker === "#") {
-      const name = selector.slice(end + 1).match(/^[-\w\u0080-\uFFFF]+/);
+      const name = selector.slice(end + 1).match(BODY_NAME);
       if (!name) return null;
+      const attribute = marker === "." ? "class" : "id";
+      const operator = marker === "." ? "~=" : "=";
+      if (!matchesBodyValue(body.getAttribute(attribute), operator, name[0], quirks)) return null;
       end += name[0].length + 1;
     } else if (marker === "[") {
       let quote = null;
       let close = end + 1;
       for (; close < selector.length; close++) {
         const char = selector[close];
-        // Leave escaped roots to the existing fallback; jsdom does not reliably
-        // match CSS escapes. Dynamic pseudo-classes are also not static predicates.
+        // Escaped roots are outside this deliberately bounded grammar.
         if (char === "\\") return null;
         if (quote) {
           if (char === quote) quote = null;
@@ -160,25 +205,28 @@ function scopeQualifiedBodySelector(selector, body) {
         }
       }
       if (close === selector.length) return null;
+      const match = selector.slice(end + 1, close).match(BODY_ATTRIBUTE);
+      if (!match) return null;
+      const [, name, operator, doubleQuoted, singleQuoted, identifier, space, modifier] = match;
+      if (identifier !== undefined && modifier && !space) return null;
+      const flag = modifier && asciiLower(modifier);
+      const insensitive = flag === "i" || (!flag && HTML_INSENSITIVE_ATTRIBUTES.has(asciiLower(name)));
+      const value = doubleQuoted ?? singleQuoted ?? identifier;
+      if (!matchesBodyValue(body.getAttribute(name), operator, value, insensitive)) return null;
       end = close + 1;
     } else {
       break;
     }
   }
   const suffix = selector.slice(end);
-  if (suffix && !/^[\s>]/.test(suffix)) return null;
-  const relationship = suffix.replace(/^(?:\s|\/\*[\s\S]*?\*\/)*/, "");
+  if (suffix && !/^[\t\n\f\r >]/.test(suffix)) return null;
+  const relationship = suffix.replace(/^(?:[\t\n\f\r ]|\/\*[\s\S]*?\*\/)*/, "");
   // A sibling of the message container belongs to the app, not the message.
   if (/^[+~]/.test(relationship)) return null;
   const compound = selector.slice(0, end);
-  try {
-    if (!body.matches("body" + compound.slice(4))) return null;
-  } catch {
-    return null;
-  }
-  // The wildcard makes this match the container; the original compound keeps
-  // its specificity so ID-qualified rules still outrank class-qualified rules.
-  return `#ownmail-email-content:is(:where(*), ${compound})${suffix}`;
+  // The reader container is a DIV, so :not(body...) matches it while retaining
+  // the original specificity. Unlike :is(), :not() does not forgive invalid CSS.
+  return `#ownmail-email-content:not(${compound})${suffix}`;
 }
 
 /**

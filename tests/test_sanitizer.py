@@ -520,9 +520,9 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                     tree = lxml_html.fragment_fromstring(content, create_parent="div")
                     styles = tree.xpath("./style")
                     assert len(styles) == 1
-                    # :where(*) keeps the match unconditional; the original compound
-                    # inside :is() retains its class/attribute/ID and type specificity.
-                    expected = f"#ownmail-email-content:is(:where(*), {compound}){suffix}"
+                    # The DIV container cannot match BODY; :not() retains the
+                    # compound's specificity without forgiving invalid syntax.
+                    expected = f"#ownmail-email-content:not({compound}){suffix}"
                     assert expected + " { color: red; }" in styles[0].text_content()
                     assert container_attributes == {}
                     assert [element.tag for element in tree] == ["style", "p", "section"]
@@ -572,8 +572,8 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 stylesheet = tree.xpath("//style")[0].text_content()
                 for compound in ("body#attributes", "body[id=attributes]", "body[onload]"):
                     assert f"#ownmail-email-content {compound} .probe" in stylesheet
-                    assert f":is(:where(*), {compound})" not in stylesheet
-                assert "#ownmail-email-content:is(:where(*), body.main) .probe { color: red; }" in stylesheet
+                    assert f":not({compound})" not in stylesheet
+                assert "#ownmail-email-content:not(body.main) .probe { color: red; }" in stylesheet
 
     def test_qualified_body_selectors_use_final_inline_style(self):
         """Head/body styles see the same attribute after inline CSS cleanup."""
@@ -595,9 +595,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                     if matches:
                         assert "sans-serif" in final_style
                     prefix = (
-                        f"#ownmail-email-content:is(:where(*), {compound})"
-                        if matches
-                        else f"#ownmail-email-content {compound}"
+                        f"#ownmail-email-content:not({compound})" if matches else f"#ownmail-email-content {compound}"
                     )
                     assert tree.xpath("//style")[0].text_content() == prefix + " .probe { color: red; }"
 
@@ -616,7 +614,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 )
                 stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
                 assert scoped_rules in stylesheet
-                assert "#ownmail-email-content:is(:where(*), body.main) .probe { color: red; }" in stylesheet
+                assert "#ownmail-email-content:not(body.main) .probe { color: red; }" in stylesheet
 
     def test_qualified_body_selectors_keep_unsupported_roots_unchanged(self):
         """Dynamic, escaped and malformed body compounds retain the existing fallback."""
@@ -669,11 +667,140 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 )
                 stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
                 selector = (
-                    "#ownmail-email-content:is(:where(*), body.main#message) .probe"
+                    "#ownmail-email-content:not(body.main#message) .probe"
                     if matches
                     else "#ownmail-email-content body.main#message .probe"
                 )
                 assert stylesheet == selector + " { color: red; }"
+
+    def _assert_body_predicate(self, compound, attributes, matches, doctype="<!DOCTYPE html>"):
+        """Check a static predicate against actual sanitized head/body styles."""
+        from html import escape
+
+        body_attributes = "".join(f' {name}="{escape(value, quote=True)}"' for name, value in attributes.items())
+        for placement in ("head", "body"):
+            with self.subTest(compound=compound, attributes=attributes, doctype=doctype, placement=placement):
+                style = f"<style>{compound} .probe {{ color: red; }}</style>"
+                result, *_ = self.sanitizer.sanitize(
+                    f"{doctype}<html><head>{style if placement == 'head' else ''}</head>"
+                    f"<body{body_attributes}>{style if placement == 'body' else ''}"
+                    '<p class="probe">Text</p></body></html>'
+                )
+                tree = lxml_html.fromstring(result)
+                # HTML parsing normalizes carriage returns before predicates run.
+                assert dict(tree.xpath("//body")[0].attrib) == {
+                    name: value.replace("\r", "\n") for name, value in attributes.items()
+                }
+                selector = (
+                    f"#ownmail-email-content:not({compound})" if matches else f"#ownmail-email-content {compound}"
+                )
+                assert tree.xpath("//style")[0].text_content() == selector + " .probe { color: red; }"
+
+    def test_body_predicate_absent_attributes_do_not_match_null(self):
+        """An absent DOM attribute is not the CSS string or identifier null."""
+        for compound in (
+            "body.null",
+            "body#null",
+            "body[missing=null]",
+            "body[missing^=n]",
+            "body[missing*=u]",
+            "body[missing$=ll]",
+        ):
+            self._assert_body_predicate(compound, {}, False)
+        self._assert_body_predicate(
+            "body.null#null[data-present=null]", {"class": "null", "id": "null", "data-present": "null"}, True
+        )
+
+    def test_body_predicate_attribute_operators_and_empty_operands(self):
+        """Each operator needs its own match semantics, including empty needles."""
+        attributes = {"data-value": "en-us alpha", "data-empty": ""}
+        for predicate, matches in (
+            ("[data-value]", True),
+            ("[data-missing]", False),
+            ('[data-value="en-us alpha"]', True),
+            ("[data-value=en-us]", False),
+            ("[data-value~=alpha]", True),
+            ("[data-value~=lph]", False),
+            ('[data-value~="en-us alpha"]', False),
+            ("[data-value|=en]", True),
+            ("[data-value|=e]", False),
+            ("[data-value^=en-]", True),
+            ("[data-value^=us]", False),
+            ("[data-value$=alpha]", True),
+            ("[data-value$=en]", False),
+            ("[data-value*=us]", True),
+            ("[data-value*=missing]", False),
+            ('[data-empty=""]', True),
+            ('[data-value=""]', False),
+            ('[data-empty|=""]', True),
+            ('[data-value|=""]', False),
+        ):
+            self._assert_body_predicate("body" + predicate, attributes, matches)
+        for name in ("data-value", "data-empty"):
+            for operator in ("^=", "$=", "*=", "~="):
+                self._assert_body_predicate(f'body[{name}{operator}""]', attributes, False)
+
+    def test_body_predicate_tokens_use_ascii_whitespace(self):
+        """Class and word predicates split ASCII whitespace, but not NBSP."""
+        ascii_tokens = {"class": "first\tmain\nsecond\fthird\rfourth final"}
+        self._assert_body_predicate("body.first.main.second.third.fourth.final", ascii_tokens, True)
+        self._assert_body_predicate(
+            "body[class~=first][class~=main][class~=second][class~=third][class~=fourth][class~=final]",
+            ascii_tokens,
+            True,
+        )
+        for compound, matches in (
+            ("body.main", False),
+            ("body[class~=main]", False),
+            ("body.first\N{NO-BREAK SPACE}main", True),
+            ('body[class~="first\N{NO-BREAK SPACE}main"]', True),
+        ):
+            self._assert_body_predicate(compound, {"class": "first\N{NO-BREAK SPACE}main"}, matches)
+
+    def test_body_predicate_case_follows_source_mode_and_ascii_flags(self):
+        """Quirks mode affects class/ID selectors; attribute flags fold only ASCII."""
+        attributes = {"class": "MAIN Ä", "id": "MESSAGE", "data-case": "ABC Ä", "dir": "RTL"}
+        for compound, standards_match, quirks_match in (
+            ("body.main", False, True),
+            ("body#message", False, True),
+            ("body.ä", False, False),
+            ('body[class~="main"]', False, False),
+            ('body[data-case="abc Ä" i]', True, True),
+            ('body[data-case="abc ä" i]', False, False),
+            ('body[data-case="ABC Ä" s]', True, True),
+            ('body[data-case="abc Ä" s]', False, False),
+            ('body[data-case="ABC Ä"]', True, True),
+            ('body[data-case="abc Ä"]', False, False),
+            ("body[DIR=rtl]", True, True),
+            ("body[dir=rtl s]", False, False),
+            ("body[dir=RTL s]", True, True),
+            ("body[dir=rtl i]", True, True),
+        ):
+            self._assert_body_predicate(compound, attributes, standards_match)
+            self._assert_body_predicate(compound, attributes, quirks_match, doctype="")
+
+    def test_body_predicate_validates_unescaped_identifier_grammar(self):
+        """Invalid numeric identifiers cannot become valid through projection."""
+        attributes = {
+            "class": "123 - --main",
+            "id": "123",
+            "data-value": "123",
+            "data-other": "-1",
+            "data-dash": "--value",
+        }
+        for compound, matches in (
+            ("body.123", False),
+            ("body#123", False),
+            ("body.-", False),
+            ("body[data-value=123]", False),
+            ("body[data-other=-1]", False),
+            ('body[data-value="123"]', True),
+            ('body[data-other="-1"]', True),
+            ("body.--main", True),
+            ("body[data-dash=--value]", True),
+        ):
+            self._assert_body_predicate(compound, attributes, matches)
+        self._assert_body_predicate("body#--message", {"id": "--message"}, True)
 
     def test_scopes_css_in_media_query(self):
         """Test that selectors inside @media are also scoped."""

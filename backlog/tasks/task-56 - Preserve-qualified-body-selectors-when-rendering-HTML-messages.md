@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-13 06:30'
-updated_date: '2026-09-30 11:56'
+updated_date: '2026-09-30 12:08'
 labels: []
 dependencies: []
 priority: medium
@@ -21,8 +21,8 @@ The CSS sanitizer scopes a selector such as body[class=main] .logo under the rea
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A synthetic message with a qualified body selector retains the intended descendant styling after sanitization and body extraction.
-- [ ] #2 The preserved styles remain scoped to message content.
+- [x] #1 A synthetic message with a qualified body selector retains the intended descendant styling after sanitization and body extraction.
+- [x] #2 The preserved styles remain scoped to message content.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -47,4 +47,10 @@ Red/green evidence: the unchanged actual worker failed 20 new subtests while 25 
 Independent Astra Ultra review found three P2 correctness issues in implementation checkpoint 03a405ff957a35bd9e560ea13fed8fff044c3822 before the full gate. (1) Head body-style predicates ran before final inline CSS cleanup. This is fixed by resolving BODY after sanitizeInlineStyle in the existing hook; a regression first failed two head subcases, then all 111 sanitizer tests passed. (2) jsdom accepts malformed numeric/hyphen class/ID/unquoted attribute tokens, and the forgiving :is projection activates rules browsers reject. Two actual-route browser regressions reproduce this: width becomes 106px instead of the original 17px. (3) jsdom falsely matches absent attributes against null-like values and class/ID names, empty substring operands and non-ASCII token whitespace; static predicate evaluation needs a bounded browser-faithful correction. Findings (2) and (3) remain open. The first implementation's green core tests are not final validation; the new malformed-selector browser tests currently fail.
 
 The last focused browser run exited and its interval was released for the queued TASK-64 full gate. No TASK-56 full gate has started. Current work remains In Progress, with original base and checkpoints preserved. Next action: replace the forgiving projection with a fail-closed specificity-preserving form, correct bounded static predicate matching, obtain fresh review of the full revised diff and rerun focused/full browser gates when the interval is available. No main changes or publication.
+
+All three independent-review findings are now resolved in the revised implementation. BODY resolution follows inline cleanup (R1). Matching rules use nonforgiving :not(body-compound) on the fixed existing DIV reader container, retaining specificity without making invalid selectors valid (R2). A bounded literal static predicate evaluator replaces jsdom.matches entirely (R3): identifier/attribute grammar, absent attributes, all attribute operators, empty operands, ASCII token whitespace, ASCII-only comparison, source-document quirks class/ID semantics, and HTML default/explicit attribute case rules follow HTML/Selectors semantics. Escaped, dynamic, namespaced and otherwise unsupported root syntax retains the existing fallback. No new trust or compatibility policy, dependencies, DOM attributes, layout wrapper or sanitizer setting is introduced.
+
+Revision evidence: all 116 sanitizer tests and all 22 actual-route body-style browser cases pass. The new predicate tests first reproduced 50 failing worker subtests with 106 controls passing; all eight new predicate browser cases also fail against the preserved pre-fix worker and pass on the revision. Earlier core, inline-hook and malformed-selector red evidence remains preserved. Original-browser comparisons verify absence/null behavior, ASCII versus NBSP tokens, empty operands, case rules, syntax validity and unchanged outside controls. Repository Ruff check/format-check, deptry and diff checks pass. Fresh independent Astra Ultra re-review resolved all three P2s and found no new correctness/security issue; it reran the original 85 probes and passed 80 additional asserted boundary cases. Author self-review against the original TASK-119 base confirms only the approved four files changed. The full pre-push gate remains pending.
+
+Normative matching references: https://html.spec.whatwg.org/multipage/semantics-other.html#case-sensitivity-of-selectors and https://www.w3.org/TR/selectors-4/#attribute-selectors . Browser evidence independently verifies the implemented cases.
 <!-- SECTION:NOTES:END -->
