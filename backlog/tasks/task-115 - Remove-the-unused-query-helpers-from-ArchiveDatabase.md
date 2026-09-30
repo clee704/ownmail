@@ -1,11 +1,11 @@
 ---
 id: TASK-115
 title: Remove the unused query helpers from ArchiveDatabase
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC1
 created_date: '2026-09-27 08:03'
-updated_date: '2026-09-30 12:35'
+updated_date: '2026-09-30 12:51'
 labels:
   - search
 dependencies: []
@@ -27,7 +27,7 @@ Found while fixing TASK-22.
 <!-- AC:BEGIN -->
 - [x] #1 _parse_query and _convert_query are deleted along with their tests
 - [x] #2 search() no longer carries the constant distinct placeholder
-- [ ] #3 The pre-push gate passes
+- [x] #3 The pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -53,7 +53,17 @@ Deleted exactly the two obsolete private methods, the eight-test TestDatabaseQue
 
 All 428 retained database, query and fixture tests passed. Ruff check, format-check, deptry and whitespace checks passed without formatting changes. Source comparison against the fixed review base verified the exact deletion boundaries and that all tests outside the obsolete class are byte-identical. No helper attribute references remain in tracked Python files. Author self-review and a fresh independent Astra Ultra review found no correctness or deletion-boundary findings. No tests of supported behavior were removed or weakened, and no new tests were needed for this deletion-only cleanup.
 
-Acceptance criteria 1 and 2 are verified. Criterion 3 remains unchecked and the task remains In Progress because the complete required mandatory-browser pre-push gate is unrun while TASK-93 owns Chromium. A private source-bound environment, task-specific runtime state and the full-gate command are prepared. No browser was launched. All baseline fixtures were synthetic and disposable; no real archive/configuration/credential operations, integration, publication or next task occurred.
+Acceptance criteria 1 and 2 were verified at the implementation checkpoint. Criterion 3 stayed unchecked and the task stayed In Progress while the complete required mandatory-browser pre-push gate was unrun and TASK-93 owned Chromium. A private source-bound environment, task-specific runtime state and the full-gate command were prepared without launching a browser. All baseline fixtures were synthetic and disposable; no real archive/configuration/credential operations, integration, publication or next task occurred.
 
-Next action: run the prepared complete mandatory-browser pre-push gate after TASK-93 releases the browser interval, preserving all tests, assertions, timeouts and the coverage floor; close only after that gate actually passes.
+Reviewed implementation checkpoint 4e468558f7594ee90cce43d2277a4e27b937df9c passed normal commit hooks. After browser clearance, the complete required pre-commit run -a --hook-stage pre-push gate passed against that clean checkpoint: all hygiene, Ruff and deptry hooks passed, and all 4,003 tests passed in 185.53 seconds with no skips or xfails. Branch-inclusive coverage reached 96.57%, above the unchanged 95% floor. The full-suite count is reduced by exactly the eight obsolete helper tests; all supported-behavior tests remain intact. Mandatory Chromium coverage ran with private synthetic fixtures/profiles. All 13 observed browser probes completed successfully with no timeout. The runtime-only observer preserved subprocess behavior, test selection, assertions and timeouts. The gate process exited successfully and the browser interval was released immediately; a scoped process check found no remaining task-owned pytest/browser/profile processes.
+
+All three acceptance criteria are met. Author and independent Astra Ultra reviews have no findings. This final closure is ledger-only and preserves production, tests and validation configuration from the tested implementation checkpoint. Local verification used Python 3.14.6; the supported-Python CI matrix remains a later integration check. No main changes, integration, publication or next task were performed.
+
+Next action: none within TASK-115; await separately authorized integration while preserving this completed isolated branch.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Removed two unused private database query helpers, their eight dedicated obsolete tests and constant-empty distinct scaffolding. Live parsing, re usage, schema and supported behavior/tests remain unchanged. Nine synthetic actual-search cases preserved exact IDs, ordered results and normalized bound SQL before/after. All 4,003 full-suite tests and required hooks passed with 96.57% branch-inclusive coverage and mandatory Chromium coverage.
+<!-- SECTION:FINAL_SUMMARY:END -->
