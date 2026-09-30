@@ -36,6 +36,11 @@ Your `.eml` files and JSON label sidecars preserve the archive; SQLite provides
 its rebuildable search index. Downloads are incremental and resumable with Ctrl-C.
 You can also import `.eml` exports from other mail tools.
 
+For message bodies labelled Latin-1, Ownmail prefers UTF-8 when the complete
+payload decodes as readable UTF-8; otherwise it retains Latin-1. Other usable
+charset declarations keep their precedence. Undeclared bodies use best-effort
+recovery, including short Korean text and text after long HTML preambles.
+
 ## Install
 
 ### Development version from GitHub
