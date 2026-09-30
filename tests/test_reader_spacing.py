@@ -52,6 +52,56 @@ def spacing_sanitizer(contrast_browser):
             id="simple-html-after-hidden-backgrounds",
         ),
         pytest.param(
+            "<style>.canvas {background:#eef1f4;margin:0;padding:24px}</style>"
+            '<div class="canvas" id="panel"><p id="copy" style="margin:0">Newsletter copy</p></div>',
+            False,
+            24,
+            id="class-styled-root-canvas",
+        ),
+        pytest.param(
+            '<div><div><div><table id="panel" width="100%" bgcolor="#eef1f4" '
+            'cellpadding="0" cellspacing="0"><tr><td style="padding:24px">'
+            '<p id="copy" style="margin:0">Newsletter copy</p></td></tr></table></div></div></div>',
+            False,
+            24,
+            id="nested-background-table",
+        ),
+        pytest.param(
+            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+            '<td id="panel" bgcolor="#eef1f4" style="padding:24px">'
+            '<p id="copy" style="margin:0">Newsletter copy</p></td></tr></table>',
+            False,
+            24,
+            id="background-on-layout-cell",
+        ),
+        pytest.param(
+            '<p><span style="background:#eef1f4">Badge</span></p><p id="copy">Simple formatted message</p>',
+            True,
+            None,
+            id="decorative-inline-background",
+        ),
+        pytest.param(
+            '<div><span style="display:none;background:#eef1f4">Hidden preview</span></div>'
+            '<p id="copy">Simple formatted message</p>',
+            True,
+            None,
+            id="nested-hidden-background",
+        ),
+        pytest.param(
+            "<style>.preview {display:none;background:#eef1f4}</style>"
+            '<div class="preview">Hidden preview</div><p id="copy">Simple formatted message</p>',
+            True,
+            None,
+            id="class-hidden-background",
+        ),
+        pytest.param(
+            '<style>.badge {background:#eef1f4}</style><p><span class="badge">Badge</span></p>'
+            '<p id="copy">Simple formatted message</p>',
+            True,
+            None,
+            id="decorative-class-background",
+        ),
+        pytest.param(
             '<div id="panel" style="background:#eef1f4;margin:0;padding:0">'
             '<p id="copy" style="margin:0">Flush authored copy</p></div>',
             False,

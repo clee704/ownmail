@@ -855,6 +855,203 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         _, _, supports_dark = self.sanitizer.sanitize(html)
         assert supports_dark is False
 
+    def test_authored_canvases_need_no_reader_padding(self):
+        """The sender's main canvas supplies its own frame, including scoped CSS."""
+        copy = '<p id="copy">Newsletter copy</p>'
+        for name, stylesheet, body in (
+            (
+                "class-styled root",
+                ".canvas {background:#eef1f4;margin:0;padding:24px}",
+                f'<div class="canvas" id="panel">{copy}</div>',
+            ),
+            (
+                "deeply wrapped table",
+                "",
+                '<div><div><div><table id="panel" width="100%" bgcolor="#eef1f4"><tbody><tr>'
+                f'<td style="padding:24px">{copy}</td></tr></tbody></table></div></div></div>',
+            ),
+            (
+                "principal layout cell",
+                "",
+                '<table width="100%"><tbody><tr><td id="panel" bgcolor="#eef1f4" style="padding:24px">'
+                f"{copy}</td></tr></tbody></table>",
+            ),
+            (
+                "inline root control",
+                "",
+                f'<div id="panel" style="background:#eef1f4;padding:24px">{copy}</div>',
+            ),
+            (
+                "uppercase hidden preview before canvas",
+                "",
+                '<div style="display:NONE;background:#eef1f4">Preview</div>'
+                f'<div style="background:#eef1f4;visibility:VISIBLE">{copy}</div>',
+            ),
+        ):
+            with self.subTest(name=name):
+                result, needs_padding, _ = self.sanitizer.sanitize(f"<style>{stylesheet}</style>{body}")
+                tree = lxml_html.fromstring(result)
+                assert lxml_html.tostring(tree.xpath("//body")[0], encoding="unicode") == f"<body>{body}</body>"
+                if stylesheet:
+                    assert tree.xpath("//style")[0].text_content() == (
+                        "#ownmail-email-content .canvas {background:#eef1f4;margin:0;padding:24px}"
+                    )
+                assert needs_padding is False
+
+    def test_simple_copy_with_backgrounds_keeps_reader_padding(self):
+        """Decorations, hidden previews and uncertain backgrounds cannot supply a canvas."""
+        copy = '<p id="copy">Simple formatted message</p>'
+        for name, stylesheet, body in (
+            ("simple HTML control", "", copy),
+            ("hidden root control", "", '<div style="display:none;background:#eef1f4">Preview</div>' + copy),
+            (
+                "hidden class control",
+                ".preview {display:none;background:#eef1f4}",
+                '<div class="preview">Preview</div>' + copy,
+            ),
+            ("decorative badge", "", '<p><span style="background:#eef1f4">Badge</span></p>' + copy),
+            (
+                "nested hidden background",
+                "",
+                '<div><span style="display:none;background:#eef1f4">Preview</span></div>' + copy,
+            ),
+            (
+                "decorative class control",
+                ".badge {background:#eef1f4}",
+                '<p><span class="badge">Badge</span></p>' + copy,
+            ),
+            (
+                "conflicting class backgrounds",
+                ".canvas {background:#eef1f4} .canvas {background:transparent}",
+                f'<div class="canvas">{copy}</div>',
+            ),
+            (
+                "conditional class background",
+                "@media (min-width:600px) {.canvas {background:#eef1f4}}",
+                f'<div class="canvas">{copy}</div>',
+            ),
+            (
+                "escaped property is outside the static proof",
+                r".canvas {background:#eef1f4;back\67 round:transparent}",
+                f'<div class="canvas">{copy}</div>',
+            ),
+            ("bgcolor does not paint a div", "", f'<div bgcolor="#eef1f4">{copy}</div>'),
+            (
+                "text-clipped background is not a canvas",
+                "",
+                f'<div style="background:#eef1f4;background-clip:text">{copy}</div>',
+            ),
+            (
+                "prefixed text-clipped background is uncertain",
+                "",
+                f'<div style="background:#eef1f4;-webkit-background-clip:text;color:transparent">{copy}</div>',
+            ),
+            (
+                "masked background is uncertain",
+                "",
+                f'<div style="background:#eef1f4;mask-image:linear-gradient(transparent,transparent)">{copy}</div>',
+            ),
+            (
+                "zero-sized copy is uncertain",
+                "",
+                f'<div style="background:#eef1f4;font-size:0;line-height:0">{copy}</div>',
+            ),
+            (
+                "transparent modern color is not a canvas",
+                "",
+                f'<div style="background:color(srgb 1 1 1 / 0)">{copy}</div>',
+            ),
+            (
+                "zero em height is uncertain",
+                "",
+                f'<div style="background:#eef1f4;height:0em;overflow:hidden">{copy}</div>',
+            ),
+            ("hidden content", "", f'<div style="background:#eef1f4;content-visibility:hidden">{copy}</div>'),
+            ("closed details", "", f'<details><div style="background:#eef1f4">{copy}</div></details>'),
+            ("closed dialog", "", f'<dialog><div style="background:#eef1f4">{copy}</div></dialog>'),
+            (
+                "colored caption beside an image region",
+                "",
+                '<div><div><img src="data:image/png;base64," alt="Synthetic"></div>'
+                f'<div style="background:#eef1f4">{copy}</div></div>',
+            ),
+            (
+                "colored copy in a competing table cell",
+                "",
+                '<table><tbody><tr><td><img src="data:image/png;base64," alt="Synthetic"></td>'
+                f'<td><div style="background:#eef1f4">{copy}</div></td></tr></tbody></table>',
+            ),
+            (
+                "colored copy beside an empty spacer cell",
+                "",
+                '<table><tbody><tr><td width="300"></td>'
+                f'<td><div><div style="background:#eef1f4">{copy}</div></div></td></tr></tbody></table>',
+            ),
+            *(
+                (
+                    f"trailing image outside inline flow: {style}",
+                    "",
+                    f'<div style="background:#eef1f4">{copy}</div>'
+                    f'<img src="data:image/png;base64," style="{style}" alt="Synthetic">',
+                )
+                for style in ("display:block", "float:right", "position:absolute")
+            ),
+        ):
+            with self.subTest(name=name):
+                result, needs_padding, _ = self.sanitizer.sanitize(f"<style>{stylesheet}</style>{body}")
+                tree = lxml_html.fromstring(result)
+                assert lxml_html.tostring(tree.xpath("//body")[0], encoding="unicode") == f"<body>{body}</body>"
+                assert needs_padding is True
+
+    def test_padding_selector_repeated_ancestors_finish(self):
+        """An absent ancestor must not cause combinatorial matching retries."""
+        source = (
+            "<style>.missing "
+            + " ".join([".x"] * 15)
+            + "{background:#eee}</style>"
+            + '<div class="x">' * 30
+            + "Copy"
+            + "</div>" * 30
+        )
+        result = subprocess.run(
+            [shutil.which("node"), str(Path(sanitizer_module._SANITIZER_DIR) / "worker.js")],
+            input=json.dumps({"id": 1, "html": source}) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        response = json.loads(result.stdout.splitlines()[-1])
+        assert response["error"] is None
+        assert response["needsPadding"] is True
+        tree = lxml_html.fromstring(response["html"])
+        assert len(tree.xpath('//div[@class="x"]')) == 30
+        assert tree.xpath("//body")[0].text_content() == "Copy"
+
+    def test_inapplicable_styles_keep_reader_padding(self):
+        """Source BODY attributes and non-CSS text cannot paint the reader canvas."""
+        body = '<div class="canvas"><p>Copy</p></div>'
+        for name, body_attributes, style_attributes, selector, expected_selector in (
+            (
+                "source body class",
+                ' class="sender"',
+                "",
+                ".sender #ownmail-email-content .canvas",
+                ".sender #ownmail-email-content .canvas",
+            ),
+            ("non-CSS style", "", ' type="text/plain"', ".canvas", "#ownmail-email-content .canvas"),
+        ):
+            with self.subTest(name=name):
+                result, needs_padding, _ = self.sanitizer.sanitize(
+                    f"<html><head><style{style_attributes}>{selector} {{background:#eef1f4}}</style></head>"
+                    f"<body{body_attributes}>{body}</body></html>"
+                )
+                assert result == (
+                    f"<html><head><style{style_attributes}>{expected_selector} {{background:#eef1f4}}</style></head>"
+                    f"<body{body_attributes}>{body}</body></html>"
+                )
+                assert needs_padding is True
+
     def test_allows_google_fonts_import(self):
         """Test that @import from Google Fonts is preserved."""
         html = '<style>@import url("https://fonts.googleapis.com/css2?family=Roboto"); p { font-family: Roboto; }</style><p>Hi</p>'

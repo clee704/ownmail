@@ -511,55 +511,193 @@ function isColorDark(color) {
   return luminance < 0.4;
 }
 
-/**
- * Detect whether an email needs padding.
- *
- * Heuristic: if the first significant element(s) in the email set an explicit
- * background color (via style attribute or bgcolor), the email controls its own
- * layout and padding would create an ugly frame.  Otherwise, the email likely
- * assumes a white background and needs padding for readability.
- */
-function detectNeedsPadding(html) {
-  try {
-    const dom = new JSDOM(html);
-    const doc = dom.window.document;
-    const body = doc.body;
-    if (!body) return true;
-
-    // Check the first few root-level elements (skip whitespace text nodes)
-    const children = Array.from(body.children);
-    // Hidden preview text must not displace the visible layout in this sample.
-    const contentElements = children.filter(
-      (el) => el.tagName.toLowerCase() !== "style" && el.style.display.toLowerCase() !== "none"
-    );
-    if (contentElements.length === 0) return true;
-
-    // Check the first content element and its immediate child
-    for (const el of contentElements.slice(0, 2)) {
-      if (hasExplicitBackground(el)) return false;
-      // Also check immediate wrapper children (common pattern: <div><table bgcolor=...>)
-      const firstChild = el.children[0];
-      if (firstChild && hasExplicitBackground(firstChild)) return false;
-    }
-
-    return true;
-  } catch (e) {
-    return true; // Default to padding on error
+// Padding detection proves only simple, unconditional layout facts. It does
+// not simulate the CSS cascade (jsdom does not implement its specificity).
+function paddingSelector(selector) {
+  const parts = selector.trim().split(/([\t\n\f\r ]*>[\t\n\f\r ]*|[\t\n\f\r ]+)/);
+  const compound = new RegExp(`^(?:${CSS_IDENTIFIER}|\\*)?(?:[.#]${CSS_IDENTIFIER})*$`);
+  const qualifier = new RegExp(`([.#])(${CSS_IDENTIFIER})`, "g");
+  if (parts[0] !== "#ownmail-email-content" || parts.length % 2 !== 1) return null;
+  const selectors = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    if (!parts[i] || !compound.test(parts[i])) return null;
+    const tag = parts[i].match(BODY_NAME)?.[0];
+    const qualifiers = Array.from(parts[i].matchAll(qualifier));
+    selectors.push({ tag, qualifiers, child: i > 0 && parts[i - 1].includes(">") });
   }
+  const cache = new WeakMap();
+  function matches(element, index) {
+    if (!element) return false;
+    if (!cache.has(element)) cache.set(element, new Map());
+    const results = cache.get(element);
+    if (!results.has(index)) results.set(index, evaluate(element, index));
+    return results.get(index);
+  }
+  function evaluate(element, index) {
+    const { tag, qualifiers, child } = selectors[index];
+    if (tag && asciiLower(element.tagName) !== asciiLower(tag)) return false;
+    for (const [, marker, name] of qualifiers) {
+      if (!matchesBodyValue(element.getAttribute(marker === "." ? "class" : "id"),
+        marker === "." ? "~=" : "=", name, false)) return false;
+    }
+    if (!index) return true;
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      if (matches(parent, index - 1)) return true;
+      if (child) break;
+    }
+    return false;
+  }
+  return (element) => matches(element, selectors.length - 1);
 }
 
-/**
- * Check if an element has an explicit background color set.
- */
-function hasExplicitBackground(el) {
-  // Check bgcolor attribute
-  if (el.hasAttribute("bgcolor")) return true;
+function paddingStyles(doc, container) {
+  const elements = [container, ...container.querySelectorAll("*")];
+  const styles = new Map(elements.map((element) => [element, new Map()]));
+  const relevant = /^(?:background(?:-.*)?|(?:-webkit-)?(?:background-clip|mask(?:-.*)?)|display|visibility|content-visibility|opacity|position|float|(?:(?:min|max)-)?(?:width|height|inline-size|block-size)|font|font-size|line-height|overflow(?:-[xy])?|clip(?:-path)?|transform|filter|content|all|animation(?:-.*)?|transition(?:-.*)?)$/;
+  const probe = doc.createElement("div").style;
+  function remember(element, property, value) {
+    const properties = styles.get(element);
+    if (!properties.has(property)) properties.set(property, new Set());
+    properties.get(property).add(value);
+  }
+  function declarations(nodes, targets) {
+    for (const decl of nodes) {
+      if (decl.type === "comment") continue;
+      if (decl.type !== "decl") return false;
+      if (decl.prop.includes("\\")) return false;
+      const property = decl.prop.toLowerCase();
+      if (!relevant.test(property)) continue;
+      probe.cssText = "";
+      probe.setProperty(property, decl.value);
+      const value = asciiLower(probe.getPropertyValue(property));
+      if (!value || /\b(?:var|env)\s*\(|\b(?:inherit|initial|unset|revert|revert-layer|currentcolor)\b/i.test(value)) return false;
+      for (const element of targets) {
+        if (property === "background") {
+          remember(element, "background-color", asciiLower(probe.backgroundColor) || "transparent");
+          remember(element, "background-image", probe.backgroundImage || "none");
+          remember(element, "background-clip", probe.backgroundClip || "border-box");
+        } else if (property === "font") {
+          remember(element, "font-size", probe.fontSize);
+          remember(element, "line-height", probe.lineHeight || "normal");
+        } else {
+          remember(element, property, value);
+        }
+      }
+    }
+    return true;
+  }
+  for (const style of doc.querySelectorAll("style")) {
+    if ((style.getAttribute("type") || "text/css").trim().toLowerCase() !== "text/css") continue;
+    const css = postcss.parse(style.textContent, { map: false });
+    let uncertain = false;
+    css.walkRules((rule) => {
+      if (!rule.nodes.some((node) => node.type === "decl" &&
+        (relevant.test(node.prop.toLowerCase()) || node.prop.includes("\\")))) return;
+      if (rule.parent.type !== "root" || (style.getAttribute("media") || "all").toLowerCase() !== "all") {
+        uncertain = true;
+        return;
+      }
+      const selectors = rule.selectors.map(paddingSelector);
+      if (selectors.some((selector) => !selector)) { uncertain = true; return; }
+      const targets = elements.filter((element) => selectors.some((selector) => selector(element)));
+      if (targets.length && !declarations(rule.nodes, targets)) uncertain = true;
+    });
+    if (uncertain) return null;
+  }
+  for (const element of elements) {
+    if (/^(TABLE|TD|TH|TR|THEAD|TBODY|TFOOT)$/.test(element.tagName) && element.hasAttribute("bgcolor")) {
+      probe.cssText = "";
+      probe.backgroundColor = element.getAttribute("bgcolor");
+      if (!probe.backgroundColor) return null;
+      remember(element, "background-color", asciiLower(probe.backgroundColor));
+    }
+    const inline = element.getAttribute("style");
+    if (inline && !declarations(postcss.parse(inline, { map: false }).nodes, [element])) return null;
+  }
+  return new Map(Array.from(styles, ([element, properties]) => [element,
+    Object.fromEntries(Array.from(properties, ([name, values]) => [name, values.size === 1 ? [...values][0] : "?"]))]));
+}
 
-  // Check inline style for background or background-color
-  const style = el.getAttribute("style") || "";
-  if (/background(-color)?\s*:/i.test(style)) return true;
+/** Recognize a visible authored canvas without altering the sanitized message. */
+function detectNeedsPadding(html) {
+  let dom;
+  try {
+    // Match the standards-mode reader DIV, not the discarded sender BODY.
+    // No resources or scripts are loaded in this disposable document.
+    dom = new JSDOM("<!doctype html>" + html);
+    const doc = dom.window.document;
+    const container = doc.createElement("div");
+    container.id = "ownmail-email-content";
+    container.className = "ownmail-email-content-html";
+    if (doc.body.hasAttribute("style")) container.setAttribute("style", doc.body.getAttribute("style"));
+    container.append(...doc.body.childNodes);
+    doc.body.replaceChildren(container);
+    for (const attribute of Array.from(doc.body.attributes)) doc.body.removeAttribute(attribute.name);
+    const styles = paddingStyles(doc, container);
+    if (!styles) return true;
 
-  return false;
+    const copy = [];
+    const images = [];
+    const visible = new Set();
+    let uncertain = false;
+    function visit(element, inheritedVisibility = "visible") {
+      if (/^(STYLE|LINK|TEMPLATE|HR|BR)$/.test(element.tagName)) return;
+      const style = styles.get(element);
+      if (style.display === "none" || style.opacity === "0" || (element.hidden && !style.display)) return;
+      if (Object.values(style).includes("?") ||
+          (/^(DETAILS|DIALOG)$/.test(element.tagName) && !element.hasAttribute("open")) ||
+          (style.opacity && style.opacity !== "1") ||
+          (style["content-visibility"] && style["content-visibility"] !== "visible") ||
+          (style.position && !/^(static|relative)$/.test(style.position)) ||
+          (style.float && style.float !== "none") ||
+          Object.keys(style).some((name) => /^(all|animation|transition|clip|transform|filter|content$|mask|-webkit-)/.test(name)) ||
+          Object.entries(style).some(([name, value]) => /(?:width|height|size|line-height)$/.test(name) &&
+            (/^0(?:[a-z%]*)$/i.test(value) || value.includes("(")))) {
+        uncertain = true;
+        return;
+      }
+      const visibility = style.visibility || inheritedVisibility;
+      if (visibility === "visible") visible.add(element);
+      if (element.tagName === "IMG") {
+        if (visibility === "visible") images.push(element);
+        return;
+      }
+      for (const node of element.childNodes) {
+        if (node.nodeType === 3 && /\S/.test(node.textContent) && visibility === "visible") copy.push(node);
+        else if (node.nodeType === 1) visit(node, visibility);
+      }
+    }
+    visit(container);
+    if (uncertain || !copy.length) return true;
+    for (let element = copy[0].parentElement; element && container.contains(element); element = element.parentElement) {
+      if (!visible.has(element) || !/^(DIV|SECTION|ARTICLE|MAIN|TABLE|TD|TH)$/.test(element.tagName)) continue;
+      const style = styles.get(element);
+      if (style.display && !/^(block|table|table-cell)$/.test(style.display)) continue;
+      if (!copy.every((node) => element.contains(node))) continue;
+      // A caption cannot stand in for another image-bearing layout region.
+      // Direct trailing inline images retain the existing reader behavior.
+      if (images.some((image) => !element.contains(image) &&
+        (image.parentElement !== container ||
+          (styles.get(image).display && !/^(inline|inline-block)$/.test(styles.get(image).display)) ||
+          !(element.compareDocumentPosition(image) & 4)))) continue;
+      // A colored cell beside another cell is not proof of a full canvas.
+      let competingCell = false;
+      for (let parent = element; parent !== container; parent = parent.parentElement) {
+        if (/^(TD|TH)$/.test(parent.tagName) && parent.parentElement.children.length !== 1) competingCell = true;
+      }
+      if (competingCell) continue;
+      const color = style["background-color"];
+      if (!color || color === "transparent" || !/^(?:[a-z]+|rgb\([\d\s,.]+\))$/i.test(color)) continue;
+      if (style["background-image"] && style["background-image"] !== "none") continue;
+      if (style["background-clip"] && style["background-clip"] !== "border-box") continue;
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return true;
+  } finally {
+    if (dom) dom.window.close();
+  }
 }
 
 // Process input line by line
@@ -587,11 +725,8 @@ rl.on("line", (line) => {
   try {
     const clean = purify.sanitize(html, PURIFY_CONFIG);
 
-    // Detect if the email needs padding by checking whether root-level
-    // elements set an explicit background.  Emails with full-width tables
-    // and explicit backgrounds (marketing newsletters) look bad with extra
-    // padding, while simple HTML emails (GitHub notifications, plain
-    // formatted text) need breathing room.
+    // Preserve an identifiable sender canvas; keep readable reader padding
+    // for simple HTML and layouts whose background/visibility is uncertain.
     const needsPadding = detectNeedsPadding(clean);
 
     // Detect if the email supports dark mode natively (has dark-mode CSS
