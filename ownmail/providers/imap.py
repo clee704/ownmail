@@ -46,7 +46,7 @@ def parse_list_response(folder_data) -> list[tuple[str, str, str]]:
     """Parse an IMAP LIST response into (name, flags, delimiter) tuples.
 
     Non-selectable folders (e.g. the "[Gmail]" parent) are dropped — nothing
-    can be fetched from them.
+    can be fetched from them. NIL hierarchy delimiters become empty strings.
 
     Args:
         folder_data: Raw response lines from IMAP4.list()
@@ -58,8 +58,8 @@ def parse_list_response(folder_data) -> list[tuple[str, str, str]]:
     for item in folder_data:
         if not isinstance(item, bytes):
             continue
-        # Folder list response: (\\Flags) "delimiter" "folder_name"
-        match = re.match(rb'\((?P<flags>.*?)\) "(?P<delim>.*?)" (?P<name>.*)', item)
+        # Folder list response: (\\Flags) ("delimiter" / NIL) "folder_name"
+        match = re.match(rb'\((?P<flags>.*?)\) (?:"(?P<delim>.*?)"|NIL) (?P<name>.*)', item)
         if not match:
             continue
         flags = match.group("flags").decode()
@@ -69,7 +69,7 @@ def parse_list_response(folder_data) -> list[tuple[str, str, str]]:
             (
                 match.group("name").decode().strip('"'),
                 flags,
-                match.group("delim").decode(),
+                (match.group("delim") or b"").decode(),
             )
         )
     return folders
