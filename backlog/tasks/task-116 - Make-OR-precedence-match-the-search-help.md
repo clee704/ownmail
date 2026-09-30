@@ -1,7 +1,7 @@
 ---
 id: TASK-116
 title: Make OR precedence match the search help
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC1
 created_date: '2026-09-27 08:16'
@@ -60,4 +60,6 @@ Coordinator paused final validation and commit hooks while reconciling newly dis
 Coordinator verified upstream scope clearance: help.html and test_database.py are unchanged across the task base and upstream, and the existing help-route test is unchanged; upstream web-test changes concern startup handling outside this task. The assigned implementation can proceed unchanged. Preserve focused results and run the full combined gate after the coordinator supplies the reconciled base. A short shared-machine capture currently pauses heavy checks and hooks; no independent merge, rebase or push is authorized.
 
 The coordinator released the local validation/checkpoint slot after confirming this task is independent of the upstream sanitizer changes. The full required pre-push aggregate passed with browser tests mandatory: 3982 passed, 1 expected failure, no skips, and 96.50% branch-inclusive coverage above the 95% gate. File hygiene, Ruff check/format and deptry passed; the explicit format-check also passed during focused validation. The synthetic served help page passed desktop and mobile headless Chromium checks for visible corrected examples, no horizontal overflow and no page errors; screenshots were visually reviewed. Author self-review of the whole assigned task diff against retained base da018d5d1dd309ee5767ac8483fc746d7ff3155f found no unresolved issues. Production query/database behavior and all unassigned files remain unchanged. These results cover the isolated task branch; upstream reconciliation, combined validation and publishing remain coordinator-owned.
+
+Implementation is committed as ce6de9d with normal file-hygiene, Ruff, deptry and Conventional Commit hooks passing. Both acceptance criteria are verified, and the required full gate plus desktop/mobile help verification passed on the same implementation. This final checkpoint changes only the task ledger. Local task work is complete; coordinator-controlled reconciliation/integration and any required combined validation or publication remain separate delivery steps.
 <!-- SECTION:NOTES:END -->
