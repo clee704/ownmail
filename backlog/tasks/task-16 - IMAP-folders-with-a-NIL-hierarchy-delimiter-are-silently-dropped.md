@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-07-25 05:24'
-updated_date: '2026-09-30 05:46'
+updated_date: '2026-09-30 06:07'
 labels: []
 dependencies: []
 priority: medium
@@ -50,4 +50,10 @@ The current parser returns no folders for valid synthetic NIL listings. The live
 Start from the common committed claim base after both task claims. Use an isolated local worktree in the IC's own writable workspace. Integrate TASK-116 before TASK-16; serialize full suites, browser validation and commit hooks through the coordinator. Preserve every other task and implementation scope.
 Validation begins with pytest tests/test_imap_provider.py tests/test_roles.py. Complete the repository's full coverage and required-browser pre-push gate before closure; prove the NIL regression fails against the old parser. Do not exercise a real account or change credentials/OAuth, schema, dependencies, live lifecycle behavior, mail files or publication settings.
 Next action: IC2 rechecks the valid-NIL premise and existing parser/role contracts on the common claim base, then confirms or updates this bounded plan before implementation.
+
+IC2 rechecked the claim and confirmed the implementation plan on common base 705aa580b8c0b14905471942918834115329d533. Source inspection confirms the archive regex requires a quoted delimiter while the existing live parser maps NIL to an empty delimiter and role matching already treats that as a flat namespace. Keep the claim review base da018d5d1dd309ee5767ac8483fc746d7ff3155f; the intervening shared commits contain only the two task claims. The assigned quiet window postpones dynamic premise checks, environment preparation and hooks. Next action after release: reproduce the synthetic NIL drop, commit this task-only plan confirmation, then implement and test the minimal parser change.
+
+After the quiet-window release, a synthetic check against the unchanged common-base parser confirmed the premise: quoted Receipts/Sent rows return both original tuples, but the same rows with NIL return no parser tuples and no archive-provider folders. Existing role_for_imap_folder correctly classifies flat Trash and leaves flat Work/Trash unclassified. The missing route is therefore present and worth the bounded fix. No account was connected. Plan confirmed without scope changes; this task-only checkpoint precedes implementation.
+
+Checkpoint-only slot granted. Implementation remains paused while the coordinator checks newly discovered upstream commits for overlap with TASK-16 and TASK-116. Preserve this local plan and common-base worktree; do not independently rebase, merge or push. Next action: resume the bounded implementation only after the coordinator confirms the owned code scope can proceed.
 <!-- SECTION:NOTES:END -->
