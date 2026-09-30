@@ -1706,23 +1706,44 @@ class TestCmdDownloadSources:
         assert "Errors: 0" in overall
 
     @pytest.mark.parametrize("interrupted_source", [0, 1])
-    def test_interrupted_download_reports_resume(self, temp_dir, capsys, interrupted_source):
-        """An interrupted run should tell the user how to resume."""
+    @pytest.mark.parametrize("imap_first", [False, True])
+    def test_interrupted_download_reports_resume(self, temp_dir, capsys, interrupted_source, imap_first):
+        """Stop later sources and retain counts through the interrupted source."""
         from ownmail.cli import cmd_download
 
         archive = self._archive(temp_dir)
         config = {"sources": self._gmail_config()["sources"] + self._imap_config()["sources"]}
-        results = [self._result(success=1), self._result(success=2)]
+        if imap_first:
+            config["sources"].reverse()
+        results = [self._result(success=1, errors=2), self._result(success=2, errors=3)]
         results[interrupted_source]["interrupted"] = True
-        with patch("ownmail.cli.GmailProvider"):
-            with patch("ownmail.providers.imap.ImapProvider"):
-                with patch.object(archive, "backup", side_effect=results):
+        with patch("ownmail.cli.GmailProvider") as gmail_cls:
+            with patch("ownmail.providers.imap.ImapProvider") as imap_cls:
+                with (
+                    patch.object(archive, "auto_expire_trash", return_value=0),
+                    patch.object(archive, "backup", side_effect=results) as backup,
+                ):
                     assert cmd_download(archive, config) is False
 
+        constructors = [imap_cls, gmail_cls] if imap_first else [gmail_cls, imap_cls]
+        for index, constructor in enumerate(constructors):
+            if index <= interrupted_source:
+                constructor.assert_called_once()
+                constructor.return_value.authenticate.assert_called_once()
+            else:
+                constructor.assert_not_called()
+                constructor.return_value.authenticate.assert_not_called()
+        if imap_first or interrupted_source == 1:
+            imap_cls.return_value.close.assert_called_once()
+        else:
+            imap_cls.return_value.close.assert_not_called()
+        assert backup.call_count == interrupted_source + 1
         per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
         assert "Download Paused!" in per_source
         assert "Run 'download' again to resume" in per_source
-        assert "Downloaded: 3 emails" in overall
+        assert f"Downloaded: {1 if interrupted_source == 0 else 3} emails" in overall
+        assert f"Errors: {2 if interrupted_source == 0 else 5}" in overall
+        assert "Download interrupted." in overall
         assert "Run 'download' again to resume" in overall
 
     def test_errors_are_reported(self, temp_dir, capsys):

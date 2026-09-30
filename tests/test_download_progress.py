@@ -369,12 +369,22 @@ def test_fatal_message_storage_exception_is_counted_once(cli_download, error):
 
 @pytest.mark.parametrize("stage", ["checking", "downloading"])
 def test_interrupt_flushes_current_counts_without_message_errors(cli_download, stage):
-    _, path = cli_download
+    config, path = cli_download
+    config.write_text(
+        config.read_text() + "  - name: Later\n"
+        "    type: imap\n"
+        "    active_downloads: true\n"
+        "    account: later@example.com\n"
+        "    host: mail.example.com\n"
+        "    auth: {secret_ref: 'keychain:synthetic-later'}\n"
+    )
     mock_provider = provider(["saved", "interrupt"])
+    later_provider = provider(source="Later")
+    later_provider.account = "later@example.com"
+    raw = mock_provider.download_message.return_value
     if stage == "checking":
         mock_provider.get_new_message_ids.side_effect = KeyboardInterrupt
     else:
-        raw = mock_provider.download_message.return_value
 
         def download(message_id):
             if message_id == "interrupt":
@@ -382,14 +392,27 @@ def test_interrupt_flushes_current_counts_without_message_errors(cli_download, s
             return raw
 
         mock_provider.download_message.side_effect = download
-    with patch("ownmail.providers.imap.ImapProvider", return_value=mock_provider):
-        with pytest.raises(SystemExit):
+    with (
+        patch("ownmail.providers.imap.ImapProvider", side_effect=[mock_provider, later_provider]) as provider_cls,
+        patch.object(EmailArchive, "auto_expire_trash", return_value=0),
+    ):
+        with pytest.raises(SystemExit) as exc:
             main()
+    assert exc.value.code == 1
+    provider_cls.assert_called_once()
+    mock_provider.authenticate.assert_called_once()
+    mock_provider.close.assert_called_once()
+    later_provider.authenticate.assert_not_called()
     final = snapshot(path)
     assert final["phase"] == "finished"
+    assert final["source"] == "Synthetic"
     assert final["errors"] == 0
     assert final["downloaded"] == int(stage == "downloading")
     assert final["failure_reason"] == FAILURE_REASONS["interrupted"]
+    saved_files = list((path.parent / "archive").rglob("*.eml"))
+    assert len(saved_files) == int(stage == "downloading")
+    if saved_files:
+        assert saved_files[0].read_bytes() == raw[0]
 
 
 def test_unwritable_progress_path_does_not_fail_a_download(cli_download, monkeypatch, tmp_path):

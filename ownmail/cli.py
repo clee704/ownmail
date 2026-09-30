@@ -626,6 +626,8 @@ def cmd_download(
             if result["interrupted"]:
                 progress.fail("interrupted")
             progress.flush()
+        if result["interrupted"]:
+            break
 
     print("\n" + "=" * 50)
     print("Overall Download Summary")
@@ -633,7 +635,8 @@ def cmd_download(
     print(f"  Errors: {total_errors:,}")
     print(f"  Total archived: {archive.db.get_email_count():,} emails")
     if interrupted:
-        print("\n  Run 'download' again to resume.")
+        print("\n  Download interrupted.")
+        print("  Run 'download' again to resume.")
     print("=" * 50 + "\n")
     return total_errors == 0 and not interrupted and not skipped_source and not (progress and progress.errors)
 
