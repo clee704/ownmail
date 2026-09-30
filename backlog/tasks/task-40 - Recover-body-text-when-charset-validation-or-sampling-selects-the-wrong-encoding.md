@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-11 10:43'
-updated_date: '2026-09-30 04:52'
+updated_date: '2026-09-30 05:13'
 labels: []
 dependencies: []
 priority: high
@@ -65,4 +65,6 @@ Baseline limitation: short correctly declared Windows-1251 Cyrillic already fail
 Next action: author self-review, then coordinated complete coverage and browser/pre-push gates before closure; do not mark AC4 or Done until they pass. Shared README wording remains a manager integration proposal.
 
 Author self-review against common base c44eb0f completed across the owned decoder/helper changes, declaration precedence, MIME/meta aliases, graceful fallbacks and synthetic regression/browser tests. No actionable introduced findings. Header decoding and IC1 startup/sanitizer functions are unchanged. Focused local hygiene, ruff and deptry hooks pass; complete coordinated pre-push coverage remains pending.
+
+Combined integration checkpoint: rebased cleanly onto the integrated TASK-118 base 9dcfdc77c16497bd70b26007f46618804711fed8 with no conflicts. Shared startup/TestRunServer ASTs and sanitizer implementation/tests/README bytes match that base. UTF-8 recovery counts an authored U+FFFD as readable without bypassing validation of surrounding text; existing control-garbage rejection remains intact. Latin-1 recovery requires a complete readable strict UTF-8 payload. The corrected focused set, including all existing fixture charset families, passes 115 checks. Final combined required-browser pre-push coverage is the remaining closure gate.
 <!-- SECTION:NOTES:END -->

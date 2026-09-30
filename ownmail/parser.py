@@ -249,9 +249,12 @@ def _try_decode(payload: bytes, encoding: str) -> str | None:
     """
     try:
         decoded = payload.decode(encoding)
-        # Strict UTF-8 proves a literal U+FFFD came from the source bytes.
-        # Readability heuristics are only needed for legacy codec guesses.
-        if codecs.lookup(encoding).name == "utf-8" or _validate_decoded_text(decoded):
+        # Strict UTF-8 proves U+FFFD came from the source bytes. Count it as
+        # readable while still rejecting surrounding control-character garbage.
+        validation_text = decoded
+        if codecs.lookup(encoding).name == "utf-8":
+            validation_text = decoded.replace("\ufffd", " ")
+        if _validate_decoded_text(validation_text):
             return decoded
     except (UnicodeDecodeError, LookupError):
         pass
@@ -262,7 +265,7 @@ def _decode_body(payload: bytes, header_charset: str | None, *, is_html: bool = 
     """Select the same body charset for display and indexing.
 
     Declarations win when they decode cleanly, except Latin-1: prefer UTF-8
-    when the entire payload is valid UTF-8. Otherwise retain Latin-1. Bytes
+    when the entire payload is readable, strict UTF-8. Otherwise retain Latin-1. Bytes
     valid in both encodings are inherently ambiguous; this rule favors UTF-8.
     Other declared legacy encodings retain their precedence.
     """
