@@ -538,7 +538,7 @@ def cmd_download(
             )
 
             # Print summary
-            total = email_count + result["success_count"]
+            total = archive.db.get_email_count(account)
             print("\n" + "-" * 50)
             if result["interrupted"]:
                 print("Download Paused!")
@@ -595,7 +595,7 @@ def cmd_download(
                 **progress_options,
             )
 
-            total = email_count + result["success_count"]
+            total = archive.db.get_email_count(account)
             print("\n" + "-" * 50)
             if result["interrupted"]:
                 print("Download Paused!")

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-14 03:58'
-updated_date: '2026-09-30 10:34'
+updated_date: '2026-09-30 10:37'
 labels: []
 dependencies: []
 priority: medium
@@ -21,8 +21,8 @@ The per-account download summary adds backup success_count to the prior archive 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-account archived totals equal the stored message count after a download containing content duplicates.
-- [ ] #2 A regression test covers successful downloads that do not add archive rows.
+- [x] #1 Per-account archived totals equal the stored message count after a download containing content duplicates.
+- [x] #2 A regression test covers successful downloads that do not add archive rows.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -41,4 +41,6 @@ The per-account download summary adds backup success_count to the prior archive 
 2026-09-25 review: affects the default EmailArchive.backup path only. The overall summary already reads the database count; the per-account 'Total' and 'Downloaded' lines in cli.py still add success_count, which includes content-duplicate skips.
 
 Owner: Ownmail IC2. Branch: fix/account-archive-totals. Review base: 384a8b941178e7322196d8a3bd53a6ae069c59a4, preserving completed TASK-98 and TASK-110. TASK-124 remains preserved separately. The execution-order table selects this item immediately after TASK-95; no dependencies are declared. The approved preflight verified an in-memory call of the exact candidate cmd_download with mocked archive, database, providers, authentication and expiry: ten unchanged stored rows plus two successful duplicate skips report twelve per account for both Gmail and IMAP, while the overall summary correctly reports ten. EmailArchive.backup intentionally counts duplicate skips as successful operations and commits before returning; the existing get_email_count(account) already supplies the correct display count. The bounded fix changes no counting policy or archive authority. Existing distinct/shared-account CLI coverage models successes exceeding row growth but omits per-account totals, so it will be strengthened rather than duplicated. Only the two CLI total calculations, TestCmdDownloadSources regressions and this task ledger are owned. Author self-review is the ordinary-fix review requirement. Next action: commit the task-only checkpoint with normal hooks before editing code.
+
+The task-only plan was committed as 98acc0c2966e180e9ec752fb759dae2d17bd3168 before code changes. The implementation replaces only the two per-account archived-total calculations with the existing post-backup account-count query. Four regressions failed against unchanged code: actual duplicate-only backup through the CLI for both Gmail and IMAP reported two archived rows instead of one, and the distinct/shared-account cases inflated totals from success counters. With the fix, the 75 focused source-summary, content-dedup, download-progress and shutdown tests pass. Tests use synthetic temporary archives, mocked provider construction/authentication and mocked trash expiry; duplicate-only checks retain byte-identical existing mail and one stored row while preserving a successful Downloaded count. Existing multi-source assertions verify account totals of two/two for distinct accounts and three/four for shared accounts, with unchanged overall totals and returned successes. Repository-wide Ruff check, explicit format-check for all 118 Python files, deptry and whitespace checks pass. Author self-review found no actionable introduced issue; the full required-browser pre-push gate and local closure remain pending. No accountless attribution, interruption, provider, storage, dependency or denied-task behavior changed.
 <!-- SECTION:NOTES:END -->
