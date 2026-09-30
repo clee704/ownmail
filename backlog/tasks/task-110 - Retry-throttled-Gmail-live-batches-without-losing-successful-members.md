@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Retry throttled Gmail live batches without losing successful members
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC1
 created_date: '2026-09-22 05:48'
-updated_date: '2026-09-30 08:05'
+updated_date: '2026-09-30 08:10'
 labels: []
 dependencies: []
 priority: medium
@@ -41,5 +41,13 @@ Live refreshes can receive per-message HTTP 429 responses inside a successful Gm
 Premise verified on cbb90b81e5b0b1ad87164bc5998643302a8b0a69 using the real Google client over the existing synthetic GmailTransport with network, authentication and keyring access forbidden. A transient m1 member 429 leaves metadata incomplete and raw m1 failed after one batch; m0/m2 succeed, no automatic backoff occurs, and a second explicit call recovers m1 while rereading all members. Independent Astra Ultra read-only preflight confirms the shared missing behavior is live_gmail._message_batch. The manager accepted the bounded policy supported by existing capture retry evidence: explicit 429/503 only, three total attempts, delays 1s/2s, and unchanged live-50 contract. Capture whole-batch result clearing and batch10/delay0.2 behavior are not copied or changed. Whole-batch exceptions and missing/duplicate/unexpected callbacks remain conservative rather than becoming new retry causes. No new runtime dependencies, schema, OAuth/token/credential handling or real-message operations are in scope. Exact owned files: ownmail/providers/live_gmail.py (batch helper and required time import), tests/test_live_gmail_batch.py, tests/test_live_gmail_content.py and this task ledger. Review base remains cbb90b81e5b0b1ad87164bc5998643302a8b0a69 across all checkpoints.
 
 The task-only plan was committed as dcbffaf1d52beb5eb8a0eef372623c36c64ebd47 before implementation. The bounded helper now retries only explicit 429/503 members, retains successful/permanent results, and stops retrying on missing/duplicate/unexpected callbacks or whole-batch exceptions. Tests assert exact member IDs, 1s/2s backoff, three-attempt exhaustion, unchanged batch50, interruption propagation, and cached bytes/capture cursor preservation followed by later recovery. New regressions failed against the original helper (12 failures, plus eight retry-callback cases) and the implemented focused suite passed 68 tests. The broader provider/live-sync/recovery suite passed 408 tests. Ruff check, Ruff format-check and deptry passed. Author review against the original review base and a fresh independent Astra Ultra review found no actionable issues; 13 additional mocked helper probes passed. No product code outside the assigned helper/import or real service operations changed.
-Next action: run the complete required pre-push gate with mandatory headless browser coverage, unchanged coverage threshold and a runtime-only lifecycle observer; retain logs, then close only after the aggregate passes.
+
+Implementation checkpoint faa4b3c57eb210a4e2bf775509ccc69e268f75c4 passed the complete required pre-commit pre-push gate with mandatory headless Chromium, unchanged test selection and 95% branch-inclusive coverage floor: 3976 passed, one expected failure, 96.54% coverage in 188.70s. All 13 browser launch/close probes exited cleanly. The runtime-only observer preserved original timeouts and assertions; maxfail=1 stopped only on a first failure and the full suite completed successfully. File hygiene, Ruff check/format and deptry hooks passed; explicit Ruff format-check also passed. The implementation and final task commits use normal commit/message hooks. Local validation used Python 3.14.6; the supported-version CI matrix remains a later integration check. No integration or publication was performed.
+Next action: no implementation work remains; preserve this clean local branch for separately authorized integration and supported-version CI.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented bounded per-member Gmail live retries for explicit HTTP 429/503 failures with three total attempts and 1s/2s backoff. Successful/permanent observations are never reread, live batch50 is retained, and structural/outer failures and cancellation remain conservative. Synthetic metadata/content regressions cover recovery, exhaustion, exact member reads, cached-content/cursor preservation and later resumption. The complete mandatory-browser pre-push gate passed with 3976 tests, one expected failure and 96.54% coverage. Author review and fresh independent Astra Ultra review found no actionable issues. Local only; integration/publication remain separately coordinated.
+<!-- SECTION:FINAL_SUMMARY:END -->
