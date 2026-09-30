@@ -49,6 +49,45 @@ rebuildable search index. It can be recreated from mail still on the server;
 its presence never makes a message archived or eligible for server cleanup.
 Existing archive files, sidecars, database schema, and local Trash stay unchanged.
 
+## Choosing labels for new captures
+
+Each Gmail API or IMAP source can set `exclude_labels` to an exact-name list,
+empty by default. Use it for recurring labels you do not want to inherit;
+local editing remains available for one-off changes. For example, add this
+to an existing source:
+
+```yaml
+exclude_labels: [CATEGORY_UPDATES, Waiting]
+```
+
+**Omitted labels are not saved as owned label metadata. Rebuild cannot
+recover them, and removing the option later does not restore them.** You may
+still add those names locally. Existing owned snapshots and local edits are
+unchanged, including a saved sidecar awaiting an index retry. An intentional
+empty label set remains authoritative for rebuild and `update-labels`.
+
+**Omitted names are also no longer filing evidence for a later `reconcile`
+preview.** For example, if `Saved` later becomes an excluded folder, a snapshot
+with `Saved` and `Waiting` is report-only because `Waiting` shows filing; if
+`Waiting` was omitted, the snapshot can become a bin candidate. Preview remains
+the default. Moving it requires a separate `reconcile --apply`; existing Trash
+expiry rules then apply. The option does not change reconciliation rules or
+the explicit `relabel` repair operation.
+
+Names match exactly as that provider supplies them for capture: Gmail label
+names or IMAP folder/label names, including Gmail-over-IMAP. Case, whitespace,
+punctuation and Unicode are preserved; `CATEGORY_*` is a literal name, not a
+wildcard. Unmatched names have no effect. Existing mailbox-status filters still
+run, and Gmail `include_labels: false` still omits all labels.
+
+This option changes only labels on future captures, whether Active downloads
+are enabled or disabled. Message contents, eligibility, lifecycle checks,
+Active labels and tracking scope, and server cleanup remain unchanged. It does
+not make unknown Gmail states such as `CHAT` eligible, or bypass failed label
+lookups. Changing the list does not reset a cursor, rescan mail, or backfill
+existing captures. Unlike `exclude_folders` and the `active_exclude_*` options,
+it does not exclude any message from downloading or tracking.
+
 ## Editing labels
 
 Open an archived message, choose **More message actions → Edit labels**, add or

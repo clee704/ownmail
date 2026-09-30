@@ -48,6 +48,14 @@ sources:
       secret_ref: keychain:oauth-token/you@gmail.com  # required
     include_labels: true                   # fetch Gmail labels (default: true)
 
+    # Optional for Gmail and IMAP: omit exact label names from NEW captures.
+    # Defaults to []; does not exclude messages or change Active tracking.
+    # Omitted labels are not saved: rebuild cannot recover them. They also
+    # cease to be filing evidence in later reconcile previews; moving mail
+    # still requires a separate reconcile --apply. See docs/archive.md.
+    # Existing snapshots and local edits are unchanged. No rescan/backfill.
+    # exclude_labels: [CATEGORY_UPDATES, Waiting]
+
     # Fetch Active contents for reading and search (default: true).
     # false stops Active content fetching while eligible capture continues.
     # Existing cache entries remain stale until confirmed capture or removal;
@@ -79,6 +87,8 @@ sources:
   #     secret_ref: keychain:imap-password/you@company.com
   #
   #   active_downloads: true
+  #   # Exact captured folder/label names, with the same omission limits above.
+  #   exclude_labels: []
   #
   #   # Skip contents from these exact folder names. Metadata checks still
   #   # inspect visible folders, and exclusions mark the view incomplete.

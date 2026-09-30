@@ -279,6 +279,10 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         if "active_downloads" in source and type(source["active_downloads"]) is not bool:
             errors.append(f"Source '{name}': active_downloads must be true or false")
         errors.extend(_validate_active_scope(name, source))
+        if "exclude_labels" in source:
+            labels = source["exclude_labels"]
+            if not isinstance(labels, list) or any(not isinstance(label, str) or not label.strip() for label in labels):
+                errors.append(f"Source '{name}': exclude_labels must be a list of nonempty names")
 
         # IMAP requires host
         if source_type == "imap":

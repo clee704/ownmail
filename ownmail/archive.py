@@ -13,6 +13,7 @@ import stat
 import sys
 import tempfile
 import time
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from email.utils import parseaddr
 from email.utils import parsedate_to_datetime as _parsedate_to_datetime
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from ownmail import roles, sidecar
-from ownmail.config import get_db_dir, gmail_accounts
+from ownmail.config import get_db_dir, get_source_by_name, gmail_accounts
 from ownmail.database import ArchiveDatabase
 from ownmail.download_progress import DownloadProgress
 from ownmail.keychain import KeychainStorage
@@ -300,6 +301,12 @@ class EmailArchive:
     # Backup
     # -------------------------------------------------------------------------
 
+    def _labels_for_capture(self, source_name: str, labels: Iterable[str]) -> list[str]:
+        """Choose newly owned labels without changing provider state or saved snapshots."""
+        source = get_source_by_name(self.config, source_name) or {}
+        excluded = frozenset(source.get("exclude_labels", ()))
+        return [label for label in labels if label not in excluded]
+
     def backup(
         self,
         provider: EmailProvider,
@@ -527,7 +534,8 @@ class EmailArchive:
                         # retryable on the next backup.
                         try:
                             size_bytes = filepath.stat().st_size
-                            sidecar.write_labels(filepath, labels or [])
+                            labels = self._labels_for_capture(provider.source_name, labels or [])
+                            sidecar.write_labels(filepath, labels)
                         except OSError as e:
                             print(f"\n  Error saving labels for {msg_id}: {e}")
                             failed_ids.append(msg_id)

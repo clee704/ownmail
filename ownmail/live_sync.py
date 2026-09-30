@@ -105,7 +105,7 @@ def _capture(archive, provider, message, lookup) -> bool:
     else:
         metadata = {
             "version": sidecar.SIDECAR_VERSION,
-            "labels": list(message.labels),
+            "labels": archive._labels_for_capture(provider.source_name, message.labels),
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "capture": {**entry, "labels_complete": True},
         }
