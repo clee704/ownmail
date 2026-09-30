@@ -16,6 +16,7 @@
 const { JSDOM } = require("jsdom");
 const DOMPurify = require("dompurify");
 const postcss = require("postcss");
+const tokenizeCSS = require("postcss/lib/tokenize");
 
 // Create a single jsdom window and DOMPurify instance (reused across requests)
 const window = new JSDOM("").window;
@@ -105,6 +106,32 @@ function isTrustedFontUrl(url) {
 }
 
 /**
+ * Keep CSS strings and comments safe for an HTML style element without changing
+ * their CSS meaning. Do this before PostCSS's own HTML escaping sees the text.
+ */
+function prepareStyleText(css) {
+  const tokenizer = tokenizeCSS(new postcss.Input(css, { map: false }));
+  const tokens = [];
+  while (!tokenizer.endOfFile()) tokens.push(tokenizer.nextToken());
+
+  // Legacy HTML comment wrappers are CSS tokens, not quoted/commented content.
+  const last = tokens.filter((token) => token[0] !== "space").pop();
+  const wrapped = /^\s*<!--/.test(css) && last && last[0] === "word" && last[1] === "-->";
+  if (wrapped) last[1] = "";
+
+  const result = tokens.map((token) => {
+    if (token[0] === "string") {
+      return token[1].replace(/\\[\s\S]|</g, (text) =>
+        text === "<" || text === "\\<" ? "\\3c " : text
+      );
+    }
+    if (token[0] === "comment") return token[1].replace(/</g, "\\3c ");
+    return token[1];
+  }).join("");
+  return wrapped ? result.replace(/^(\s*)<!--/, "$1") : result;
+}
+
+/**
  * Scope and sanitize a CSS stylesheet using postcss AST.
  * - Removes @charset; allows @import only from trusted font providers
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
@@ -117,7 +144,7 @@ function scopeAndSanitizeCSS(css) {
   let root;
   try {
     // Ignore sourceMappingURL comments so message CSS cannot make postcss read local files.
-    root = postcss.parse(css, { map: false });
+    root = postcss.parse(prepareStyleText(css), { map: false });
   } catch (e) {
     return "/* CSS parse error */";
   }

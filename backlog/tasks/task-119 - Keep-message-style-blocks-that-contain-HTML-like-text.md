@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-29 06:39'
-updated_date: '2026-09-30 11:17'
+updated_date: '2026-09-30 11:29'
 labels:
   - ui
 dependencies: []
@@ -22,8 +22,8 @@ The sanitizer worker drops a message's whole style block in two cases. When the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A synthetic message whose style rules are wrapped in <!-- --> keeps its scoped rules after sanitization
-- [ ] #2 A synthetic message whose CSS comments or strings contain markup-like text keeps its scoped rules, and no style text can close the style element
+- [x] #1 A synthetic message whose style rules are wrapped in <!-- --> keeps its scoped rules after sanitization
+- [x] #2 A synthetic message whose CSS comments or strings contain markup-like text keeps its scoped rules, and no style text can close the style element
 - [ ] #3 The full pre-push gate passes
 <!-- AC:END -->
 
@@ -41,4 +41,8 @@ The sanitizer worker drops a message's whole style block in two cases. When the 
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner: Ownmail IC2. Branch: fix/message-style-text. Review base: 62875a5c627e9d1d964a945c2176507c4e93b58e. TASK-119 is next after TASK-13 in execution order, unassigned with no dependencies before this claim. The approved read-only premise ran the actual installed worker on synthetic inputs: a plain stylesheet retained its scoped rule, a genuine HTML-comment wrapper became CSS parse error, and markup-like text in a CSS comment or content string removed the whole style element. Body text survived. The relevant source is independent of TASK-13 linkification, TASK-56 body-selector relationships and denied TASK-37/95/125 actions. Owned paths are ownmail/sanitizer/worker.js, tests/test_sanitizer.py, tests/test_reader_body_style.py and this task record only. No new dependency or STOP-category change is planned. Existing DOMPurify markup/breakout checks remain enabled; preservation must not rely on disabling them or restoring raw styles after sanitization. Fresh independent Astra Ultra security/correctness review is required by the manager. TASK-13 currently owns Chromium. Next action: commit this supported claim/plan checkpoint before implementation.
+
+Implemented token-aware stylesheet preparation before PostCSS serialization. Genuine outer HTML-comment markers are removed only outside strings/comments; literal less-than characters in CSS strings/comments are serialized safely while preserving escape parity and CSS meaning. Existing DOMPurify protections, selector scoping, declaration/import filters, source-map suppression and dependency versions remain unchanged.
+
+Regression evidence: the actual original worker failed 14 new subtests; the six new route/browser cases all failed against a private original-worker copy and pass with the change. All 103 sanitizer tests and all 10 reader-body-style browser cases pass. Rendered fixtures compare original CSS in an isolated reference against sanitized computed content, borders and range-query widths, and verify outside-scope controls and absence of injected DOM/events. Ruff check, Ruff format-check and deptry pass. The first development check caught missing map:false on the additional PostCSS Input; this was corrected and the existing/extended source-map guard now passes. Author self-review against the original base found the diff confined to the approved worker/tests/task scope. Independent Astra Ultra security/correctness review is in progress; full pre-push coverage remains pending. No main integration or publication performed.
 <!-- SECTION:NOTES:END -->

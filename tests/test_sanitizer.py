@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from lxml import html as lxml_html
+
 import ownmail.sanitizer as sanitizer_module
 from ownmail.download_lock import ProcessLock
 from ownmail.sanitizer import HtmlSanitizer, _caret_floor, _satisfies
@@ -305,10 +307,96 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 f.write("not a source map")
             # Loading either target as a source map fails the CSS parse, which drops the rule.
             for target in (path, "data:application/json,not%20a%20source%20map"):
-                with self.subTest(target=target):
-                    html = f"<style>p {{ color: red; }} /*# sourceMappingURL={target} */</style><p>Hi</p>"
-                    result, *_ = self.sanitizer.sanitize(html)
-                    assert "#ownmail-email-content p" in result
+                for comment in ("", "/* reset <p> margins */"):
+                    with self.subTest(target=target, comment=comment):
+                        html = f"<style>{comment} p {{ color: red; }} /*# sourceMappingURL={target} */</style><p>Hi</p>"
+                        result, *_ = self.sanitizer.sanitize(html)
+                        assert "#ownmail-email-content p" in result
+
+    def test_preserves_html_comment_wrapped_css(self):
+        """Legacy outer comment markers do not invalidate the scoped stylesheet."""
+        for tag in ("style", "STYLE"):
+            for css in (
+                "<!--.wrapped { color: red; }-->",
+                " \n\t<!--\n.wrapped { color: red; }\n-->\r\n ",
+            ):
+                with self.subTest(tag=tag, css=css):
+                    result, *_ = self.sanitizer.sanitize(f'<{tag}>{css}</{tag}><p class="wrapped">Text</p>')
+                    tree = lxml_html.fromstring(result)
+                    styles = tree.xpath("//style")
+                    assert len(styles) == 1
+                    assert "#ownmail-email-content .wrapped" in styles[0].text_content()
+                    assert "color: red" in styles[0].text_content()
+                    assert tree.xpath("//p")[0].text_content() == "Text"
+
+    def test_preserves_markup_like_css_text(self):
+        """Markup in comments and strings must not erase rules or CSS operators."""
+        for css in (
+            "/* reset <p> margins */",
+            '/* <P> <!note> </p> */ .markup::before { content: "<b>text</b>"; }',
+            r".markup::before { content: '<em> \\ \' \3c b> <!-- literal -->'; }",
+            r'.markup::before { content: "\<em> \3c strong>"; }',
+        ):
+            with self.subTest(css=css):
+                result, *_ = self.sanitizer.sanitize(
+                    f"<style>{css} @media (400px < width <= 900px) {{ "
+                    '.markup > b { color: red; } }</style><p class="markup"><b>Text</b></p>'
+                )
+                tree = lxml_html.fromstring(result)
+                styles = tree.xpath("//style")
+                assert len(styles) == 1
+                stylesheet = styles[0].text_content()
+                assert "#ownmail-email-content .markup > b" in stylesheet
+                assert "400px < width <= 900px" in stylesheet
+                assert "color: red" in stylesheet
+                if "content:" in css:
+                    assert "#ownmail-email-content .markup::before" in stylesheet
+                    assert "content:" in stylesheet
+                assert tree.xpath("//p/b")[0].text_content() == "Text"
+
+    def test_markup_like_css_cannot_create_html_elements(self):
+        """Reparsing CSS strings and comments cannot create scripts or event handlers."""
+        for css in (
+            r""".probe::before { content: "\3c /StYlE><img id='css-injected' src='x' onerror='alert(1)'><ScRiPt>alert(2)</ScRiPt>"; }""",
+            "/* </StYlE-not-an-end-tag><img id='css-injected' src='x' onerror='alert(1)'> */",
+        ):
+            with self.subTest(css=css):
+                result, *_ = self.sanitizer.sanitize(
+                    f'<style>{css} .probe {{ color: red; }}</style><p class="probe">Text</p>'
+                )
+                tree = lxml_html.fromstring(result)
+                styles = tree.xpath("//style")
+                assert len(styles) == 1
+                assert "#ownmail-email-content .probe" in styles[0].text_content()
+                assert not tree.xpath("//script | //img | //*[@id='css-injected']")
+                assert not any(name.lower().startswith("on") for element in tree.iter() for name in element.attrib)
+                assert [element.tag for element in tree.xpath("//body/*")] == ["p"]
+                assert tree.xpath("//p")[0].text_content() == "Text"
+
+    def test_filters_declarations_in_markup_like_css(self):
+        """Preserving stylesheet text keeps the declaration and import filters active."""
+        css = """
+            @import url("https://evil.com/spy.css");
+            /* reset <p> margins */
+            .filtered {
+                color: red;
+                width: expression(alert(1));
+                background: url("javascript:alert(2)");
+                behavior: url("https://evil.com/behavior.htc");
+                -moz-binding: url("https://evil.com/binding.xml");
+            }
+        """
+        for stylesheet in (css, f"<!--{css}-->"):
+            with self.subTest(stylesheet=stylesheet):
+                result, *_ = self.sanitizer.sanitize(f'<style>{stylesheet}</style><p class="filtered">Text</p>')
+                tree = lxml_html.fromstring(result)
+                styles = tree.xpath("//style")
+                assert len(styles) == 1
+                sanitized_css = styles[0].text_content()
+                assert "#ownmail-email-content .filtered" in sanitized_css
+                assert "color: red" in sanitized_css
+                for forbidden in ("@import", "expression", "javascript:", "behavior", "-moz-binding"):
+                    assert forbidden not in sanitized_css
 
     def test_strips_css_javascript_url(self):
         """Test that javascript: url() references are removed."""
