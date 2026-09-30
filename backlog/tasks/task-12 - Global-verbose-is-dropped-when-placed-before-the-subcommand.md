@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-07-24 20:55'
-updated_date: '2026-09-30 12:09'
+updated_date: '2026-09-30 12:15'
 labels: []
 dependencies: []
 priority: low
@@ -26,8 +26,8 @@ Found while writing CLI tests for TASK-3; a test asserting the pre-subcommand fo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Actual main preserves -v/--verbose before and after existing supported commands, including repeated flags, while omitted verbose remains False and unsupported nested flag positions remain unsupported.
-- [ ] #2 Synthetic regressions verify dispatched verbose values and existing error/traceback behavior, fail against the old duplicate default, and pass after the bounded fix without real configuration, archive, provider or credential operations.
+- [x] #1 Actual main preserves -v/--verbose before and after existing supported commands, including repeated flags, while omitted verbose remains False and unsupported nested flag positions remain unsupported.
+- [x] #2 Synthetic regressions verify dispatched verbose values and existing error/traceback behavior, fail against the old duplicate default, and pass after the bounded fix without real configuration, archive, provider or credential operations.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -47,5 +47,11 @@ Premise verified read-only on clean completed TASK-64 revision 90cf67cd2a243297b
 
 Owned scope is only the duplicate verbose argument in main._add_global_opts, the existing dispatch/traceback regression families in tests/test_cli.py, and this task ledger. The root default stays False. Existing sources --verbose list is supported and --verbose sources list currently suffers the same overwritten default; sources list --verbose is currently rejected and is outside this task. TASK-56/93 sanitizer work and all held policy/integration work remain untouched. This task originally had no acceptance-criteria section, so explicit criteria are recorded here before implementation.
 
-Next action: commit this task-only acceptance/claim/plan checkpoint with normal hooks before editing tests or production code.
+Task-only acceptance/claim/plan checkpoint c2968e946a2c35f7abd7935718907a55a2c40746 was committed with normal hooks before any test or production edits. The two existing regression functions now exercise actual main with mocked configuration, archive construction and commands. Dispatch cases assert omitted False, both spellings before and after verify, repeated pre/post flags and both positions. Error cases check original exception identity and reporting, nonverbose exit 1, existing nested sources placements, and continued parse exit 2 before configuration loading for unsupported trailing nested flags. Keychain construction is asserted absent.
+
+Against unchanged production code, the strengthened regressions produced 6 failures and 11 passes. Adding default=argparse.SUPPRESS only to the duplicate subparser verbose argument then produced 17 focused passes. All 119 retained CLI tests passed. Ruff check, format-check, deptry and whitespace checks passed without formatting changes. Author review verified the one-line production scope and exact source equivalence outside the two owned test functions. Fresh independent Astra Ultra review found no correctness, scope or test-quality findings. Root defaults, parser definitions, dispatch, existing exception handling and unsupported nested positions remain unchanged.
+
+Both acceptance criteria are verified by focused behavior. The task remains In Progress because the complete required mandatory-browser pre-push gate is still unrun while TASK-56 owns Chromium. Private development dependencies, temporary state and the full-gate command are prepared; no browser was launched. All regression fixtures are synthetic, with no real configuration/archive/credential operations. No integration, publication or next task was performed.
+
+Next action: run the prepared complete mandatory-browser pre-push gate once TASK-56 releases the browser interval; close only after that gate actually passes.
 <!-- SECTION:NOTES:END -->

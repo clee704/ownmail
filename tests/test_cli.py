@@ -1063,19 +1063,37 @@ class TestMainEdgeCases:
         captured = capsys.readouterr()
         assert "matching '2024/*'" in captured.out
 
-    def test_main_verify_verbose(self, temp_dir, capsys, monkeypatch):
-        """Test verify --verbose command."""
+    @pytest.mark.parametrize(
+        "args, verbose",
+        [
+            (["verify"], False),
+            (["--verbose", "verify"], True),
+            (["-v", "verify"], True),
+            (["verify", "--verbose"], True),
+            (["verify", "-v"], True),
+            (["-v", "--verbose", "verify"], True),
+            (["verify", "-v", "--verbose"], True),
+            (["--verbose", "verify", "-v"], True),
+        ],
+    )
+    def test_main_verify_verbose(self, args, verbose):
+        """Preserve either verbose spelling and position when dispatching."""
         from ownmail.cli import main
 
-        config_path = temp_dir / "config.yaml"
-        config_path.write_text(f"archive_root: {temp_dir}\n")
-        monkeypatch.chdir(temp_dir)
-
-        with patch.object(sys, "argv", ["ownmail", "verify", "--verbose"]):
+        with (
+            patch.object(sys, "argv", ["ownmail", "--config", "/synthetic-task12/config.yaml", *args]),
+            patch("ownmail.cli.load_config", return_value={}),
+            patch("ownmail.cli.validate_config", return_value=[]),
+            patch("ownmail.cli.get_archive_root", return_value="synthetic-archive"),
+            patch("ownmail.cli.EmailArchive") as archive,
+            patch("ownmail.cli.KeychainStorage") as keychain,
+            patch("ownmail.commands.cmd_verify") as verify,
+        ):
             main()
 
-        capsys.readouterr()
-        # Should not crash
+        archive.assert_called_once_with("synthetic-archive", {})
+        verify.assert_called_once_with(archive.return_value, False, verbose)
+        keychain.assert_not_called()
 
     def test_main_refuses_duplicate_source_names(self, temp_dir, capsys, monkeypatch):
         """Test that CLI exits with error on duplicate source names."""
@@ -1594,20 +1612,53 @@ class TestMainErrorHandling:
         assert exc.value.code == 1
         assert "Error: kaboom" in capsys.readouterr().out
 
-    def test_verbose_reraises_for_traceback(self, temp_dir, monkeypatch):
-        """--verbose should re-raise so the traceback is visible."""
+    @pytest.mark.parametrize(
+        "args, target, exit_code",
+        [
+            (["verify"], "ownmail.commands.cmd_verify", 1),
+            (["--verbose", "verify"], "ownmail.commands.cmd_verify", None),
+            (["-v", "verify"], "ownmail.commands.cmd_verify", None),
+            (["verify", "--verbose"], "ownmail.commands.cmd_verify", None),
+            (["verify", "-v"], "ownmail.commands.cmd_verify", None),
+            (["--verbose", "sources", "list"], "ownmail.cli.cmd_sources_list", None),
+            (["sources", "--verbose", "list"], "ownmail.cli.cmd_sources_list", None),
+            (["sources", "list", "--verbose"], "ownmail.cli.cmd_sources_list", 2),
+            (["sources", "list", "-v"], "ownmail.cli.cmd_sources_list", 2),
+        ],
+    )
+    def test_verbose_reraises_for_traceback(self, args, target, exit_code, capsys):
+        """Verbose preserves tracebacks without adding new flag positions."""
         from ownmail.cli import main
 
-        self._config(temp_dir)
-        monkeypatch.chdir(temp_dir)
-
-        # cmd_verify is imported lazily inside main(), so patch it at its source.
-        # --verbose must follow the subcommand here: see TASK-12, the global
-        # form is currently swallowed by the subparser's duplicate flag.
-        with patch("ownmail.commands.cmd_verify", side_effect=RuntimeError("kaboom")):
-            with patch.object(sys, "argv", ["ownmail", "verify", "--verbose"]):
-                with pytest.raises(RuntimeError, match="kaboom"):
+        error = RuntimeError("kaboom")
+        with (
+            patch.object(sys, "argv", ["ownmail", "--config", "/synthetic-task12/config.yaml", *args]),
+            patch("ownmail.cli.load_config", return_value={}) as load_config,
+            patch("ownmail.cli.validate_config", return_value=[]),
+            patch("ownmail.cli.get_archive_root", return_value="synthetic-archive"),
+            patch("ownmail.cli.EmailArchive"),
+            patch("ownmail.cli.KeychainStorage") as keychain,
+            patch(target, side_effect=error) as command,
+        ):
+            if exit_code is None:
+                with pytest.raises(RuntimeError, match="kaboom") as exc:
                     main()
+                assert exc.value is error
+            else:
+                with pytest.raises(SystemExit) as exc:
+                    main()
+                assert exc.value.code == exit_code
+
+        output = capsys.readouterr()
+        if exit_code == 2:
+            load_config.assert_not_called()
+            command.assert_not_called()
+            assert "unrecognized arguments" in output.err
+        else:
+            load_config.assert_called_once()
+            command.assert_called_once()
+            assert "Error: kaboom" in output.out
+        keychain.assert_not_called()
 
 
 class TestCmdDownloadSources:

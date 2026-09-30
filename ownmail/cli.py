@@ -934,7 +934,7 @@ Examples:
 
     # Helper: add global options to a subparser so they work in any position
     def _add_global_opts(sub):
-        sub.add_argument("-v", "--verbose", action="store_true", help=argparse.SUPPRESS)
+        sub.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     # setup command
     setup_parser = subparsers.add_parser(
