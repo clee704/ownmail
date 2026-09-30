@@ -99,7 +99,6 @@
         } finally {
             pending = false;
             controls.forEach(function(control, index) { control.disabled = previous[index]; });
-            if (typeof hideLoading === 'function') hideLoading();
         }
     };
 })();

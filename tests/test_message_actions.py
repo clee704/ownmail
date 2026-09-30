@@ -106,7 +106,7 @@ assert.equal(success, 1);
 assert.equal(feedback.dataset.state, 'success');
 assert(!button.disabled);
 assert(!checkbox.disabled);
-assert.equal(cleaned, 1);
+assert.equal(cleaned, 0, "Actions must not clean up native navigation they do not own");
 """,
     )
 
@@ -131,7 +131,7 @@ assert(!checkbox.disabled);
 assert(!navigated);
 assert.equal(window.location.search, '?q=project&page=2');
 assert.equal(window.sessionStorage.getItem('ownmail-action-notice'), null);
-assert.equal(cleaned, 1);
+assert.equal(cleaned, 0, "Actions must not clean up native navigation they do not own");
 advance(10000);
 assert(!feedback.hidden);
 window.fetch = () => Promise.resolve({ok: true});

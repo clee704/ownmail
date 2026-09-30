@@ -263,3 +263,95 @@ assert.equal(stopped, 1);
 assert.equal(timers.size, 0);
 """,
     )
+
+
+ACTION_NAVIGATION_CLOCK = (
+    NAVIGATION_CLOCK
+    + """
+const flush = () => new Promise(resolve => setImmediate(resolve));
+// Suppress only JSDOM's unsupported default navigation, after app handlers run.
+document.addEventListener('click', event => {
+    if (event.target.closest('a[href]')) event.preventDefault();
+});
+"""
+)
+
+
+def test_successful_trash_keeps_back_navigation_deadline(reader, shell_browser):
+    client, _ = reader
+    test_ui_shell.run_shell_browser(
+        client.application,
+        shell_browser,
+        ACTION_NAVIGATION_CLOCK
+        + """
+window.confirm = () => true;
+let requests = 0, finished;
+window.fetch = () => {requests++; return Promise.resolve({ok:true});};
+const runAction = window.ownmailMessageAction;
+window.ownmailMessageAction = action => finished = runAction(action);
+byId('ownmail-reader-actions').querySelector('[data-reader-action="trash"]').click();
+assert.equal(await finished, true);
+assert.equal(feedback.dataset.state, 'success');
+advance(30000);
+assert.equal(stopped, 1);
+assert.equal(feedback.dataset.state, 'error');
+assert.equal(retry.href, byId('ownmail-back-to-results').href);
+assert.equal(requests, 1, 'Retry must never replay the confirmed mutation');
+""",
+        path="/email/message?return_to=%2Fsearch%3Fpage%3D3",
+    )
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "timeout"])
+def test_older_action_cannot_cancel_newer_navigation(shell_app, shell_browser, outcome):
+    app, _ = shell_app
+    test_ui_shell.run_shell_browser(
+        app,
+        shell_browser,
+        ACTION_NAVIGATION_CLOCK
+        + """
+let finish, requests = 0;
+window.fetch = () => {requests++; return new Promise(resolve => finish = resolve);};
+const action = {url:'/synthetic-action',request:{method:'POST'},pending:'Saving',success:'Saved',failure:'Could not save'};
+const pending = window.ownmailMessageAction(action);
+advance(100);
+const destination = document.querySelector('#ownmail-sidebar a[href="/settings"]');
+destination.click();
+advance(200);
+assert(byId('ownmail-loading-overlay').classList.contains('ownmail-active'));
+if (OUTCOME === 'timeout') advance(29700);
+else finish({ok:OUTCOME === 'success', status:503});
+assert.equal(await pending, OUTCOME === 'success');
+advance(30000);
+assert.equal(stopped, 1);
+assert.equal(feedback.dataset.state, 'error');
+assert.equal(retry.href, destination.href);
+finish({ok:true});
+await flush();
+assert.equal(retry.href, destination.href);
+assert.equal(feedback.dataset.state, 'error');
+assert.equal(requests, 1, 'An interrupted action must not replay itself');
+""".replace("OUTCOME", json.dumps(outcome)),
+    )
+
+
+def test_repeated_actions_do_not_take_ownership_of_native_navigation(shell_app, shell_browser):
+    app, _ = shell_app
+    test_ui_shell.run_shell_browser(
+        app,
+        shell_browser,
+        ACTION_NAVIGATION_CLOCK
+        + """
+let requests = 0;
+window.fetch = () => {requests++; return Promise.resolve({ok:requests > 1, status:503});};
+const destination = document.querySelector('#ownmail-sidebar a[href="/settings"]');
+destination.click();
+const action = {url:'/synthetic-action',request:{method:'POST'},pending:'Saving',success:'Saved',failure:'Could not save'};
+assert.equal(await window.ownmailMessageAction(action), false);
+assert.equal(await window.ownmailMessageAction(action), true);
+advance(30000);
+assert.equal(stopped, 1);
+assert.equal(retry.href, destination.href);
+assert.equal(requests, 2, 'Only the two explicit actions issue requests');
+""",
+    )
