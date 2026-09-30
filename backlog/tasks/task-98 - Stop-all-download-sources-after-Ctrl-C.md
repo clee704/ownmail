@@ -1,11 +1,11 @@
 ---
 id: TASK-98
 title: Stop all download sources after Ctrl-C
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC1
 created_date: '2026-09-21 03:16'
-updated_date: '2026-09-30 07:41'
+updated_date: '2026-09-30 07:47'
 labels: []
 dependencies: []
 priority: medium
@@ -23,7 +23,7 @@ When a provider download catches KeyboardInterrupt and returns interrupted=True,
 <!-- AC:BEGIN -->
 - [x] #1 An interrupted source stops the source loop before constructing or authenticating the next provider.
 - [x] #2 Completed saves and counters remain available, the command returns failure, and the overall summary identifies interruption.
-- [ ] #3 A multi-source regression covers interruption during live enumeration and verifies later sources are untouched; full pre-push checks pass.
+- [x] #3 A multi-source regression covers interruption during live enumeration and verifies later sources are untouched; full pre-push checks pass.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -43,4 +43,12 @@ Premise verified on the reviewed reconciliation base: an actual cmd_download cal
 Next action: create a source-bound private test environment and commit this task-only plan with normal hooks before changing product code or tests.
 
 Task-only claim/plan checkpoint b9a2dee6290b376e85fd3e2cc2469f1569ec40a5 was committed with normal hooks before product or test implementation. Six strengthened cases failed against unchanged production code: first-source interruption still constructed the next provider, and the overall summary did not identify interruption. The implementation adds the stop only after current-source cleanup, accumulated counts and progress failure/flush, then adds an explicit overall interruption line while retaining resume guidance and False return. Existing parameterized summary coverage now checks both provider orders and both interruption positions, exact downloaded/error totals, no later constructor/authentication and IMAP close. The old first-interruption expectation of three downloads was demonstrably preserving the bug; it is now one, with stronger exclusion assertions. Existing actual CLI/live-enumeration tests now use two synthetic sources and verify exit 1, unchanged interrupted-source identity, retained counts and byte-identical saved synthetic mail. All provider constructors/authentication and trash expiry are mocked; no real mail or credentials are accessed. The focused download/progress/locking/shutdown/live suite passed 141 tests in 3.98 seconds. Ruff check, explicit format-check for all 118 Python files, deptry and whitespace checks pass. No product paths outside cmd_download changed. Next action: commit this focused checkpoint with normal hooks, run the complete mandatory-browser pre-push gate in private runtime state, and complete author review/verified ledger closure.
+
+The complete mandatory-browser pre-push gate passed on implementation checkpoint 845811a3fa485638ca46d4a3430891f6ef4799cf: 3958 passed, one expected failure, no errors/skips, and 96.55% branch-inclusive coverage in 201.90 seconds. All hygiene, Ruff and deptry hooks passed; the final explicit format-check passed for all 118 Python files. All 13 browser launch/close probes exited zero with temporary-profile cleanup in 0.39 to 1.18 seconds. The runtime-only observer retained original subprocess behavior and exceptions, maxfail was only a failure-stop option, and the complete test selection, timeouts, assertions and 95% coverage threshold were unchanged. The browser-only interval was released immediately on process exit. Author self-review against original base 8a2e1b25de4f4fac4fc4c5792abbb17366d3b909 found no unresolved findings; the independent Astra Ultra premise review had already confirmed the bounded scope. The final synthetic-account fixture alignment was rechecked with both affected integration cases passing before the complete gate. Only this ledger closure follows the tested product checkpoint, with normal hooks. No new policy, schema, credential, provider, storage, TASK-37 or TASK-125 changes were made, and no master/merge/rebase/publication operation occurred. Next action: hand the clean tested local candidate to the manager for separately authorized consolidation; preserve all existing branches and await a specific next assignment.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+An interrupted download now stops the all-source loop after retaining the current source counters, progress and cleanup; later providers are never constructed or authenticated. The overall summary explicitly identifies interruption and retains failure return/resume guidance. Strengthened existing tests cover both provider orders and interruption positions plus actual synthetic CLI/live enumeration and saved-content retention. Six cases failed before the fix; focused checks, author review, normal commit hooks and the complete required browser/coverage pre-push gate pass. The change is preserved locally for manager-controlled integration; no default-branch update or publication occurred.
+<!-- SECTION:FINAL_SUMMARY:END -->
