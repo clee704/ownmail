@@ -194,6 +194,33 @@ ownmail search 'label:"Receipts, 2026"'
 
 The web interface includes search help with supported operators and examples.
 
+## Export
+
+Export owned archive messages to a new mbox file that other mail clients can import:
+
+```bash
+ownmail export --format mbox --output backup.mbox
+ownmail export --output receipts.mbox --query 'from:billing@example.com after:2024-01-01'
+ownmail export --output filed.mbox --query='-is:active'
+```
+
+Export uses the existing search syntax without a result-count limit. As in ordinary
+archive search, Trash and messages without parsed dates are excluded. Use `scan`
+to register untracked mail and `rebuild` to repair indexed dates first. Active-only
+cached messages are not exported. Ownership filters such as `is:active` can select
+archived copies with verified existing Active membership, but only the archived
+bytes and labels are used. Export never downloads mail.
+
+Original headers, MIME bodies and attachments are retained, with standard mbox
+envelope lines and `From ` escaping. Sidecar labels are not added as headers.
+The output directory must exist, and existing files or symlinks are refused.
+Unreadable message files are skipped and reported; the resulting mbox contains the
+readable matches, and the command exits unsuccessfully to flag the partial export.
+Handled write errors or Ctrl-C remove the new incomplete output so the same command
+can be rerun. The output can be visible while being copied; abrupt process termination
+can leave a partial file. Source mail is never changed. PDF export is tracked separately in
+[TASK-129](backlog/tasks/task-129%20-%20PDF-export-for-archived-messages.md).
+
 ## Commands
 
 | Command | Purpose |
@@ -204,6 +231,7 @@ The web interface includes search help with supported operators and examples.
 | `authorize-cleanup --source NAME` | Grant separate Gmail cleanup access through explicit browser consent |
 | `serve` | Open the web interface |
 | `search "query"` | Search from the terminal |
+| `export --output FILE` | Export matching archived messages as mbox |
 | `import <path>` | Import external `.eml` files |
 | `scan` | Index `.eml` files already in the archive |
 | `stats` | Show archive statistics |

@@ -733,6 +733,23 @@ def cmd_cleanup(archive_root: Path, config: dict, source_name: str, *, apply: bo
     return not result["errors"] and not result["interrupted"]
 
 
+def cmd_export(archive: EmailArchive, output: Path, query: str = "") -> bool:
+    """Export matching owned messages to a new mbox file."""
+    from ownmail.export import export_mbox
+
+    try:
+        exported, skipped = export_mbox(archive, output, query)
+    except (OSError, ValueError) as error:
+        print(f"Export failed: {error}")
+        return False
+    print(f"Exported {exported} message(s) to {output}")
+    if skipped:
+        print(f"Skipped {len(skipped)} unreadable message(s):")
+        for email_id, reason in skipped:
+            print(f"  {email_id}: {reason}")
+    return not skipped
+
+
 def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
     """Search cached Active and archived messages."""
     print(f"\nSearching for: {query}\n")
@@ -1006,6 +1023,27 @@ Examples:
     search_parser.add_argument("--limit", type=int, default=50, help="Maximum results")
     _add_global_opts(search_parser)
 
+    # export command
+    export_parser = subparsers.add_parser(
+        "export",
+        help="Export archived messages to a new mbox file",
+        description=(
+            "Export owned archive messages using existing search syntax and its Trash/date exclusions. "
+            "Active-only cached messages are excluded. Original headers and attachments are preserved; "
+            "no label headers are added. Existing output files are never overwritten. PDF is not supported."
+        ),
+    )
+    export_parser.add_argument("--format", choices=["mbox"], default="mbox", help="Export format (default: mbox)")
+    export_parser.add_argument(
+        "--output", type=Path, required=True, help="New output file; its parent directory must exist"
+    )
+    export_parser.add_argument(
+        "--query",
+        default="",
+        help="Existing search query; use --query=-term for leading negation (default: all ordinary archive matches)",
+    )
+    _add_global_opts(export_parser)
+
     # stats command
     stats_parser = subparsers.add_parser(
         "stats",
@@ -1265,6 +1303,9 @@ Examples:
 
             if args.command == "search":
                 cmd_search(archive, args.query, limit=args.limit)
+            elif args.command == "export":
+                if not cmd_export(archive, args.output, args.query):
+                    sys.exit(1)
             elif args.command == "stats":
                 cmd_stats(archive, config, args.source)
             elif args.command == "rebuild":
