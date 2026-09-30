@@ -204,7 +204,7 @@ def test_running_refresh_shows_active_counts_before_completion(shell_app, downlo
             source: 'Synthetic', downloaded: 2, active_refreshed: 4, active_complete: null};
         await refresh();
         await waitStatus('Refreshing live mail from Synthetic');
-        assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 failed');
+        assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 skipped · 0 failed');
         assert.doesNotMatch(await page.locator('#ownmail-download-message').textContent(), /Capture finished/);
         """,
     )
@@ -222,15 +222,15 @@ def test_running_scan_shows_checked_count_before_capture(shell_app, download_bro
         await refresh();
         await waitStatus(__SOURCE__ ? 'Scanning live mail from Synthetic' : 'Scanning live mail…');
         assert.equal(await progress.isVisible(), true);
-        assert.equal(await counts.textContent(), '0 checked · 0 archived · 0 Active refreshed · 0 failed');
+        assert.equal(await counts.textContent(), '0 checked · 0 archived · 0 Active refreshed · 0 skipped · 0 failed');
         state = {...state, scan_checked: 123};
         await refresh();
         await waitStatus('123 checked');
-        assert.equal(await counts.textContent(), '123 checked · 0 archived · 0 Active refreshed · 0 failed');
+        assert.equal(await counts.textContent(), '123 checked · 0 archived · 0 Active refreshed · 0 skipped · 0 failed');
         state = {...state, phase: 'refreshing', downloaded: 2, active_refreshed: 4};
         await refresh();
         await waitStatus('Refreshing live mail');
-        assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 failed');
+        assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 skipped · 0 failed');
         """.replace("__SOURCE__", json.dumps(source)),
     )
 
@@ -246,7 +246,7 @@ def test_finished_download_distinguishes_active_refresh_completeness(shell_app, 
             downloaded: 2, active_refreshed: 4, active_complete: __COMPLETE__};
         await refresh();
         await waitStatus(__COMPLETE__ ? 'Capture finished. Active mail refreshed.' : 'Active refresh incomplete.');
-        assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 failed');
+        assert.equal(await counts.textContent(), '2 archived · 4 Active refreshed · 0 skipped · 0 failed');
         const message = await page.locator('#ownmail-download-message').textContent();
         if (!__COMPLETE__) assert.doesNotMatch(message, /Active mail refreshed|current|up to date/i);
         """.replace("__COMPLETE__", json.dumps(complete)),

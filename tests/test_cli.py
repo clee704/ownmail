@@ -1475,6 +1475,40 @@ class TestMainServeCommand:
         config.write_text(body)
         return config
 
+    @pytest.mark.parametrize("verbose", [False, True])
+    @pytest.mark.parametrize("refusal", ["sanitizer", "debug-host"])
+    def test_serve_refusal_exits_nonzero(self, temp_dir, monkeypatch, capsys, verbose, refusal):
+        """The actual server guards must propagate failure through the CLI."""
+        from ownmail.cli import main
+
+        self._write_config(temp_dir, "archive_root: .\n")
+        monkeypatch.chdir(temp_dir)
+        argv = ["ownmail", "serve"]
+        if verbose:
+            argv.append("--verbose")
+        if refusal == "debug-host":
+            argv.extend(["--debug", "--host", "0.0.0.0"])
+        sanitizer = MagicMock(available=refusal != "sanitizer", error="Synthetic startup failure")
+        with (
+            patch.object(sys, "argv", argv),
+            patch("ownmail.cli.EmailArchive") as mock_archive,
+            patch("ownmail.sanitizer.HtmlSanitizer", return_value=sanitizer),
+            patch("ownmail.web.create_app") as mock_create,
+            patch("flask.Flask.run") as mock_run,
+            patch("threading.Timer") as mock_timer,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 1
+        mock_create.assert_not_called()
+        mock_archive.return_value.auto_expire_trash.assert_not_called()
+        mock_run.assert_not_called()
+        mock_timer.assert_not_called()
+        out = capsys.readouterr().out
+        expected_error = "Refusing to serve" if refusal == "sanitizer" else "remote code execution"
+        assert expected_error in out
+        assert "Running at" not in out
+
     def test_serve_passes_web_config_through(self, temp_dir, monkeypatch):
         """Values from config.yaml [web] should reach run_server."""
         from ownmail.cli import main
@@ -1714,6 +1748,49 @@ class TestCmdDownloadSources:
         assert "Total archived: 0 emails" in overall
         assert "resume" not in overall
 
+    @pytest.mark.parametrize("source_type", ["gmail_api", "imap"])
+    def test_duplicate_only_download_keeps_account_total(self, temp_dir, capsys, source_type):
+        """Successful duplicate reads do not increase the stored account total."""
+        import hashlib
+
+        from ownmail.cli import cmd_download
+
+        archive = self._archive(temp_dir)
+        config = self._gmail_config() if source_type == "gmail_api" else self._imap_config()
+        source = config["sources"][0]
+        raw = b"From: sender@example.com\nSubject: Duplicate\n\nSynthetic message.\n"
+        existing = temp_dir / "existing.eml"
+        existing.write_bytes(raw)
+        archive.db.mark_downloaded(
+            _eid("old", source["account"]),
+            "old",
+            existing.name,
+            content_hash=hashlib.sha256(raw).hexdigest(),
+            account=source["account"],
+        )
+        provider = MagicMock(account=source["account"], source_name=source["name"])
+        provider.name = "gmail" if source_type == "gmail_api" else "imap"
+        provider.get_new_message_ids.return_value = (["new-id"], None)
+        provider.get_current_sync_state.return_value = None
+        provider.download_message.return_value = (raw, [])
+        target = "ownmail.cli.GmailProvider" if source_type == "gmail_api" else "ownmail.providers.imap.ImapProvider"
+        with patch(target, return_value=provider), patch.object(archive, "auto_expire_trash", return_value=0):
+            assert cmd_download(archive, config) is True
+
+        provider.authenticate.assert_called_once()
+        provider.download_message.assert_called_once_with("new-id")
+        if source_type == "imap":
+            provider.close.assert_called_once()
+        assert archive.db.get_email_count(source["account"]) == 1
+        assert list(temp_dir.rglob("*.eml")) == [existing]
+        assert existing.read_bytes() == raw
+        per_source, overall = capsys.readouterr().out.split("Overall Download Summary")
+        assert "Previously downloaded: 1 emails" in per_source
+        assert "skipped (already downloaded)" in per_source
+        for summary in (per_source, overall):
+            assert "Downloaded: 1 emails" in summary
+            assert "Total archived: 1 emails" in summary
+
     @pytest.mark.parametrize("same_account", [False, True])
     def test_overall_summary_sums_downloads_and_counts_archive(self, temp_dir, capsys, same_account):
         """Run totals include both providers; archive counts include each row once."""
@@ -1756,6 +1833,9 @@ class TestCmdDownloadSources:
         assert "Downloaded: 567 emails" in per_source
         assert "Errors: 2" in per_source
         assert "Errors: 1000" in per_source
+        gmail_summary, imap_summary = per_source.split("Source: work")
+        assert f"Total archived: {3 if same_account else 2} emails" in gmail_summary
+        assert f"Total archived: {4 if same_account else 2} emails" in imap_summary
         assert "Downloaded: 1,801 emails" in overall
         assert "Errors: 1,002" in overall
         assert "Total archived: 5 emails" in overall

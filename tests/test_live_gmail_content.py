@@ -112,6 +112,8 @@ def test_content_batch_only_member_not_found_confirms_absence(status, batch_retr
     else:
         assert isinstance(messages["m1"], LiveLookupError)
         assert "private" not in str(messages["m1"])
+        assert isinstance(messages["m1"].__cause__, HttpError)
+        assert messages["m1"].__cause__.resp.status == status
     attempts = 3 if status in {429, 503} else 1
     assert transport.member_requests == {("raw", "m0"): 1, ("raw", "m1"): attempts, ("raw", "m2"): 1}
     assert batch_retry_sleep.call_args_list == ([call(1.0), call(2.0)] if attempts == 3 else [])
@@ -199,11 +201,16 @@ def test_missing_revision_keeps_content_readable_without_authorizing_reuse():
     assert single.read_live_message("a").content_revision is None
 
 
-@pytest.mark.parametrize("failure", ["transport", "missing"])
+@pytest.mark.parametrize("failure", [TimeoutError, ConnectionError, RuntimeError, HttpError, None])
 def test_failed_content_batch_preserves_other_batches_and_never_implies_absence(failure):
     transport = GmailTransport(101)
-    if failure == "transport":
+    if failure:
         transport.fail_batch = 2
+        transport.failure = (
+            HttpError(MagicMock(status=404, reason="Not found"), b"private transport details")
+            if failure is HttpError
+            else failure("private transport details")
+        )
     else:
         transport.omitted.add("m75")
     messages = provider_for(transport).read_live_messages(list(transport.messages))
@@ -211,15 +218,21 @@ def test_failed_content_batch_preserves_other_batches_and_never_implies_absence(
         f"m{index}" for index in range(50)
     ] + ["m100"]
     assert all(isinstance(messages[f"m{index}"], LiveLookupError) for index in range(50, 100))
+    if failure:
+        assert all(messages[f"m{index}"].__cause__ is transport.failure for index in range(50, 100))
+        assert all("private" not in str(messages[f"m{index}"]) for index in range(50, 100))
     assert transport.batch_sizes == [50, 50, 1]
 
 
-@pytest.mark.parametrize("failure", ["missing", "duplicate", "unexpected", "exception"])
+@pytest.mark.parametrize(
+    "failure", ["missing", "duplicate", "unexpected", "exception", TimeoutError, ConnectionError, RuntimeError]
+)
 @pytest.mark.parametrize("after_retry", [False, True])
 def test_content_callback_failures_preserve_unambiguous_results(failure, after_retry, batch_retry_sleep):
     transport = GmailTransport(3)
     provider = provider_for(transport)
     attempts = []
+    member_error = failure("private member details") if isinstance(failure, type) else None
 
     def new_batch(*, callback):
         requested = []
@@ -234,7 +247,10 @@ def test_content_callback_failures_preserve_unambiguous_results(failure, after_r
             for message_id in reversed(requested):
                 if failure == "missing" and message_id == "m1":
                     continue
-                callback(message_id, transport.messages[message_id], None)
+                if member_error and message_id == "m1":
+                    callback(message_id, None, member_error)
+                else:
+                    callback(message_id, transport.messages[message_id], None)
             if failure == "exception":
                 raise RuntimeError("private batch details")
             if failure == "duplicate":
@@ -251,21 +267,32 @@ def test_content_callback_failures_preserve_unambiguous_results(failure, after_r
     messages = provider.read_live_messages(list(transport.messages))
     assert isinstance(messages["m0"], LiveMessage)
     assert isinstance(messages["m2"], LiveMessage)
-    expected = LiveLookupError if failure in {"missing", "duplicate"} else LiveMessage
+    expected = LiveLookupError if member_error or failure in {"missing", "duplicate"} else LiveMessage
     assert isinstance(messages["m1"], expected)
+    if member_error:
+        assert messages["m1"].__cause__ is member_error
+        assert "private" not in str(messages["m1"])
     assert list(messages) == ["m0", "m1", "m2"]
     assert attempts == [["m0", "m1", "m2"]] + ([["m1"]] if after_retry else [])
     assert batch_retry_sleep.call_count == int(after_retry)
 
 
 @pytest.mark.parametrize("include_labels", [True, False])
-def test_failed_content_catalog_never_uses_old_label_names(include_labels):
+@pytest.mark.parametrize("failure", [TimeoutError, ConnectionError, RuntimeError, None])
+def test_failed_content_catalog_never_uses_old_label_names(include_labels, failure, monkeypatch):
     transport = GmailTransport(1)
     provider = provider_for(transport, include_labels=include_labels)
     assert provider.read_live_messages(["m0"])["m0"].raw
-    transport.catalog = {"labels": [{"id": "Label_1"}]}
+    if failure:
+        error = failure("private catalog details")
+        monkeypatch.setattr(transport, "request", MagicMock(side_effect=error))
+    else:
+        transport.catalog = {"labels": [{"id": "Label_1"}]}
     result = provider.read_live_messages(["m0"])
     assert isinstance(result["m0"], LiveLookupError)
+    if failure:
+        assert result["m0"].__cause__ is error
+        assert "private" not in str(result["m0"])
     assert transport.batch_sizes == [1]
 
 

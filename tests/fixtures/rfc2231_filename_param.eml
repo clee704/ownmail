@@ -1,0 +1,29 @@
+From: sender@example.com
+To: recipient@example.com
+Subject: Synthetic CJK RFC2231 attachments
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="synthetic-cjk"
+
+--synthetic-cjk
+Content-Type: text/plain; charset=us-ascii
+
+Three synthetic attachments with RFC2231 UTF-8 filenames.
+--synthetic-cjk
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=UTF-8''%ED%95%9C%EA%B8%80%20%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKS29yZWFuAAH/
+--synthetic-cjk
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E%20%E6%B7%BB%E4%BB%98.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKSmFwYW5lc2UAAv4=
+--synthetic-cjk
+Content-Type: application/pdf
+Content-Disposition: attachment; filename*=UTF-8''%E4%B8%AD%E6%96%87%20%E9%99%84%E4%BB%B6.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKQ2hpbmVzZQAD/Q==
+--synthetic-cjk--

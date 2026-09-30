@@ -174,8 +174,13 @@ def _message_batch(provider, message_ids, *, raw=False, allow_not_found=False):
                     request_id=message_id,
                 )
             batch.execute()
-        except Exception:
+        except Exception as error:
             failed = True
+            # A batch-level 404 cannot confirm any individual message's absence.
+            lookup_error = LiveLookupError("Gmail live lookup failed")
+            lookup_error.__cause__ = error
+            for message_id in pending:
+                current.setdefault(message_id, lookup_error)
         for message_id in pending:
             responses.pop(message_id, None)
         responses.update(current)
@@ -200,7 +205,9 @@ def read_messages(provider, message_ids: list[str]) -> dict[str, LiveMessage | N
         current_ids = valid_ids[offset : offset + LIVE_BATCH_SIZE]
         try:
             catalog = _catalog(provider)
-        except Exception:
+        except Exception as error:
+            for message_id in current_ids:
+                results[message_id].__cause__ = error
             continue
         responses, _ = _message_batch(provider, current_ids, raw=True)
         for message_id in current_ids:
@@ -209,11 +216,13 @@ def read_messages(provider, message_ids: list[str]) -> dict[str, LiveMessage | N
                 results[message_id] = None
                 continue
             try:
+                if isinstance(response, Exception):
+                    raise response
                 results[message_id] = _message(provider, response, message_id, catalog, raw=True)
             except LiveLookupError as error:
                 results[message_id] = error
-            except Exception:
-                pass
+            except Exception as error:
+                results[message_id].__cause__ = error
     return results
 
 

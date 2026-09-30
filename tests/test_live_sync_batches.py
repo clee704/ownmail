@@ -1,11 +1,13 @@
 """Batching and content reuse retain the live download lifecycle contracts."""
 
+import json
 from dataclasses import replace
 
 import pytest
 
 from ownmail import roles
 from ownmail.archive import EmailArchive
+from ownmail.download_progress import DownloadProgress
 from ownmail.live import LiveLookupError
 from tests.test_live_sync import MailServer, message, owned_rows, sync
 
@@ -127,6 +129,36 @@ def test_reconciliation_batches_confirmed_absence(archive):
     assert sync(archive, server)["active_complete"] is True
     assert sorted(len(batch) for batch in server.batches) == [2, 3, 3]
     assert archive.active_cache().list_entries() == []
+
+
+@pytest.mark.parametrize("state", ["deleted", "discarded", "active", "eligible"])
+def test_reconciliation_flushes_completed_work_before_next_batch(archive, tmp_path, monkeypatch, state):
+    server = BatchServer([message(str(index)) for index in range(4)])
+    sync(archive, server)
+    server.listed = []
+    server.messages = {
+        key: None if state == "deleted" else replace(value, state=state) for key, value in server.messages.items()
+    }
+    server.batches.clear()
+    monkeypatch.setattr("ownmail.live_sync.time.monotonic", lambda: 0.0)
+    path = tmp_path / "progress.json"
+    progress = DownloadProgress(path)
+    observations = []
+    read = server.read_live_messages
+
+    def reading(ids):
+        observations.append(json.loads(path.read_text()))
+        return read(ids)
+
+    monkeypatch.setattr(server, "read_live_messages", reading)
+    result = sync(archive, server, progress=progress)
+    assert len(observations) == 2
+    counter = {"active": "active_refreshed", "eligible": "downloaded"}.get(state, "skipped")
+    assert observations[1][counter] == 3
+    assert json.loads(path.read_text())[counter] == 4
+    assert result["error_count"] == 0
+    assert len(archive.active_cache().list_entries()) == (4 if state == "active" else 0)
+    assert len(owned_rows(archive)) == (4 if state == "eligible" else 0)
 
 
 @pytest.mark.parametrize("complete", [True, False])

@@ -207,6 +207,7 @@ def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
         # - ASCII printable (0x20-0x7E)
         # - Common whitespace (tab, newline, carriage return)
         # - Latin extended (0x80-0xFF) - accented chars
+        # - Cyrillic (U+0400-U+04FF), including Windows-1251 letters
         # - Zero-width characters (U+200B-U+200D, U+FEFF) - used in emails
         # - CJK characters (Chinese, Japanese, Korean)
         #   - CJK Unified Ideographs: U+4E00-U+9FFF
@@ -220,6 +221,7 @@ def _validate_decoded_text(text: str, min_readable_ratio: float = 0.7) -> bool:
             0x20 <= code <= 0x7E  # ASCII printable
             or code in (0x09, 0x0A, 0x0D)  # tab, newline, CR
             or 0x80 <= code <= 0xFF  # Latin extended
+            or 0x0400 <= code <= 0x04FF  # Cyrillic
             # Hidden preview padding must not force a different charset.
             or code in (0x2007, 0x034F)  # Figure space / combining grapheme joiner
             or 0x200B <= code <= 0x200D  # Zero-width space/non-joiner/joiner

@@ -204,6 +204,41 @@ def test_finished_run_distinguishes_zero_new_mail_from_missing_progress(shell_ap
     )
 
 
+def test_live_download_keeps_skipped_work_visible_through_completion(shell_app, download_browser):
+    app, _ = shell_app
+    run_download_browser(
+        app,
+        download_browser,
+        """
+        state = {...state, running: true, state: 'running', has_progress: true, phase: 'scanning',
+            source: 'Primary', scan_checked: 7, downloaded: 2, active_refreshed: 3, skipped: 1, errors: 0};
+        await refresh();
+        await waitStatus('Scanning live mail from Primary');
+        assert.equal(await counts.textContent(), '7 checked · 2 archived · 3 Active refreshed · 1 skipped · 0 failed');
+        state = {...state, phase: 'refreshing'};
+        await refresh();
+        await waitStatus('Refreshing live mail from Primary');
+        assert.equal(await counts.textContent(), '2 archived · 3 Active refreshed · 1 skipped · 0 failed');
+        state = {...state, skipped: 50};
+        await refresh();
+        await waitStatus('50 skipped');
+        assert.equal(await counts.textContent(), '2 archived · 3 Active refreshed · 50 skipped · 0 failed');
+        assert.equal(await page.locator('#ownmail-download-message').textContent(), 'Refreshing live mail from Primary…');
+        assert.ok(await start.isDisabled());
+        for (const [activeComplete, outcome, message] of [
+            [true, 'succeeded', 'Capture finished. Active mail refreshed.'],
+            [false, 'failed', 'Active refresh incomplete. Previously saved copies remain available.']
+        ]) {
+            state = {...state, running: false, state: outcome, phase: 'finished', active_complete: activeComplete};
+            await refresh();
+            await waitStatus(message);
+            assert.equal(await counts.textContent(), '2 archived · 3 Active refreshed · 50 skipped · 0 failed');
+            assert.ok(await start.isEnabled());
+        }
+        """,
+    )
+
+
 def test_failure_reason_and_source_are_plain_text_and_clear_on_next_run(shell_app, download_browser):
     app, _ = shell_app
     run_download_browser(
@@ -303,11 +338,12 @@ def test_download_controls_fit_phone_viewport(shell_app, download_browser):
         app,
         download_browser,
         """
-        state = {...state, running: true, state: 'running', phase: 'downloading', source: 'Personal archive',
-            has_progress: true, downloaded: 42, skipped: 3, errors: 1,
+        state = {...state, running: true, state: 'running', phase: 'refreshing', source: 'Personal archive',
+            has_progress: true, downloaded: 42, active_refreshed: 8, skipped: 3, errors: 1,
             failure_reason: 'One message could not be downloaded.'};
         await refresh();
-        await waitStatus('42 downloaded');
+        await waitStatus('42 archived');
+        assert.equal(await counts.textContent(), '42 archived · 8 Active refreshed · 3 skipped · 1 failed');
         const bounds = await page.evaluate(() => ({
             viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth,
             controls: Array.from(document.querySelectorAll('#ownmail-download-form button, #ownmail-download-form select'))

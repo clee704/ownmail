@@ -16,6 +16,7 @@
 const { JSDOM } = require("jsdom");
 const DOMPurify = require("dompurify");
 const postcss = require("postcss");
+const tokenizeCSS = require("postcss/lib/tokenize");
 
 // Create a single jsdom window and DOMPurify instance (reused across requests)
 const window = new JSDOM("").window;
@@ -105,6 +106,130 @@ function isTrustedFontUrl(url) {
 }
 
 /**
+ * Keep CSS strings and comments safe for an HTML style element without changing
+ * their CSS meaning. Do this before PostCSS's own HTML escaping sees the text.
+ */
+function prepareStyleText(css) {
+  const tokenizer = tokenizeCSS(new postcss.Input(css, { map: false }));
+  const tokens = [];
+  while (!tokenizer.endOfFile()) tokens.push(tokenizer.nextToken());
+
+  // Legacy HTML comment wrappers are CSS tokens, not quoted/commented content.
+  const last = tokens.filter((token) => token[0] !== "space").pop();
+  const wrapped = /^\s*<!--/.test(css) && last && last[0] === "word" && last[1] === "-->";
+  if (wrapped) last[1] = "";
+
+  const result = tokens.map((token) => {
+    if (token[0] === "string") {
+      return token[1].replace(/\\[\s\S]|</g, (text) =>
+        text === "<" || text === "\\<" ? "\\3c " : text
+      );
+    }
+    if (token[0] === "comment") return token[1].replace(/</g, "\\3c ");
+    return token[1];
+  }).join("");
+  return wrapped ? result.replace(/^(\s*)<!--/, "$1") : result;
+}
+
+// Only literal identifiers/strings are resolved here; escaped and dynamic roots
+// keep the existing fallback. Do not use jsdom.matches: its predicate semantics
+// differ from browsers for missing attributes, whitespace and case folding.
+const CSS_IDENTIFIER = String.raw`(?:--|-?[A-Za-z_\u0080-\uFFFF])[-\w\u0080-\uFFFF]*`;
+const BODY_NAME = new RegExp(`^${CSS_IDENTIFIER}`);
+const BODY_ATTRIBUTE = new RegExp(
+  String.raw`^[\t\n\f\r ]*(${CSS_IDENTIFIER})[\t\n\f\r ]*(?:([~|^$*]?=)[\t\n\f\r ]*(?:"([^"\\\n\r\f]*)"|'([^'\\\n\r\f]*)'|(${CSS_IDENTIFIER}))([\t\n\f\r ]*)([isIS])?[\t\n\f\r ]*)?$`
+);
+
+// HTML defines these attribute values as ASCII-insensitive by default:
+// https://html.spec.whatwg.org/multipage/semantics-other.html#case-sensitivity-of-selectors
+const HTML_INSENSITIVE_ATTRIBUTES = new Set([
+  "accept", "accept-charset", "align", "alink", "axis", "bgcolor", "charset",
+  "checked", "clear", "codetype", "color", "compact", "declare", "defer", "dir",
+  "direction", "disabled", "enctype", "face", "frame", "hreflang", "http-equiv",
+  "lang", "language", "link", "media", "method", "multiple", "nohref", "noresize",
+  "noshade", "nowrap", "readonly", "rel", "rev", "rules", "scope", "scrolling",
+  "selected", "shape", "target", "text", "type", "valign", "valuetype", "vlink",
+]);
+
+function asciiLower(value) {
+  return value.replace(/[A-Z]/g, (char) => char.toLowerCase());
+}
+
+function matchesBodyValue(actual, operator, expected, insensitive) {
+  if (actual === null) return false;
+  if (!operator) return true;
+  if (insensitive) {
+    actual = asciiLower(actual);
+    expected = asciiLower(expected);
+  }
+  switch (operator) {
+    case "=": return actual === expected;
+    case "~=": return expected !== "" && actual.split(/[\t\n\f\r ]+/).includes(expected);
+    case "|=": return actual === expected || actual.startsWith(expected + "-");
+    case "^=": return expected !== "" && actual.startsWith(expected);
+    case "$=": return expected !== "" && actual.endsWith(expected);
+    case "*=": return expected !== "" && actual.includes(expected);
+    default: return false;
+  }
+}
+
+/** Resolve a static body compound without moving sender attributes into the app. */
+function scopeQualifiedBodySelector(selector, body) {
+  if (!body || !/^body[.#\[]/i.test(selector)) return null;
+  const quirks = body.ownerDocument.compatMode === "BackCompat";
+  let end = 4;
+  while (end < selector.length) {
+    const marker = selector[end];
+    if (marker === "." || marker === "#") {
+      const name = selector.slice(end + 1).match(BODY_NAME);
+      if (!name) return null;
+      const attribute = marker === "." ? "class" : "id";
+      const operator = marker === "." ? "~=" : "=";
+      if (!matchesBodyValue(body.getAttribute(attribute), operator, name[0], quirks)) return null;
+      end += name[0].length + 1;
+    } else if (marker === "[") {
+      let quote = null;
+      let close = end + 1;
+      for (; close < selector.length; close++) {
+        const char = selector[close];
+        // Escaped roots are outside this deliberately bounded grammar.
+        if (char === "\\") return null;
+        if (quote) {
+          if (char === quote) quote = null;
+        } else if (char === '"' || char === "'") {
+          quote = char;
+        } else if (char === "]") {
+          break;
+        } else if (char === "[") {
+          return null;
+        }
+      }
+      if (close === selector.length) return null;
+      const match = selector.slice(end + 1, close).match(BODY_ATTRIBUTE);
+      if (!match) return null;
+      const [, name, operator, doubleQuoted, singleQuoted, identifier, space, modifier] = match;
+      if (identifier !== undefined && modifier && !space) return null;
+      const flag = modifier && asciiLower(modifier);
+      const insensitive = flag === "i" || (!flag && HTML_INSENSITIVE_ATTRIBUTES.has(asciiLower(name)));
+      const value = doubleQuoted ?? singleQuoted ?? identifier;
+      if (!matchesBodyValue(body.getAttribute(name), operator, value, insensitive)) return null;
+      end = close + 1;
+    } else {
+      break;
+    }
+  }
+  const suffix = selector.slice(end);
+  if (suffix && !/^[\t\n\f\r >]/.test(suffix)) return null;
+  const relationship = suffix.replace(/^(?:[\t\n\f\r ]|\/\*[\s\S]*?\*\/)*/, "");
+  // A sibling of the message container belongs to the app, not the message.
+  if (/^[+~]/.test(relationship)) return null;
+  const compound = selector.slice(0, end);
+  // The reader container is a DIV, so :not(body...) matches it while retaining
+  // the original specificity. Unlike :is(), :not() does not forgive invalid CSS.
+  return `#ownmail-email-content:not(${compound})${suffix}`;
+}
+
+/**
  * Scope and sanitize a CSS stylesheet using postcss AST.
  * - Removes @charset; allows @import only from trusted font providers
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
@@ -113,11 +238,11 @@ function isTrustedFontUrl(url) {
  * - Scopes all selectors under #ownmail-email-content
  * - Leaves @font-face, @keyframes unscoped
  */
-function scopeAndSanitizeCSS(css) {
+function scopeAndSanitizeCSS(css, body = null) {
   let root;
   try {
     // Ignore sourceMappingURL comments so message CSS cannot make postcss read local files.
-    root = postcss.parse(css, { map: false });
+    root = postcss.parse(prepareStyleText(css), { map: false });
   } catch (e) {
     return "/* CSS parse error */";
   }
@@ -181,6 +306,8 @@ function scopeAndSanitizeCSS(css) {
       if (!sel) return sel;
       // Already scoped
       if (sel.includes("#ownmail-email-content")) return sel;
+      const qualified = scopeQualifiedBodySelector(sel, body);
+      if (qualified) return qualified;
       // Replace standalone html/body with #ownmail-email-content
       if (/^(html|body)$/i.test(sel)) return "#ownmail-email-content";
       // Replace html/body prefix: "body .foo" → "#ownmail-email-content .foo"
@@ -217,10 +344,18 @@ function sanitizeInlineStyle(css) {
   return css;
 }
 
+// Head styles arrive before BODY attributes are sanitized. Keep their source
+// so later resolution does not reinterpret sender-authored already-scoped CSS.
+const pendingBodyStyles = new WeakMap();
+const sanitizedBodies = new WeakSet();
+
 // Hook into DOMPurify to sanitize and scope CSS, and filter <link> tags
 purify.addHook("uponSanitizeElement", (node, data) => {
   if (data.tagName === "style" && node.textContent) {
-    node.textContent = scopeAndSanitizeCSS(node.textContent);
+    const body = node.ownerDocument.body;
+    const context = sanitizedBodies.has(body) ? body : null;
+    if (!context) pendingBodyStyles.set(node, node.textContent);
+    node.textContent = scopeAndSanitizeCSS(node.textContent, context);
   }
 
   // Allow <link rel="stylesheet"> only from trusted font providers
@@ -245,6 +380,18 @@ purify.addHook("afterSanitizeAttributes", (node) => {
   if (node.hasAttribute && node.hasAttribute("style")) {
     const style = node.getAttribute("style");
     node.setAttribute("style", sanitizeInlineStyle(style));
+  }
+
+  if (node.tagName === "BODY") {
+    // Body predicates must see the final inline CSS, including removed unsafe
+    // values and added font fallbacks, just like styles encountered in the body.
+    sanitizedBodies.add(node);
+    for (const style of node.ownerDocument.querySelectorAll("style")) {
+      const original = pendingBodyStyles.get(style);
+      if (original === undefined) continue;
+      style.textContent = scopeAndSanitizeCSS(original, node);
+      pendingBodyStyles.delete(style);
+    }
   }
 
   // Force links and forms to open in new tab
@@ -364,55 +511,193 @@ function isColorDark(color) {
   return luminance < 0.4;
 }
 
-/**
- * Detect whether an email needs padding.
- *
- * Heuristic: if the first significant element(s) in the email set an explicit
- * background color (via style attribute or bgcolor), the email controls its own
- * layout and padding would create an ugly frame.  Otherwise, the email likely
- * assumes a white background and needs padding for readability.
- */
-function detectNeedsPadding(html) {
-  try {
-    const dom = new JSDOM(html);
-    const doc = dom.window.document;
-    const body = doc.body;
-    if (!body) return true;
-
-    // Check the first few root-level elements (skip whitespace text nodes)
-    const children = Array.from(body.children);
-    // Hidden preview text must not displace the visible layout in this sample.
-    const contentElements = children.filter(
-      (el) => el.tagName.toLowerCase() !== "style" && el.style.display.toLowerCase() !== "none"
-    );
-    if (contentElements.length === 0) return true;
-
-    // Check the first content element and its immediate child
-    for (const el of contentElements.slice(0, 2)) {
-      if (hasExplicitBackground(el)) return false;
-      // Also check immediate wrapper children (common pattern: <div><table bgcolor=...>)
-      const firstChild = el.children[0];
-      if (firstChild && hasExplicitBackground(firstChild)) return false;
-    }
-
-    return true;
-  } catch (e) {
-    return true; // Default to padding on error
+// Padding detection proves only simple, unconditional layout facts. It does
+// not simulate the CSS cascade (jsdom does not implement its specificity).
+function paddingSelector(selector) {
+  const parts = selector.trim().split(/([\t\n\f\r ]*>[\t\n\f\r ]*|[\t\n\f\r ]+)/);
+  const compound = new RegExp(`^(?:${CSS_IDENTIFIER}|\\*)?(?:[.#]${CSS_IDENTIFIER})*$`);
+  const qualifier = new RegExp(`([.#])(${CSS_IDENTIFIER})`, "g");
+  if (parts[0] !== "#ownmail-email-content" || parts.length % 2 !== 1) return null;
+  const selectors = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    if (!parts[i] || !compound.test(parts[i])) return null;
+    const tag = parts[i].match(BODY_NAME)?.[0];
+    const qualifiers = Array.from(parts[i].matchAll(qualifier));
+    selectors.push({ tag, qualifiers, child: i > 0 && parts[i - 1].includes(">") });
   }
+  const cache = new WeakMap();
+  function matches(element, index) {
+    if (!element) return false;
+    if (!cache.has(element)) cache.set(element, new Map());
+    const results = cache.get(element);
+    if (!results.has(index)) results.set(index, evaluate(element, index));
+    return results.get(index);
+  }
+  function evaluate(element, index) {
+    const { tag, qualifiers, child } = selectors[index];
+    if (tag && asciiLower(element.tagName) !== asciiLower(tag)) return false;
+    for (const [, marker, name] of qualifiers) {
+      if (!matchesBodyValue(element.getAttribute(marker === "." ? "class" : "id"),
+        marker === "." ? "~=" : "=", name, false)) return false;
+    }
+    if (!index) return true;
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      if (matches(parent, index - 1)) return true;
+      if (child) break;
+    }
+    return false;
+  }
+  return (element) => matches(element, selectors.length - 1);
 }
 
-/**
- * Check if an element has an explicit background color set.
- */
-function hasExplicitBackground(el) {
-  // Check bgcolor attribute
-  if (el.hasAttribute("bgcolor")) return true;
+function paddingStyles(doc, container) {
+  const elements = [container, ...container.querySelectorAll("*")];
+  const styles = new Map(elements.map((element) => [element, new Map()]));
+  const relevant = /^(?:background(?:-.*)?|(?:-webkit-)?(?:background-clip|mask(?:-.*)?)|display|visibility|content-visibility|opacity|position|float|(?:(?:min|max)-)?(?:width|height|inline-size|block-size)|font|font-size|line-height|overflow(?:-[xy])?|clip(?:-path)?|transform|filter|content|all|animation(?:-.*)?|transition(?:-.*)?)$/;
+  const probe = doc.createElement("div").style;
+  function remember(element, property, value) {
+    const properties = styles.get(element);
+    if (!properties.has(property)) properties.set(property, new Set());
+    properties.get(property).add(value);
+  }
+  function declarations(nodes, targets) {
+    for (const decl of nodes) {
+      if (decl.type === "comment") continue;
+      if (decl.type !== "decl") return false;
+      if (decl.prop.includes("\\")) return false;
+      const property = decl.prop.toLowerCase();
+      if (!relevant.test(property)) continue;
+      probe.cssText = "";
+      probe.setProperty(property, decl.value);
+      const value = asciiLower(probe.getPropertyValue(property));
+      if (!value || /\b(?:var|env)\s*\(|\b(?:inherit|initial|unset|revert|revert-layer|currentcolor)\b/i.test(value)) return false;
+      for (const element of targets) {
+        if (property === "background") {
+          remember(element, "background-color", asciiLower(probe.backgroundColor) || "transparent");
+          remember(element, "background-image", probe.backgroundImage || "none");
+          remember(element, "background-clip", probe.backgroundClip || "border-box");
+        } else if (property === "font") {
+          remember(element, "font-size", probe.fontSize);
+          remember(element, "line-height", probe.lineHeight || "normal");
+        } else {
+          remember(element, property, value);
+        }
+      }
+    }
+    return true;
+  }
+  for (const style of doc.querySelectorAll("style")) {
+    if ((style.getAttribute("type") || "text/css").trim().toLowerCase() !== "text/css") continue;
+    const css = postcss.parse(style.textContent, { map: false });
+    let uncertain = false;
+    css.walkRules((rule) => {
+      if (!rule.nodes.some((node) => node.type === "decl" &&
+        (relevant.test(node.prop.toLowerCase()) || node.prop.includes("\\")))) return;
+      if (rule.parent.type !== "root" || (style.getAttribute("media") || "all").toLowerCase() !== "all") {
+        uncertain = true;
+        return;
+      }
+      const selectors = rule.selectors.map(paddingSelector);
+      if (selectors.some((selector) => !selector)) { uncertain = true; return; }
+      const targets = elements.filter((element) => selectors.some((selector) => selector(element)));
+      if (targets.length && !declarations(rule.nodes, targets)) uncertain = true;
+    });
+    if (uncertain) return null;
+  }
+  for (const element of elements) {
+    if (/^(TABLE|TD|TH|TR|THEAD|TBODY|TFOOT)$/.test(element.tagName) && element.hasAttribute("bgcolor")) {
+      probe.cssText = "";
+      probe.backgroundColor = element.getAttribute("bgcolor");
+      if (!probe.backgroundColor) return null;
+      remember(element, "background-color", asciiLower(probe.backgroundColor));
+    }
+    const inline = element.getAttribute("style");
+    if (inline && !declarations(postcss.parse(inline, { map: false }).nodes, [element])) return null;
+  }
+  return new Map(Array.from(styles, ([element, properties]) => [element,
+    Object.fromEntries(Array.from(properties, ([name, values]) => [name, values.size === 1 ? [...values][0] : "?"]))]));
+}
 
-  // Check inline style for background or background-color
-  const style = el.getAttribute("style") || "";
-  if (/background(-color)?\s*:/i.test(style)) return true;
+/** Recognize a visible authored canvas without altering the sanitized message. */
+function detectNeedsPadding(html) {
+  let dom;
+  try {
+    // Match the standards-mode reader DIV, not the discarded sender BODY.
+    // No resources or scripts are loaded in this disposable document.
+    dom = new JSDOM("<!doctype html>" + html);
+    const doc = dom.window.document;
+    const container = doc.createElement("div");
+    container.id = "ownmail-email-content";
+    container.className = "ownmail-email-content-html";
+    if (doc.body.hasAttribute("style")) container.setAttribute("style", doc.body.getAttribute("style"));
+    container.append(...doc.body.childNodes);
+    doc.body.replaceChildren(container);
+    for (const attribute of Array.from(doc.body.attributes)) doc.body.removeAttribute(attribute.name);
+    const styles = paddingStyles(doc, container);
+    if (!styles) return true;
 
-  return false;
+    const copy = [];
+    const images = [];
+    const visible = new Set();
+    let uncertain = false;
+    function visit(element, inheritedVisibility = "visible") {
+      if (/^(STYLE|LINK|TEMPLATE|HR|BR)$/.test(element.tagName)) return;
+      const style = styles.get(element);
+      if (style.display === "none" || style.opacity === "0" || (element.hidden && !style.display)) return;
+      if (Object.values(style).includes("?") ||
+          (/^(DETAILS|DIALOG)$/.test(element.tagName) && !element.hasAttribute("open")) ||
+          (style.opacity && style.opacity !== "1") ||
+          (style["content-visibility"] && style["content-visibility"] !== "visible") ||
+          (style.position && !/^(static|relative)$/.test(style.position)) ||
+          (style.float && style.float !== "none") ||
+          Object.keys(style).some((name) => /^(all|animation|transition|clip|transform|filter|content$|mask|-webkit-)/.test(name)) ||
+          Object.entries(style).some(([name, value]) => /(?:width|height|size|line-height)$/.test(name) &&
+            (/^0(?:[a-z%]*)$/i.test(value) || value.includes("(")))) {
+        uncertain = true;
+        return;
+      }
+      const visibility = style.visibility || inheritedVisibility;
+      if (visibility === "visible") visible.add(element);
+      if (element.tagName === "IMG") {
+        if (visibility === "visible") images.push(element);
+        return;
+      }
+      for (const node of element.childNodes) {
+        if (node.nodeType === 3 && /\S/.test(node.textContent) && visibility === "visible") copy.push(node);
+        else if (node.nodeType === 1) visit(node, visibility);
+      }
+    }
+    visit(container);
+    if (uncertain || !copy.length) return true;
+    for (let element = copy[0].parentElement; element && container.contains(element); element = element.parentElement) {
+      if (!visible.has(element) || !/^(DIV|SECTION|ARTICLE|MAIN|TABLE|TD|TH)$/.test(element.tagName)) continue;
+      const style = styles.get(element);
+      if (style.display && !/^(block|table|table-cell)$/.test(style.display)) continue;
+      if (!copy.every((node) => element.contains(node))) continue;
+      // A caption cannot stand in for another image-bearing layout region.
+      // Direct trailing inline images retain the existing reader behavior.
+      if (images.some((image) => !element.contains(image) &&
+        (image.parentElement !== container ||
+          (styles.get(image).display && !/^(inline|inline-block)$/.test(styles.get(image).display)) ||
+          !(element.compareDocumentPosition(image) & 4)))) continue;
+      // A colored cell beside another cell is not proof of a full canvas.
+      let competingCell = false;
+      for (let parent = element; parent !== container; parent = parent.parentElement) {
+        if (/^(TD|TH)$/.test(parent.tagName) && parent.parentElement.children.length !== 1) competingCell = true;
+      }
+      if (competingCell) continue;
+      const color = style["background-color"];
+      if (!color || color === "transparent" || !/^(?:[a-z]+|rgb\([\d\s,.]+\))$/i.test(color)) continue;
+      if (style["background-image"] && style["background-image"] !== "none") continue;
+      if (style["background-clip"] && style["background-clip"] !== "border-box") continue;
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return true;
+  } finally {
+    if (dom) dom.window.close();
+  }
 }
 
 // Process input line by line
@@ -440,11 +725,8 @@ rl.on("line", (line) => {
   try {
     const clean = purify.sanitize(html, PURIFY_CONFIG);
 
-    // Detect if the email needs padding by checking whether root-level
-    // elements set an explicit background.  Emails with full-width tables
-    // and explicit backgrounds (marketing newsletters) look bad with extra
-    // padding, while simple HTML emails (GitHub notifications, plain
-    // formatted text) need breathing room.
+    // Preserve an identifiable sender canvas; keep readable reader padding
+    // for simple HTML and layouts whose background/visibility is uncertain.
     const needsPadding = detectNeedsPadding(clean);
 
     // Detect if the email supports dark mode natively (has dark-mode CSS

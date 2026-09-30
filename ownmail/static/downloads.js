@@ -70,7 +70,7 @@
         if (snapshot.has_progress && (typeof snapshot.active_complete === 'boolean' ||
                 snapshot.phase === 'scanning' || snapshot.phase === 'refreshing')) {
             totals = snapshot.downloaded + ' archived · ' + (snapshot.active_refreshed || 0) +
-                ' Active refreshed · ' + snapshot.errors + ' failed';
+                ' Active refreshed · ' + snapshot.skipped + ' skipped · ' + snapshot.errors + ' failed';
         }
         if (snapshot.has_progress && snapshot.running && snapshot.phase === 'scanning') {
             totals = (snapshot.scan_checked || 0) + ' checked · ' + totals;

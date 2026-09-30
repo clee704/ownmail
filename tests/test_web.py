@@ -2090,18 +2090,28 @@ class TestRunServer:
             patch("webbrowser.open"),
         )
 
-    @pytest.mark.parametrize("debug,reload", [(False, False), (False, True), (True, False), (True, True)])
-    def test_starts_and_stops_sanitizer(self, archive, sanitizer, debug, reload):
+    @pytest.mark.parametrize(
+        "host,debug,reload",
+        [
+            ("127.0.0.1", False, False),
+            ("127.0.0.1", False, True),
+            ("127.0.0.1", True, False),
+            ("127.0.0.1", True, True),
+            ("localhost", True, False),
+            ("::1", True, False),
+        ],
+    )
+    def test_starts_and_stops_sanitizer(self, archive, sanitizer, host, debug, reload):
         """The server should start the sanitizer and stop it on exit."""
         from ownmail.web import run_server
 
         san_patch, run_patch, _ = self._patches(sanitizer)
         with san_patch, run_patch as mock_run:
-            run_server(archive, debug=debug, reload=reload, open_browser=False)
+            assert run_server(archive, host=host, debug=debug, reload=reload, open_browser=False) is None
         sanitizer.start.assert_called_once_with()
         sanitizer.stop.assert_called_once()
         mock_run.assert_called_once()
-        assert mock_run.call_args.kwargs["host"] == "127.0.0.1"
+        assert mock_run.call_args.kwargs["host"] == host
         assert mock_run.call_args.kwargs["port"] == 8080
         assert mock_run.call_args.kwargs["debug"] is debug
         assert mock_run.call_args.kwargs["use_reloader"] is (debug or reload)
@@ -2126,10 +2136,19 @@ class TestRunServer:
         sanitizer.available = False
         sanitizer.error = "npm install failed.\nInstall them with:\n  npm --prefix /x install --omit=dev"
         san_patch, run_patch, _ = self._patches(sanitizer)
-        with san_patch, run_patch as mock_run, patch("ownmail.web.create_app") as mock_create:
-            run_server(archive, open_browser=False)
+        with (
+            san_patch,
+            run_patch as mock_run,
+            patch("ownmail.web.create_app") as mock_create,
+            patch("threading.Timer") as mock_timer,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            run_server(archive)
+        assert exc_info.value.code == 1
         mock_run.assert_not_called()
         mock_create.assert_not_called()
+        archive.auto_expire_trash.assert_not_called()
+        mock_timer.assert_not_called()
         out = capsys.readouterr().out
         assert "❌ HTML sanitizer failed to start.\n   npm install failed.\n   Install them with:\n" in out
         assert (
@@ -2140,17 +2159,35 @@ class TestRunServer:
         assert "web interface" not in out
         assert "Running at" not in out
 
-    def test_debug_with_public_host_is_refused(self, archive, sanitizer, capsys):
-        """--debug on a non-localhost host must not start the server."""
+    @pytest.mark.parametrize("host", ["0.0.0.0", "::", "mail.example.test"])
+    def test_debug_with_public_host_is_refused(self, archive, sanitizer, capsys, host):
+        """--debug on a non-localhost host must refuse before startup side effects."""
+        from unittest.mock import patch
+
         from ownmail.web import run_server
 
         san_patch, run_patch, _ = self._patches(sanitizer)
-        with san_patch, run_patch as mock_run:
-            run_server(archive, host="0.0.0.0", debug=True, open_browser=False)
+        with (
+            san_patch as mock_sanitizer,
+            run_patch as mock_run,
+            patch("ownmail.web.create_app") as mock_create,
+            patch("threading.Timer") as mock_timer,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            run_server(archive, host=host, debug=True)
+        assert exc_info.value.code == 1
+        mock_sanitizer.assert_not_called()
+        sanitizer.start.assert_not_called()
+        sanitizer.stop.assert_not_called()
+        mock_create.assert_not_called()
+        archive.auto_expire_trash.assert_not_called()
         mock_run.assert_not_called()
-        sanitizer.stop.assert_called_once()
+        mock_timer.assert_not_called()
         out = capsys.readouterr().out
+        assert "ERROR: --debug cannot be used with non-localhost --host" in out
         assert "remote code execution" in out
+        assert "web interface" not in out
+        assert "Running at" not in out
 
     def test_public_host_warns(self, archive, sanitizer, capsys):
         """Binding to a public host should print a network exposure warning."""

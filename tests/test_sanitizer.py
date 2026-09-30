@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from lxml import html as lxml_html
+
 import ownmail.sanitizer as sanitizer_module
 from ownmail.download_lock import ProcessLock
 from ownmail.sanitizer import HtmlSanitizer, _caret_floor, _satisfies
@@ -176,10 +178,96 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 f.write("not a source map")
             # Loading either target as a source map fails the CSS parse, which drops the rule.
             for target in (path, "data:application/json,not%20a%20source%20map"):
-                with self.subTest(target=target):
-                    html = f"<style>p {{ color: red; }} /*# sourceMappingURL={target} */</style><p>Hi</p>"
-                    result, *_ = self.sanitizer.sanitize(html)
-                    assert "#ownmail-email-content p" in result
+                for comment in ("", "/* reset <p> margins */"):
+                    with self.subTest(target=target, comment=comment):
+                        html = f"<style>{comment} p {{ color: red; }} /*# sourceMappingURL={target} */</style><p>Hi</p>"
+                        result, *_ = self.sanitizer.sanitize(html)
+                        assert "#ownmail-email-content p" in result
+
+    def test_preserves_html_comment_wrapped_css(self):
+        """Legacy outer comment markers do not invalidate the scoped stylesheet."""
+        for tag in ("style", "STYLE"):
+            for css in (
+                "<!--.wrapped { color: red; }-->",
+                " \n\t<!--\n.wrapped { color: red; }\n-->\r\n ",
+            ):
+                with self.subTest(tag=tag, css=css):
+                    result, *_ = self.sanitizer.sanitize(f'<{tag}>{css}</{tag}><p class="wrapped">Text</p>')
+                    tree = lxml_html.fromstring(result)
+                    styles = tree.xpath("//style")
+                    assert len(styles) == 1
+                    assert "#ownmail-email-content .wrapped" in styles[0].text_content()
+                    assert "color: red" in styles[0].text_content()
+                    assert tree.xpath("//p")[0].text_content() == "Text"
+
+    def test_preserves_markup_like_css_text(self):
+        """Markup in comments and strings must not erase rules or CSS operators."""
+        for css in (
+            "/* reset <p> margins */",
+            '/* <P> <!note> </p> */ .markup::before { content: "<b>text</b>"; }',
+            r".markup::before { content: '<em> \\ \' \3c b> <!-- literal -->'; }",
+            r'.markup::before { content: "\<em> \3c strong>"; }',
+        ):
+            with self.subTest(css=css):
+                result, *_ = self.sanitizer.sanitize(
+                    f"<style>{css} @media (400px < width <= 900px) {{ "
+                    '.markup > b { color: red; } }</style><p class="markup"><b>Text</b></p>'
+                )
+                tree = lxml_html.fromstring(result)
+                styles = tree.xpath("//style")
+                assert len(styles) == 1
+                stylesheet = styles[0].text_content()
+                assert "#ownmail-email-content .markup > b" in stylesheet
+                assert "400px < width <= 900px" in stylesheet
+                assert "color: red" in stylesheet
+                if "content:" in css:
+                    assert "#ownmail-email-content .markup::before" in stylesheet
+                    assert "content:" in stylesheet
+                assert tree.xpath("//p/b")[0].text_content() == "Text"
+
+    def test_markup_like_css_cannot_create_html_elements(self):
+        """Reparsing CSS strings and comments cannot create scripts or event handlers."""
+        for css in (
+            r""".probe::before { content: "\3c /StYlE><img id='css-injected' src='x' onerror='alert(1)'><ScRiPt>alert(2)</ScRiPt>"; }""",
+            "/* </StYlE-not-an-end-tag><img id='css-injected' src='x' onerror='alert(1)'> */",
+        ):
+            with self.subTest(css=css):
+                result, *_ = self.sanitizer.sanitize(
+                    f'<style>{css} .probe {{ color: red; }}</style><p class="probe">Text</p>'
+                )
+                tree = lxml_html.fromstring(result)
+                styles = tree.xpath("//style")
+                assert len(styles) == 1
+                assert "#ownmail-email-content .probe" in styles[0].text_content()
+                assert not tree.xpath("//script | //img | //*[@id='css-injected']")
+                assert not any(name.lower().startswith("on") for element in tree.iter() for name in element.attrib)
+                assert [element.tag for element in tree.xpath("//body/*")] == ["p"]
+                assert tree.xpath("//p")[0].text_content() == "Text"
+
+    def test_filters_declarations_in_markup_like_css(self):
+        """Preserving stylesheet text keeps the declaration and import filters active."""
+        css = """
+            @import url("https://evil.com/spy.css");
+            /* reset <p> margins */
+            .filtered {
+                color: red;
+                width: expression(alert(1));
+                background: url("javascript:alert(2)");
+                behavior: url("https://evil.com/behavior.htc");
+                -moz-binding: url("https://evil.com/binding.xml");
+            }
+        """
+        for stylesheet in (css, f"<!--{css}-->"):
+            with self.subTest(stylesheet=stylesheet):
+                result, *_ = self.sanitizer.sanitize(f'<style>{stylesheet}</style><p class="filtered">Text</p>')
+                tree = lxml_html.fromstring(result)
+                styles = tree.xpath("//style")
+                assert len(styles) == 1
+                sanitized_css = styles[0].text_content()
+                assert "#ownmail-email-content .filtered" in sanitized_css
+                assert "color: red" in sanitized_css
+                for forbidden in ("@import", "expression", "javascript:", "behavior", "-moz-binding"):
+                    assert forbidden not in sanitized_css
 
     def test_strips_css_javascript_url(self):
         """Test that javascript: url() references are removed."""
@@ -272,6 +360,319 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "#ownmail-email-content" in result
         assert "font-size" in result
 
+    def test_preserves_qualified_body_selectors_after_extraction(self):
+        """Matching static body predicates survive extraction without a new wrapper."""
+        from ownmail.web import _extract_body_content
+
+        cases = (
+            ("body.main", 'class="main"', " .probe"),
+            ("body[class=main]", 'class="main"', " > .probe"),
+            ("body#message", 'id="message"', " .probe::before"),
+            (
+                'body.main.news#message[class~="main"][data-kind = "message copy"]',
+                'class="main news" id="message" data-kind="message copy"',
+                " > .probe + section .probe",
+            ),
+            ("BODY.main", 'class="main"', " > .probe"),
+            ('body[class = "main news"]', 'class="main news"', " .probe"),
+            ("body[data-kind]", 'data-kind="message copy"', " .probe"),
+        )
+        for compound, attributes, suffix in cases:
+            for placement in ("head", "body"):
+                with self.subTest(compound=compound, placement=placement):
+                    style = f"<style>{compound}{suffix} {{ color: red; }}</style>"
+                    head_style = style if placement == "head" else ""
+                    body_style = style if placement == "body" else ""
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{head_style}</head><body {attributes}>{body_style}"
+                        '<p class="probe">Direct</p><section><p class="probe">Nested</p></section></body></html>'
+                    )
+                    content, container_attributes = _extract_body_content(result)
+                    tree = lxml_html.fragment_fromstring(content, create_parent="div")
+                    styles = tree.xpath("./style")
+                    assert len(styles) == 1
+                    # The DIV container cannot match BODY; :not() retains the
+                    # compound's specificity without forgiving invalid syntax.
+                    expected = f"#ownmail-email-content:not({compound}){suffix}"
+                    assert expected + " { color: red; }" in styles[0].text_content()
+                    assert container_attributes == {}
+                    assert [element.tag for element in tree] == ["style", "p", "section"]
+                    assert tree.xpath("./p")[0].text_content() == "Direct"
+                    assert tree.xpath("./section/p")[0].text_content() == "Nested"
+
+    def test_qualified_body_selectors_respect_nonmatching_attributes(self):
+        """A missing or different body predicate must not become unconditional."""
+        for compound in (
+            "body.other",
+            "body#other",
+            "body[class=main]",
+            'body.main#message[data-kind="other"]',
+            "body[data-missing]",
+        ):
+            for placement in ("head", "body"):
+                with self.subTest(compound=compound, placement=placement):
+                    style = f"<style>{compound} .probe {{ color: red; }}</style>"
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{style if placement == 'head' else ''}</head>"
+                        '<body class="main news" id="message" data-kind="message copy">'
+                        f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                    )
+                    stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                    assert stylesheet == f"#ownmail-email-content {compound} .probe {{ color: red; }}"
+
+    def test_qualified_body_selectors_use_sanitized_attributes(self):
+        """Removed clobbering IDs and event attributes cannot activate body rules."""
+        css = (
+            "body.main .probe { color: red; }"
+            "body#attributes .probe { color: blue; }"
+            "body[id=attributes] .probe { color: green; }"
+            "body[onload] .probe { color: yellow; }"
+        )
+        for placement in ("head", "body"):
+            with self.subTest(placement=placement):
+                style = f"<style>{css}</style>"
+                result, *_ = self.sanitizer.sanitize(
+                    f"<html><head>{style if placement == 'head' else ''}</head>"
+                    '<body class="main" id="attributes" onload="unsafe()">'
+                    f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                )
+                tree = lxml_html.fromstring(result)
+                body = tree.xpath("//body")[0]
+                assert body.get("id") is None
+                assert body.get("onload") is None
+                stylesheet = tree.xpath("//style")[0].text_content()
+                for compound in ("body#attributes", "body[id=attributes]", "body[onload]"):
+                    assert f"#ownmail-email-content {compound} .probe" in stylesheet
+                    assert f":not({compound})" not in stylesheet
+                assert "#ownmail-email-content:not(body.main) .probe { color: red; }" in stylesheet
+
+    def test_qualified_body_selectors_use_final_inline_style(self):
+        """Head/body styles see the same attribute after inline CSS cleanup."""
+        for inline, compound, matches in (
+            ("font-family: Roboto", 'body[style*="sans-serif"]', True),
+            ("width: expression(alert(1))", 'body[style*="expression"]', False),
+        ):
+            for placement in ("head", "body"):
+                with self.subTest(inline=inline, placement=placement):
+                    style = f"<style>{compound} .probe {{ color: red; }}</style>"
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{style if placement == 'head' else ''}</head>"
+                        f'<body style="{inline}">{style if placement == "body" else ""}'
+                        '<p class="probe">Text</p></body></html>'
+                    )
+                    tree = lxml_html.fromstring(result)
+                    final_style = tree.xpath("//body")[0].get("style")
+                    assert "expression" not in final_style
+                    if matches:
+                        assert "sans-serif" in final_style
+                    prefix = (
+                        f"#ownmail-email-content:not({compound})" if matches else f"#ownmail-email-content {compound}"
+                    )
+                    assert tree.xpath("//style")[0].text_content() == prefix + " .probe { color: red; }"
+
+    def test_qualified_body_selectors_keep_author_scoped_rules_unchanged(self):
+        """Deferred head styles must retain the provenance of already-scoped rules."""
+        scoped_rules = (
+            "#ownmail-email-content body.main .probe { color: blue; }"
+            "body.main #ownmail-email-content .probe { color: green; }"
+        )
+        for placement in ("head", "body"):
+            with self.subTest(placement=placement):
+                style = f"<style>body.main .probe {{ color: red; }}{scoped_rules}</style>"
+                result, *_ = self.sanitizer.sanitize(
+                    f"<html><head>{style if placement == 'head' else ''}</head><body class=main>"
+                    f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                )
+                stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                assert scoped_rules in stylesheet
+                assert "#ownmail-email-content:not(body.main) .probe { color: red; }" in stylesheet
+
+    def test_qualified_body_selectors_keep_unsupported_roots_unchanged(self):
+        """Dynamic, escaped and malformed body compounds retain the existing fallback."""
+        for selector in (
+            "body.main:hover .probe",
+            "body.main:has(.probe) .probe",
+            r"body.ma\69 n .probe",
+            r"b\6f dy.main .probe",
+            "body..main .probe",
+        ):
+            with self.subTest(selector=selector):
+                result, *_ = self.sanitizer.sanitize(
+                    f"<html><head><style>{selector} {{ color: red; }}</style></head>"
+                    '<body class="main"><p class="probe">Text</p></body></html>'
+                )
+                stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                assert stylesheet == f"#ownmail-email-content {selector} {{ color: red; }}"
+
+    def test_qualified_body_selectors_do_not_activate_root_siblings(self):
+        """Mapping a matching body must never make a selector reach app siblings."""
+        for selector in (
+            "body.main + .shell",
+            "body.main+.shell",
+            "body[class=main] ~ .shell",
+            "body#message~.shell",
+        ):
+            for placement in ("head", "body"):
+                with self.subTest(selector=selector, placement=placement):
+                    style = f"<style>{selector} {{ color: red; }}</style>"
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{style if placement == 'head' else ''}</head>"
+                        '<body class="main" id="message">'
+                        f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                    )
+                    stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                    assert stylesheet == f"#ownmail-email-content {selector} {{ color: red; }}"
+
+    def test_qualified_body_selectors_do_not_leak_between_requests(self):
+        """The long-lived worker must resolve each stylesheet against its own body."""
+        for attributes, matches in (
+            ('class="main" id="message"', True),
+            ("", False),
+            ('class="other" id="other"', False),
+            ('class="main" id="message"', True),
+        ):
+            with self.subTest(attributes=attributes):
+                result, *_ = self.sanitizer.sanitize(
+                    "<html><head><style>body.main#message .probe { color: red; }</style></head>"
+                    f'<body {attributes}><p class="probe">Text</p></body></html>'
+                )
+                stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                selector = (
+                    "#ownmail-email-content:not(body.main#message) .probe"
+                    if matches
+                    else "#ownmail-email-content body.main#message .probe"
+                )
+                assert stylesheet == selector + " { color: red; }"
+
+    def _assert_body_predicate(self, compound, attributes, matches, doctype="<!DOCTYPE html>"):
+        """Check a static predicate against actual sanitized head/body styles."""
+        from html import escape
+
+        body_attributes = "".join(f' {name}="{escape(value, quote=True)}"' for name, value in attributes.items())
+        for placement in ("head", "body"):
+            with self.subTest(compound=compound, attributes=attributes, doctype=doctype, placement=placement):
+                style = f"<style>{compound} .probe {{ color: red; }}</style>"
+                result, *_ = self.sanitizer.sanitize(
+                    f"{doctype}<html><head>{style if placement == 'head' else ''}</head>"
+                    f"<body{body_attributes}>{style if placement == 'body' else ''}"
+                    '<p class="probe">Text</p></body></html>'
+                )
+                tree = lxml_html.fromstring(result)
+                # HTML parsing normalizes carriage returns before predicates run.
+                assert dict(tree.xpath("//body")[0].attrib) == {
+                    name: value.replace("\r", "\n") for name, value in attributes.items()
+                }
+                selector = (
+                    f"#ownmail-email-content:not({compound})" if matches else f"#ownmail-email-content {compound}"
+                )
+                assert tree.xpath("//style")[0].text_content() == selector + " .probe { color: red; }"
+
+    def test_body_predicate_absent_attributes_do_not_match_null(self):
+        """An absent DOM attribute is not the CSS string or identifier null."""
+        for compound in (
+            "body.null",
+            "body#null",
+            "body[missing=null]",
+            "body[missing^=n]",
+            "body[missing*=u]",
+            "body[missing$=ll]",
+        ):
+            self._assert_body_predicate(compound, {}, False)
+        self._assert_body_predicate(
+            "body.null#null[data-present=null]", {"class": "null", "id": "null", "data-present": "null"}, True
+        )
+
+    def test_body_predicate_attribute_operators_and_empty_operands(self):
+        """Each operator needs its own match semantics, including empty needles."""
+        attributes = {"data-value": "en-us alpha", "data-empty": ""}
+        for predicate, matches in (
+            ("[data-value]", True),
+            ("[data-missing]", False),
+            ('[data-value="en-us alpha"]', True),
+            ("[data-value=en-us]", False),
+            ("[data-value~=alpha]", True),
+            ("[data-value~=lph]", False),
+            ('[data-value~="en-us alpha"]', False),
+            ("[data-value|=en]", True),
+            ("[data-value|=e]", False),
+            ("[data-value^=en-]", True),
+            ("[data-value^=us]", False),
+            ("[data-value$=alpha]", True),
+            ("[data-value$=en]", False),
+            ("[data-value*=us]", True),
+            ("[data-value*=missing]", False),
+            ('[data-empty=""]', True),
+            ('[data-value=""]', False),
+            ('[data-empty|=""]', True),
+            ('[data-value|=""]', False),
+        ):
+            self._assert_body_predicate("body" + predicate, attributes, matches)
+        for name in ("data-value", "data-empty"):
+            for operator in ("^=", "$=", "*=", "~="):
+                self._assert_body_predicate(f'body[{name}{operator}""]', attributes, False)
+
+    def test_body_predicate_tokens_use_ascii_whitespace(self):
+        """Class and word predicates split ASCII whitespace, but not NBSP."""
+        ascii_tokens = {"class": "first\tmain\nsecond\fthird\rfourth final"}
+        self._assert_body_predicate("body.first.main.second.third.fourth.final", ascii_tokens, True)
+        self._assert_body_predicate(
+            "body[class~=first][class~=main][class~=second][class~=third][class~=fourth][class~=final]",
+            ascii_tokens,
+            True,
+        )
+        for compound, matches in (
+            ("body.main", False),
+            ("body[class~=main]", False),
+            ("body.first\N{NO-BREAK SPACE}main", True),
+            ('body[class~="first\N{NO-BREAK SPACE}main"]', True),
+        ):
+            self._assert_body_predicate(compound, {"class": "first\N{NO-BREAK SPACE}main"}, matches)
+
+    def test_body_predicate_case_follows_source_mode_and_ascii_flags(self):
+        """Quirks mode affects class/ID selectors; attribute flags fold only ASCII."""
+        attributes = {"class": "MAIN Ä", "id": "MESSAGE", "data-case": "ABC Ä", "dir": "RTL"}
+        for compound, standards_match, quirks_match in (
+            ("body.main", False, True),
+            ("body#message", False, True),
+            ("body.ä", False, False),
+            ('body[class~="main"]', False, False),
+            ('body[data-case="abc Ä" i]', True, True),
+            ('body[data-case="abc ä" i]', False, False),
+            ('body[data-case="ABC Ä" s]', True, True),
+            ('body[data-case="abc Ä" s]', False, False),
+            ('body[data-case="ABC Ä"]', True, True),
+            ('body[data-case="abc Ä"]', False, False),
+            ("body[DIR=rtl]", True, True),
+            ("body[dir=rtl s]", False, False),
+            ("body[dir=RTL s]", True, True),
+            ("body[dir=rtl i]", True, True),
+        ):
+            self._assert_body_predicate(compound, attributes, standards_match)
+            self._assert_body_predicate(compound, attributes, quirks_match, doctype="")
+
+    def test_body_predicate_validates_unescaped_identifier_grammar(self):
+        """Invalid numeric identifiers cannot become valid through projection."""
+        attributes = {
+            "class": "123 - --main",
+            "id": "123",
+            "data-value": "123",
+            "data-other": "-1",
+            "data-dash": "--value",
+        }
+        for compound, matches in (
+            ("body.123", False),
+            ("body#123", False),
+            ("body.-", False),
+            ("body[data-value=123]", False),
+            ("body[data-other=-1]", False),
+            ('body[data-value="123"]', True),
+            ('body[data-other="-1"]', True),
+            ("body.--main", True),
+            ("body[data-dash=--value]", True),
+        ):
+            self._assert_body_predicate(compound, attributes, matches)
+        self._assert_body_predicate("body#--message", {"id": "--message"}, True)
+
     def test_scopes_css_in_media_query(self):
         """Test that selectors inside @media are also scoped."""
         html = '<style>@media (max-width: 600px) { .col { width: 100%; } }</style><div class="col">X</div>'
@@ -324,6 +725,203 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         html = '<div style="background-color: #ffffff;"><p>Light</p></div>'
         _, _, supports_dark = self.sanitizer.sanitize(html)
         assert supports_dark is False
+
+    def test_authored_canvases_need_no_reader_padding(self):
+        """The sender's main canvas supplies its own frame, including scoped CSS."""
+        copy = '<p id="copy">Newsletter copy</p>'
+        for name, stylesheet, body in (
+            (
+                "class-styled root",
+                ".canvas {background:#eef1f4;margin:0;padding:24px}",
+                f'<div class="canvas" id="panel">{copy}</div>',
+            ),
+            (
+                "deeply wrapped table",
+                "",
+                '<div><div><div><table id="panel" width="100%" bgcolor="#eef1f4"><tbody><tr>'
+                f'<td style="padding:24px">{copy}</td></tr></tbody></table></div></div></div>',
+            ),
+            (
+                "principal layout cell",
+                "",
+                '<table width="100%"><tbody><tr><td id="panel" bgcolor="#eef1f4" style="padding:24px">'
+                f"{copy}</td></tr></tbody></table>",
+            ),
+            (
+                "inline root control",
+                "",
+                f'<div id="panel" style="background:#eef1f4;padding:24px">{copy}</div>',
+            ),
+            (
+                "uppercase hidden preview before canvas",
+                "",
+                '<div style="display:NONE;background:#eef1f4">Preview</div>'
+                f'<div style="background:#eef1f4;visibility:VISIBLE">{copy}</div>',
+            ),
+        ):
+            with self.subTest(name=name):
+                result, needs_padding, _ = self.sanitizer.sanitize(f"<style>{stylesheet}</style>{body}")
+                tree = lxml_html.fromstring(result)
+                assert lxml_html.tostring(tree.xpath("//body")[0], encoding="unicode") == f"<body>{body}</body>"
+                if stylesheet:
+                    assert tree.xpath("//style")[0].text_content() == (
+                        "#ownmail-email-content .canvas {background:#eef1f4;margin:0;padding:24px}"
+                    )
+                assert needs_padding is False
+
+    def test_simple_copy_with_backgrounds_keeps_reader_padding(self):
+        """Decorations, hidden previews and uncertain backgrounds cannot supply a canvas."""
+        copy = '<p id="copy">Simple formatted message</p>'
+        for name, stylesheet, body in (
+            ("simple HTML control", "", copy),
+            ("hidden root control", "", '<div style="display:none;background:#eef1f4">Preview</div>' + copy),
+            (
+                "hidden class control",
+                ".preview {display:none;background:#eef1f4}",
+                '<div class="preview">Preview</div>' + copy,
+            ),
+            ("decorative badge", "", '<p><span style="background:#eef1f4">Badge</span></p>' + copy),
+            (
+                "nested hidden background",
+                "",
+                '<div><span style="display:none;background:#eef1f4">Preview</span></div>' + copy,
+            ),
+            (
+                "decorative class control",
+                ".badge {background:#eef1f4}",
+                '<p><span class="badge">Badge</span></p>' + copy,
+            ),
+            (
+                "conflicting class backgrounds",
+                ".canvas {background:#eef1f4} .canvas {background:transparent}",
+                f'<div class="canvas">{copy}</div>',
+            ),
+            (
+                "conditional class background",
+                "@media (min-width:600px) {.canvas {background:#eef1f4}}",
+                f'<div class="canvas">{copy}</div>',
+            ),
+            (
+                "escaped property is outside the static proof",
+                r".canvas {background:#eef1f4;back\67 round:transparent}",
+                f'<div class="canvas">{copy}</div>',
+            ),
+            ("bgcolor does not paint a div", "", f'<div bgcolor="#eef1f4">{copy}</div>'),
+            (
+                "text-clipped background is not a canvas",
+                "",
+                f'<div style="background:#eef1f4;background-clip:text">{copy}</div>',
+            ),
+            (
+                "prefixed text-clipped background is uncertain",
+                "",
+                f'<div style="background:#eef1f4;-webkit-background-clip:text;color:transparent">{copy}</div>',
+            ),
+            (
+                "masked background is uncertain",
+                "",
+                f'<div style="background:#eef1f4;mask-image:linear-gradient(transparent,transparent)">{copy}</div>',
+            ),
+            (
+                "zero-sized copy is uncertain",
+                "",
+                f'<div style="background:#eef1f4;font-size:0;line-height:0">{copy}</div>',
+            ),
+            (
+                "transparent modern color is not a canvas",
+                "",
+                f'<div style="background:color(srgb 1 1 1 / 0)">{copy}</div>',
+            ),
+            (
+                "zero em height is uncertain",
+                "",
+                f'<div style="background:#eef1f4;height:0em;overflow:hidden">{copy}</div>',
+            ),
+            ("hidden content", "", f'<div style="background:#eef1f4;content-visibility:hidden">{copy}</div>'),
+            ("closed details", "", f'<details><div style="background:#eef1f4">{copy}</div></details>'),
+            ("closed dialog", "", f'<dialog><div style="background:#eef1f4">{copy}</div></dialog>'),
+            (
+                "colored caption beside an image region",
+                "",
+                '<div><div><img src="data:image/png;base64," alt="Synthetic"></div>'
+                f'<div style="background:#eef1f4">{copy}</div></div>',
+            ),
+            (
+                "colored copy in a competing table cell",
+                "",
+                '<table><tbody><tr><td><img src="data:image/png;base64," alt="Synthetic"></td>'
+                f'<td><div style="background:#eef1f4">{copy}</div></td></tr></tbody></table>',
+            ),
+            (
+                "colored copy beside an empty spacer cell",
+                "",
+                '<table><tbody><tr><td width="300"></td>'
+                f'<td><div><div style="background:#eef1f4">{copy}</div></div></td></tr></tbody></table>',
+            ),
+            *(
+                (
+                    f"trailing image outside inline flow: {style}",
+                    "",
+                    f'<div style="background:#eef1f4">{copy}</div>'
+                    f'<img src="data:image/png;base64," style="{style}" alt="Synthetic">',
+                )
+                for style in ("display:block", "float:right", "position:absolute")
+            ),
+        ):
+            with self.subTest(name=name):
+                result, needs_padding, _ = self.sanitizer.sanitize(f"<style>{stylesheet}</style>{body}")
+                tree = lxml_html.fromstring(result)
+                assert lxml_html.tostring(tree.xpath("//body")[0], encoding="unicode") == f"<body>{body}</body>"
+                assert needs_padding is True
+
+    def test_padding_selector_repeated_ancestors_finish(self):
+        """An absent ancestor must not cause combinatorial matching retries."""
+        source = (
+            "<style>.missing "
+            + " ".join([".x"] * 15)
+            + "{background:#eee}</style>"
+            + '<div class="x">' * 30
+            + "Copy"
+            + "</div>" * 30
+        )
+        result = subprocess.run(
+            [shutil.which("node"), str(Path(sanitizer_module._SANITIZER_DIR) / "worker.js")],
+            input=json.dumps({"id": 1, "html": source}) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        response = json.loads(result.stdout.splitlines()[-1])
+        assert response["error"] is None
+        assert response["needsPadding"] is True
+        tree = lxml_html.fromstring(response["html"])
+        assert len(tree.xpath('//div[@class="x"]')) == 30
+        assert tree.xpath("//body")[0].text_content() == "Copy"
+
+    def test_inapplicable_styles_keep_reader_padding(self):
+        """Source BODY attributes and non-CSS text cannot paint the reader canvas."""
+        body = '<div class="canvas"><p>Copy</p></div>'
+        for name, body_attributes, style_attributes, selector, expected_selector in (
+            (
+                "source body class",
+                ' class="sender"',
+                "",
+                ".sender #ownmail-email-content .canvas",
+                ".sender #ownmail-email-content .canvas",
+            ),
+            ("non-CSS style", "", ' type="text/plain"', ".canvas", "#ownmail-email-content .canvas"),
+        ):
+            with self.subTest(name=name):
+                result, needs_padding, _ = self.sanitizer.sanitize(
+                    f"<html><head><style{style_attributes}>{selector} {{background:#eef1f4}}</style></head>"
+                    f"<body{body_attributes}>{body}</body></html>"
+                )
+                assert result == (
+                    f"<html><head><style{style_attributes}>{expected_selector} {{background:#eef1f4}}</style></head>"
+                    f"<body{body_attributes}>{body}</body></html>"
+                )
+                assert needs_padding is True
 
     def test_allows_google_fonts_import(self):
         """Test that @import from Google Fonts is preserved."""
