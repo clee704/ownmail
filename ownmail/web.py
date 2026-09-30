@@ -986,6 +986,130 @@ def _build_label_nav(label_counts: dict, role_counts: dict, system_labels: set, 
     return {"system": system, "user": user}
 
 
+def _message_body(msg) -> dict:
+    """Extract the reader's MIME body, CID images and attachment descriptions."""
+    # Extract body
+    body = ""
+    body_html = None
+    body_parts = []  # Collect text parts from top-level only
+    embedded_messages = []  # Collect embedded message/rfc822 for digests
+    attachments = [_attachment_entry(part) for part in _attachment_parts(msg)]
+    cid_images = {}  # Content-ID -> data URI mapping
+
+    if msg.is_multipart():
+        # Parts of embedded message/rfc822 parts (like digest entries),
+        # which shouldn't be concatenated into the main body
+        embedded_parts = set()
+
+        for part in msg.walk():
+            content_type = part.get_content_type()
+
+            # Handle embedded message/rfc822 parts (digest entries)
+            if content_type == "message/rfc822":
+                embedded_parts.update(part.walk())
+                # Extract embedded message for digest display
+                try:
+                    embedded = part.get_payload(0)
+                    if embedded:
+                        emb_from = decode_header(embedded.get("From", ""))
+                        emb_subject = decode_header(embedded.get("Subject", ""))
+                        emb_date = embedded.get("Date", "")
+                        emb_to = decode_header(embedded.get("To", ""))
+                        emb_reply_to = decode_header(embedded.get("Reply-To", ""))
+
+                        # Get body of embedded message
+                        emb_body = ""
+                        for sub in embedded.walk():
+                            if sub.get_content_type() == "text/plain" and not emb_body and not is_attachment(sub):
+                                payload = sub.get_payload(decode=True)
+                                if payload:
+                                    emb_body = _decode_text_body(payload, sub.get_content_charset())
+
+                        embedded_messages.append(
+                            {
+                                "from": emb_from,
+                                "subject": emb_subject,
+                                "date": emb_date,
+                                "to": emb_to,
+                                "reply_to": emb_reply_to,
+                                "body": emb_body,
+                            }
+                        )
+                except Exception:
+                    pass
+                continue
+
+            # Extract inline images with Content-ID (for cid: references)
+            content_id = part.get("Content-ID", "")
+            if content_id and content_type.startswith("image/"):
+                # Content-ID is often wrapped in angle brackets
+                cid = content_id.strip("<>")
+                payload = part.get_payload(decode=True)
+                if payload:
+                    data_uri = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
+                    cid_images[cid] = data_uri
+
+            # Skip content inside embedded messages (already extracted above)
+            if part in embedded_parts:
+                continue
+
+            # Named inline text remains part of the displayed message.
+            if part.get_content_disposition() == "attachment":
+                continue
+            if content_type == "text/plain":
+                payload = part.get_payload(decode=True)
+                if payload:
+                    # Collect text/plain parts from main message
+                    text = _decode_text_body(payload, part.get_content_charset())
+                    if text:
+                        body_parts.append(text)
+            elif content_type == "text/html" and not body_html:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    # Use helper that can extract charset from HTML meta tag
+                    body_html = _decode_html_body(payload, part.get_content_charset())
+
+        # Combine all text parts
+        if body_parts:
+            body = "\n\n".join(body_parts)
+
+        # Append embedded messages (for digest emails)
+        if embedded_messages:
+            for emb in embedded_messages:
+                separator = "\n" + "-" * 60 + "\n"
+                header_lines = []
+                if emb["from"]:
+                    header_lines.append(f"From: {emb['from']}")
+                if emb["subject"]:
+                    header_lines.append(f"Subject: {emb['subject']}")
+                if emb["date"]:
+                    header_lines.append(f"Date: {emb['date']}")
+                if emb["to"]:
+                    header_lines.append(f"To: {emb['to']}")
+                if emb["reply_to"]:
+                    header_lines.append(f"Reply-To: {emb['reply_to']}")
+                headers = "\n".join(header_lines)
+                body += separator + headers + "\n\n" + emb["body"]
+    else:
+        payload = msg.get_payload(decode=True)
+        if payload:
+            content_type = msg.get_content_type()
+            header_charset = msg.get_content_charset()
+            if content_type == "text/html":
+                # Use helper that can extract charset from HTML meta tag
+                body_html = _decode_html_body(payload, header_charset)
+            else:
+                # Use helper that can detect Korean charset
+                body = _decode_text_body(payload, header_charset)
+
+    # Prefer HTML over plain text for better formatting
+    # (we already block remote content for privacy)
+    if body_html:
+        body = ""
+
+    return {"body": body, "body_html": body_html, "attachments": attachments, "cid_images": cid_images}
+
+
 class _PassthroughSanitizer:
     """No-op sanitizer that returns HTML unchanged. Used in tests."""
 
@@ -1396,124 +1520,7 @@ def create_app(
         with open(filepath, "rb") as f:
             msg = email.message_from_binary_file(f, policy=email_policy)
 
-        # Extract body
-        body = ""
-        body_html = None
-        body_parts = []  # Collect text parts from top-level only
-        embedded_messages = []  # Collect embedded message/rfc822 for digests
-        attachments = [_attachment_entry(part) for part in _attachment_parts(msg)]
-        cid_images = {}  # Content-ID -> data URI mapping
-
-        if msg.is_multipart():
-            # Parts of embedded message/rfc822 parts (like digest entries),
-            # which shouldn't be concatenated into the main body
-            embedded_parts = set()
-
-            for part in msg.walk():
-                content_type = part.get_content_type()
-
-                # Handle embedded message/rfc822 parts (digest entries)
-                if content_type == "message/rfc822":
-                    embedded_parts.update(part.walk())
-                    # Extract embedded message for digest display
-                    try:
-                        embedded = part.get_payload(0)
-                        if embedded:
-                            emb_from = decode_header(embedded.get("From", ""))
-                            emb_subject = decode_header(embedded.get("Subject", ""))
-                            emb_date = embedded.get("Date", "")
-                            emb_to = decode_header(embedded.get("To", ""))
-                            emb_reply_to = decode_header(embedded.get("Reply-To", ""))
-
-                            # Get body of embedded message
-                            emb_body = ""
-                            for sub in embedded.walk():
-                                if sub.get_content_type() == "text/plain" and not emb_body and not is_attachment(sub):
-                                    payload = sub.get_payload(decode=True)
-                                    if payload:
-                                        emb_body = _decode_text_body(payload, sub.get_content_charset())
-
-                            embedded_messages.append(
-                                {
-                                    "from": emb_from,
-                                    "subject": emb_subject,
-                                    "date": emb_date,
-                                    "to": emb_to,
-                                    "reply_to": emb_reply_to,
-                                    "body": emb_body,
-                                }
-                            )
-                    except Exception:
-                        pass
-                    continue
-
-                # Extract inline images with Content-ID (for cid: references)
-                content_id = part.get("Content-ID", "")
-                if content_id and content_type.startswith("image/"):
-                    # Content-ID is often wrapped in angle brackets
-                    cid = content_id.strip("<>")
-                    payload = part.get_payload(decode=True)
-                    if payload:
-                        data_uri = f"data:{content_type};base64,{base64.b64encode(payload).decode('ascii')}"
-                        cid_images[cid] = data_uri
-
-                # Skip content inside embedded messages (already extracted above)
-                if part in embedded_parts:
-                    continue
-
-                # Named inline text remains part of the displayed message.
-                if part.get_content_disposition() == "attachment":
-                    continue
-                if content_type == "text/plain":
-                    payload = part.get_payload(decode=True)
-                    if payload:
-                        # Collect text/plain parts from main message
-                        text = _decode_text_body(payload, part.get_content_charset())
-                        if text:
-                            body_parts.append(text)
-                elif content_type == "text/html" and not body_html:
-                    payload = part.get_payload(decode=True)
-                    if payload:
-                        # Use helper that can extract charset from HTML meta tag
-                        body_html = _decode_html_body(payload, part.get_content_charset())
-
-            # Combine all text parts
-            if body_parts:
-                body = "\n\n".join(body_parts)
-
-            # Append embedded messages (for digest emails)
-            if embedded_messages:
-                for emb in embedded_messages:
-                    separator = "\n" + "-" * 60 + "\n"
-                    header_lines = []
-                    if emb["from"]:
-                        header_lines.append(f"From: {emb['from']}")
-                    if emb["subject"]:
-                        header_lines.append(f"Subject: {emb['subject']}")
-                    if emb["date"]:
-                        header_lines.append(f"Date: {emb['date']}")
-                    if emb["to"]:
-                        header_lines.append(f"To: {emb['to']}")
-                    if emb["reply_to"]:
-                        header_lines.append(f"Reply-To: {emb['reply_to']}")
-                    headers = "\n".join(header_lines)
-                    body += separator + headers + "\n\n" + emb["body"]
-        else:
-            payload = msg.get_payload(decode=True)
-            if payload:
-                content_type = msg.get_content_type()
-                header_charset = msg.get_content_charset()
-                if content_type == "text/html":
-                    # Use helper that can extract charset from HTML meta tag
-                    body_html = _decode_html_body(payload, header_charset)
-                else:
-                    # Use helper that can detect Korean charset
-                    body = _decode_text_body(payload, header_charset)
-
-        # Prefer HTML over plain text for better formatting
-        # (we already block remote content for privacy)
-        if body_html:
-            body = ""
+        email_content = _message_body(msg)
 
         if verbose:
             print(f"[verbose] Email parsing took {time.time() - start:.2f}s", flush=True)
@@ -1524,10 +1531,7 @@ def create_app(
             "recipients": recipients,
             "date": date,
             "labels": labels,
-            "body": body,
-            "body_html": body_html,
-            "attachments": attachments,
-            "cid_images": cid_images,
+            **email_content,
             "is_trashed": is_trashed,
         }
 
