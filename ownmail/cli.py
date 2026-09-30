@@ -783,6 +783,65 @@ def cmd_search(archive: EmailArchive, query: str, limit: int = 50) -> None:
         print()
 
 
+def _json_read_config(args) -> tuple[Path, dict]:
+    """Validate configuration for JSON readers without initializing local data."""
+    from ownmail.search_readonly import SearchUnavailable
+
+    try:
+        if args.config is not None and not args.config.is_file():
+            raise SearchUnavailable("Requested configuration file is unavailable")
+        config = load_config(args.config, SCRIPT_DIR)
+        errors = validate_config(config)
+        if errors:
+            raise SearchUnavailable("Invalid configuration: " + "; ".join(errors))
+    except SearchUnavailable:
+        raise
+    except Exception as error:
+        raise SearchUnavailable("Configuration could not be read") from error
+    return args.archive_root or get_archive_root(config, DEFAULT_ARCHIVE_DIR), config
+
+
+def cmd_read_json(args) -> int:
+    """Read one selected local message as JSON, with no initializer or provider."""
+    import sqlite3
+    from contextlib import redirect_stdout
+
+    from ownmail.read_json import MessageParseError, read_message_json, validate_body_limit
+    from ownmail.search_json import search_error_json
+    from ownmail.search_readonly import SearchUnavailable, open_search_archive
+
+    try:
+        body_limit = int(args.body_limit)
+        validate_body_limit(body_limit)
+    except (TypeError, ValueError) as error:
+        print(search_error_json("invalid_limit", str(error)))
+        return 1
+    if not args.message_id:
+        print(search_error_json("invalid_id", "Message ID must not be empty"))
+        return 1
+    try:
+        with redirect_stdout(sys.stderr):
+            archive_root, config = _json_read_config(args)
+            with open_search_archive(archive_root, config) as archive:
+                result = read_message_json(archive, args.message_id, body_limit=body_limit)
+    except LookupError as error:
+        result = search_error_json("not_found", str(error))
+    except MessageParseError as error:
+        result = search_error_json("parse_failed", str(error))
+    except (SearchUnavailable, OSError, ValueError, sqlite3.Error) as error:
+        result = search_error_json("unavailable", str(error))
+    except KeyboardInterrupt:
+        print(search_error_json("read_failed", "Read interrupted"))
+        return 130
+    except Exception as error:
+        result = search_error_json("read_failed", str(error))
+    else:
+        print(result)
+        return 0
+    print(result)
+    return 1
+
+
 def cmd_search_json(args) -> int:
     """Return one bounded JSON result/error document without opening writable data."""
     import sqlite3
@@ -803,18 +862,7 @@ def cmd_search_json(args) -> int:
         return 1
     try:
         with redirect_stdout(sys.stderr):
-            try:
-                if args.config is not None and not args.config.is_file():
-                    raise SearchUnavailable("Requested configuration file is unavailable")
-                config = load_config(args.config, SCRIPT_DIR)
-                errors = validate_config(config)
-                if errors:
-                    raise SearchUnavailable("Invalid configuration: " + "; ".join(errors))
-            except SearchUnavailable:
-                raise
-            except Exception as error:
-                raise SearchUnavailable("Configuration could not be read") from error
-            archive_root = args.archive_root or get_archive_root(config, DEFAULT_ARCHIVE_DIR)
+            archive_root, config = _json_read_config(args)
             with open_search_archive(archive_root, config) as archive:
                 rows = archive.search(args.query, limit=limit + 1, offset=offset)
                 result = search_results_json(rows, archive.active_infos(), limit=limit, offset=offset)
@@ -1076,6 +1124,17 @@ Examples:
     search_parser.add_argument("--offset", default=0, help="JSON result offset (nonnegative, default: 0)")
     _add_global_opts(search_parser)
 
+    read_parser = subparsers.add_parser(
+        "read",
+        help="Read a local message by search ID as bounded JSON",
+        description="Decode an archived or cached Active message without modifying local data or contacting servers.",
+    )
+    read_parser.add_argument("message_id", help="Exact ID returned by JSON search")
+    read_parser.add_argument(
+        "--body-limit", default=20000, help="Maximum body text characters (1–100000, default: 20000)"
+    )
+    _add_global_opts(read_parser)
+
     # export command
     export_parser = subparsers.add_parser(
         "export",
@@ -1287,6 +1346,12 @@ Examples:
     if not args.command:
         parser.print_help()
         sys.exit(1)
+
+    if args.command == "read":
+        status = cmd_read_json(args)
+        if status:
+            sys.exit(status)
+        return
 
     if args.command == "search":
         if args.json:

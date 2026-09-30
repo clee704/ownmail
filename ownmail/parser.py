@@ -641,15 +641,18 @@ class EmailParser:
             return " ".join(text.split())
 
     @staticmethod
-    def parse_file(filepath: Path = None, content: bytes = None) -> dict:
+    def parse_file(filepath: Path = None, content: bytes = None, *, for_reading: bool = False) -> dict:
         """Parse an .eml file and extract searchable content.
 
         Args:
             filepath: Path to .eml file (reads from disk)
             content: Raw email bytes (avoids disk read if already loaded)
+            for_reading: Exclude attachment contents, retain filename boundaries,
+                and propagate parse failures instead of returning indexing fallbacks.
 
         Returns:
-            Dictionary with keys: subject, sender, recipients, date_str, body, attachments
+            Decoded subject, sender, recipients, date_str and body. Indexing returns
+            a joined attachments string; reading returns an attachment_names list.
         """
         try:
             raw_content = None
@@ -663,6 +666,8 @@ class EmailParser:
             else:
                 raise ValueError("Must provide filepath or content")
         except Exception as e:
+            if for_reading:
+                raise
             # If even parsing fails, return minimal info
             return {
                 "subject": "",
@@ -700,6 +705,47 @@ class EmailParser:
 
         # Try to parse and normalize the date to avoid garbled weekday names
         date_str = EmailParser._normalize_date(date_str)
+
+        if for_reading:
+            plain, rich, names = [], [], []
+
+            def visit(part):
+                if is_attachment(part):
+                    filename = extract_attachment_filename(part)
+                    if filename:
+                        names.append(EmailParser._sanitize_header(filename))
+                    return
+                # Forwarded message attachments are not the selected body.
+                if part.get_content_type() == "message/rfc822":
+                    return
+                if part.is_multipart():
+                    for child in part.iter_parts():
+                        visit(child)
+                elif part.get_content_type() in ("text/plain", "text/html"):
+                    # Preserve valid declared Unicode (including emoji-only
+                    # bodies); indexing's readability heuristic is not a decoder.
+                    try:
+                        if codecs.lookup(part.get_content_charset() or "").name != "utf-8":
+                            raise LookupError
+                        text = part.get_content(errors="strict")
+                    except (LookupError, UnicodeError):
+                        text = EmailParser._safe_get_content(part)
+                    text = EmailParser._strip_embedded_mime_headers(text)
+                    if text.strip():
+                        if part.get_content_type() == "text/plain":
+                            plain.append(text)
+                        else:
+                            rich.append(EmailParser._strip_html(text))
+
+            visit(msg)
+            return {
+                "subject": subject,
+                "sender": sender,
+                "recipients": recipients_str,
+                "date_str": date_str,
+                "body": "\n".join(plain or rich),
+                "attachment_names": names,
+            }
 
         # Extract body text
         body_parts = []

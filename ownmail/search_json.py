@@ -30,6 +30,24 @@ def validate_search_pagination(limit: int, offset: int) -> None:
         raise ValueError(f"offset must be a nonnegative integer at most {MAX_OFFSET}")
 
 
+def message_status(message_id: str, info: dict | None) -> dict:
+    """Keep ownership and Active freshness identical in JSON search and reading."""
+    if info is None and message_id.startswith("active-"):
+        raise ValueError("Active status is unavailable for a cached result")
+    return {
+        "archived": bool(info["archived"]) if info is not None else True,
+        "active": {
+            "complete": info["complete"],
+            "checked_at": info.get("checked_at"),
+            "content_at": info.get("content_at"),
+            "reason": info.get("reason"),
+            "refresh_error": info.get("refresh_error"),
+        }
+        if info is not None
+        else None,
+    }
+
+
 def search_results_json(
     rows: list[tuple], active_infos: dict[str, dict], *, limit: int = DEFAULT_LIMIT, offset: int = 0
 ) -> str:
@@ -43,8 +61,6 @@ def search_results_json(
     results = []
     for message_id, _filename, subject, sender, date, snippet, attachments in rows[:limit]:
         info = active_infos.get(message_id)
-        if info is None and message_id.startswith("active-"):
-            raise ValueError("Active status is unavailable for a cached search result")
         snippet = snippet or ""
         if len(snippet) > MAX_SNIPPET_LENGTH:
             snippet = snippet[: MAX_SNIPPET_LENGTH - 1] + "…"
@@ -56,16 +72,7 @@ def search_results_json(
                 "date": date,
                 "snippet": snippet,
                 "has_attachments": bool(attachments),
-                "archived": bool(info["archived"]) if info is not None else True,
-                "active": {
-                    "complete": info["complete"],
-                    "checked_at": info.get("checked_at"),
-                    "content_at": info.get("content_at"),
-                    "reason": info.get("reason"),
-                    "refresh_error": info.get("refresh_error"),
-                }
-                if info is not None
-                else None,
+                **message_status(message_id, info),
             }
         )
     has_more = len(rows) > limit
@@ -86,7 +93,7 @@ def search_results_json(
 def search_error_json(code: str, message: str) -> str:
     """Serialize a defined command error without writing to either stream.
 
-    Codes distinguish invalid_query, invalid_pagination, unavailable prerequisites
-    and search_failed; the command maps these errors to nonzero exit status.
+    Search and reading supply their documented codes; both commands map errors
+    to nonzero exit status.
     """
     return json.dumps({"error": {"code": code, "message": message}}, ensure_ascii=False)
