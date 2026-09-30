@@ -1,11 +1,11 @@
 ---
 id: TASK-8
 title: Verify CJK attachment filename encoding (RFC 5987)
-status: In Progress
+status: Done
 assignee:
   - '@codex-ic2'
 created_date: '2026-07-24 20:29'
-updated_date: '2026-09-30 13:34'
+updated_date: '2026-09-30 13:42'
 labels: []
 milestone: m-3
 dependencies: []
@@ -42,5 +42,13 @@ Verification task, not a production bug: nine private synthetic observations on 
 Owned scope is the new synthetic RFC2231 fixture, the existing TestWebAttachmentRfc2231 family and this ledger. No production code, real attachments/mail/config/credentials, sanitizer lifecycle, host/security policy or dependencies change. TASK-121 lifecycle ownership and TASK-123 consolidation remain separate. Acceptance is verified for all three requested languages before closing; the mandatory full pre-push gate remains required even for this tests-only task.
 
 Current behavior confirmed for all three requested languages. The committed synthetic MIME fixture uses RFC2231 UTF-8 extended filename parameters for Korean, Japanese and Chinese names and three distinct base64-encoded binary payloads. The existing RFC2231 web regression now checks actual EmailParser filename extraction plus actual attachment downloads: exact names, one UTF-8 filename* parameter in an ASCII response header, strict UTF-8 round trip and unchanged payload bytes. Its original message-page assertion is retained. No production code changed.
-Focused verification: 31 parser/attachment tests passed. Runtime-only mutation checks prove the strengthened test rejects lost parser filenames, lost download filenames, missing extended filename parameters, incorrect header charset and corrupted payloads; the original smoke test incorrectly passed all five mutations. Both tests pass against the unchanged product. Ruff check, format --check and deptry pass. Author self-review and independent Astra Ultra read-only support review found no correctness or scope issues. Full required pre-push/browser/coverage validation remains pending before closure.
+Focused verification: 31 parser/attachment tests passed. Runtime-only mutation checks prove the strengthened test rejects lost parser filenames, lost download filenames, missing extended filename parameters, incorrect header charset and corrupted payloads; the original smoke test incorrectly passed all five mutations. Both tests pass against the unchanged product. Ruff check, format --check and deptry pass. Author self-review and independent Astra Ultra read-only support review found no correctness or scope issues. The implementation checkpoint remained In Progress until the mandatory full gate completed.
+
+Final validation on e408af3fb6e89ce304228b28443c1f3095bfb015: pre-commit run -a --hook-stage pre-push exited 0, with 4084 passed, one existing expected failure and no skipped tests; coverage 96.66% exceeds the unchanged 95% branch-inclusive gate. All 13 required headless Chromium launch/close probes passed without timeout; the browser interval was released on actual exit and no task-owned browser/test processes remained. The complete gate and final mutation checks used fixture/test bytes identical to the committed checkpoint. Closure changes only this ledger. Production files remain byte-identical to the review base; no production fix was needed. No integration or publication performed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified existing Korean, Japanese and Chinese attachment filename behavior and added a durable regression fixture/test. Actual parser output, explicit attachment downloads, UTF-8 filename* round trips and distinct binary payloads are checked. Five runtime mutations demonstrate the added assertions detect failures the old smoke test missed. Focused checks, static checks, author/support reviews, full browser/coverage gate and normal hooks passed. Production code is unchanged.
+<!-- SECTION:FINAL_SUMMARY:END -->
