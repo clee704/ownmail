@@ -733,12 +733,17 @@ def cmd_cleanup(archive_root: Path, config: dict, source_name: str, *, apply: bo
     return not result["errors"] and not result["interrupted"]
 
 
-def cmd_export(archive: EmailArchive, output: Path, query: str = "") -> bool:
-    """Export matching owned messages to a new mbox file."""
-    from ownmail.export import export_mbox
-
+def cmd_export(archive: EmailArchive, output: Path, query: str = "", export_format: str = "mbox") -> bool:
+    """Export matching owned messages to a new mbox file or PDF directory."""
     try:
-        exported, skipped = export_mbox(archive, output, query)
+        if export_format == "pdf":
+            from ownmail.pdf_export import export_pdf
+
+            exported, skipped = export_pdf(archive, output, query)
+        else:
+            from ownmail.export import export_mbox
+
+            exported, skipped = export_mbox(archive, output, query)
     except (OSError, ValueError) as error:
         print(f"Export failed: {error}")
         return False
@@ -1026,16 +1031,20 @@ Examples:
     # export command
     export_parser = subparsers.add_parser(
         "export",
-        help="Export archived messages to a new mbox file",
+        help="Export archived messages as mbox or PDF",
         description=(
             "Export owned archive messages using existing search syntax and its Trash/date exclusions. "
-            "Active-only cached messages are excluded. Original headers and attachments are preserved; "
-            "no label headers are added. Existing output files are never overwritten. PDF is not supported."
+            "Active-only cached messages are excluded. Mbox preserves original headers and attachments. "
+            "PDF creates one document per message in a new directory, with an attachment inventory. "
+            "PDF requires an available optional Playwright/Chromium renderer; no tooling is installed automatically. "
+            "Existing output files, directories and symlinks are never overwritten."
         ),
     )
-    export_parser.add_argument("--format", choices=["mbox"], default="mbox", help="Export format (default: mbox)")
     export_parser.add_argument(
-        "--output", type=Path, required=True, help="New output file; its parent directory must exist"
+        "--format", choices=["mbox", "pdf"], default="mbox", help="Export format (default: mbox)"
+    )
+    export_parser.add_argument(
+        "--output", type=Path, required=True, help="New mbox file or PDF directory; its parent directory must exist"
     )
     export_parser.add_argument(
         "--query",
@@ -1304,7 +1313,7 @@ Examples:
             if args.command == "search":
                 cmd_search(archive, args.query, limit=args.limit)
             elif args.command == "export":
-                if not cmd_export(archive, args.output, args.query):
+                if not cmd_export(archive, args.output, args.query, export_format=args.format):
                     sys.exit(1)
             elif args.command == "stats":
                 cmd_stats(archive, config, args.source)

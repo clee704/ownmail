@@ -202,6 +202,7 @@ Export owned archive messages to a new mbox file that other mail clients can imp
 ownmail export --format mbox --output backup.mbox
 ownmail export --output receipts.mbox --query 'from:billing@example.com after:2024-01-01'
 ownmail export --output filed.mbox --query='-is:active'
+ownmail export --format pdf --output receipt-pdfs --query 'from:billing@example.com'
 ```
 
 Export uses the existing search syntax without a result-count limit. As in ordinary
@@ -211,15 +212,27 @@ cached messages are not exported. Ownership filters such as `is:active` can sele
 archived copies with verified existing Active membership, but only the archived
 bytes and labels are used. Export never downloads mail.
 
-Original headers, MIME bodies and attachments are retained, with standard mbox
-envelope lines and `From ` escaping. Sidecar labels are not added as headers.
-The output directory must exist, and existing files or symlinks are refused.
-Unreadable message files are skipped and reported; the resulting mbox contains the
-readable matches, and the command exits unsuccessfully to flag the partial export.
-Handled write errors or Ctrl-C remove the new incomplete output so the same command
-can be rerun. The output can be visible while being copied; abrupt process termination
-can leave a partial file. Source mail is never changed. PDF export is tracked separately in
-[TASK-129](backlog/tasks/task-129%20-%20PDF-export-for-archived-messages.md).
+The default mbox format retains original headers, MIME bodies and attachments,
+with standard mbox envelope lines and `From ` escaping. Sidecar labels are not
+added as headers.
+
+PDF exports create a new directory containing `000001.pdf`, `000002.pdf`, and so
+on, in date-ascending message order. Each document prints the subject, sender,
+recipients, date, plain-text or sanitized HTML body, and an attachment inventory.
+Attachment payloads are not embedded in the PDF; safe inline CID images remain visible. Remote content
+and local-file loads are blocked. An empty selection creates an empty directory.
+
+PDF is optional and requires available Node.js, the already-declared Playwright
+package, and Chromium. These are checked only when PDF is selected. If unavailable,
+the command fails clearly before creating output. Ownmail never installs or
+downloads renderer tooling, and mbox export does not require it.
+
+The output parent directory must exist. Existing files, directories and symlinks
+are refused. Unreadable message files are skipped and reported; the output contains
+the readable matches, and the command exits unsuccessfully to flag the partial
+export. Handled renderer/write errors or Ctrl-C remove the new incomplete export
+so the same command can be rerun. Output can be visible while being published;
+abrupt process termination can leave partial output. Source mail is never changed.
 
 ## Commands
 
@@ -231,7 +244,7 @@ can leave a partial file. Source mail is never changed. PDF export is tracked se
 | `authorize-cleanup --source NAME` | Grant separate Gmail cleanup access through explicit browser consent |
 | `serve` | Open the web interface |
 | `search "query"` | Search from the terminal |
-| `export --output FILE` | Export matching archived messages as mbox |
+| `export --output PATH` | Export matching archived messages as mbox or PDF |
 | `import <path>` | Import external `.eml` files |
 | `scan` | Index `.eml` files already in the archive |
 | `stats` | Show archive statistics |

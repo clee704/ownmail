@@ -386,10 +386,10 @@ def test_module_command_exports_from_explicit_synthetic_config(archive, store, t
     assert [str(message["Subject"]) for message in read_mbox(output)] == ["standalone"]
 
 
-def test_pdf_is_explicitly_unsupported(archive, run_cli, tmp_path, capsys):
-    output = tmp_path / "out.pdf"
+def test_unknown_export_format_is_explicitly_unsupported(archive, run_cli, tmp_path, capsys):
+    output = tmp_path / "out.html"
     with pytest.raises(SystemExit) as error:
-        run_cli(archive, output, "--format", "pdf")
+        run_cli(archive, output, "--format", "html")
     assert error.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
     assert not output.exists()
