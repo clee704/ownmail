@@ -1965,14 +1965,17 @@ def create_app(
                 # Write back
                 save_web_config(config_data, config_path)
 
-                # Update in-memory set
-                app.config["trusted_senders"].add(sender_email)
-
                 if verbose:
                     print(f"[verbose] Added trusted sender: {sender_email}", flush=True)
+            # Also restore process state when the preference was already saved.
+            app.config["trusted_senders"].add(sender_email)
         except Exception as e:
             if verbose:
                 print(f"[verbose] Error updating config: {e}", flush=True)
+            return {
+                "status": "error",
+                "message": "Could not save trusted-sender preference. Check the configuration file and permissions, then retry.",
+            }, 500
 
         # Return JSON for AJAX, redirect for form submit
         if request.headers.get("Content-Type") == "application/x-www-form-urlencoded" and not redirect_to:
@@ -1990,7 +1993,7 @@ def create_app(
         if not sender_email:
             return {"status": "error", "message": "No email provided"}
 
-        # Remove from in-memory set
+        # Revoke trust immediately, even if saving fails.
         app.config["trusted_senders"].discard(sender_email)
 
         config_path = app.config.get("config_path")
@@ -2015,6 +2018,11 @@ def create_app(
             except Exception as e:
                 if verbose:
                     print(f"[verbose] Error updating config: {e}", flush=True)
+                return {
+                    "status": "error",
+                    "message": "Sender is untrusted for this server session, but the change was not saved. "
+                    "Check the configuration file and permissions, then retry.",
+                }, 500
 
         return {"status": "ok"}
 

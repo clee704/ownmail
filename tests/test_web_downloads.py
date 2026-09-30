@@ -294,7 +294,11 @@ def test_partial_config_write_never_replaces_readable_config(configured_app, end
             response = client.post(
                 endpoint, data={"email": "old@example.com" if endpoint == "/untrust-sender" else "new@example.com"}
             )
-            assert response.status_code in (200, 302)
+            if endpoint in ("/trust-sender", "/untrust-sender"):
+                assert response.status_code == 500
+                assert response.get_json()["status"] == "error"
+            else:
+                assert response.status_code in (200, 302)
     save.assert_called_once()
     assert config.read_bytes() == before
     assert not list(config.parent.glob(".ownmail-config-*"))

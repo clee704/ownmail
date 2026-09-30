@@ -1854,14 +1854,22 @@ class TestTrustedSenderPersistence:
         assert load_yaml(config)["web"]["trusted_senders"] == ["new@example.com"]
 
     def test_trust_sender_is_idempotent(self, archive, tmp_path):
-        """Trusting an already-trusted sender should not duplicate the entry."""
+        """Persisted trust also restores process state without rewriting the config."""
+        from unittest.mock import patch
+
         from ownmail.yaml_util import load_yaml
 
         config = tmp_path / "config.yaml"
         config.write_text("web:\n  trusted_senders:\n    - a@example.com\n")
+        before = config.read_bytes()
         app = create_app(archive, config_path=str(config))
-        with app.test_client() as client:
-            client.post("/trust-sender", data={"email": "a@example.com", "redirect": "/search"})
+        with patch("ownmail.web.save_web_config") as save, app.test_client() as client:
+            for _ in range(2):
+                response = client.post("/trust-sender", data={"email": "a@example.com", "redirect": "/search"})
+                assert response.status_code == 302
+                assert app.config["trusted_senders"] == {"a@example.com"}
+        save.assert_not_called()
+        assert config.read_bytes() == before
         assert load_yaml(config)["web"]["trusted_senders"] == ["a@example.com"]
 
     def test_trust_sender_empty_email_redirects(self, archive):
@@ -1885,20 +1893,46 @@ class TestTrustedSenderPersistence:
             assert response.location == "/"
         assert "a@example.com" in app.config["trusted_senders"]
 
-    def test_trust_sender_config_error_is_survivable(self, archive, tmp_path):
-        """A config write failure should not break the redirect."""
+    @pytest.mark.parametrize("operation", ["load_yaml", "save_yaml", "os.replace"])
+    @pytest.mark.parametrize("redirect_to", ["/", "/search"])
+    def test_trust_sender_config_error_reports_failure_and_allows_retry(
+        self, archive, tmp_path, operation, redirect_to
+    ):
+        """Failed saves report an error without granting trust or changing config."""
         from unittest.mock import patch
 
+        from ownmail.yaml_util import load_yaml
+
         config = tmp_path / "config.yaml"
-        config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config), verbose=True)
-        with patch("ownmail.yaml_util.load_yaml", side_effect=OSError("boom")):
-            with app.test_client() as client:
-                response = client.post("/trust-sender", data={"email": "a@example.com", "redirect": "/search"})
-        assert response.status_code == 302
+        config.write_text("# Preserve unrelated settings\nweb:\n  page_size: 37\n  trusted_senders: [b@example.com]\n")
+        before = config.read_bytes()
+        app = create_app(archive, config_path=str(config), trusted_senders=["b@example.com"], verbose=True)
+        target = "ownmail.web_downloads.os.replace" if operation == "os.replace" else f"ownmail.yaml_util.{operation}"
+        with app.test_client() as client:
+            with patch(target, side_effect=OSError("synthetic private detail")):
+                response = client.post("/trust-sender", data={"email": "a@example.com", "redirect": redirect_to})
+            assert response.status_code == 500
+            assert response.location is None
+            error = response.get_json()
+            assert error["status"] == "error"
+            assert "configuration" in error["message"].lower()
+            assert "retry" in error["message"].lower()
+            assert "synthetic private detail" not in response.get_data(as_text=True)
+            assert str(config) not in response.get_data(as_text=True)
+            assert app.config["trusted_senders"] == {"b@example.com"}
+            assert config.read_bytes() == before
+            assert not list(tmp_path.glob(".ownmail-config-*"))
+
+            retry = client.post("/trust-sender", data={"email": "a@example.com", "redirect": redirect_to})
+            assert retry.status_code == (200 if redirect_to == "/" else 302)
+        assert app.config["trusted_senders"] == {"a@example.com", "b@example.com"}
+        assert load_yaml(config)["web"] == {"page_size": 37, "trusted_senders": ["b@example.com", "a@example.com"]}
+        assert config.read_text().startswith("# Preserve unrelated settings\n")
 
     def test_untrust_sender_writes_config(self, archive, tmp_path):
         """Untrusting a sender should remove it from config.yaml."""
+        from unittest.mock import patch
+
         from ownmail.yaml_util import load_yaml
 
         config = tmp_path / "config.yaml"
@@ -1907,6 +1941,10 @@ class TestTrustedSenderPersistence:
         with app.test_client() as client:
             response = client.post("/untrust-sender", data={"email": "A@Example.com"})
             assert response.get_json() == {"status": "ok"}
+            with patch("ownmail.web.save_web_config") as save:
+                repeated = client.post("/untrust-sender", data={"email": "A@Example.com"})
+            assert repeated.get_json() == {"status": "ok"}
+            save.assert_not_called()
         assert "a@example.com" not in app.config["trusted_senders"]
         assert load_yaml(config)["web"]["trusted_senders"] == ["b@example.com"]
 
@@ -1917,17 +1955,54 @@ class TestTrustedSenderPersistence:
             response = client.post("/untrust-sender", data={"email": ""})
             assert response.get_json()["status"] == "error"
 
-    def test_untrust_sender_config_error_is_survivable(self, archive, tmp_path):
-        """A config read failure should still report ok."""
+    @pytest.mark.parametrize("operation", ["load_yaml", "save_yaml", "os.replace"])
+    @pytest.mark.parametrize("next_action", ["/untrust-sender", "/trust-sender"])
+    def test_untrust_sender_config_error_preserves_revocation_and_retry(
+        self, archive, tmp_path, operation, next_action
+    ):
+        """Untrust takes effect before a failed save; retry or re-trust remains safe."""
         from unittest.mock import patch
 
+        from ownmail.yaml_util import load_yaml
+
         config = tmp_path / "config.yaml"
-        config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config), verbose=True)
-        with patch("ownmail.yaml_util.load_yaml", side_effect=OSError("boom")):
-            with app.test_client() as client:
+        config.write_text(
+            "# Preserve unrelated settings\nweb:\n  page_size: 37\n  trusted_senders: [a@example.com, b@example.com]\n"
+        )
+        before = config.read_bytes()
+        app = create_app(
+            archive, config_path=str(config), trusted_senders=["a@example.com", "b@example.com"], verbose=True
+        )
+        observed_trust = []
+
+        def fail_config(*args, **kwargs):
+            observed_trust.append(set(app.config["trusted_senders"]))
+            raise OSError("synthetic private detail")
+
+        target = "ownmail.web_downloads.os.replace" if operation == "os.replace" else f"ownmail.yaml_util.{operation}"
+        with app.test_client() as client:
+            with patch(target, side_effect=fail_config):
                 response = client.post("/untrust-sender", data={"email": "a@example.com"})
-        assert response.get_json() == {"status": "ok"}
+            assert observed_trust == [{"b@example.com"}]
+            assert response.status_code == 500
+            error = response.get_json()
+            assert error["status"] == "error"
+            assert "session" in error["message"].lower()
+            assert "not saved" in error["message"].lower()
+            assert "retry" in error["message"].lower()
+            assert "synthetic private detail" not in response.get_data(as_text=True)
+            assert str(config) not in response.get_data(as_text=True)
+            assert app.config["trusted_senders"] == {"b@example.com"}
+            assert config.read_bytes() == before
+            assert not list(tmp_path.glob(".ownmail-config-*"))
+
+            retry = client.post(next_action, data={"email": "a@example.com"})
+            assert retry.status_code == 200
+            assert retry.get_json() == {"status": "ok"}
+        expected = ["b@example.com"] if next_action == "/untrust-sender" else ["a@example.com", "b@example.com"]
+        assert app.config["trusted_senders"] == set(expected)
+        assert load_yaml(config)["web"] == {"page_size": 37, "trusted_senders": expected}
+        assert config.read_text().startswith("# Preserve unrelated settings\n")
 
 
 class TestViewTrash:
