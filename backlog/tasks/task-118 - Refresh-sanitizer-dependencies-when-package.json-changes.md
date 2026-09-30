@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-09-29 06:39'
-updated_date: '2026-09-30 04:25'
+updated_date: '2026-09-30 04:32'
 labels:
   - web
 dependencies: []
@@ -29,6 +29,12 @@ The same path has two smaller problems. When the sanitizer fails to start, ownma
 - [ ] #3 Startup guidance for a failed sanitizer install works for pipx and source installs, and the full pre-push gate passes
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Verify direct installed package metadata against the full current stable caret ranges using stdlib, including upper bounds and prerelease exclusion. Satisfying installs bypass npm entirely. Missing or stale packages refresh with --omit=dev; verify the resulting versions before worker startup. Missing npm, offline failure, timeout or unsuccessful refresh leave sanitizer unavailable and serving refused. Limit edits to sanitizer setup, owned run_server guidance/tests and this ledger; manager integrates README proposal. Run focused tests and mutation checks, then coordinated required browser/full coverage/pre-push gates and full-base author review.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -36,4 +42,6 @@ Owner: Ownmail IC1. Reserved for TASK-118. Review base: 654e88c2836e1426732b46b8
 Intended scope: ownmail/sanitizer/__init__.py, especially HtmlSanitizer._ensure_deps and startup failure reporting; ownmail/web.py run_server sanitizer-startup guidance only; tests/test_sanitizer.py dependency/startup cases and tests/test_web.py TestRunServer; this task file. Existing dependency declarations are inputs; no new runtime dependency or changed sanitizer security boundary is included.
 Ownmail IC2 owns body charset recovery in ownmail/parser.py and the web decoding functions and their tests. Both tasks touch ownmail/web.py and tests/test_web.py in separate function/test families. Preserve the other task's scope and fixtures. Implementation uses separate worktrees; integration is serialized in TASK-118 then TASK-40 order. Shared imports or helpers, overlapping test changes and unresolved security behavior must be reported before expanding scope. The integration checkout, README files and execution-order document are reserved for the manager. No real archive or server operation is included.
 Next action: Ownmail IC1 creates its isolated worktree from the common claim base, verifies the current dependency-refresh premise and existing alternatives, and records its bounded implementation plan before substantive work.
+
+Premise verified: existing node_modules currently bypasses all dependency checks. Runtime declarations remain unchanged. Review base for this isolated implementation is common claim base c44eb0f620d79e9be10ff8449969408adac6341b.
 <!-- SECTION:NOTES:END -->
