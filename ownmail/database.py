@@ -55,6 +55,10 @@ class ArchiveDatabase:
 
         self._init_db()
 
+    def _connect(self):
+        """Open a query connection; existing-data views supply a pinned read handle."""
+        return sqlite3.connect(self.db_path)
+
     @staticmethod
     def make_email_id(account: str, provider_id: str) -> str:
         """Generate a stable email_id from account and provider_id.
@@ -608,7 +612,7 @@ class ArchiveDatabase:
         Returns:
             (sql, params), or None when no label in this archive has the role
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             role_map = self._label_role_map(conn)
         everywhere = sorted(
             label for label, (r, non_gmail_only) in role_map.items() if r == role and not non_gmail_only
@@ -1036,7 +1040,7 @@ class ArchiveDatabase:
         import time
 
         _t0 = time.time()
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             _t1 = time.time()
             # Parse query using the new query parser
             parsed = parse_query(query, tz=tz)
