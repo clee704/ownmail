@@ -33,6 +33,7 @@ const dom = new JSDOM(PAGE, { url: 'http://localhost/search?q=project&page=2', r
 const { window } = dom;
 const { document } = window;
 const source = SOURCE;
+const localScripts = LOCAL_SCRIPTS;
 const feedback = document.getElementById('ownmail-action-feedback');
 const checkbox = document.querySelector('.ownmail-email-checkbox input');
 const button = document.querySelector('[data-message-action]');
@@ -69,6 +70,7 @@ ASSERTIONS
 });
 """
     script = script.replace("PAGE", json.dumps(page)).replace("SOURCE", json.dumps(ACTION_SCRIPT.read_text()))
+    script = script.replace("LOCAL_SCRIPTS", json.dumps(test_ui_shell.local_script_sources()))
     result = subprocess.run(
         ["node", "-e", script.replace("ASSERTIONS", assertions)],
         cwd=browser_dir,
@@ -292,17 +294,34 @@ def test_existing_action_requests_and_confirmations(
             start_idx=0,
             trash_count=1,
             subject="Synthetic",
+            email_id="message",
+            is_trashed=call.startswith(("restoreEmail", "deleteForever(")),
             sender_email="sender@example.com",
             has_remote_content=True,
             images_blocked=True,
             body_text="Synthetic message.",
         )
+    if template == "email.html":
+        action = {
+            "trashEmail": "trash",
+            "restoreEmail": "restore",
+            "deleteForever": "delete-forever",
+            "trustSender": "trust",
+            "untrustSender": "untrust",
+        }[call.split("(")[0]]
+        call = f"document.querySelector('[data-reader-action=\"{action}\"]').click()"
     run_action_script(
         shell_browser,
         """
 window.matchMedia = () => ({matches: false, addEventListener() {}});
 window.scrollTo = () => {};
-for (const script of document.querySelectorAll('script:not([src])')) window.eval(script.textContent);
+for (const script of document.querySelectorAll('script')) {
+    if (script.src) {
+        if (script.src.endsWith('/message-actions.js')) continue; // Already loaded above.
+        assert(Object.hasOwn(localScripts, script.src), 'Only checked-in app scripts may load');
+        window.eval(localScripts[script.src]);
+    } else if (!script.type || script.type === 'text/javascript') window.eval(script.textContent);
+}
 if (checkbox) checkbox.checked = true;
 let captured;
 let confirmations = [];

@@ -147,11 +147,36 @@ def shell_browser():
     return Path(__file__).parents[1] / "ownmail" / "sanitizer"
 
 
+# Resolve only the app's checked-in static JS; CSS and unrelated resources stay
+# unavailable. JSDOM executes these external scripts in parser order.
+LOCAL_SCRIPT_LOADER = """
+const localScripts = __LOCAL_SCRIPTS__;
+class LocalScripts extends ResourceLoader {
+    fetch(url) {
+        return Object.hasOwn(localScripts, url) ? Promise.resolve(Buffer.from(localScripts[url])) : null;
+    }
+}
+"""
+
+
+def local_script_sources():
+    static = Path(__file__).parents[1] / "ownmail" / "static"
+    return {"http://localhost/static/" + path.name: path.read_text() for path in static.glob("*.js")}
+
+
+def with_local_scripts(script):
+    return script.replace("__SCRIPT_LOADER__", LOCAL_SCRIPT_LOADER).replace(
+        "__LOCAL_SCRIPTS__", json.dumps(local_script_sources())
+    )
+
+
 def run_shell_browser(app, browser_dir, assertions, path="/help", theme=None):
     page = app.test_client().get(path).data.decode()
     script = """
 const assert = require('node:assert/strict');
-const { JSDOM, VirtualConsole } = require('jsdom');
+const { JSDOM, ResourceLoader, VirtualConsole } = require('jsdom');
+__SCRIPT_LOADER__
+(async () => {
 const mediaQueries = new Map();
 const scriptErrors = [];
 const virtualConsole = new VirtualConsole();
@@ -159,6 +184,7 @@ virtualConsole.on('jsdomError', error => scriptErrors.push(error.message));
 const dom = new JSDOM(__PAGE__, {
     url: __URL__,
     runScripts: 'dangerously',
+    resources: new LocalScripts(),
     virtualConsole,
     beforeParse(window) {
         window.localStorage.setItem('ownmail-sidebar', 'collapsed');
@@ -179,6 +205,7 @@ const dom = new JSDOM(__PAGE__, {
         };
     }
 });
+await new Promise(resolve => dom.window.addEventListener('load', resolve));
 const { window } = dom;
 const { document } = window;
 const byId = id => document.getElementById(id);
@@ -187,9 +214,15 @@ const key = (target, name, shift = false) => target.dispatchEvent(
 );
 """
     script = script.replace("__PAGE__", json.dumps(page)).replace("__URL__", json.dumps("http://localhost" + path))
-    script = script.replace("__THEME__", json.dumps(theme))
+    script = with_local_scripts(script.replace("__THEME__", json.dumps(theme)))
     result = subprocess.run(
-        ["node", "-e", script + assertions + "\nassert.deepEqual(scriptErrors, []);\ndom.window.close();\n"],
+        [
+            "node",
+            "-e",
+            script
+            + assertions
+            + "\nassert.deepEqual(scriptErrors, []);\ndom.window.close();\n})().catch(error => { console.error(error); process.exitCode = 1; });",
+        ],
         cwd=browser_dir,
         capture_output=True,
         text=True,

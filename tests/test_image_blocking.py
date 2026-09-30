@@ -200,10 +200,15 @@ def test_blocked_message_sends_csp_and_offers_to_load_content(message_app, marku
     app = message_app(markup, block_images=True)
     response, page = open_message(app, "?return_to=%2Fsearch%3Fq%3Dsale")
     assert response.headers["Content-Security-Policy"] == IMAGE_BLOCKING_CSP
+    assert "'unsafe-inline'" not in IMAGE_BLOCKING_CSP.split("script-src ")[1].split(";")[0]
     assert page.xpath("//*[@id='ownmail-email-content']//img/@src") == images
     load = "/email/message?images=load&return_to=/search?q%3Dsale"
     assert page.xpath("//*[@id='load-images-btn']/@data-images-url") == [load]
     assert page.xpath("//*[@id='menu-load-images']/@data-images-url") == [load]
+    actions = page.get_element_by_id("ownmail-reader-actions")
+    assert actions.get("data-sender") == "sender@example.com"
+    assert actions.get("data-email-id") == "message"
+    assert actions.get("data-reload-url") == "/email/message?return_to=/search?q%3Dsale"
     assert page.xpath("//*[@id='menu-block-images']") == []
     assert page.xpath("//*[@id='ownmail-image-banner']//*[contains(@class, 'ownmail-trust-btn')]")
 
@@ -216,9 +221,9 @@ def test_blocked_message_sends_csp_and_offers_to_load_content(message_app, marku
         ({"block_images": True}, "?images=load"),
     ],
 )
-def test_loaded_images_send_no_csp_and_offer_to_block_them(message_app, options, query):
+def test_loaded_images_restrict_scripts_and_offer_to_block_them(message_app, options, query):
     response, page = open_message(message_app(REMOTE_IMAGE, **options), query)
-    assert "Content-Security-Policy" not in response.headers
+    assert response.headers["Content-Security-Policy"] == "script-src 'self'"
     assert page.xpath("//*[@id='ownmail-email-content']//img/@src") == ["https://t.test/x.png"]
     assert page.xpath("//*[@id='ownmail-image-banner']") == []
     assert page.xpath("//*[@id='menu-block-images']/@data-images-url") == ["/email/message?images=block"]
@@ -228,6 +233,7 @@ def test_loaded_images_send_no_csp_and_offer_to_block_them(message_app, options,
 def test_block_images_overrides_the_default(message_app, options):
     response, page = open_message(message_app(REMOTE_IMAGE, **options), "?images=block")
     assert response.headers["Content-Security-Policy"] == IMAGE_BLOCKING_CSP
+    assert "'unsafe-inline'" not in IMAGE_BLOCKING_CSP.split("script-src ")[1].split(";")[0]
     assert page.xpath("//*[@id='ownmail-image-banner']")
     trusted = "trusted_senders" in options
     assert bool(page.xpath("//*[contains(@class, 'ownmail-trust-btn')]")) is not trusted
@@ -237,6 +243,7 @@ def test_blocking_does_not_depend_on_detecting_images(message_app):
     app = message_app("<p>No remote images</p>", block_images=True)
     response, page = open_message(app, "?images=other")
     assert response.headers["Content-Security-Policy"] == IMAGE_BLOCKING_CSP
+    assert "'unsafe-inline'" not in IMAGE_BLOCKING_CSP.split("script-src ")[1].split(";")[0]
     assert page.xpath("//*[@id='ownmail-image-banner'] | //*[@data-images-url]") == []
 
 
@@ -244,7 +251,7 @@ def test_block_images_setting_applies_to_the_next_message(message_app):
     app = message_app(REMOTE_IMAGE, block_images=True)
     assert "Content-Security-Policy" in open_message(app)[0].headers
     app.config["block_images"] = False
-    assert "Content-Security-Policy" not in open_message(app)[0].headers
+    assert open_message(app)[0].headers["Content-Security-Policy"] == "script-src 'self'"
 
 
 # Every remote source the sanitizer keeps, each fetched from its own path. The
@@ -346,7 +353,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         };
         const imageWidths = () => page.locator('#ownmail-email-content img').evaluateAll(
             images => images.map(image => image.naturalWidth));
-        await page.goto(input.base + input.path);
+        const response = await page.goto(input.base + input.path);
         await settle();
         __ASSERTIONS__
         assert.deepEqual(errors, []);
@@ -379,8 +386,7 @@ def browser_message_app(tmp_path, spacing_sanitizer):
 @pytest.mark.parametrize("wrapper", ["p", "body", "html", "head"])
 def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_message_app, contrast_browser, wrapper):
     # A <link> the sender wrote inside an attribute value carries event handlers.
-    # If body extraction lifts it out as a live element, the CSP allows inline
-    # handlers, so onerror fires while blocked and onload fires once loaded.
+    # Ensure extraction keeps the attribute inert independently of CSP.
     handler = "window.__ownmail_pwned=true"
     link = f"<link rel=stylesheet href=https://t.test/pwn.css onload={handler} onerror={handler}>"
     prefix = {"p": "", "body": ">", "html": "<body>", "head": "<body>"}[wrapper]
@@ -400,12 +406,12 @@ def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_me
             assert.equal(Boolean(title && title.includes('pwn.css')), __RETAINED__);
             assertRequested([]);
         };
-        // Blocked (default): the CSP is active and allows inline handlers.
+        // Blocked (default): no live link should exist.
         await assertInert();
 
         await page.goto(input.base + '/email/synthetic?images=load');
         await settle();
-        // Loaded: no CSP; a lifted <link> would fetch and fire onload instead.
+        // Loaded: a lifted link would make a remote request.
         await assertInert();
         """.replace("__RETAINED__", json.dumps(wrapper == "p")),
     )
@@ -528,4 +534,66 @@ def test_trusting_sender_reloads_the_message_with_images(image_app, contrast_bro
         assert.equal(await page.locator('#ownmail-image-banner').count(), 0);
         assert.equal(await page.locator('#ownmail-action-message').textContent(), 'Sender trusted.');
         """.replace("__LOADED__", json.dumps(LOADED_PATHS)),
+    )
+
+
+@pytest.mark.parametrize("query", ["", "?images=load"])
+def test_reader_app_markup_uses_only_external_scripts(message_app, query):
+    _, page = open_message(message_app(REMOTE_IMAGE, block_images=True), query)
+    assert not page.xpath("//script[not(@src)]")
+    assert all(script.get("src").startswith("/static/") for script in page.xpath("//script"))
+    assert not [(node.tag, attr) for node in page.iter() for attr in node.attrib if attr.lower().startswith("on")]
+
+
+@pytest.mark.parametrize("query", ["", "?images=load"])
+def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, contrast_browser, query):
+    # Deliberately retain a benign handler to test the response policy independently
+    # of sanitizer correctness. The browser must receive the actual Flask headers.
+    handler = "window.__retainedHandlerRan = true"
+    markup = (
+        f'<button id="retained-handler" onclick="{handler}">Synthetic handler</button>'
+        '<button id="spoofed-control" data-reader-action="trash" data-show-loading '
+        'data-images-url="/email/message?images=load">Untrusted control</button>' + REMOTE_IMAGE
+    )
+    sanitizer = MagicMock()
+    sanitizer.sanitize.side_effect = lambda body: (body, True, False)
+    app = message_app(markup, block_images=True, sanitizer=sanitizer)
+    run_image_browser(
+        app,
+        contrast_browser,
+        "/email/message" + query,
+        """
+        const policy = response.headers()['content-security-policy'];
+        assert.equal(policy.split('script-src ')[1].split(';')[0], "'self'");
+        const retained = page.locator('#retained-handler');
+        assert.equal(await retained.getAttribute('onclick'), 'window.__retainedHandlerRan = true');
+        await page.evaluate(() => {
+            window.__retainedClicks = 0;
+            document.getElementById('retained-handler').addEventListener('click', () => window.__retainedClicks++);
+        });
+        await retained.click();
+        assert.equal(await page.evaluate(() => window.__retainedClicks), 1);
+        assert.equal(await page.evaluate(() => window.__retainedHandlerRan), undefined);
+        const dialogs = [];
+        page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
+        const start = page.url();
+        await page.locator('#spoofed-control').click();
+        await page.waitForTimeout(250);
+        assert.equal(page.url(), start);
+        assert.deepEqual(dialogs, []);
+        assert.equal(await page.locator('#ownmail-loading-overlay').getAttribute('class'), 'ownmail-loading-overlay');
+        await page.locator('#ownmail-message-details-toggle').click();
+        assert.equal(await page.locator('#ownmail-message-details-toggle').getAttribute('aria-expanded'), 'true');
+        assert(await page.locator('#ownmail-message-metadata').isVisible());
+        // The reader hides its app header on mobile; exercise the shell on desktop.
+        await page.setViewportSize({width: 1200, height: 1400});
+        await page.locator('#ownmail-sidebar-toggle').click();
+        assert.equal(await page.locator('#ownmail-sidebar-toggle').getAttribute('aria-expanded'), 'false');
+        await page.locator('#ownmail-sidebar-toggle').click();
+        assert.equal(await page.locator('#ownmail-sidebar-toggle').getAttribute('aria-expanded'), 'true');
+        await page.locator('.ownmail-email-menu summary').click();
+        await navigate(() => page.locator('[id^="menu-"][data-images-url]').click());
+        assert.notEqual(page.url(), start);
+        assert.equal(await page.evaluate(() => window.__retainedHandlerRan), undefined);
+        """,
     )
