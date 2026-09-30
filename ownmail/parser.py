@@ -623,9 +623,9 @@ class EmailParser:
 
             # Remove elements that shouldn't contribute text
             for element in tree.xpath("//style | //script | //head | //noscript"):
-                parent = element.getparent()
-                if parent is not None:
-                    parent.remove(element)
+                if element.getparent() is not None:
+                    # Tail text follows the hidden subtree and remains visible.
+                    element.drop_tree()
 
             # Extract text content
             text = tree.text_content()
