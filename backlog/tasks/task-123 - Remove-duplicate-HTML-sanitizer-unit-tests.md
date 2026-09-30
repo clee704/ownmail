@@ -1,11 +1,11 @@
 ---
 id: TASK-123
 title: Remove duplicate HTML sanitizer unit tests
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC1
 created_date: '2026-09-30 02:12'
-updated_date: '2026-09-30 13:43'
+updated_date: '2026-09-30 13:49'
 labels:
   - web
 dependencies: []
@@ -25,7 +25,7 @@ tests/test_sanitizer.py tests the same sanitize, kill and stop paths twice. Test
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Each sanitize, kill and stop path is covered by one test, keeping the stronger assertion of each pair
-- [ ] #2 Coverage does not drop and the full pre-push gate passes
+- [x] #2 Coverage does not drop and the full pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -69,4 +69,18 @@ After deleting exactly eight redundant methods, all 114 retained sanitizer/TestR
 Author full-diff review and independent Astra Ultra review found no remaining issues. Scope checks prove only the eight removals and seven strengthened counterparts changed; every other test/helper method is byte-identical, including TASK-121 diagnostics/races, unique close-failure, restart install=False and availability tests. Production is unchanged. Ruff check, format-check, deptry and whitespace checks passed.
 
 Next action: commit the reviewed test-only implementation with normal hooks, then run the prepared complete mandatory-browser pre-push gate after TASK-8 releases Chromium and compare exact full coverage measurements against the preserved base. TASK-123 remains In Progress until AC 2 is verified; no integration/publication or next task.
+
+Final required pre-push gate passed on clean reviewed implementation e6cba45aef6b7c51f83e1e16b74ec9f3890e022f: 4,002 passed in 201.58 seconds, all 13 Chromium startup probes passed, and the original full selection, assertions, timeouts and 95% branch-inclusive floor were retained. All normal hook checks passed without tracked-file changes. No skips, expected failures, startup timeouts or product failures. Python 3.14.6 was used locally; supported-version CI is not claimed.
+
+Exact full coverage comparison against the preserved completed TASK-121 base passed after normalizing only worktree path prefixes: all 46 measured files have identical executed-line and arc sets, totaling 11,420 executed lines and 16,715 arcs with no additions or losses. Report totals are also identical: 8,543 of 8,744 statements and 3,164 of 3,378 branches covered; 201 missing statements, 214 missing branches, 196 partial branches, and unrounded combined coverage 96.5764725292856%. Thus AC 2 is met by actual measurements, not just equal rounded percentages. The expected eight-test reduction is 4,010 to 4,002 with all stronger guarantees preserved.
+
+The browser interval was released immediately after the aggregate exited successfully; a scoped process check found no remaining task-owned worktree/test/profile processes. Production remains byte-identical to review base 31c679bc2095b4516dc8a5ee3794ddae99b9dc67. This closing change is ledger-only and preserves the tested implementation's test and validation configuration. All criteria are verified and author/independent Astra Ultra reviews are complete with no unresolved findings.
+
+Next action: preserve the completed isolated branch for separately authorized integration. No main update, merge, rebase, push, publication or next task is included.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Removed eight duplicate sanitizer tests after transferring every stronger assertion into their existing counterparts. Eleven mutation checks verify the transferred guarantees; distinct close-failure, restart/no-install, availability and all TASK-121 lifecycle/diagnostic/race tests remain unchanged. Full gate: 4,002 passed, 13 Chromium probes, exact coverage sets/totals unchanged from base. Production unchanged; author and independent Astra Ultra reviews passed. Delivery is a completed local branch with integration/publication separate.
+<!-- SECTION:FINAL_SUMMARY:END -->
