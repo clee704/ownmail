@@ -2284,7 +2284,10 @@ def run_server(
         print(f"   Trusted senders: {len(trusted_senders)}")
     if not sanitizer.available:
         print("\n   ERROR: HTML sanitizer failed to start.")
-        print("   Install Node.js and run: cd ownmail/sanitizer && npm install")
+        print("   Install Node.js and npm (https://nodejs.org), then retry ownmail serve.")
+        print("   Dependencies are checked and refreshed automatically; npm needs network access for a refresh.")
+        print("   For pipx installs, repair the environment with: pipx reinstall ownmail")
+        print("   From a source checkout, run: npm --prefix ownmail/sanitizer install --omit=dev")
         print("   Refusing to serve without sanitization.\n")
         return
     print("   HTML sanitization enabled (DOMPurify)")

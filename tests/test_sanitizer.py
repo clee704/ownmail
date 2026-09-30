@@ -1,11 +1,15 @@
 """Tests for the HTML sanitizer (DOMPurify sidecar)."""
 
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ownmail.sanitizer import HtmlSanitizer
 
@@ -55,71 +59,6 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         """Test available property defaults to False."""
         sanitizer = HtmlSanitizer()
         assert sanitizer.available is False
-
-    @patch("ownmail.sanitizer.subprocess.run")
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_runs_npm_install(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps runs npm install when node_modules missing."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-        mock_run.return_value = MagicMock(returncode=0, stderr="")
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-
-        assert result is True
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        assert "install" in call_args[0][0]
-
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=True)
-    def test_ensure_deps_skips_if_exists(self, mock_isdir):
-        """Test _ensure_deps skips npm install when node_modules exists."""
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is True
-
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which", return_value=None)
-    def test_ensure_deps_no_npm(self, mock_which, mock_isdir):
-        """Test _ensure_deps returns False when npm not found."""
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
-
-    @patch("ownmail.sanitizer.subprocess.run")
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_npm_install_fails(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps returns False when npm install fails."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-        mock_run.return_value = MagicMock(returncode=1, stderr="permission denied")
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
-
-    @patch("ownmail.sanitizer.subprocess.run", side_effect=subprocess.TimeoutExpired("npm", 60))
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_npm_timeout(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps returns False on npm timeout."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
-
-    @patch("ownmail.sanitizer.subprocess.run", side_effect=OSError("disk full"))
-    @patch("ownmail.sanitizer.os.path.isdir", return_value=False)
-    @patch("shutil.which")
-    def test_ensure_deps_npm_exception(self, mock_which, mock_isdir, mock_run):
-        """Test _ensure_deps returns False on unexpected exception."""
-        mock_which.side_effect = lambda cmd: "/usr/bin/npm" if cmd == "npm" else None
-
-        sanitizer = HtmlSanitizer()
-        result = sanitizer._ensure_deps()
-        assert result is False
 
     def test_start_with_mocked_process(self):
         """Test start() with a mocked Node.js process that sends ready signal."""
@@ -310,20 +249,6 @@ class TestHtmlSanitizerUnit(unittest.TestCase):
         mock_kill.assert_called_once()
         assert sanitizer._available is False
         mock_start.assert_called_once()
-
-    def test_verbose_ensure_deps(self):
-        """Test verbose mode output during _ensure_deps failure."""
-        sanitizer = HtmlSanitizer(verbose=True)
-
-        mock_run = MagicMock(returncode=1, stderr="verbose error msg")
-        with (
-            patch("ownmail.sanitizer.subprocess.run", return_value=mock_run),
-            patch("ownmail.sanitizer.os.path.isdir", return_value=False),
-            patch("shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
-        ):
-            result = sanitizer._ensure_deps()
-
-        assert result is False
 
 
 @unittest.skipUnless(node_available(), "Node.js not available")
@@ -801,57 +726,151 @@ class TestSanitizerLifecycle(unittest.TestCase):
         san._drain_stderr()  # must not raise
 
 
-class TestSanitizerDeps(unittest.TestCase):
-    """Tests for _ensure_deps."""
+class TestSanitizerDeps:
+    """Dependency checks use isolated package metadata and never touch real installs."""
 
-    def test_existing_node_modules_short_circuits(self):
-        """An existing node_modules directory means nothing to install."""
-        san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=True):
-            with patch("subprocess.run") as mock_run:
-                self.assertTrue(san._ensure_deps())
-        mock_run.assert_not_called()
+    @pytest.fixture
+    def dependency_dir(self, tmp_path, monkeypatch):
+        from ownmail import sanitizer
 
-    def test_missing_npm_fails(self):
-        """Without npm, dependency setup cannot proceed."""
-        san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value=None):
-                self.assertFalse(san._ensure_deps())
+        manifest = json.loads((Path(sanitizer._SANITIZER_DIR) / "package.json").read_text())
+        (tmp_path / "package.json").write_text(json.dumps(manifest))
+        for name, requirement in manifest["dependencies"].items():
+            package = tmp_path / "node_modules" / name
+            package.mkdir(parents=True)
+            (package / "package.json").write_text(json.dumps({"version": requirement.removeprefix("^")}))
+        monkeypatch.setattr(sanitizer, "_SANITIZER_DIR", str(tmp_path))
+        return tmp_path
 
-    def test_successful_install(self):
-        """A zero exit code from npm install means deps are ready."""
-        san = HtmlSanitizer()
-        result = MagicMock(returncode=0, stderr="")
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", return_value=result):
-                    self.assertTrue(san._ensure_deps())
+    @staticmethod
+    def _set_version(dependency_dir, version):
+        (dependency_dir / "node_modules/dompurify/package.json").write_text(json.dumps({"version": version}))
 
-    def test_failed_install(self):
-        """A non-zero npm exit code should report failure."""
-        san = HtmlSanitizer(verbose=True)
-        result = MagicMock(returncode=1, stderr="EACCES")
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", return_value=result):
-                    self.assertFalse(san._ensure_deps())
+    @pytest.mark.parametrize(
+        "version,satisfied",
+        [
+            ("3.4.15", False),
+            ("3.4.16", True),
+            ("3.5.0", True),
+            ("4.0.0", False),
+            ("3.4.16-rc.1", False),
+            ("3.5.0-rc.1", False),
+            ("4.0.0-rc.1", False),
+            ("3.4.16+build.2", True),
+            ("3.04.16", False),
+            (None, False),
+        ],
+    )
+    def test_full_caret_range(self, dependency_dir, version, satisfied):
+        self._set_version(dependency_dir, version)
+        assert HtmlSanitizer._deps_satisfied() is satisfied
 
-    def test_install_timeout(self):
-        """A hung npm install should time out rather than block forever."""
-        san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("npm", 60)):
-                    self.assertFalse(san._ensure_deps())
+    def test_satisfying_install_needs_no_npm(self, dependency_dir):
+        with patch("shutil.which", return_value=None) as which, patch("subprocess.run") as run:
+            assert HtmlSanitizer()._ensure_deps() is True
+        which.assert_not_called()
+        run.assert_not_called()
 
-    def test_install_unexpected_error(self):
-        """Any other npm failure should report failure, not raise."""
-        san = HtmlSanitizer()
-        with patch("os.path.isdir", return_value=False):
-            with patch("shutil.which", return_value="/usr/bin/npm"):
-                with patch("subprocess.run", side_effect=OSError("boom")):
-                    self.assertFalse(san._ensure_deps())
+    @pytest.mark.parametrize("name", ["dompurify", "jsdom", "postcss"])
+    def test_missing_package_refreshes(self, dependency_dir, name):
+        metadata = dependency_dir / "node_modules" / name / "package.json"
+        contents = metadata.read_text()
+        metadata.unlink()
+
+        def install(*args, **kwargs):
+            metadata.write_text(contents)
+            return MagicMock(returncode=0, stderr="")
+
+        with patch("shutil.which", return_value="/usr/bin/npm"), patch("subprocess.run", side_effect=install) as run:
+            assert HtmlSanitizer()._ensure_deps() is True
+        run.assert_called_once_with(
+            ["/usr/bin/npm", "install", "--omit=dev", "--no-fund", "--no-audit"],
+            cwd=str(dependency_dir),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    def test_changed_manifest_refreshes_existing_directory(self, dependency_dir):
+        assert HtmlSanitizer._deps_satisfied() is True
+        manifest_path = dependency_dir / "package.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["dependencies"]["dompurify"] = "^3.4.17"
+        manifest_path.write_text(json.dumps(manifest))
+
+        def install(*args, **kwargs):
+            self._set_version(dependency_dir, "3.4.17")
+            return MagicMock(returncode=0, stderr="")
+
+        with patch("shutil.which", return_value="/usr/bin/npm"), patch("subprocess.run", side_effect=install) as run:
+            assert HtmlSanitizer()._ensure_deps() is True
+        run.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "file,contents",
+        [
+            ("package.json", None),
+            ("package.json", "not json"),
+            ("package.json", "{}"),
+            ("package.json", '{"dependencies": []}'),
+            ("package.json", '{"dependencies": {}}'),
+            ("package.json", '{"dependencies": {"dompurify": null}}'),
+            ("package.json", '{"dependencies": {"dompurify": ">=3.4.16"}}'),
+            ("node_modules/dompurify/package.json", "not json"),
+            ("node_modules/dompurify/package.json", "{}"),
+        ],
+    )
+    def test_unverifiable_metadata_is_not_ready(self, dependency_dir, file, contents):
+        path = dependency_dir / file
+        if contents is None:
+            path.unlink()
+        else:
+            path.write_text(contents)
+        assert HtmlSanitizer._deps_satisfied() is False
+
+    def test_unreadable_metadata_is_not_ready(self, dependency_dir):
+        with patch("builtins.open", side_effect=PermissionError("unreadable")):
+            assert HtmlSanitizer._deps_satisfied() is False
+
+    def test_stale_install_without_npm_refuses_worker_start(self, dependency_dir, caplog):
+        self._set_version(dependency_dir, "3.4.15")
+        sanitizer = HtmlSanitizer()
+        with (
+            patch.object(sanitizer, "is_node_available", return_value=True),
+            patch("shutil.which", return_value=None),
+            patch("subprocess.Popen") as worker,
+        ):
+            sanitizer.start()
+        assert sanitizer.available is False
+        worker.assert_not_called()
+        assert "npm not found" in caplog.text
+
+    @pytest.mark.parametrize(
+        "outcome,diagnostic",
+        [
+            (MagicMock(returncode=1, stderr="ENOTFOUND registry.npmjs.org"), "ENOTFOUND"),
+            (MagicMock(returncode=1, stderr="EACCES"), "EACCES"),
+            (subprocess.TimeoutExpired("npm", 60), "timed out"),
+            (OSError("disk full"), "disk full"),
+            (MagicMock(returncode=0, stderr=""), "still do not satisfy"),
+        ],
+    )
+    def test_failed_refresh_refuses_worker_start(self, dependency_dir, caplog, capsys, outcome, diagnostic):
+        self._set_version(dependency_dir, "3.4.15")
+        sanitizer = HtmlSanitizer(verbose=True)
+        run_args = {"side_effect": outcome} if isinstance(outcome, Exception) else {"return_value": outcome}
+        with (
+            patch.object(sanitizer, "is_node_available", return_value=True),
+            patch("shutil.which", return_value="/usr/bin/npm"),
+            patch("subprocess.run", **run_args),
+            patch("subprocess.Popen") as worker,
+        ):
+            sanitizer.start()
+        assert sanitizer.available is False
+        worker.assert_not_called()
+        assert diagnostic in caplog.text
+        if not isinstance(outcome, Exception) and outcome.returncode:
+            assert outcome.stderr in capsys.readouterr().out
 
 
 class TestSanitizeErrorHandling(unittest.TestCase):

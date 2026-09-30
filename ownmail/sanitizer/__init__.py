@@ -13,6 +13,7 @@ import html as html_module
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -35,8 +36,7 @@ class HtmlSanitizer:
         finally:
             sanitizer.stop()
 
-    If Node.js is not installed, start() logs a warning and sanitize()
-    returns the original HTML unchanged.
+    If setup fails, start() logs a warning and sanitize() returns escaped HTML.
     """
 
     def __init__(self, timeout: float = 5.0, verbose: bool = False):
@@ -59,13 +59,46 @@ class HtmlSanitizer:
         """Check if Node.js is installed and accessible."""
         return shutil.which("node") is not None
 
-    def _ensure_deps(self) -> bool:
-        """Install npm dependencies if not already present.
+    @staticmethod
+    def _deps_satisfied() -> bool:
+        """Check the stable, nonzero-major caret ranges declared by this package.
 
-        Returns True if deps are ready, False on failure.
+        Read installed metadata directly so a ready installation needs neither
+        npm nor network access. Unknown range syntax and prereleases fail closed.
         """
-        node_modules = os.path.join(_SANITIZER_DIR, "node_modules")
-        if os.path.isdir(node_modules):
+        try:
+            with open(os.path.join(_SANITIZER_DIR, "package.json")) as f:
+                dependencies = json.load(f)["dependencies"]
+            if not isinstance(dependencies, dict) or not dependencies:
+                return False
+            for name, requirement in dependencies.items():
+                floor = re.fullmatch(r"\^([1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", requirement)
+                if floor is None:
+                    logger.warning("Unsupported HTML sanitizer dependency requirement: %s", requirement)
+                    return False
+                with open(os.path.join(_SANITIZER_DIR, "node_modules", name, "package.json")) as f:
+                    version = json.load(f)["version"]
+                installed = re.fullmatch(
+                    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+                    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?",
+                    version,
+                )
+                if installed is None:
+                    return False
+                lower = tuple(map(int, floor.groups()))
+                actual = tuple(map(int, installed.groups()))
+                if not lower <= actual < (lower[0] + 1, 0, 0):
+                    return False
+            return True
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+
+    def _ensure_deps(self) -> bool:
+        """Refresh missing or incompatible npm dependencies before starting.
+
+        Returns True only when installed versions satisfy package.json.
+        """
+        if self._deps_satisfied():
             return True
 
         npm = shutil.which("npm")
@@ -76,10 +109,10 @@ class HtmlSanitizer:
             )
             return False
 
-        print("📦 Installing HTML sanitizer dependencies (one-time setup)...")
+        print("📦 Installing or refreshing HTML sanitizer dependencies...")
         try:
             result = subprocess.run(
-                [npm, "install", "--production", "--no-fund", "--no-audit"],
+                [npm, "install", "--omit=dev", "--no-fund", "--no-audit"],
                 cwd=_SANITIZER_DIR,
                 capture_output=True,
                 text=True,
@@ -93,6 +126,11 @@ class HtmlSanitizer:
                 )
                 if self._verbose:
                     print(f"[verbose] npm install stderr: {result.stderr.strip()}", flush=True)
+                return False
+            if not self._deps_satisfied():
+                logger.warning(
+                    "npm install completed but HTML sanitizer dependencies still do not satisfy package.json"
+                )
                 return False
             print("✓ HTML sanitizer ready")
             return True
@@ -120,7 +158,7 @@ class HtmlSanitizer:
         """Start the DOMPurify sidecar process.
 
         If Node.js is not available or setup fails, sanitize() will
-        return HTML unchanged (graceful degradation).
+        return escaped HTML. The web server refuses to serve without the worker.
         """
         if not self.is_node_available():
             logger.warning(

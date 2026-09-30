@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-09-29 06:39'
-updated_date: '2026-09-30 04:32'
+updated_date: '2026-09-30 04:52'
 labels:
   - web
 dependencies: []
@@ -24,8 +24,8 @@ The same path has two smaller problems. When the sanitizer fails to start, ownma
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 When installed dependencies no longer satisfy package.json, the next ownmail serve installs satisfying versions before starting the sanitizer, and an install that already satisfies it starts without running npm
-- [ ] #2 When the refresh cannot run (npm missing, offline or a failed install), the outcome is defined, reported to the user and covered by tests
+- [x] #1 When installed dependencies no longer satisfy package.json, the next ownmail serve installs satisfying versions before starting the sanitizer, and an install that already satisfies it starts without running npm
+- [x] #2 When the refresh cannot run (npm missing, offline or a failed install), the outcome is defined, reported to the user and covered by tests
 - [ ] #3 Startup guidance for a failed sanitizer install works for pipx and source installs, and the full pre-push gate passes
 <!-- AC:END -->
 
@@ -44,4 +44,8 @@ Ownmail IC2 owns body charset recovery in ownmail/parser.py and the web decoding
 Next action: Ownmail IC1 creates its isolated worktree from the common claim base, verifies the current dependency-refresh premise and existing alternatives, and records its bounded implementation plan before substantive work.
 
 Premise verified: existing node_modules currently bypasses all dependency checks. Runtime declarations remain unchanged. Review base for this isolated implementation is common claim base c44eb0f620d79e9be10ff8449969408adac6341b.
+
+Implementation validates each current stable nonzero-major caret requirement against direct installed metadata, including upper bounds and prerelease exclusion. Unsupported requirement syntax fails closed with a diagnostic. Satisfying metadata bypasses npm lookup and invocation; refresh uses --omit=dev and revalidates before worker startup. Missing npm, offline/install errors, timeout, filesystem errors and an ineffective successful install all leave the worker unavailable. Consolidated duplicate dependency tests into isolated fixtures; 129 sanitizer/startup tests passed including actual Node integration. Regression tests detected four deliberate mutations (old directory shortcut, omitted upper bound, accepted prereleases and skipped post-install verification), after which source was restored. Ruff check, format-check and deptry pass. Plan was recorded through backlog before substantive edits; its initial commit attempt was blocked by missing isolated dev tooling, and successful plan commit followed implementation edits. Required full browser/coverage/pre-push validation remains pending.
+
+Required Chromium browser coverage passed with synthetic fixtures: 3939 passed, 1 expected xfailed, no skipped tests; branch-inclusive coverage 96.44%. A narrow headless-test escalation was needed after macOS sandbox browser bootstrap/kill restrictions; no product assertions or security settings changed. A disposable real-npm probe confirmed that a retained node_modules directory and old lockfile refresh after the manifest floor changes, a satisfying install runs without npm, and an offline stale refresh reports ENOTCACHED and fails safely. Author reviewed the full task diff from common claim base: edits remain in owned sanitizer/startup scopes, no runtime dependencies or security boundary changed. Exact final pre-push gate remains pending.
 <!-- SECTION:NOTES:END -->

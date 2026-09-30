@@ -2037,7 +2037,13 @@ class TestRunServer:
         with san_patch, run_patch as mock_run:
             run_server(archive, open_browser=False)
         mock_run.assert_not_called()
-        assert "Refusing to serve without sanitization" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "Refusing to serve without sanitization" in out
+        assert "Install Node.js and npm" in out
+        assert "retry ownmail serve" in out
+        assert "pipx reinstall ownmail" in out
+        assert "npm --prefix ownmail/sanitizer install --omit=dev" in out
+        assert "npm needs network access for a refresh" in out
 
     def test_debug_with_public_host_is_refused(self, archive, sanitizer, capsys):
         """--debug on a non-localhost host must not start the server."""
