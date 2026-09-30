@@ -1,11 +1,11 @@
 ---
 id: TASK-93
 title: Recognize HTML layouts beyond inline root backgrounds
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC2
 created_date: '2026-09-15 02:56'
-updated_date: '2026-09-30 12:45'
+updated_date: '2026-09-30 12:59'
 labels:
   - ui
 dependencies: []
@@ -22,9 +22,9 @@ The padding detector still misses sender backgrounds supplied by scoped CSS clas
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Synthetic class-styled and nested layout canvases render without a second reader frame in both themes.
-- [ ] #2 Simple HTML retains readable padding, including messages with decorative or hidden background elements.
-- [ ] #3 Browser checks exercise the real sanitizer at phone and desktop widths and fail against the previous behavior.
+- [x] #1 Synthetic class-styled and nested layout canvases render without a second reader frame in both themes.
+- [x] #2 Simple HTML retains readable padding, including messages with decorative or hidden background elements.
+- [x] #3 Browser checks exercise the real sanitizer at phone and desktop widths and fail against the previous behavior.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -51,4 +51,14 @@ Fresh independent Astra Ultra review requested corrections before final validati
 Current focused validation: 120 sanitizer tests pass, including all exact task cases, returned-markup assertions, retained TASK-56/TASK-119 tests, review regressions and a bounded subprocess performance regression. Node syntax, Ruff check, Ruff format-check, deptry and diff checks pass. All task acceptance criteria remain unchecked pending green browser geometry and full required pre-push validation. Next action: finish independent re-review and checkpoint the implementation with normal hooks, then run green rendered/full gates after the coordinated Chromium interval is available. No integration, publication or real mailbox/settings operations.
 
 Independent Astra Ultra re-review passed on implementation checkpoint 4213693f9c544b3381220a4d31069cf46140b3cb: all five findings resolved, no open correctness/UI issue. Fifty-four independent probes pass; the previous matcher timeout reproduction now completes in 0.216 seconds. All 54 differential comparisons preserve byte-identical sanitized HTML and unchanged dark-mode metadata; TASK-56/TASK-119 protections remain unchanged. Reviewed worker SHA-256: d665180fd6d20fb89155ada950e68fdba802266beaa2faa6a613de4f67ba66e9. Author self-review and normal checkpoint commit hooks also pass. Chromium process verification found no task-owned process; the interval is released for TASK-115. Remaining prerequisite: coordinated browser availability for green reader-spacing checks and the full mandatory pre-push gate; no acceptance criterion or Done status is claimed yet. No new design-policy blocker. Next action: resume rendered validation on this clean checkpoint after TASK-115 exits.
+
+Final validation passed on clean checkpoint f8db26355e98877618c454451d4975bf5691e549 (product implementation 4213693f9c544b3381220a4d31069cf46140b3cb). All 16 actual-route reader-spacing cases pass at 390, 768 and 1440 pixels in both light/dark themes, retaining the original simple HTML/plain-text insets, authored geometry, containment, fitting and print assertions. The required pre-push gate exited 0: 4,076 passed, one pre-existing TASK-13 expected failure, no skips, and 96.65957098411658% combined statement/branch coverage against the unchanged 95% threshold. All 13 mandatory Chromium launch/close probes completed without timeout. The complete selection, existing timeouts/assertions and coverage threshold were preserved; maxfail=1 and a runtime-only observer supplied actionable diagnostics. Static checks and normal commit hooks pass.
+
+All three acceptance criteria are now verified, including five preserved red reproductions on the previous behavior and the green rendered matrix. Independent Astra Ultra review remains approved on the exact validated worker/test bytes, with all five findings resolved and 54 passing differential probes preserving sanitized HTML/dark-mode output. Author self-review passed against the original TASK-56 base. Unsupported or uncertain CSS/layouts deliberately retain reader padding. Browser validation has exited and the interval is released. This closure changes only the task ledger; all product/test files remain byte-identical to the fully validated checkpoint. TASK-121 lifecycle hunks are untouched. No integration, merge/rebase, publication, real mail/settings or trust-policy change. Task complete.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Recognize class-styled, deeply wrapped and principal-cell message canvases without an extra reader frame. Preserve readable padding for simple HTML and decorative, hidden or genuinely ambiguous layouts, without changing sanitized markup, selector rewriting or dark-mode/trust behavior. All 16 rendered spacing cases pass at three widths in both themes; full required gate passes with 4,076 tests, one existing expected failure and 96.66% coverage. Independent Astra Ultra review has no open findings. Final closure is ledger-only; no integration or publication.
+<!-- SECTION:FINAL_SUMMARY:END -->
