@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex-task9'
 created_date: '2026-07-24 20:29'
-updated_date: '2026-09-30 16:57'
+updated_date: '2026-09-30 17:09'
 labels: []
 milestone: m-4
 dependencies: []
@@ -30,8 +30,8 @@ Scope is undecided: mbox-only first is the sensible cut. Also decide whether exp
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ownmail export --format mbox --output <file> writes a valid mbox importable by another client
-- [ ] #2 --query filters the export using the existing search syntax, not a new one
+- [x] #1 ownmail export --format mbox --output <file> writes a valid mbox importable by another client
+- [x] #2 --query filters the export using the existing search syntax, not a new one
 - [x] #3 PDF export is either implemented, split into its own task, or explicitly dropped with the reason recorded
 <!-- AC:END -->
 
@@ -45,4 +45,6 @@ Review base: 95251cc64f328890362757de49d194fa8ca256fe. Implement only archive-ow
 
 <!-- SECTION:NOTES:BEGIN -->
 Premise confirmed: no export CLI exists. Exact scope explicitly authorized: mbox-only, ordinary archive search semantics including Trash/date behavior, no synthesized label headers, no Active-only export. PDF is split into TASK-129 using the supported Backlog shared creation lock. Output remains a new user-selected artifact; source mail, credentials, ownership and schema stay unchanged. CLI changes are confined to a new export function/parser/dispatch, with TASK-37 functions excluded.
+
+Implemented archive-only mbox export with exclusive output creation, original byte-based MIME/header preservation, search filters and verified membership, partial-read reporting and restart-safe failure cleanup. Added an opt-in FTS error path to the existing database search helper, preserving default callers: the synthetic leading text-negation probe previously printed an FTS syntax error and falsely succeeded with an empty export; it now fails before output creation. Valid combined negation and valid empty results are covered. AC1 and AC2 verified by 34 focused synthetic cases including the standalone module CLI, plus 489 retained CLI/database/query/ownership tests. Exporter focused statement and branch coverage is 100%. Four deliberate mutations (50-result cap, nonexclusive destination, swallowed FTS error, omitted Active membership) each failed the intended regression and were restored. Earlier MIME fixture comparison normalized CRLF only on its read side; corrected both comparisons to parsebytes. Leading negative CLI values use standard argparse --query=-term spelling. Required full pre-push gate and independent review remain pending; status stays In Progress.
 <!-- SECTION:NOTES:END -->

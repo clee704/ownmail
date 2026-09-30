@@ -1016,6 +1016,7 @@ class ArchiveDatabase:
         _active_ids: set[str] | None = frozenset(),
         _archived_ids: set[str] | None = None,
         _with_order: bool = False,
+        _raise_fts_errors: bool = False,
     ) -> list[tuple]:
         """Search emails.
 
@@ -1027,6 +1028,7 @@ class ArchiveDatabase:
             sort: Sort order - 'relevance', 'date_desc', or 'date_asc'
             include_unknown: Include emails without parsed dates (default: False)
             tz: Optional ZoneInfo timezone for date filter interpretation
+            _raise_fts_errors: Raise ValueError instead of returning no matches for invalid FTS
 
         Returns:
             List of (email_id, filename, subject, sender, date_str, snippet, has_attachments)
@@ -1211,6 +1213,8 @@ class ArchiveDatabase:
                 except sqlite3.OperationalError as e:
                     error_str = str(e).lower()
                     if "fts5" in error_str or "match" in error_str or "syntax" in error_str:
+                        if _raise_fts_errors:
+                            raise ValueError(f"Invalid search: {e}") from e
                         print(f"[db.search] FTS5 error: {e}", flush=True)
                         # Return empty results - caller should check for FTS errors
                         return []
