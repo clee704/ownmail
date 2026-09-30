@@ -1,10 +1,11 @@
 ---
 id: TASK-50
 title: Improve the iPhone Home Screen web app experience
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - Ownmail audit IC4
 created_date: '2026-09-13 04:50'
-updated_date: '2026-09-26 02:24'
+updated_date: '2026-09-30 18:57'
 labels:
   - ui
   - mobile
@@ -41,3 +42,15 @@ Implement this incrementally in the existing Flask UI. A cached offline fallback
 - [ ] #5 Connection loss and an unavailable server produce recoverable feedback with Retry; loading states terminate and failed actions never appear successful. Document the HTTPS prerequisite and intended scope for a cached offline fallback.
 - [ ] #6 Record actual iPhone Home Screen checks for cold launch, Back, long-message scrolling, background/resume, keyboard use, portrait/landscape, and connection recovery, including the tested iOS version. Add focused regression coverage for changed navigation and recovery behavior.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Pinned code/review base is reviewed combined candidate ca2911c883ba7b0a178b22f4faac694a322360af while its final gate runs. This is the explicitly authorized code slice of TASK50; retain every original acceptance criterion and keep all actual-iPhone requirements open. 1. Add manifest/app theme colors from the existing light/dark palette; reuse theme preference application before paint and on resume/preference changes. 2. Extend existing session-scoped result state to save only the selected local message identity/version and scroll position on lifecycle boundaries. Restore the same valid reader conservatively without overriding native history restoration, anchors or user movement; do not redirect a list launch into old mail or store message contents. Give missing reader pages a usable local return view and clear stale saved positions. 3. Reuse the action feedback area for explicit Retry navigation/reload. Bound message-action and label-loading requests including response-body waits; clear loading/disabled states on failure and suppress late success. Do not automatically replay mutations. Give held native page navigation a bounded stop/retry path without changing successful fast navigation. 4. Add focused synthetic metadata, preference, reading-state, unavailable-message and connection recovery regressions, including red/green and meaningful safety mutations. Retain navigation/focus, CSP/untrusted-email, desktop and keyboard controls. Browser checks require the actual exclusive browser lease; no native/device actions are included. 5. Document the trusted HTTPS prerequisite and a future static-only offline fallback boundary; do not install a service worker, cache private mail, expose services or alter network/security settings. Reconcile forthcoming clean main, obtain independent focused review, run normal hooks and the mandatory full gate, then preserve a clean honest In Progress checkpoint until the physical-iPhone criteria are actually checked with an iOS version.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Premise inspected against the execution order and exact task: manifest/root scope/icons and most list navigation already exist in completed TASK49/50.1/51/52/53. Missing code includes theme colors, app-managed message reading-position recovery, bounded unresolved requests and explicit recovery controls. Preserve the prior verified navigation fixes; do not redesign the shell or infer a cutout defect merely from the default viewport. Source ownership is base.html/email.html plus a reader-only unavailable template; app-preferences.js, app-shell.js, result-state.js, message-actions.js and label-editor.js; narrow shared feedback styles; web.py manifest and view_email hunks; relevant tests/docs and TASK50. Frozen PDF/export and JSON-reader implementation remain unchanged. Physical iPhone Home Screen checks, any device access and a trusted deployed HTTPS origin are not implied by the code authorization. No acceptance criterion is marked complete from emulation or existing partial evidence.
+<!-- SECTION:NOTES:END -->
