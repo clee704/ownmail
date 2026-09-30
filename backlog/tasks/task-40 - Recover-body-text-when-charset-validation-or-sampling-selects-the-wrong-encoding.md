@@ -3,11 +3,11 @@ id: TASK-40
 title: >-
   Recover body text when charset validation or sampling selects the wrong
   encoding
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC2
 created_date: '2026-09-11 10:43'
-updated_date: '2026-09-30 05:13'
+updated_date: '2026-09-30 05:27'
 labels: []
 dependencies: []
 priority: high
@@ -33,7 +33,7 @@ Review charset selection and validation for these cases. Keep display and indexi
 - [x] #1 Valid UTF-8 containing a literal U+FFFD preserves the remaining text in display and indexing.
 - [x] #2 Conflicting Latin-1 declarations have a documented recovery rule, with regression coverage for UTF-8 payloads and correctly labelled legacy text.
 - [x] #3 Undeclared short EUC-KR content and EUC-KR content after a long ASCII HTML preamble decode correctly in display and indexing.
-- [ ] #4 Synthetic regression tests cover all four reproductions and pass with the required repository checks.
+- [x] #4 Synthetic regression tests cover all four reproductions and pass with the required repository checks.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -67,4 +67,16 @@ Next action: author self-review, then coordinated complete coverage and browser/
 Author self-review against common base c44eb0f completed across the owned decoder/helper changes, declaration precedence, MIME/meta aliases, graceful fallbacks and synthetic regression/browser tests. No actionable introduced findings. Header decoding and IC1 startup/sanitizer functions are unchanged. Focused local hygiene, ruff and deptry hooks pass; complete coordinated pre-push coverage remains pending.
 
 Combined integration checkpoint: rebased cleanly onto the integrated TASK-118 base 9dcfdc77c16497bd70b26007f46618804711fed8 with no conflicts. Shared startup/TestRunServer ASTs and sanitizer implementation/tests/README bytes match that base. UTF-8 recovery counts an authored U+FFFD as readable without bypassing validation of surrounding text; existing control-garbage rejection remains intact. Latin-1 recovery requires a complete readable strict UTF-8 payload. The corrected focused set, including all existing fixture charset families, passes 115 checks. Final combined required-browser pre-push coverage is the remaining closure gate.
+
+Final combined validation passed after the authorized clean rebase onto integrated TASK-118 base 9dcfdc77c16497bd70b26007f46618804711fed8. The exact required pre-commit run -a --hook-stage pre-push completed with all hooks passing and OWNMAIL_REQUIRE_BROWSER_TESTS=1; complete pytest coverage is 96.506% with branches included. The suite collects 3,971 tests and retains its existing strict TASK-13 expected failure. Direct repo-wide ruff check, ruff format --check and deptry pass. All four synthetic message cases render correctly in Chromium; 115 focused original/new charset checks pass, including control-garbage rejection and declared legacy preservation. Original-base regressions demonstrably failed before the fix.
+
+Author self-review of the final combined diff found no remaining actionable introduced findings. Integrated TASK-118 run_server/TestRunServer behavior and sanitizer implementation/tests are preserved. Header decoding, dependencies, real mail files and running systems were not changed. TASK-126 remains the separately recorded pre-existing Cyrillic whitelist limitation; this task does not claim every legacy charset is correct.
+
+Implementation and follow-up are committed locally on fix/body-charset-recovery; tested implementation revision: 698d10ac4da989433aa1ffedc33a3d35bc18c8b5. All acceptance criteria are verified. The manager owns subsequent integration and the shared README proposal; no push or publication is required or authorized. No TASK-40 blocker remains.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Completed body charset recovery for display and indexing through one shared selector. Authored UTF-8 U+FFFD is preserved while surrounding text validation still rejects garbage. Complete readable UTF-8 takes precedence over a Latin-1 declaration; other usable declarations retain precedence. The fallback no longer misses short Korean bodies or non-ASCII bytes after long ASCII preambles. Combined required-browser pre-push coverage passed at 96.506%, focused regressions passed, and final author self-review found no remaining introduced issue. Pre-existing Cyrillic validation is tracked separately in TASK-126. Work is committed locally for manager integration.
+<!-- SECTION:FINAL_SUMMARY:END -->
