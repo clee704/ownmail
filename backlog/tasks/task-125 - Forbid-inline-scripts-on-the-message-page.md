@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Forbid inline scripts on the message page
-status: In Progress
+status: Done
 assignee:
   - '@codex-task125'
 created_date: '2026-09-30 03:15'
-updated_date: '2026-09-30 16:20'
+updated_date: '2026-09-30 16:43'
 labels:
   - ui
 dependencies: []
@@ -27,7 +27,7 @@ The message page has six inline script blocks (base.html, email.html and the inc
 - [x] #1 The message page runs no inline script blocks or inline event-handler attributes, and the existing reader browser tests still pass
 - [x] #2 Every message response, with remote content blocked or loaded, sends a Content-Security-Policy whose script-src excludes 'unsafe-inline', and loading remote content still works
 - [x] #3 A browser test with a sanitizer stub that lets an inline handler through confirms it does not run, with remote content blocked and loaded
-- [ ] #4 The full pre-push gate passes
+- [x] #4 The full pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -42,4 +42,12 @@ Review base: 47e54fd653f65a33b394f52207602476dc14126b. Confirmed missing outcome
 Ownership confirmed through parent: base/email/result-state templates, new static JS, message response CSP only in web.py, ui-shell/reader-navigation/message-actions harnesses and image-blocking tests. No parser, sanitizer, provider or other web functions. Synthetic fixtures only.
 
 Implemented six parser-order static script extractions and replaced reader/shell inline handlers with listeners scoped to trusted controls. Escaped app data attributes carry sender, message ID, reload URL and auto-scale preference. Every rendered message now restricts script-src to self; loaded policy leaves image/font/media/style requests unchanged. Seven static regressions failed before the change and pass after; both actual-Flask-header retained-handler cases executed the benign handler before and block it after while app controls work. Existing focused checks: 182 non-Chromium checks passed, 20 action tests passed using actual control clicks, and 118 existing affected Chromium checks passed. Initial new-browser fixture mistakenly clicked the intentionally hidden mobile header; corrected it to desktop and both cases passed. A deliberate document-wide binding mutation fails on the spoofed email control; source restored. Ruff and diff checks pass. Independent review and required full pre-push gate remain pending through parent coordination; task stays In Progress.
+
+Move app inline script bodies and handlers to checked-in local scripts while preserving their parse order and scoped real-control bindings. Blocked and loaded message responses enforce script-src self; loaded remote content remains permitted by the other existing policies. Independent source review, 28 selected checks and two real Chromium probes found no actionable issue; the JSDOM-only observation did not reproduce in Chromium. Final combined verification passed on 6f76b4398d83c6a6217a0e7049428d976e531c63: unchanged pre-commit run -a --hook-stage pre-push, mandatory Chromium enabled, 4163 tests passed in 287.30s, 96.72% aggregate branch-inclusive coverage against 95%. All normal hygiene, Ruff, formatting and deptry checks passed. Exact backend, reader and TASK-125 heads are ancestors; all merged source/test paths were checked against their reviewed contents. No real mail, credential changes or remote operations. The following closure commit changes task metadata only; code and tests remain the verified candidate.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Move app inline script bodies and handlers to checked-in local scripts while preserving their parse order and scoped real-control bindings. Blocked and loaded message responses enforce script-src self; loaded remote content remains permitted by the other existing policies. Independent source review, 28 selected checks and two real Chromium probes found no actionable issue; the JSDOM-only observation did not reproduce in Chromium. Combined required gate: 4163 passed, 96.72% coverage; implementation and independent review complete. Local integration is authorized; no public push.
+<!-- SECTION:FINAL_SUMMARY:END -->

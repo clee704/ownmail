@@ -3,11 +3,11 @@ id: TASK-40
 title: >-
   Recover body text when charset validation or sampling selects the wrong
   encoding
-status: In Progress
+status: Done
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-11 10:43'
-updated_date: '2026-09-30 16:29'
+updated_date: '2026-09-30 16:43'
 labels: []
 dependencies: []
 priority: high
@@ -36,7 +36,7 @@ Review charset selection and validation for these cases. Keep display and indexi
 - [x] #4 Synthetic regression tests cover all four reproductions and pass with the required repository checks.
 - [x] #5 Undeclared short Western plain/HTML bodies preserve Noel, Munich and facade accent bytes through display and indexing while retained Korean, declared-charset and garbage-rejection controls pass.
 - [x] #6 Web no longer reexports decoder helpers solely for tests; canonical parser helper tests retain unique assertions without duplicate helper families.
-- [ ] #7 Audit follow-up receives independent review and the final combined repository gate before reclosure.
+- [x] #7 Audit follow-up receives independent review and the final combined repository gate before reclosure.
 - [x] #8 Short undeclared Western uppercase accents (Ärger, Åland and Álex) remain correct alongside original short/late EUC-KR, declared CP949 and long undeclared CP949 controls.
 <!-- AC:END -->
 
@@ -89,12 +89,12 @@ Helper consolidation complete: removed only the two test-only decoder reexports 
 Independent backend review of frozen bdc8191 identified the same TASK-40 regression remaining in CP949: undeclared Latin-1 Ärger, Åland and Álex are consumed as Korean because CP949 permits ASCII trail bytes. Original task AC3 explicitly requires short EUC-KR and late EUC-KR recovery, not inference of short undeclared CP949 extensions. Follow-up plan: add all three plain/HTML display/index regressions and declared/long CP949 controls; keep the original CP949-first broader fallback only when high-byte count exceeds ten, use strict EUC-KR alone for shorter non-ASCII bodies; rerun affected nonbrowser controls and hand off for independent recheck plus the combined mandatory-browser gate. No general encoding inference, policy expansion or other code scope.
 
 Independent-review correction implemented: only strict EUC-KR is attempted for one through ten high bytes, while CP949 retains its prior first position above that threshold; MIME/meta declarations and UTF-8 precedence are unchanged. All six new uppercase-Western plain/HTML regressions failed at bdc8191 while declared/long CP949 controls passed. Corrected focused parser/web/fixture/charset checks: 220 passed. Original short and late EUC-KR, long undeclared CP949 extensions, short declared CP949, UTF-8/Cyrillic/Latin declaration ambiguity and garbage rejection remain covered. Exact bytes and decoder candidates are preserved in private evidence. AC8 verified; independent recheck and final combined mandatory-browser gate remain pending under AC7. The earlier claim of complete Western correction was too broad and is superseded by these bounded tests.
+
+Complete shared body recovery for literal UTF-8 U+FFFD, conflicting Latin-1 declarations and short/late EUC-KR. Audit corrections preserve undeclared Western text by using only strict EUC-KR for short fallback; the prior broad CJK order remains above ten high bytes. Declared and long CP949 retain support. Canonical parser tests replace duplicated test-only web reexports. Independent review caught an incomplete CP949 correction; the final head resolved it and 24 independent plain/HTML display/content/index cases passed. Final combined verification passed on 6f76b4398d83c6a6217a0e7049428d976e531c63: unchanged pre-commit run -a --hook-stage pre-push, mandatory Chromium enabled, 4163 tests passed in 287.30s, 96.72% aggregate branch-inclusive coverage against 95%. All normal hygiene, Ruff, formatting and deptry checks passed. Exact backend, reader and TASK-125 heads are ancestors; all merged source/test paths were checked against their reviewed contents. No real mail, credential changes or remote operations. The following closure commit changes task metadata only; code and tests remain the verified candidate.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Completed body charset recovery for display and indexing through one shared selector. Authored UTF-8 U+FFFD is preserved while surrounding text validation still rejects garbage. Complete readable UTF-8 takes precedence over a Latin-1 declaration; other usable declarations retain precedence. The fallback no longer misses short Korean bodies or non-ASCII bytes after long ASCII preambles. Combined required-browser pre-push coverage passed at 96.506%, focused regressions passed, and final author self-review found no remaining introduced issue. Pre-existing Cyrillic validation is tracked separately in TASK-126. Work is committed locally for manager integration.
-
-Audit follow-up: the bounded Western regression correction and decoder-helper consolidation are implemented and locally verified. Historical closure above is preserved. Status remains In Progress pending the newly added independent-review and final combined gate criterion.
+Complete shared body recovery for literal UTF-8 U+FFFD, conflicting Latin-1 declarations and short/late EUC-KR. Audit corrections preserve undeclared Western text by using only strict EUC-KR for short fallback; the prior broad CJK order remains above ten high bytes. Declared and long CP949 retain support. Canonical parser tests replace duplicated test-only web reexports. Independent review caught an incomplete CP949 correction; the final head resolved it and 24 independent plain/HTML display/content/index cases passed. Combined required gate: 4163 passed, 96.72% coverage; implementation and independent review complete. Local integration is authorized; no public push.
 <!-- SECTION:FINAL_SUMMARY:END -->

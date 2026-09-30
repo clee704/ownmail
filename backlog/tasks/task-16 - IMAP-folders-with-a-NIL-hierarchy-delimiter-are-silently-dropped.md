@@ -1,11 +1,11 @@
 ---
 id: TASK-16
 title: IMAP folders with a NIL hierarchy delimiter are silently dropped
-status: In Progress
+status: Done
 assignee:
   - Ownmail backend audit
 created_date: '2026-07-25 05:24'
-updated_date: '2026-09-30 16:09'
+updated_date: '2026-09-30 16:43'
 labels: []
 dependencies: []
 priority: medium
@@ -67,10 +67,12 @@ Full required validation passed on implementation commit 8a7cf051a8d93e4f83dc2d3
 Authorized audit follow-up from fixed review base 47e54fd653f65a33b394f52207602476dc14126b. The uppercase NIL fix remains useful, but lowercase and mixed-case protocol tokens are still skipped as in the baseline. Add a case-insensitive group for the NIL token only, parameterize existing parser and full/incremental scan cases, prove the new cases fail first, then obtain independent focused review and the combined required gate before restoring Done. Preserve folder-name/flag spelling and role policy. Scope is parse_list_response and existing IMAP tests only. No real server or credential operations.
 
 Audit follow-up implementation: accept ASCII-case variants only inside the NIL token regex group; original folder spelling, flags, delimiters and filtering stay unchanged. Extended existing parser and full/incremental provider tests instead of duplicating them. On unchanged production, nine new mixed-case cases failed and all three uppercase controls passed. With the correction, the combined sanitizer/provider focused run passed 279 tests. Independent focused review and the final combined required gate are pending; keep In Progress.
+
+Accept all ASCII-case variants of the NIL delimiter without changing folder spelling, flags, quoted delimiters or role exclusions. Original and follow-up parser/full/incremental mocked scan regressions pass; nine mixed-case regressions failed before correction. Independent backend review passed 42 tests, 11 subtests and six actual-pipe probes across the full backend correction scope. Final combined verification passed on 6f76b4398d83c6a6217a0e7049428d976e531c63: unchanged pre-commit run -a --hook-stage pre-push, mandatory Chromium enabled, 4163 tests passed in 287.30s, 96.72% aggregate branch-inclusive coverage against 95%. All normal hygiene, Ruff, formatting and deptry checks passed. Exact backend, reader and TASK-125 heads are ancestors; all merged source/test paths were checked against their reviewed contents. No real mail, credential changes or remote operations. The following closure commit changes task metadata only; code and tests remain the verified candidate.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Accept NIL hierarchy delimiters in archive IMAP LIST responses as an empty delimiter, preserving quoted delimiters, folder names/flags and existing filtering. Added meaningful parser/provider regressions for mixed listings, malformed/non-byte/Noselect rows, flat-name roles and exclusions, role discovery and full/incremental scans. Seven positive regressions failed with the original parser; all 205 focused tests and the complete required-browser pre-push gate passed (3,978 passed, one existing expected failure, 96.52% aggregate coverage). Author self-review is complete with no outstanding introduced findings. Local task complete; integration and push are coordinator-owned.
+Accept all ASCII-case variants of the NIL delimiter without changing folder spelling, flags, quoted delimiters or role exclusions. Original and follow-up parser/full/incremental mocked scan regressions pass; nine mixed-case regressions failed before correction. Independent backend review passed 42 tests, 11 subtests and six actual-pipe probes across the full backend correction scope. Combined required gate: 4163 passed, 96.72% coverage; implementation and independent review complete. Local integration is authorized; no public push.
 <!-- SECTION:FINAL_SUMMARY:END -->

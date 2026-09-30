@@ -1,11 +1,11 @@
 ---
 id: TASK-93
 title: Recognize HTML layouts beyond inline root backgrounds
-status: In Progress
+status: Done
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-15 02:56'
-updated_date: '2026-09-30 16:10'
+updated_date: '2026-09-30 16:43'
 labels:
   - ui
 dependencies: []
@@ -26,7 +26,7 @@ The padding detector still misses sender backgrounds supplied by scoped CSS clas
 - [x] #2 Simple HTML retains readable padding, including messages with decorative or hidden background elements.
 - [x] #3 Browser checks exercise the real sanitizer at phone and desktop widths and fail against the previous behavior.
 - [x] #4 An unmatched supported static selector inside conditional CSS does not add reader padding to an otherwise verified canvas; affecting conditional rules retain conservative padding.
-- [ ] #5 Audit follow-up receives independent review and the final combined repository gate before reclosure.
+- [x] #5 Audit follow-up receives independent review and the final combined repository gate before reclosure.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -65,12 +65,12 @@ Audit correction checkpoint: actual worker regressions fail at the combined base
 The new real-reader test failed against exported unchanged combined-base production on the extra padding class. With the fix, the complete seventeen-case spacing matrix passes at phone/tablet/desktop widths, in both themes and print; all affected charset/spacing checks total 60 passes. The eight worker subcases retain conservative behavior for matching and unsupported selectors. AC4 is verified; independent review and the final combined repository gate remain pending. Browser commands exited and the interval was released.
 
 Full-task author review against combined base 47e54fd653f65a33b394f52207602476dc14126b confirms the only production change is ordering existing static target matching before conditional uncertainty. Matching/unknown selector fallback, sanitized HTML, dark-mode metadata, and all sanitizer startup/runtime code are preserved. Worker and rendered red/green evidence is complete; independent review and the integration owner final combined required gate remain outstanding.
+
+Preserve authored full-width/class/nested canvases while retaining padding for plain content. Known unmatched static selectors in conditional CSS no longer add a second reader frame; affecting and unsupported selectors retain conservative fallback. Independent source review and five separate Node cases passed; mandatory combined browser cases cover actual reader spacing. Final combined verification passed on 6f76b4398d83c6a6217a0e7049428d976e531c63: unchanged pre-commit run -a --hook-stage pre-push, mandatory Chromium enabled, 4163 tests passed in 287.30s, 96.72% aggregate branch-inclusive coverage against 95%. All normal hygiene, Ruff, formatting and deptry checks passed. Exact backend, reader and TASK-125 heads are ancestors; all merged source/test paths were checked against their reviewed contents. No real mail, credential changes or remote operations. The following closure commit changes task metadata only; code and tests remain the verified candidate.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Recognize class-styled, deeply wrapped and principal-cell message canvases without an extra reader frame. Preserve readable padding for simple HTML and decorative, hidden or genuinely ambiguous layouts, without changing sanitized markup, selector rewriting or dark-mode/trust behavior. All 16 rendered spacing cases pass at three widths in both themes; full required gate passes with 4,076 tests, one existing expected failure and 96.66% coverage. Independent Astra Ultra review has no open findings. Final closure is ledger-only; no integration or publication.
-
-Audit follow-up: inapplicable responsive rules no longer invalidate proven canvases; worker and real-reader regressions pass. Historical closure above is preserved. Status remains In Progress pending independent review and the final combined gate.
+Preserve authored full-width/class/nested canvases while retaining padding for plain content. Known unmatched static selectors in conditional CSS no longer add a second reader frame; affecting and unsupported selectors retain conservative fallback. Independent source review and five separate Node cases passed; mandatory combined browser cases cover actual reader spacing. Combined required gate: 4163 passed, 96.72% coverage; implementation and independent review complete. Local integration is authorized; no public push.
 <!-- SECTION:FINAL_SUMMARY:END -->
