@@ -489,6 +489,166 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "#ownmail-email-content" in result
         assert "font-size" in result
 
+    def test_preserves_qualified_body_selectors_after_extraction(self):
+        """Matching static body predicates survive extraction without a new wrapper."""
+        from ownmail.web import _extract_body_content
+
+        cases = (
+            ("body.main", 'class="main"', " .probe"),
+            ("body[class=main]", 'class="main"', " > .probe"),
+            ("body#message", 'id="message"', " .probe::before"),
+            (
+                'body.main.news#message[class~="main"][data-kind = "message copy"]',
+                'class="main news" id="message" data-kind="message copy"',
+                " > .probe + section .probe",
+            ),
+            ("BODY.main", 'class="main"', " > .probe"),
+            ('body[class = "main news"]', 'class="main news"', " .probe"),
+            ("body[data-kind]", 'data-kind="message copy"', " .probe"),
+        )
+        for compound, attributes, suffix in cases:
+            for placement in ("head", "body"):
+                with self.subTest(compound=compound, placement=placement):
+                    style = f"<style>{compound}{suffix} {{ color: red; }}</style>"
+                    head_style = style if placement == "head" else ""
+                    body_style = style if placement == "body" else ""
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{head_style}</head><body {attributes}>{body_style}"
+                        '<p class="probe">Direct</p><section><p class="probe">Nested</p></section></body></html>'
+                    )
+                    content, container_attributes = _extract_body_content(result)
+                    tree = lxml_html.fragment_fromstring(content, create_parent="div")
+                    styles = tree.xpath("./style")
+                    assert len(styles) == 1
+                    # :where(*) keeps the match unconditional; the original compound
+                    # inside :is() retains its class/attribute/ID and type specificity.
+                    expected = f"#ownmail-email-content:is(:where(*), {compound}){suffix}"
+                    assert expected + " { color: red; }" in styles[0].text_content()
+                    assert container_attributes == {}
+                    assert [element.tag for element in tree] == ["style", "p", "section"]
+                    assert tree.xpath("./p")[0].text_content() == "Direct"
+                    assert tree.xpath("./section/p")[0].text_content() == "Nested"
+
+    def test_qualified_body_selectors_respect_nonmatching_attributes(self):
+        """A missing or different body predicate must not become unconditional."""
+        for compound in (
+            "body.other",
+            "body#other",
+            "body[class=main]",
+            'body.main#message[data-kind="other"]',
+            "body[data-missing]",
+        ):
+            for placement in ("head", "body"):
+                with self.subTest(compound=compound, placement=placement):
+                    style = f"<style>{compound} .probe {{ color: red; }}</style>"
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{style if placement == 'head' else ''}</head>"
+                        '<body class="main news" id="message" data-kind="message copy">'
+                        f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                    )
+                    stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                    assert stylesheet == f"#ownmail-email-content {compound} .probe {{ color: red; }}"
+
+    def test_qualified_body_selectors_use_sanitized_attributes(self):
+        """Removed clobbering IDs and event attributes cannot activate body rules."""
+        css = (
+            "body.main .probe { color: red; }"
+            "body#attributes .probe { color: blue; }"
+            "body[id=attributes] .probe { color: green; }"
+            "body[onload] .probe { color: yellow; }"
+        )
+        for placement in ("head", "body"):
+            with self.subTest(placement=placement):
+                style = f"<style>{css}</style>"
+                result, *_ = self.sanitizer.sanitize(
+                    f"<html><head>{style if placement == 'head' else ''}</head>"
+                    '<body class="main" id="attributes" onload="unsafe()">'
+                    f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                )
+                tree = lxml_html.fromstring(result)
+                body = tree.xpath("//body")[0]
+                assert body.get("id") is None
+                assert body.get("onload") is None
+                stylesheet = tree.xpath("//style")[0].text_content()
+                for compound in ("body#attributes", "body[id=attributes]", "body[onload]"):
+                    assert f"#ownmail-email-content {compound} .probe" in stylesheet
+                    assert f":is(:where(*), {compound})" not in stylesheet
+                assert "#ownmail-email-content:is(:where(*), body.main) .probe { color: red; }" in stylesheet
+
+    def test_qualified_body_selectors_keep_author_scoped_rules_unchanged(self):
+        """Deferred head styles must retain the provenance of already-scoped rules."""
+        scoped_rules = (
+            "#ownmail-email-content body.main .probe { color: blue; }"
+            "body.main #ownmail-email-content .probe { color: green; }"
+        )
+        for placement in ("head", "body"):
+            with self.subTest(placement=placement):
+                style = f"<style>body.main .probe {{ color: red; }}{scoped_rules}</style>"
+                result, *_ = self.sanitizer.sanitize(
+                    f"<html><head>{style if placement == 'head' else ''}</head><body class=main>"
+                    f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                )
+                stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                assert scoped_rules in stylesheet
+                assert "#ownmail-email-content:is(:where(*), body.main) .probe { color: red; }" in stylesheet
+
+    def test_qualified_body_selectors_keep_unsupported_roots_unchanged(self):
+        """Dynamic, escaped and malformed body compounds retain the existing fallback."""
+        for selector in (
+            "body.main:hover .probe",
+            "body.main:has(.probe) .probe",
+            r"body.ma\69 n .probe",
+            r"b\6f dy.main .probe",
+            "body..main .probe",
+        ):
+            with self.subTest(selector=selector):
+                result, *_ = self.sanitizer.sanitize(
+                    f"<html><head><style>{selector} {{ color: red; }}</style></head>"
+                    '<body class="main"><p class="probe">Text</p></body></html>'
+                )
+                stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                assert stylesheet == f"#ownmail-email-content {selector} {{ color: red; }}"
+
+    def test_qualified_body_selectors_do_not_activate_root_siblings(self):
+        """Mapping a matching body must never make a selector reach app siblings."""
+        for selector in (
+            "body.main + .shell",
+            "body.main+.shell",
+            "body[class=main] ~ .shell",
+            "body#message~.shell",
+        ):
+            for placement in ("head", "body"):
+                with self.subTest(selector=selector, placement=placement):
+                    style = f"<style>{selector} {{ color: red; }}</style>"
+                    result, *_ = self.sanitizer.sanitize(
+                        f"<html><head>{style if placement == 'head' else ''}</head>"
+                        '<body class="main" id="message">'
+                        f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
+                    )
+                    stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                    assert stylesheet == f"#ownmail-email-content {selector} {{ color: red; }}"
+
+    def test_qualified_body_selectors_do_not_leak_between_requests(self):
+        """The long-lived worker must resolve each stylesheet against its own body."""
+        for attributes, matches in (
+            ('class="main" id="message"', True),
+            ("", False),
+            ('class="other" id="other"', False),
+            ('class="main" id="message"', True),
+        ):
+            with self.subTest(attributes=attributes):
+                result, *_ = self.sanitizer.sanitize(
+                    "<html><head><style>body.main#message .probe { color: red; }</style></head>"
+                    f'<body {attributes}><p class="probe">Text</p></body></html>'
+                )
+                stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
+                selector = (
+                    "#ownmail-email-content:is(:where(*), body.main#message) .probe"
+                    if matches
+                    else "#ownmail-email-content body.main#message .probe"
+                )
+                assert stylesheet == selector + " { color: red; }"
+
     def test_scopes_css_in_media_query(self):
         """Test that selectors inside @media are also scoped."""
         html = '<style>@media (max-width: 600px) { .col { width: 100%; } }</style><div class="col">X</div>'

@@ -12,6 +12,99 @@ contrast_browser = test_email_contrast.contrast_browser
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 
+@pytest.mark.parametrize("style_location", ["head", "body"])
+def test_qualified_body_rules_keep_matching_cascade_and_message_scope(
+    shell_app, contrast_browser, spacing_sanitizer, style_location
+):
+    app, archive = shell_app
+    app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
+    css = """
+        /* Sender markup-like comment <p> must remain safe (TASK-119). */
+        body .probe {width:9px;}
+        body.main .class-probe {width:21px;}
+        body[class~="main"] .attribute-probe {width:31px;}
+        body[class = "main compact"] .exact-probe {width:41px;}
+        BODY#message .id-probe {width:51px;}
+        body.main#message[class~="compact"]>.child-probe {width:61px;}
+        body[data-layout="wide"] .data-probe {width:71px;}
+        body#message .cascade-probe {width:81px;}
+        body.main.main .cascade-probe {width:91px;}
+        body.other .nonmatch-probe {width:101px;}
+        body[id="other"] .nonmatch-probe {width:111px;}
+        #ownmail-email-content body.main .already-scoped-probe {width:121px;}
+        body.main+.outside, body.main ~ .outside,
+        body.main /* comment */ + .outside {opacity:0;}
+        body.main .class-probe::before {content:"<b>literal</b>";}
+    """
+    expected = {
+        "class": "21px",
+        "attribute": "31px",
+        "exact": "41px",
+        "id": "51px",
+        "child": "61px",
+        "data": "71px",
+        "cascade": "81px",
+        "nonmatch": "9px",
+        "already-scoped": "9px",
+    }
+    body = "".join(f'<div class="probe {name}-probe">{name}</div>' for name in expected)
+    stylesheet = f"<style>{css}</style>"
+    source = (
+        f"<html><head>{stylesheet if style_location == 'head' else ''}</head>"
+        '<body class="main compact" id="message" data-layout="wide">'
+        f"{stylesheet if style_location == 'body' else ''}{body}</body></html>"
+    )
+    message = EmailMessage()
+    message["Subject"] = "Synthetic qualified body styles"
+    message["From"] = "sender@example.com"
+    message.set_content(source, subtype="html")
+    (archive.archive_dir / "synthetic.eml").write_bytes(message.as_bytes())
+    archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", None, None, None, None)
+    response = app.test_client().get("/email/synthetic")
+    assert response.status_code == 200
+    test_email_contrast.run_contrast_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        r"""
+        const expected = __EXPECTED__;
+        const reference = await browser.newPage();
+        try {
+            // Only synthetic CSS/text: no scripts, resources or mailbox content.
+            await reference.setContent(__SOURCE__);
+            for (const [name, width] of Object.entries(expected)) {
+                const selector = '.' + name + '-probe';
+                assert.equal(await reference.locator(selector).evaluate(el => getComputedStyle(el).width), width);
+                assert.equal(await page.locator('#ownmail-email-content ' + selector)
+                    .evaluate(el => getComputedStyle(el).width), width, name + ' must retain original matching/cascade');
+            }
+            const before = el => getComputedStyle(el, '::before').content;
+            assert.equal(await page.locator('#ownmail-email-content .class-probe').evaluate(before),
+                await reference.locator('.class-probe').evaluate(before));
+        } finally {
+            await reference.close();
+        }
+        await page.evaluate(() => {
+            const outside = document.createElement('div');
+            outside.className = 'outside';
+            outside.id = 'outside-qualified-control';
+            outside.innerHTML = '<div class="probe class-probe" style="width:123px">App shell</div>';
+            document.getElementById('ownmail-email-content').after(outside);
+        });
+        await settle();
+        const outside = page.locator('#outside-qualified-control');
+        assert.equal(await outside.evaluate(el => getComputedStyle(el).opacity), '1', 'Root siblings must stay outside sender scope');
+        assert.equal(await outside.locator('.probe').evaluate(el => getComputedStyle(el, '::before').content), 'none');
+        assert.equal(await page.locator('#ownmail-email-content').evaluate(el => el.classList.contains('main')), false);
+        assert.equal(await page.locator('#ownmail-email-content').getAttribute('data-layout'), null);
+        """.replace("__EXPECTED__", json.dumps(expected)).replace("__SOURCE__", json.dumps(source)),
+        theme="light",
+        rendered_page=response.get_data(as_text=True),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )
+
+
 @pytest.mark.parametrize(
     "css_text",
     [

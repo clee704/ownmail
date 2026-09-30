@@ -131,6 +131,56 @@ function prepareStyleText(css) {
   return wrapped ? result.replace(/^(\s*)<!--/, "$1") : result;
 }
 
+/** Resolve a static body compound without moving sender attributes into the app. */
+function scopeQualifiedBodySelector(selector, body) {
+  if (!body || !/^body[.#\[]/i.test(selector)) return null;
+  let end = 4;
+  while (end < selector.length) {
+    const marker = selector[end];
+    if (marker === "." || marker === "#") {
+      const name = selector.slice(end + 1).match(/^[-\w\u0080-\uFFFF]+/);
+      if (!name) return null;
+      end += name[0].length + 1;
+    } else if (marker === "[") {
+      let quote = null;
+      let close = end + 1;
+      for (; close < selector.length; close++) {
+        const char = selector[close];
+        // Leave escaped roots to the existing fallback; jsdom does not reliably
+        // match CSS escapes. Dynamic pseudo-classes are also not static predicates.
+        if (char === "\\") return null;
+        if (quote) {
+          if (char === quote) quote = null;
+        } else if (char === '"' || char === "'") {
+          quote = char;
+        } else if (char === "]") {
+          break;
+        } else if (char === "[") {
+          return null;
+        }
+      }
+      if (close === selector.length) return null;
+      end = close + 1;
+    } else {
+      break;
+    }
+  }
+  const suffix = selector.slice(end);
+  if (suffix && !/^[\s>]/.test(suffix)) return null;
+  const relationship = suffix.replace(/^(?:\s|\/\*[\s\S]*?\*\/)*/, "");
+  // A sibling of the message container belongs to the app, not the message.
+  if (/^[+~]/.test(relationship)) return null;
+  const compound = selector.slice(0, end);
+  try {
+    if (!body.matches("body" + compound.slice(4))) return null;
+  } catch {
+    return null;
+  }
+  // The wildcard makes this match the container; the original compound keeps
+  // its specificity so ID-qualified rules still outrank class-qualified rules.
+  return `#ownmail-email-content:is(:where(*), ${compound})${suffix}`;
+}
+
 /**
  * Scope and sanitize a CSS stylesheet using postcss AST.
  * - Removes @charset; allows @import only from trusted font providers
@@ -140,7 +190,7 @@ function prepareStyleText(css) {
  * - Scopes all selectors under #ownmail-email-content
  * - Leaves @font-face, @keyframes unscoped
  */
-function scopeAndSanitizeCSS(css) {
+function scopeAndSanitizeCSS(css, body = null) {
   let root;
   try {
     // Ignore sourceMappingURL comments so message CSS cannot make postcss read local files.
@@ -208,6 +258,8 @@ function scopeAndSanitizeCSS(css) {
       if (!sel) return sel;
       // Already scoped
       if (sel.includes("#ownmail-email-content")) return sel;
+      const qualified = scopeQualifiedBodySelector(sel, body);
+      if (qualified) return qualified;
       // Replace standalone html/body with #ownmail-email-content
       if (/^(html|body)$/i.test(sel)) return "#ownmail-email-content";
       // Replace html/body prefix: "body .foo" → "#ownmail-email-content .foo"
@@ -244,10 +296,29 @@ function sanitizeInlineStyle(css) {
   return css;
 }
 
+// Head styles arrive before BODY attributes are sanitized. Keep their source
+// so later resolution does not reinterpret sender-authored already-scoped CSS.
+const pendingBodyStyles = new WeakMap();
+const sanitizedBodies = new WeakSet();
+
+purify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName !== "BODY") return;
+  sanitizedBodies.add(node);
+  for (const style of node.ownerDocument.querySelectorAll("style")) {
+    const original = pendingBodyStyles.get(style);
+    if (original === undefined) continue;
+    style.textContent = scopeAndSanitizeCSS(original, node);
+    pendingBodyStyles.delete(style);
+  }
+});
+
 // Hook into DOMPurify to sanitize and scope CSS, and filter <link> tags
 purify.addHook("uponSanitizeElement", (node, data) => {
   if (data.tagName === "style" && node.textContent) {
-    node.textContent = scopeAndSanitizeCSS(node.textContent);
+    const body = node.ownerDocument.body;
+    const context = sanitizedBodies.has(body) ? body : null;
+    if (!context) pendingBodyStyles.set(node, node.textContent);
+    node.textContent = scopeAndSanitizeCSS(node.textContent, context);
   }
 
   // Allow <link rel="stylesheet"> only from trusted font providers
