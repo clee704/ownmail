@@ -481,6 +481,14 @@ class TestTryDecode:
         # Should return None or invalid result
         assert result is None or "\ufffd" not in result
 
+    @pytest.mark.parametrize("encoding", ["utf-8", "UTF8", "utf_8"])
+    def test_literal_replacement_character_is_preserved(self, encoding):
+        """Strict UTF-8 accepts authored U+FFFD, including charset aliases."""
+        from ownmail.web import _try_decode
+
+        body = "Café �"
+        assert _try_decode(body.encode(), encoding) == body
+
 
 class TestRawEmailRoute:
     """Tests for /raw/<email_id> route."""

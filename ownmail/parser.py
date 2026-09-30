@@ -1,6 +1,7 @@
 """Email parser for extracting searchable content from .eml files."""
 
 import base64
+import codecs
 import email
 import email.utils
 import html
@@ -248,11 +249,52 @@ def _try_decode(payload: bytes, encoding: str) -> str | None:
     """
     try:
         decoded = payload.decode(encoding)
-        if _validate_decoded_text(decoded):
+        # Strict UTF-8 proves a literal U+FFFD came from the source bytes.
+        # Readability heuristics are only needed for legacy codec guesses.
+        if codecs.lookup(encoding).name == "utf-8" or _validate_decoded_text(decoded):
             return decoded
     except (UnicodeDecodeError, LookupError):
         pass
     return None
+
+
+def _decode_body(payload: bytes, header_charset: str | None, *, is_html: bool = False) -> str:
+    """Select the same body charset for display and indexing.
+
+    Declarations win when they decode cleanly, except Latin-1: prefer UTF-8
+    when the entire payload is valid UTF-8. Otherwise retain Latin-1. Bytes
+    valid in both encodings are inherently ambiguous; this rule favors UTF-8.
+    Other declared legacy encodings retain their precedence.
+    """
+    declarations = [header_charset] if header_charset else []
+    if is_html:
+        match = HTML_CHARSET_RE.search(payload[:2048].decode("latin-1"))
+        if match:
+            declarations.append(match.group(1))
+
+    for declaration in declarations:
+        charset = CHARSET_ALIASES.get(declaration.lower(), declaration)
+        try:
+            if codecs.lookup(charset).name == "iso8859-1":
+                result = _try_decode(payload, "utf-8")
+                if result is not None:
+                    return result
+        except LookupError:
+            continue
+        result = _try_decode(payload, charset)
+        if result is not None:
+            return result
+
+    encodings = ["utf-8"]
+    # A short body or long ASCII preamble must not hide legacy CJK bytes.
+    if not payload.isascii():
+        encodings.extend(["cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"])
+    encodings.extend(["iso-8859-1", "cp1252"])
+    for encoding in encodings:
+        result = _try_decode(payload, encoding)
+        if result is not None:
+            return result
+    return payload.decode("utf-8", errors="replace")
 
 
 class EmailParser:
@@ -533,56 +575,10 @@ class EmailParser:
             # First, try to get raw bytes and decode with proper charset
             payload = part.get_payload(decode=True)
             if payload and isinstance(payload, bytes):
-                # Check header charset first, but validate the result
-                header_charset = part.get_content_charset()
-                if header_charset:
-                    charset = CHARSET_ALIASES.get(header_charset.lower(), header_charset)
-                    try:
-                        decoded = payload.decode(charset)
-                        # Validate result - if it has replacement chars, charset was wrong
-                        if _validate_decoded_text(decoded):
-                            return EmailParser._strip_embedded_mime_headers(decoded)
-                        # Header charset produced garbage - fall through to auto-detection
-                    except (LookupError, UnicodeDecodeError):
-                        pass
-
-                # For HTML, try to extract charset from meta tag
-                content_type = part.get_content_type()
-                if content_type == "text/html":
-                    try:
-                        # Use latin-1 to preserve raw bytes for regex search
-                        raw_html = payload.decode("latin-1")
-                        match = HTML_CHARSET_RE.search(raw_html[:2048])
-                        if match:
-                            meta_charset = match.group(1).lower()
-                            charset = CHARSET_ALIASES.get(meta_charset, meta_charset)
-                            result = _try_decode(payload, charset)
-                            if result is not None:
-                                return result
-                    except Exception:
-                        pass
-
-                # No charset specified or it was wrong - try smart detection
-                # Sample more bytes since CJK content may not appear until later
-                sample_size = min(len(payload), 4000)
-                high_bytes = sum(1 for b in payload[:sample_size] if b >= 0x80)
-
-                if high_bytes > 10:
-                    # Has significant non-ASCII content - try various encodings
-                    # and validate the result makes sense
-                    for encoding in ["utf-8", "cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"]:
-                        result = _try_decode(payload, encoding)
-                        if result is not None:
-                            return EmailParser._strip_embedded_mime_headers(result)
-
-                # Try common encodings with validation
-                for encoding in ["utf-8", "iso-8859-1", "cp1252"]:
-                    result = _try_decode(payload, encoding)
-                    if result is not None:
-                        return EmailParser._strip_embedded_mime_headers(result)
-
-                # Last resort - decode with replacement
-                return EmailParser._strip_embedded_mime_headers(payload.decode("utf-8", errors="replace"))
+                decoded = _decode_body(
+                    payload, part.get_content_charset(), is_html=part.get_content_type() == "text/html"
+                )
+                return EmailParser._strip_embedded_mime_headers(decoded)
 
             # Fallback to get_content() for non-bytes
             payload = part.get_content()

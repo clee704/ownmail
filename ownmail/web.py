@@ -22,7 +22,18 @@ from flask import Flask, abort, g, make_response, redirect, render_template, req
 
 from ownmail import roles
 from ownmail.archive import EmailArchive
-from ownmail.parser import EmailParser, _validate_decoded_text, extract_attachment_filename, is_attachment
+from ownmail.parser import (
+    EmailParser,
+    _decode_body,
+    extract_attachment_filename,
+    is_attachment,
+)
+from ownmail.parser import (
+    _try_decode as _try_decode,
+)
+from ownmail.parser import (
+    _validate_decoded_text as _validate_decoded_text,
+)
 from ownmail.query import parse_query
 from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_web_config, serialize_config_writes
 
@@ -118,20 +129,6 @@ ATTACHMENT_CSP = "default-src 'none'; sandbox"
 # Writes an attached message with the header folding it arrived with, and
 # the CRLF line endings RFC 5322 requires
 ATTACHED_MESSAGE_POLICY = email_policy.clone(refold_source="none", linesep="\r\n")
-
-# Regex to extract charset from HTML meta tag
-# Matches: <meta charset="euc-kr"> or <meta http-equiv="Content-Type" content="text/html; charset=euc-kr">
-HTML_CHARSET_RE = re.compile(
-    r'<meta[^>]+charset\s*=\s*["\']?([a-zA-Z0-9_-]+)',
-    re.IGNORECASE,
-)
-
-# Charset aliases for Korean encodings
-CHARSET_ALIASES = {
-    "ks_c_5601-1987": "cp949",
-    "euc-kr": "euc-kr",
-    "euc_kr": "euc-kr",
-}
 
 
 def _get_server_timezone_name() -> str:
@@ -603,17 +600,6 @@ def _clean_snippet_text(text: str) -> str:
     return text
 
 
-def _try_decode(payload: bytes, encoding: str) -> str | None:
-    """Try to decode payload with given encoding and validate result."""
-    try:
-        decoded = payload.decode(encoding)
-        if _validate_decoded_text(decoded):
-            return decoded
-    except (UnicodeDecodeError, LookupError):
-        pass
-    return None
-
-
 # Regex patterns for linkifying plain text
 URL_RE = re.compile(r'(https?://[^\s<>"\')\]]+)', re.IGNORECASE)
 EMAIL_RE = re.compile(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})")
@@ -711,103 +697,13 @@ def _linkify(text: str) -> str:
 
 
 def _decode_text_body(payload: bytes, header_charset: str | None) -> str:
-    """Decode plain text body with smart charset detection.
-
-    Args:
-        payload: Raw bytes of text content
-        header_charset: Charset from Content-Type header (may be None)
-
-    Returns:
-        Decoded text string
-    """
-    # If header specifies charset, try it first with validation
-    if header_charset:
-        charset = CHARSET_ALIASES.get(header_charset.lower(), header_charset)
-        result = _try_decode(payload, charset)
-        if result is not None:
-            return result
-        # Header charset didn't produce valid result - fall through to auto-detection
-
-    # Check if payload has high bytes (non-ASCII) suggesting CJK encoding
-    # Sample multiple regions since Korean content may not appear in first 500 bytes
-    sample_size = min(len(payload), 4000)
-    high_bytes = sum(1 for b in payload[:sample_size] if b >= 0x80)
-
-    if high_bytes > 10:
-        # Has significant non-ASCII content - try various encodings
-        # and validate the result makes sense
-        for encoding in ["utf-8", "cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"]:
-            result = _try_decode(payload, encoding)
-            if result is not None:
-                return result
-
-    # Try common encodings with validation
-    for encoding in ["utf-8", "iso-8859-1", "cp1252"]:
-        result = _try_decode(payload, encoding)
-        if result is not None:
-            return result
-
-    return payload.decode("utf-8", errors="replace")
+    """Decode plain text with the charset selection used for indexing."""
+    return _decode_body(payload, header_charset)
 
 
 def _decode_html_body(payload: bytes, header_charset: str | None) -> str:
-    """Decode HTML body with charset detection from meta tag fallback.
-
-    Args:
-        payload: Raw bytes of HTML content
-        header_charset: Charset from Content-Type header (may be None)
-
-    Returns:
-        Decoded HTML string
-    """
-    # If header specifies charset, use it (with alias mapping)
-    if header_charset:
-        charset = CHARSET_ALIASES.get(header_charset.lower(), header_charset)
-        try:
-            decoded = payload.decode(charset)
-            if _validate_decoded_text(decoded):
-                return decoded
-        except (LookupError, UnicodeDecodeError):
-            pass
-
-    # No header charset - try to detect from HTML meta tag
-    # First, do a quick ASCII-safe decode to find the meta tag
-    try:
-        # Use latin-1 which maps bytes 1:1 to preserve raw bytes for regex
-        raw_html = payload.decode("latin-1")
-        match = HTML_CHARSET_RE.search(raw_html[:2048])  # Only check first 2KB
-        if match:
-            meta_charset = match.group(1).lower()
-            charset = CHARSET_ALIASES.get(meta_charset, meta_charset)
-            try:
-                decoded = payload.decode(charset)
-                if _validate_decoded_text(decoded):
-                    return decoded
-            except (LookupError, UnicodeDecodeError):
-                pass
-    except Exception:
-        pass
-
-    # No charset found - try smart detection like plain text
-    # Sample multiple regions since Korean content may not appear in first 500 bytes
-    sample_size = min(len(payload), 4000)
-    high_bytes = sum(1 for b in payload[:sample_size] if b >= 0x80)
-
-    if high_bytes > 10:
-        # Has significant non-ASCII content - try various encodings
-        for encoding in ["utf-8", "cp949", "euc-kr", "gb2312", "gbk", "big5", "shift_jis", "euc-jp"]:
-            result = _try_decode(payload, encoding)
-            if result is not None:
-                return result
-
-    # Try common encodings with validation
-    for encoding in ["utf-8", "iso-8859-1", "cp1252"]:
-        result = _try_decode(payload, encoding)
-        if result is not None:
-            return result
-
-    # Last resort
-    return payload.decode("utf-8", errors="replace")
+    """Decode HTML with MIME/meta declarations and the indexing fallback."""
+    return _decode_body(payload, header_charset, is_html=True)
 
 
 def _is_remote_url(url: str) -> bool:
