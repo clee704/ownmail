@@ -59,7 +59,7 @@ def parse_list_response(folder_data) -> list[tuple[str, str, str]]:
         if not isinstance(item, bytes):
             continue
         # Folder list response: (\\Flags) ("delimiter" / NIL) "folder_name"
-        match = re.match(rb'\((?P<flags>.*?)\) (?:"(?P<delim>.*?)"|NIL) (?P<name>.*)', item)
+        match = re.match(rb'\((?P<flags>.*?)\) (?:"(?P<delim>.*?)"|(?i:NIL)) (?P<name>.*)', item)
         if not match:
             continue
         flags = match.group("flags").decode()

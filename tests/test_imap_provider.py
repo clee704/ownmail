@@ -408,14 +408,15 @@ class TestParseListResponse:
         )
         assert parsed == [("INBOX", "\\HasNoChildren", "/"), ("Receipts", "", "")]
 
-    def test_parses_mixed_quoted_and_nil_delimiters(self):
+    @pytest.mark.parametrize("nil", ["NIL", "nil", "Nil", "nIl"])
+    def test_parses_mixed_quoted_and_nil_delimiters(self, nil):
         from ownmail.providers.imap import parse_list_response
 
         assert parse_list_response(
             [
                 b'(\\HasNoChildren) "/" "Work/2026"',
-                b'(\\HasNoChildren \\Sent) NIL "Sent Mail"',
-                b"() NIL Receipts",
+                f'(\\HasNoChildren \\Sent) {nil} "Sent Mail"'.encode(),
+                f"() {nil} Receipts".encode(),
                 b'(\\HasNoChildren) "." "Projects.Notes"',
                 b'() "" "Flat"',
             ]
@@ -1846,7 +1847,8 @@ class TestImapIncrementalScan:
         return conn
 
     @pytest.mark.parametrize("incremental", [False, True])
-    def test_nil_folders_reach_scans_without_admitting_excluded_mail(self, incremental):
+    @pytest.mark.parametrize("nil", ["NIL", "nil", "Nil", "nIl"])
+    def test_nil_folders_reach_scans_without_admitting_excluded_mail(self, incremental, nil):
         conn = self._conn(
             [],
             {"Receipts": [1, 2], "Sent": [3], "Work": [4], "Private": [50], "Trash": [99], "Container": [88]},
@@ -1854,12 +1856,12 @@ class TestImapIncrementalScan:
         conn.list.return_value = (
             "OK",
             [
-                b'(\\HasNoChildren) NIL "Receipts"',
-                b'(\\HasNoChildren \\Sent) NIL "Sent"',
+                f'(\\HasNoChildren) {nil} "Receipts"'.encode(),
+                f'(\\HasNoChildren \\Sent) {nil} "Sent"'.encode(),
                 b'(\\HasNoChildren) "/" "Work"',
-                b'(\\HasNoChildren) NIL "Private"',
-                b'(\\HasNoChildren \\Trash) NIL "Trash"',
-                b'(\\Noselect) NIL "Container"',
+                f'(\\HasNoChildren) {nil} "Private"'.encode(),
+                f'(\\HasNoChildren \\Trash) {nil} "Trash"'.encode(),
+                f'(\\Noselect) {nil} "Container"'.encode(),
             ],
         )
         provider = _imap_provider(conn, host="imap.example.test", exclude_folders=["Private"])
