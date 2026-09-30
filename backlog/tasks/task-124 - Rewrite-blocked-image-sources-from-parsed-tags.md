@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC2
 created_date: '2026-09-30 03:15'
-updated_date: '2026-09-30 06:50'
+updated_date: '2026-09-30 06:59'
 labels:
   - ui
 dependencies: []
@@ -24,8 +24,8 @@ Found while auditing TASK-120. At minimum the rewrite alters attribute text the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Image-tag text inside an attribute value is left unchanged, while real img and source elements still get the placeholder and lose remote srcset values as before
-- [ ] #2 A regression test through the real sanitizer and message route shows attribute text containing image markup reaching the page unchanged with remote content blocked, and real remote images staying unrequested
+- [x] #1 Image-tag text inside an attribute value is left unchanged, while real img and source elements still get the placeholder and lose remote srcset values as before
+- [x] #2 A regression test through the real sanitizer and message route shows attribute text containing image markup reaching the page unchanged with remote content blocked, and real remote images staying unrequested
 - [ ] #3 The full pre-push gate passes
 <!-- AC:END -->
 
@@ -45,4 +45,6 @@ Owner: Ownmail IC2. Branch: fix/parsed-image-blocking. Exact claim/review base: 
 Premise correction: the original <p title="<img src=a.png>"> example is unchanged after rewriting; an outer-regex match alone is not a failure. Tests through the real sanitizer and /email route instead prove five failures: a real img with alt="<img src=" keeps its remote src; analogous img and source srcset values survive; a false source span skips a real image placeholder; a false img span wrongly replaces a video src. Three controls pass, including the original example. Chromium confirms the src and source-srcset failures while inert attributes remain unchanged and zero-request checks pass under CSP. No DOM-structure corruption or network escape is claimed. Each case includes a genuine remote trigger that is correctly rewritten, proving the blocking path executed.
 The image helpers and test_image_blocking.py are identical between the tested upstream fd7f8af0810ab273310947e46b5e8f88c3fb9e8f and the exact claim base. This is a bounded correctness/layout fix in web.py _hide_blocked_images and its image-tag/attribute parsing helpers, tests/test_image_blocking.py and this task only. Shared README, sanitizer setup/locking/recovery, run_server, credentials, real mail and dependencies are excluded. No fetch, main change, rebase or push occurred. The synthetic reproduction was reported before implementation.
 Next action: commit this task-only plan with normal hooks, then implement the approved narrow parser change. Later reviewed TASK-127 fixes must be present in the final combined gate before closure.
+
+The implementation now uses HTMLParser callbacks to locate only real img/source start tags and tokenizes complete sanitizer-serialized attributes before rewriting actual src/srcset values. Source spans are replaced directly in the original string, retaining unrelated attributes, text, comments, entities, case and line endings. The old global image-tag and URL-attribute regexes were removed. No production nodes outside the owned image helpers changed, and sanitizer/run_server/body extraction/README/config are unchanged. On the original implementation, ten new unit and real-sanitizer route cases failed while two original controls passed; the first sandboxed run could not launch the browser probe, then the same checks ran under narrow headless-test escalation without changing assertions. With the fix, all focused image-blocking and web tests passed: 401 passed, one existing TASK-13 expected failure. Mandatory Chromium covered the new exact DOM/attribute/src/srcset/request assertions as well as existing Load/Block/Trust behavior. Repository-wide Ruff check, format-check and deptry pass. Author self-review found no actionable introduced issue. AC1 and AC2 are verified; AC3 and closure remain pending the full gate on the final candidate incorporating any later reviewed TASK-127 fixes.
 <!-- SECTION:NOTES:END -->

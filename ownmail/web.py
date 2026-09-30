@@ -85,10 +85,9 @@ CSS_STRING_RE = re.compile(r""""([^"]*)"|'([^']*)'""")
 # CSS comments, which load nothing
 CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 
-# An <img> or <source> tag as the sanitizer serializes it: attribute values
-# are always double-quoted, and a quoted value may contain ">"
-IMAGE_TAG_RE = re.compile(r'<(img|source)\b(?:[^>"]|"[^"]*")*>', re.IGNORECASE)
-IMAGE_TAG_URL_RE = re.compile(r'\s(src|srcset)="([^"]*)"', re.IGNORECASE)
+# Consume each complete attribute, including non-URL attributes whose values
+# can contain image markup. The sanitizer always double-quotes values.
+IMAGE_ATTRIBUTE_RE = re.compile(r'(\s+)([^\s/>=]+)(?:="([^"]*)")?')
 
 # Content types served inline, so the browser renders them instead of saving
 # them. Everything absent from this set is downloaded.
@@ -743,26 +742,51 @@ def _has_remote_content(html: str) -> bool:
     return False
 
 
+class _ImageSourceParser(HTMLParser):
+    """Locate source edits on real image tags while preserving serialized HTML."""
+
+    def __init__(self, html: str):
+        super().__init__(convert_charrefs=False)
+        self.line_offsets = [0] + [match.end() for match in re.finditer("\n", html)]
+        self.replacements: list[tuple[int, int, str]] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in {"img", "source"}:
+            return
+        from html import unescape
+
+        def replace(attribute):
+            name, value = attribute[2].lower(), unescape(attribute[3] or "")
+            if name == "srcset":
+                return "" if any(_is_remote_url(url) for url in SRCSET_URL_RE.findall(value)) else attribute[0]
+            if name == "src" and tag == "img" and _is_remote_url(value):
+                return f'{attribute[1]}src="{BLOCKED_IMAGE_PLACEHOLDER}"'
+            return attribute[0]
+
+        original = self.get_starttag_text()
+        rewritten = IMAGE_ATTRIBUTE_RE.sub(replace, original)
+        if rewritten != original:
+            line, column = self.getpos()
+            start = self.line_offsets[line - 1] + column
+            self.replacements.append((start, start + len(original), rewritten))
+
+
 def _hide_blocked_images(html: str) -> str:
     """Replace remote <img> sources with a placeholder of the authored size.
 
     The CSP already stops the requests; this only keeps the layout. Dropping a
     remote srcset makes the browser fall back to the placeholder.
     """
-    from html import unescape
-
-    def hide(tag):
-        def replace(attribute):
-            name, value = attribute[1].lower(), unescape(attribute[2])
-            if name == "srcset":
-                return "" if any(_is_remote_url(url) for url in SRCSET_URL_RE.findall(value)) else attribute[0]
-            if tag[1].lower() == "img" and _is_remote_url(value):
-                return f' src="{BLOCKED_IMAGE_PLACEHOLDER}"'
-            return attribute[0]
-
-        return IMAGE_TAG_URL_RE.sub(replace, tag[0])
-
-    return IMAGE_TAG_RE.sub(hide, html)
+    parser = _ImageSourceParser(html)
+    parser.feed(html)
+    parser.close()
+    parts = []
+    previous = 0
+    for start, end, replacement in parser.replacements:
+        parts.extend((html[previous:start], replacement))
+        previous = end
+    parts.append(html[previous:])
+    return "".join(parts)
 
 
 def _unquote_display_name(name: str) -> str:
