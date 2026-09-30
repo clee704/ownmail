@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ownmail.parser import EmailParser
+from ownmail.parser import EmailParser, _try_decode
 from ownmail.web import _decode_html_body, _decode_text_body, create_app
 from tests import test_email_contrast
 from tests.conftest import mock_archive_db
@@ -16,6 +16,8 @@ contrast_browser = test_email_contrast.contrast_browser
 
 RECOVERY_CASES = [
     pytest.param("Café �", "utf-8", "utf-8", "", id="literal-replacement-character"),
+    pytest.param("Привет �", "utf-8", "utf-8", "", id="cyrillic-literal-replacement-character"),
+    pytest.param("Привет", "cp1251", "windows-1251", "", id="declared-cyrillic"),
     pytest.param("Café", "utf-8", "iso-8859-1", "", id="utf8-declared-latin1"),
     pytest.param("한글", "euc-kr", None, "", id="short-undeclared-korean"),
     pytest.param(
@@ -32,6 +34,7 @@ LEGACY_CASES = [
     pytest.param("Café", "iso-8859-1", "latin1", id="latin1-alias"),
     pytest.param("Café “update”", "cp1252", "windows-1252", id="declared-windows1252"),
     pytest.param("한글", "euc-kr", "euc-kr", id="declared-korean"),
+    pytest.param("Ёжик Їжак Ў Ґ", "cp1251", "cp1251", id="cyrillic-letters-and-charset-alias"),
     # These bytes are also valid UTF-8; declarations other than Latin-1 win.
     pytest.param("Ã©", "cp1252", "windows-1252", id="ambiguous-windows1252"),
 ]
@@ -70,6 +73,12 @@ def test_correct_legacy_declarations_are_preserved(text, encoding, declared, con
     assert decoder(part.get_payload(decode=True), declared) == body
     assert EmailParser._safe_get_content(part) == body
     assert EmailParser.parse_file(content=raw)["body"] == text
+
+
+@pytest.mark.parametrize("encoding", ["cp1251", "utf-8"])
+def test_cyrillic_does_not_bypass_control_garbage_rejection(encoding):
+    body = "Привет" + "\x01" * 20
+    assert _try_decode(body.encode(encoding), encoding) is None
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "iso-8859-1"])

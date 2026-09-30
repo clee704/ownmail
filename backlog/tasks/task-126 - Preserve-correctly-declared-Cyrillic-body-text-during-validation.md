@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex-ic2'
 created_date: '2026-09-30 04:50'
-updated_date: '2026-09-30 13:53'
+updated_date: '2026-09-30 13:56'
 labels: []
 dependencies: []
 priority: medium
@@ -40,7 +40,7 @@ Actual baseline result: `Ïðèâåò` instead of `Привет`. The HTML varia
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Synthetic plain and HTML Windows-1251 bodies preserve Cyrillic in display and indexing.
+- [x] #1 Synthetic plain and HTML Windows-1251 bodies preserve Cyrillic in display and indexing.
 - [ ] #2 Existing wrong-charset recovery and valid UTF-8 body behavior remain intact with the required repository checks.
 <!-- AC:END -->
 
@@ -59,4 +59,7 @@ Review base: 598844182834e7be611a8465829c4e9566010cd4 (completed TASK-8); isolat
 <!-- SECTION:NOTES:BEGIN -->
 Manager-approved follow-up discovered during TASK-40 baseline guard preparation. Fresh premise on this review base: Windows-1251 Привет becomes 厥外奄 in both plain and HTML display/part decoding/indexing; the earlier Latin-1 result in the description is the historical pre-TASK-40 baseline. Four synthetic preservation controls pass, including correctly decoded Cyrillic headers. No real archive or messages were used.
 Manager explicitly authorized local doc-4 placement after TASK-123, this task ledger, parser body readability and existing charset regression families only. TASK-123 and completed branches remain separate. Pending owner decisions and all existing execution-order rows are preserved. Scope excludes header decoding, fallback-order changes, arbitrary Unicode acceptance, dependencies, schema, credentials, real messages and security settings.
+
+Implementation: body readability now counts the bounded Cyrillic U+0400-U+04FF block, including letters used by Windows-1251. The existing readability ratio, sampling length, U+FFFD rejection/strict UTF-8 handling, control-garbage checks and codec precedence/order are unchanged; header code is untouched.
+Red evidence: six new plain/HTML charset cases failed against the unchanged product while 22 controls passed. Green focused validation: 536 parser/web/body tests passed, with one existing expected failure; only the six browser-rendered charset cases were deferred to the full required gate. The shared matrix verifies display wrappers, MIME-part decoding and indexing for Windows-1251, its cp1251 alias and Cyrillic UTF-8 with literal U+FFFD, alongside all existing legacy/wrong-charset controls. New UTF-8 and cp1251 control-garbage cases remain rejected. Ruff check, format --check, deptry and diff checks pass. Author self-review is complete; fresh independent Astra Ultra review and full browser/coverage gate remain pending before closure.
 <!-- SECTION:NOTES:END -->
