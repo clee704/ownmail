@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail IC1
 created_date: '2026-09-12 21:27'
-updated_date: '2026-09-30 10:44'
+updated_date: '2026-09-30 10:45'
 labels:
   - web
 dependencies: []
@@ -43,5 +43,7 @@ The trust-sender and untrust-sender routes in ownmail/web.py catch configuration
 Read-only preflight independently verified the source-backed premise on 384a8b941178e7322196d8a3bd53a6ae069c59a4. Mocked Flask requests with synthetic YAML reproduce HTTP 200 status:ok (or trust-form 302) after read and write failures. Failed trust leaves the sender untrusted; failed untrust removes process trust while persisted trust remains, and retry succeeds. An already-persisted trust request can incorrectly leave process membership absent because its update is nested inside the disk-change condition. Existing reader actions already reject non-2xx responses and support retry, so no UI expansion is needed. The manager explicitly authorized preserving immediate session-only revocation on failed untrust and prohibited deferring it or weakening remote-content protection. The existing config lock and atomic replacement remain unchanged. Exact owned paths: web.py two sender routes; existing trusted-sender family in tests/test_web.py; sender-only assertions in tests/test_web_downloads.py partial-write regression; this task ledger. TASK-78 CLI work and approval-blocked TASK-37/95/125 remain outside scope.
 
 Task-only claim/plan checkpoint 911502be29eecf530794abab9663f31b4491a982 preceded all product/test edits. Both sender routes now return HTTP 500 with fixed actionable error messages for read/save failures, preserving immediate process-only revocation on failed untrust. Successful trust also reconciles process membership when the sender is already persisted. The unchanged config serializer, atomic writer, settings endpoint, templates and JavaScript remain outside the diff. Fifteen regression cases failed against the original implementation. The implemented focused suite passed 22 tests, and the final retained web/config suite passed 379 tests with one existing expected failure, including concurrent updates and failed partial writes. Ruff check, format-check, deptry and diff whitespace checks passed. Author review and independent Astra Ultra review found no remaining issues. Review identified a swallowed test assertion; it was replaced with an observation asserted outside the route handler, and all six cases now reject an in-memory-only mutation that delays revocation until after failing I/O. No repository production mutation was used for that probe. All test data/config files were synthetic.
-Next action: preserve the reviewed implementation checkpoint with normal hooks, then run the complete required pre-push gate with mandatory private headless browser coverage once the browser-only interval is coordinated with TASK-78.
+
+Reviewed implementation checkpoint e411c7fe0add4b2a0f54de339848e70cd63d60be is committed with passing normal commit/message hooks. The complete mandatory-browser pre-push gate has not run yet: its browser-only interval is awaiting coordination with concurrent TASK-78. The task remains In Progress until that required aggregate passes; focused/retained results are not a substitute.
+Next action: once the browser-only interval is confirmed, run the prepared complete pre-push command with the original test selection, coverage floor and timeouts, then record its actual result and close with normal hooks only if it passes.
 <!-- SECTION:NOTES:END -->
