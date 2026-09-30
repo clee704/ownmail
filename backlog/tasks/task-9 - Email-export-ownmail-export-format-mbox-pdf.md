@@ -1,11 +1,11 @@
 ---
 id: TASK-9
 title: Email export (ownmail export --format mbox|pdf)
-status: In Progress
+status: Done
 assignee:
   - '@codex-task9'
 created_date: '2026-07-24 20:29'
-updated_date: '2026-09-30 17:24'
+updated_date: '2026-09-30 17:35'
 labels: []
 milestone: m-4
 dependencies: []
@@ -51,4 +51,12 @@ Implemented archive-only mbox export with exclusive output creation, original by
 Independent review of f51d4d2 found one P2: a label parameter equal to active combined with is:archived unnecessarily acquired Active membership. Added a parameter-aware ownership check and five unavailable-cache regression cases (three failed before the correction, two controls passed), plus genuine Active filters after parameter-free attachment clauses. All 41 focused cases now pass with exporter statement/branch coverage at 100%. Clarified that exclusive publication cleans up handled errors/Ctrl-C but abrupt termination can leave a partial output; no atomic-publication claim is made. Awaiting mutation check, normal-hook fix checkpoint, same-reviewer recheck and full required gate. Testing/hooks temporarily paused for the coordinator-requested bounded memory measurement; source edits remain local until release.
 
 Resource pause released. The deliberate plain-clause zip mutation fails the two attachment-plus-ownership regressions; restored code passes all 41 export cases. Review correction is ready for same-reviewer recheck.
+
+Independent correction recheck approved exact 121c55a with no remaining findings and 20 bounded independent checks passing. Preserved reviewed source and prior master refs; normal merge of clean TASK-37 master c444c03 produced combined ceaace9 without conflicts. Compared both lanes against their reviewed heads: no source changes from reconciliation. Mandatory pre-commit run -a --hook-stage pre-push passed on the combined source with real Chromium required, 4215 tests collected and 96.75% combined statement/branch coverage. The actual gate process exited successfully and no private-profile browser remained. Normal commit hooks passed at both implementation checkpoints. Source is committed and all ACs are verified; only local master fast-forward delivery follows closure, with no public push.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added ownmail export --format mbox --output FILE with existing --query syntax and archive-only selection, preserving original headers, MIME bodies and attachments. Retains normal Trash/date exclusions, supports verified Active membership filters without cached-only bodies, and reports invalid queries explicitly. Uses exclusive destination creation, reports partial source-read failures and cleans handled write failures/Ctrl-C for retry. PDF is explicitly split into TASK-129. Synthetic CLI/MIME/query/failure tests, mutation checks, independent review and the full required local gate pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

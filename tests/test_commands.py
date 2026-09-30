@@ -816,6 +816,83 @@ class TestCmdSyncCheck:
         provider.authenticate.assert_called_once()
         provider.close.assert_called_once()
 
+    @pytest.mark.parametrize("first_type", ["gmail_api", "imap"])
+    def test_all_sources_are_checked_in_order_with_owned_local_ids(self, temp_dir, capsys, first_type):
+        sources = [
+            {"name": "first", "type": first_type, "account": "first@example.test"},
+            {
+                "name": "second",
+                "type": "imap" if first_type == "gmail_api" else "gmail_api",
+                "account": "second@example.test",
+            },
+        ]
+        archive = self._archive(temp_dir, sources)
+        for source in sources:
+            for provider_id in ("shared", source["name"]):
+                archive.db.mark_downloaded(
+                    _eid(provider_id, source["account"]),
+                    provider_id,
+                    f"{source['name']}-{provider_id}.eml",
+                    account=source["account"],
+                )
+        archive.db.mark_downloaded("legacy", "legacy-only", "legacy.eml")
+        order = []
+        providers = {}
+
+        def provider_for_source(**kwargs):
+            name = kwargs["source_name"]
+            order.append(name)
+            providers[name] = self._provider(["shared", name])
+            return providers[name]
+
+        with (
+            patch("ownmail.providers.gmail.GmailProvider", side_effect=provider_for_source),
+            patch("ownmail.providers.imap.ImapProvider", side_effect=provider_for_source),
+        ):
+            cmd_sync_check(archive)
+
+        assert order == ["first", "second"]
+        assert capsys.readouterr().out.count("Local archive is fully in sync") == 2
+        for provider in providers.values():
+            provider.authenticate.assert_called_once()
+            provider.close.assert_called_once()
+
+    def test_unsupported_first_source_does_not_hide_supported_source(self, temp_dir, capsys):
+        archive = self._archive(
+            temp_dir,
+            [
+                {"name": "local", "type": "maildir", "account": "local@example.test"},
+                {"name": "remote", "type": "imap", "account": "remote@example.test"},
+            ],
+        )
+        provider = self._provider([])
+        with patch("ownmail.providers.imap.ImapProvider", return_value=provider):
+            cmd_sync_check(archive)
+        out = capsys.readouterr().out
+        assert "not supported for source type 'maildir'" in out
+        assert "Source: remote" in out
+        provider.authenticate.assert_called_once()
+
+    @pytest.mark.parametrize("first_type", ["gmail_api", "imap"])
+    def test_interrupted_listing_closes_provider_and_stops_sources(self, temp_dir, first_type):
+        archive = self._archive(
+            temp_dir,
+            [
+                {"name": "first", "type": first_type, "account": "first@example.test"},
+                {"name": "later", "type": "imap", "account": "later@example.test"},
+            ],
+        )
+        provider = self._provider([])
+        provider.get_all_message_ids.side_effect = KeyboardInterrupt
+        with (
+            patch("ownmail.providers.gmail.GmailProvider", return_value=provider) as gmail,
+            patch("ownmail.providers.imap.ImapProvider", return_value=provider) as imap,
+            pytest.raises(KeyboardInterrupt),
+        ):
+            cmd_sync_check(archive)
+        assert gmail.call_count + imap.call_count == 1
+        provider.close.assert_called_once()
+
 
 class TestCmdUpdateLabels:
     """Tests for update-labels command."""
@@ -1023,7 +1100,17 @@ class TestCmdUpdateLabels:
                 {"name": "home", "type": "imap", "account": "home@example.com"},
             ],
         )
+        self._seed(
+            archive,
+            [
+                ("work", "Work:1", "work.eml", "work@example.com"),
+                ("home", "Home:1", "home.eml", "home@example.com"),
+                ("legacy", "Legacy:1", "legacy.eml", None),
+            ],
+        )
         cmd_update_labels(archive, source_name="home")
+        assert self._labels(archive) == [("home", "Home"), ("legacy", "Legacy")]
+        assert sidecar.read_labels(temp_dir / "work.eml") is None
         assert "Source: home (home@example.com)" in capsys.readouterr().out
 
     def test_unsupported_source_type(self, temp_dir, capsys):
@@ -1163,11 +1250,18 @@ class TestCmdUpdateLabels:
         """SIGINT should stop the Gmail run and report it as paused."""
         import signal as signal_module
 
-        archive = self._archive(temp_dir, [{"name": "g", "type": "gmail_api", "account": "a@example.com"}])
+        archive = self._archive(
+            temp_dir,
+            [
+                {"name": "g", "type": "gmail_api", "account": "a@example.com"},
+                {"name": "later", "type": "imap", "account": "later@example.test"},
+            ],
+        )
         for name in ("a", "b", "c"):
             (temp_dir / f"{name}.eml").write_bytes(b"From: x@example.com\n\nbody\n")
         self._seed(archive, [(n, f"msg{n}", f"{n}.eml", "a@example.com") for n in ("a", "b", "c")])
 
+        self._seed(archive, [("later", "Later:1", "later.eml", "later@example.test")])
         calls = []
 
         def labels_then_interrupt(provider_id):
@@ -1184,7 +1278,98 @@ class TestCmdUpdateLabels:
 
         assert "Update Labels Paused!" in capsys.readouterr().out
         assert len(calls) == 1
+        assert self._labels(archive) == [("a", "INBOX")]
+        assert sidecar.read_labels(temp_dir / "later.eml") is None
         assert signal_module.getsignal(signal_module.SIGINT) is before
+
+    @pytest.mark.parametrize("first_type", ["gmail_api", "imap"])
+    def test_all_sources_backfill_owned_rows_and_first_source_legacy(self, temp_dir, first_type):
+        sources = [
+            {"name": "first", "type": first_type, "account": "first@example.test"},
+            {
+                "name": "second",
+                "type": "imap" if first_type == "gmail_api" else "gmail_api",
+                "account": "second@example.test",
+            },
+        ]
+        archive = self._archive(temp_dir, sources)
+        self._seed(
+            archive,
+            [
+                ("first", "First:1", "first.eml", sources[0]["account"]),
+                ("second", "Second:1", "second.eml", sources[1]["account"]),
+                ("legacy", "Legacy:1", "legacy.eml", None),
+            ],
+        )
+        original = b"From: sender@example.test\n\nSynthetic body\n"
+        for name in ("first", "second", "legacy"):
+            (temp_dir / f"{name}.eml").write_bytes(original)
+        provider = MagicMock()
+        provider.get_labels_for_message.return_value = ["Gmail"]
+        with patch("ownmail.providers.gmail.GmailProvider", return_value=provider) as gmail:
+            cmd_update_labels(archive)
+        expected = [
+            ("first", "Gmail" if first_type == "gmail_api" else "First"),
+            ("legacy", "Gmail" if first_type == "gmail_api" else "Legacy"),
+            ("second", "Second" if first_type == "gmail_api" else "Gmail"),
+        ]
+        assert self._labels(archive) == expected
+        assert gmail.call_args.kwargs["account"] == sources[0 if first_type == "gmail_api" else 1]["account"]
+        assert {call.args[0] for call in provider.get_labels_for_message.call_args_list} == (
+            {"First:1", "Legacy:1"} if first_type == "gmail_api" else {"Second:1"}
+        )
+        for name, label in expected:
+            assert sidecar.read_labels(temp_dir / f"{name}.eml") == [label]
+            assert (temp_dir / f"{name}.eml").read_bytes() == original
+
+    @pytest.mark.parametrize("first_result", [None, [], "unsupported"])
+    def test_unlabelled_legacy_rows_never_reach_a_later_account(self, temp_dir, first_result):
+        sources = [
+            {
+                "name": "first",
+                "type": "maildir" if first_result == "unsupported" else "gmail_api",
+                "account": "first@example.test",
+            },
+            {"name": "second", "type": "gmail_api", "account": "second@example.test"},
+        ]
+        archive = self._archive(temp_dir, sources)
+        self._seed(
+            archive,
+            [("legacy", "legacy-id", "legacy.eml", None), ("second", "second-id", "second.eml", sources[1]["account"])],
+        )
+        for name in ("legacy", "second"):
+            (temp_dir / f"{name}.eml").write_bytes(b"From: sender@example.test\n\nSynthetic\n")
+        providers = {}
+
+        def provider_for_account(**kwargs):
+            account = kwargs["account"]
+            provider = MagicMock()
+            provider.get_labels_for_message.return_value = (
+                first_result if account == sources[0]["account"] else ["Second"]
+            )
+            providers[account] = provider
+            return provider
+
+        with patch("ownmail.providers.gmail.GmailProvider", side_effect=provider_for_account):
+            cmd_update_labels(archive)
+        providers[sources[1]["account"]].get_labels_for_message.assert_called_once_with("second-id")
+        assert self._labels(archive) == [("second", "Second")]
+        assert sidecar.read_labels(temp_dir / "legacy.eml") == ([] if first_result == [] else None)
+
+    def test_empty_first_source_does_not_hide_later_labels(self, temp_dir, capsys):
+        archive = self._archive(
+            temp_dir,
+            [
+                {"name": "empty", "type": "imap", "account": "empty@example.test"},
+                {"name": "later", "type": "imap", "account": "later@example.test"},
+            ],
+        )
+        self._seed(archive, [("later", "Work:2", "later.eml", "later@example.test")])
+        cmd_update_labels(archive)
+        assert self._labels(archive) == [("later", "Work")]
+        out = capsys.readouterr().out
+        assert "No emails need labels." in out
+        assert "Source: later" in out
 
 
 class TestCmdVerifyDatabaseVerbose:

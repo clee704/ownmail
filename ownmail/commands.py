@@ -1119,7 +1119,7 @@ def cmd_sync_check(
     """Compare local archive with server.
 
     Supports both Gmail API and IMAP sources. When no --source is specified,
-    checks the first configured source.
+    checks each configured source in order.
     """
     print("\n" + "=" * 50)
     print("ownmail - Sync Check")
@@ -1134,16 +1134,20 @@ def cmd_sync_check(
         print("No sources configured. Run 'ownmail setup' first.")
         return
 
-    # Find the source to check
-    source = None
+    # A named source restricts the sweep to that source.
     if source_name:
         source = get_source_by_name(config, source_name)
         if not source:
             print(f"❌ Source '{source_name}' not found")
             return
-    else:
-        source = sources[0]
+        sources = [source]
 
+    for source in sources:
+        _sync_check_source(archive, source, verbose)
+
+
+def _sync_check_source(archive: EmailArchive, source: dict, verbose: bool) -> None:
+    """Compare one source; unsupported sources do not stop the outer sweep."""
     source_type = source.get("type")
     account = source["account"]
     print(f"Source: {source['name']} ({account})")
@@ -1178,11 +1182,12 @@ def cmd_sync_check(
 
     # Get all message IDs from server
     print("Fetching message IDs from server...")
-    server_ids = set(provider.get_all_message_ids())
-
-    # Close IMAP connection if applicable
-    if hasattr(provider, "close"):
-        provider.close()
+    try:
+        server_ids = set(provider.get_all_message_ids())
+    finally:
+        # Release an IMAP listing even when Ctrl-C aborts the sweep.
+        if hasattr(provider, "close"):
+            provider.close()
 
     # Get all local message IDs for this account
     local_ids = archive.db.get_downloaded_ids(account)
@@ -1265,17 +1270,23 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
         print("No sources configured. Run 'ownmail setup' first.")
         return
 
-    # Find the source to update
-    source = None
+    # A named source keeps its existing legacy-row behavior.
     if source_name:
         source = get_source_by_name(config, source_name)
         if not source:
             print(f"❌ Source '{source_name}' not found")
             return
-    else:
-        # Use the first source (any type)
-        source = sources[0]
+        sources = [source]
 
+    for index, source in enumerate(sources):
+        # Accountless rows were considered only by the first source before
+        # this sweep. Do not offer an ambiguous row to additional accounts.
+        if not _update_labels_source(archive, source, include_legacy=index == 0):
+            return
+
+
+def _update_labels_source(archive: EmailArchive, source: dict, *, include_legacy: bool) -> bool:
+    """Backfill one source; return False if its run was paused."""
     source_type = source.get("type")
     account = source["account"]
     print(f"Source: {source['name']} ({account})")
@@ -1284,23 +1295,24 @@ def cmd_update_labels(archive: EmailArchive, source_name: str = None) -> None:
     with sqlite3.connect(archive.db.db_path) as conn:
         emails = conn.execute(
             """SELECT e.email_id, e.provider_id, e.filename FROM emails e
-               WHERE (e.account = ? OR e.account IS NULL)
+               WHERE (e.account = ? OR (? AND e.account IS NULL))
                AND NOT EXISTS (
                    SELECT 1 FROM email_labels el WHERE el.email_rowid = e.rowid
                )""",
-            (account,),
+            (account, include_legacy),
         ).fetchall()
 
     if not emails:
         print("No emails need labels.")
-        return
+        return True
 
     if source_type == "gmail_api":
-        _update_labels_gmail(archive, account, emails)
+        return _update_labels_gmail(archive, account, emails)
     elif source_type == "imap":
         _update_labels_imap(archive, account, emails)
     else:
         print(f"update-labels is not supported for source type '{source_type}'")
+    return True
 
 
 def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> None:
@@ -1363,13 +1375,14 @@ def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> No
     print("-" * 50 + "\n")
 
 
-def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> None:
+def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> bool:
     """Backfill labels for Gmail API emails by fetching from the server.
 
     An existing sidecar wins and is restored to the DB without a fetch —
     the server is not authoritative for a message ownmail already captured.
     A failed fetch is counted as an error, not as "no labels": clearing
     label state on a rate-limited request would be silent data loss.
+    Return False when paused so the caller cannot start another source.
     """
     from ownmail.providers.gmail import GmailProvider
 
@@ -1462,6 +1475,7 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> N
     if error_count > 0:
         print(f"  Errors: {error_count}")
     print("-" * 50 + "\n")
+    return not interrupted
 
 
 def _current_labels(conn, rowid: int, filepath: Path) -> list[str]:
