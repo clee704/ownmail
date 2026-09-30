@@ -8,7 +8,7 @@ import signal
 import subprocess
 from email.policy import default as email_policy
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, TemporaryFile
 
 from flask import Flask
 
@@ -23,35 +23,67 @@ _RENDER_SECONDS = 60
 
 def _run_renderer(node: str, *args: str, timeout: float) -> None:
     """Run the optional renderer, bounding failure and cancellation cleanup."""
-    with subprocess.Popen(
-        [node, str(_RENDERER), *args],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=os.name == "posix",
-    ) as process:
+    # A descendant may inherit diagnostics after its leader exits. A regular
+    # temporary file never makes completion depend on those descriptors closing.
+    with TemporaryFile() as diagnostics:
+        process = subprocess.Popen(
+            [node, str(_RENDERER), *args],
+            stdout=subprocess.DEVNULL,
+            stderr=diagnostics,
+            start_new_session=os.name == "posix",
+        )
         try:
-            _, stderr = process.communicate(timeout=timeout)
+            process.wait(timeout=timeout)
         except BaseException as error:
-            # Playwright handles SIGTERM by closing its browser and private profile.
-            # A separate process session prevents terminal Ctrl-C racing this cleanup.
             if os.name == "posix":
+
+                def signal_group(sig):
+                    try:
+                        os.killpg(process.pid, sig)
+                    except ProcessLookupError:
+                        pass
+
+                # Playwright's first SIGTERM closes its browser gracefully; a
+                # second forces its own detached browser group closed. Always
+                # kill remaining members of our group, even if the leader exited.
+                signal_group(signal.SIGTERM)
                 try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    signal_group(signal.SIGTERM)
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        pass
+                finally:
+                    signal_group(signal.SIGKILL)
             else:
-                process.terminate()
+                # Windows has no POSIX process groups. taskkill targets only the
+                # still-running renderer PID and its descendant tree.
+                if process.poll() is None:
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=5,
+                        )
+                    except (OSError, subprocess.TimeoutExpired):
+                        pass
+                    process.kill()
             try:
-                process.communicate(timeout=5)
+                process.wait(timeout=1)
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate()
+                pass
             if isinstance(error, subprocess.TimeoutExpired):
                 raise OSError("PDF renderer timed out") from error
             raise
         if process.returncode:
-            reason = stderr.strip()[-1000:] or f"exit {process.returncode}"
+            diagnostics.seek(0, os.SEEK_END)
+            diagnostics.seek(max(0, diagnostics.tell() - 4000))
+            reason = (
+                diagnostics.read().decode("utf-8", errors="replace").strip()[-1000:] or f"exit {process.returncode}"
+            )
             raise OSError(f"PDF renderer unavailable or failed: {reason}")
 
 

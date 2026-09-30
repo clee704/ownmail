@@ -2,6 +2,7 @@
 
 import html
 import os
+import re
 import sys
 from email.message import EmailMessage
 from pathlib import Path
@@ -381,7 +382,11 @@ def test_actual_pdfs_are_readable_and_block_untrusted_resources(archive, store, 
     extractor = shutil.which("pdftotext")
     if extractor:
         texts = [
-            subprocess.run([extractor, str(path), "-"], capture_output=True, text=True, check=True, timeout=15).stdout
+            " ".join(
+                subprocess.run(
+                    [extractor, "-layout", str(path), "-"], capture_output=True, text=True, check=True, timeout=15
+                ).stdout.split()
+            )
             for path in pdfs
         ]
         assert "Plain 영수증 café" in texts[0]
@@ -399,7 +404,9 @@ def test_actual_pdfs_are_readable_and_block_untrusted_resources(archive, store, 
             assert value in texts[1]
         for value in ["SCRIPT RAN", "REMOTE CANARY", "LOCAL FILE CANARY", "ATTACHMENT PRIVATE CONTENT"]:
             assert value not in texts[1]
-        assert texts[1].count("Readable HTML München 영수증 paragraph") == 100
+        assert [int(value) for value in re.findall(r"Readable HTML München 영수증 paragraph (\d+)", texts[1])] == list(
+            range(100)
+        )
     test_export.assert_no_temporary_exports(output)
 
 
@@ -472,3 +479,90 @@ def test_actual_ctrl_c_stops_renderer_child(tmp_path):
                 process.wait(timeout=5)
     with pytest.raises(ProcessLookupError):
         os.kill(int((tmp_path / "child.pid").read_text()), 0)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Owned POSIX process-group regression")
+@pytest.mark.parametrize(
+    ("inherit_descriptors", "interrupt", "stubborn_leader"),
+    [(True, False, False), (False, False, False), (True, True, False), (False, True, False), (True, False, True)],
+    ids=[
+        "timeout-inherited-output",
+        "timeout-closed-output",
+        "ctrl-c-inherited-output",
+        "ctrl-c-closed-output",
+        "stubborn-leader",
+    ],
+)
+def test_stubborn_renderer_descendant_is_stopped_with_bounded_cleanup(
+    tmp_path, inherit_descriptors, interrupt, stubborn_leader
+):
+    import signal
+    import subprocess
+    import time
+
+    child = tmp_path / "stubborn.py"
+    child.write_text(
+        "import os,signal,time\nfrom pathlib import Path\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "Path(__file__).with_name('descendant.pid').write_text(str(os.getpid()))\n"
+        "time.sleep(40)\n"
+    )
+    renderer = tmp_path / "renderer.py"
+    redirect = "" if inherit_descriptors else ", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL"
+    renderer.write_text(
+        "import os,signal,subprocess,sys,time\nfrom pathlib import Path\n"
+        + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if stubborn_leader else "")
+        + "Path(__file__).with_name('renderer.pid').write_text(str(os.getpid()))\n"
+        f"subprocess.Popen([sys.executable,str(Path(__file__).with_name('stubborn.py'))]{redirect})\n"
+        "time.sleep(40)\n"
+    )
+    caller = tmp_path / "caller.py"
+    caller.write_text(
+        "import sys\nfrom pathlib import Path\nfrom ownmail import pdf_export\n"
+        "pdf_export._RENDERER=Path(__file__).with_name('renderer.py')\n"
+        f"try:\n    pdf_export._run_renderer(sys.executable, timeout={20 if interrupt else 1})\n"
+        "except KeyboardInterrupt:\n    sys.exit(42)\n"
+        "except OSError as error:\n    print(error)\n"
+    )
+    env = dict(os.environ, PYTHONPATH=str(Path(__file__).parents[1]), PYTHONDONTWRITEBYTECODE="1")
+    process = subprocess.Popen([sys.executable, str(caller)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        if interrupt:
+            deadline = time.monotonic() + 5
+            while not (tmp_path / "descendant.pid").exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert (tmp_path / "descendant.pid").exists()
+            process.send_signal(signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=12 if stubborn_leader else 9)
+        assert process.returncode == (42 if interrupt else 0), (stdout, stderr)
+        if not interrupt:
+            assert b"timed out" in stdout
+        descendant = int((tmp_path / "descendant.pid").read_text())
+
+        # Allow the OS to reap the now-orphaned descendant. A Linux zombie is
+        # already stopped; minimal container init processes may leave it unreaped.
+        def running():
+            try:
+                os.kill(descendant, 0)
+            except ProcessLookupError:
+                return False
+            stat = Path(f"/proc/{descendant}/stat")
+            try:
+                return stat.read_text().rpartition(") ")[2].split()[0] != "Z"
+            except FileNotFoundError:
+                return True
+
+        deadline = time.monotonic() + 2
+        while running() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not running(), "Cleanup returned while its SIGTERM-resistant descendant survived"
+    finally:
+        marker = tmp_path / "renderer.pid"
+        if marker.exists():
+            try:
+                os.killpg(int(marker.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=3)
