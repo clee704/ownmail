@@ -1,11 +1,11 @@
 ---
 id: TASK-37
 title: update-labels --source silently processes only one source
-status: In Progress
+status: Done
 assignee:
   - Ownmail backend IC
 created_date: '2026-08-06 19:22'
-updated_date: '2026-09-30 16:58'
+updated_date: '2026-09-30 17:10'
 labels: []
 dependencies: []
 priority: medium
@@ -55,7 +55,7 @@ fallback may have been copied.
 - [x] #2 A named source still selects only that source; missing and unknown-source handling and advertised all-source help remain consistent.
 - [x] #3 During a bare update-labels sweep, accountless legacy rows are eligible only for the original first configured source; later sources receive explicitly owned rows only. Named-source legacy handling, existing labels and sidecar ownership remain unchanged.
 - [x] #4 Ctrl-C prevents later sources from starting. Gmail graceful pause commits completed work and restores its signal handler; sync-check propagates interruption and closes an interrupted listing provider.
-- [ ] #5 Synthetic regressions fail on the original behavior, focused checks and independent review pass, and the unchanged full mandatory-browser gate passes before local integration.
+- [x] #5 Synthetic regressions fail on the original behavior, focused checks and independent review pass, and the unchanged full mandatory-browser gate passes before local integration.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -72,4 +72,12 @@ Review base: 95251cc64f328890362757de49d194fa8ca256fe. 1. Claim and commit this 
 Code recheck confirms both commands fall back to sources[0]. Only update-labels includes accountless rows; sync-check already queries owned rows via get_downloaded_ids(account). The coordinator explicitly resolved the prior TASK-37 proposal hold: bare sweeps preserve accountless eligibility solely for the original first source, later sources process owned rows, and named-source behavior stays unchanged. This is a bounded ordinary bug fix, not authorization to access actual mail, credentials or account status. TASK-98 downloader behavior, schema, TASK-95 cache-integrity work and TASK-111 output semantics remain outside scope. Source ownership is exclusive; no other Ownmail implementation currently overlaps these functions/tests.
 
 Implementation checkpoint: both commands iterate the selected sources, with existing per-source bodies extracted into local helpers so empty or unsupported sources cannot hide later ones. update-labels includes NULL-account rows only for index zero of the selected list; selecting a named source therefore preserves its former legacy eligibility. Later sources receive only explicit account matches, including when the first source fails to fetch, returns empty labels or is unsupported. Gmail returns its existing paused/completed outcome to stop the outer loop; standalone pause output and CLI return behavior remain unchanged. sync-check keeps its owned-row query and propagates interrupted listings through provider cleanup. Source changes are confined to these command functions/helpers; no CLI parser, download/TASK-98, schema or credential logic changed. Eleven regressions failed on the original behavior, while two named/pause controls passed. The final focused command and CLI run passed 297 tests; the formatted target selection passed 13. Two runtime-only mutations are caught: offering legacy rows to every source fails two account-isolation cases, and ignoring pause fails the no-later-source assertion. Mutation code is outside the repository and production remains unmutated. Complete fixed-base self-review found no outstanding issue; independent focused review and the mandatory full gate remain pending, so keep In Progress.
+
+Independent focused review cleared the exact implementation 2748e8ce9d8ae79d6dd7cfe72cce5ca905c6564d. The unchanged mandatory-browser pre-push gate passed: 4174 tests in 261.70s, 96.72% branch-inclusive coverage against 95%, all normal hooks successful. Earlier verification: 11 failures and 2 controls on original code, then 297 focused command/CLI passes and 13 target passes; runtime-only legacy-expansion and ignored-pause mutations were caught. All inputs/providers were synthetic. Code and tests remain frozen at the tested implementation; this closure edits task metadata only. Local integration is authorized and uses a clean fast-forward with backups; no remote operation.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Bare update-labels and sync-check process every configured source in order. Empty or unsupported sources do not hide later sources. Accountless label rows are considered only by the original first source during a bare sweep; named-source legacy eligibility and existing sidecar ownership remain unchanged. Gmail graceful pause stops the outer loop after completed work is saved, and sync-check closes interrupted listings while propagating cancellation. CLI parsing, download/TASK-98 behavior, schema and credentials are unchanged. Independent focused review cleared the exact implementation 2748e8ce9d8ae79d6dd7cfe72cce5ca905c6564d. The unchanged mandatory-browser pre-push gate passed: 4174 tests in 261.70s, 96.72% branch-inclusive coverage against 95%, all normal hooks successful. Earlier verification: 11 failures and 2 controls on original code, then 297 focused command/CLI passes and 13 target passes; runtime-only legacy-expansion and ignored-pause mutations were caught. All inputs/providers were synthetic. Code and tests remain frozen at the tested implementation; this closure edits task metadata only. Local integration is authorized and uses a clean fast-forward with backups; no remote operation.
+<!-- SECTION:FINAL_SUMMARY:END -->
