@@ -226,6 +226,21 @@ class TestCreateApp:
             response = client.get("/help")
             assert response.status_code == 200
             assert b"Search syntax" in response.data
+            document = html.fromstring(response.data)
+            queries = document.xpath("//table//code/text()")
+            assert "attachment:pdf report OR attachment:pdf invoice" in queries
+            assert "apple -orange" in queries
+            assert 'apple -"exact phrase"' in queries
+            assert "(apple OR orange)" in queries
+            assert "attachment:pdf report OR invoice" not in queries
+            assert "attachment:pdf (report OR invoice)" not in queries
+            assert "(apple OR orange) juice" not in queries
+            assert "-orange" not in queries
+            assert '-"exact phrase"' not in queries
+            text = " ".join(document.text_content().split())
+            assert "implicit AND, which binds more tightly than OR" in text
+            assert "Urgent emails on or after January 1, 2024" in text
+            assert "Urgent emails this year" not in text
 
     def test_email_route_not_found(self, mock_archive):
         """Email route with invalid ID should return 404."""
