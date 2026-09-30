@@ -5836,36 +5836,27 @@ class TestWebAttachmentRfc2231:
     """Tests for RFC2231 encoded filenames."""
 
     def test_attachment_with_rfc2231_utf8(self, tmp_path):
-        """Test attachment with RFC2231 UTF-8 encoded filename."""
+        """CJK filenames survive MIME extraction and the download response header."""
+        from pathlib import Path
+        from urllib.parse import unquote_to_bytes
+
+        from ownmail.parser import EmailParser
         from ownmail.web import create_app
 
-        # RFC2231 format: filename*=utf-8''%ED%95%9C%EA%B8%80.txt
-        korean_filename = "한글.txt"
-        encoded = "".join(f"%{b:02X}" for b in korean_filename.encode("utf-8"))
-
-        eml_content = f"""From: sender@example.com
-To: recipient@example.com
-Subject: RFC2231 UTF8 Test
-MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="----=_Part_0"
-
-------=_Part_0
-Content-Type: text/plain
-
-Email with RFC2231 encoded filename.
-------=_Part_0
-Content-Type: application/pdf
-Content-Disposition: attachment; filename*=utf-8''{encoded}
-Content-Transfer-Encoding: base64
-
-JVBERi0xLjQK
-------=_Part_0--
-""".encode()
+        expected = [
+            ("한글 보고서.pdf", b"%PDF-1.4\nKorean\x00\x01\xff"),
+            ("日本語 添付.pdf", b"%PDF-1.4\nJapanese\x00\x02\xfe"),
+            ("中文 附件.pdf", b"%PDF-1.4\nChinese\x00\x03\xfd"),
+        ]
+        eml_content = (Path(__file__).parent / "fixtures" / "rfc2231_filename_param.eml").read_bytes()
+        parsed = EmailParser.parse_file(content=eml_content)
+        assert parsed["attachments"] == ", ".join(name for name, _ in expected)
         eml_file = tmp_path / "rfc2231utf8.eml"
         eml_file.write_bytes(eml_content)
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
+        mock_archive.auto_expire_trash.return_value = 0
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 1
         mock_archive.db.get_email_by_id.return_value = (
@@ -5881,6 +5872,22 @@ JVBERi0xLjQK
         with app.test_client() as client:
             response = client.get("/email/rfc")
             assert response.status_code == 200
+            for index, (filename, payload) in enumerate(expected):
+                response = client.get(f"/attachment/rfc/{index}?download")
+                assert response.status_code == 200
+                assert response.data == payload
+                assert response.mimetype == "application/octet-stream"
+                disposition = response.headers["Content-Disposition"]
+                assert disposition.isascii()
+                kind, *parameters = disposition.split(";")
+                assert kind == "attachment"
+                extended = [
+                    p.strip().removeprefix("filename*=") for p in parameters if p.strip().startswith("filename*=")
+                ]
+                assert len(extended) == 1
+                charset, _, encoded = extended[0].split("'", 2)
+                assert charset.lower() == "utf-8"
+                assert unquote_to_bytes(encoded).decode("utf-8") == filename
 
 
 # ===== MORE WEB ROUTE TESTS =====
