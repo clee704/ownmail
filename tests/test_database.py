@@ -3,8 +3,10 @@
 import sqlite3
 import sys
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
+from lxml import html
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -425,6 +427,80 @@ class TestPerAccountOperations:
 
         assert db.get_history_id(account="alice@gmail.com") == "alice_history"
         assert db.get_history_id(account="bob@gmail.com") == "bob_history"
+
+
+class TestSearchHelpExamples:
+    """Run the documented queries against messages that distinguish their meanings."""
+
+    FRUIT = {"apple-only", "orange-only", "apple-orange", "apple-phrase", "apple-separated"}
+
+    def _db(self, temp_dir):
+        db = ArchiveDatabase(temp_dir)
+        # name, subject, body, sender, attachment, labels, date
+        rows = [
+            ("apple-only", "apple", "", "", "", ["Work"], None),
+            ("orange-only", "orange", "", "", "", ["Work"], None),
+            ("apple-orange", "apple orange", "", "", "", ["Work", "Travel"], None),
+            ("apple-phrase", "apple exact phrase", "", "", "", ["Travel"], None),
+            ("apple-separated", "apple exact separate phrase", "", "", "", [], None),
+            ("labels-only", "pear", "", "", "", ["Work", "Travel"], None),
+            (
+                "pdf-report",
+                "urgent report",
+                "meeting",
+                "boss@work.com",
+                "document.pdf",
+                ["IMPORTANT"],
+                "2024-01-01T00:00:00+00:00",
+            ),
+            ("pdf-invoice", "invoice", "", "Amazon <orders@amazon.com>", "document.pdf", ["IMPORTANT"], None),
+            ("plain-invoice", "invoice", "", "", "", [], None),
+            ("plain-report", "report", "", "Amazon <orders@amazon.com>", "", [], None),
+            ("pdf-unrelated", "notice", "urgent", "boss@work.com", "document.pdf", [], None),
+            ("urgent-old", "urgent", "", "", "", [], "2023-12-31T23:59:59+00:00"),
+            ("urgent-later", "urgent", "", "", "", [], "2025-01-01T00:00:00+00:00"),
+            ("spam-meeting", "meeting", "", "spam@spam.com", "", [], None),
+        ]
+        for name, subject, body, sender, attachments, labels, date in rows:
+            date = date or "2024-02-01T12:00:00+00:00"
+            db.mark_downloaded(_eid(name), name, f"{name}.eml", email_date=date)
+            db.index_email(
+                _eid(name),
+                subject,
+                sender or "sender@example.test",
+                "reader@example.test",
+                date,
+                body,
+                attachments,
+                labels=labels,
+            )
+        return db
+
+    @pytest.mark.parametrize(
+        ("section", "row_number", "expected"),
+        [
+            ("Boolean operators", 1, {"apple-orange"}),
+            ("Boolean operators", 2, FRUIT),
+            ("Boolean operators", 3, {"apple-only", "orange-only", "apple-orange"}),
+            ("Boolean operators", 4, {"apple-orange", "labels-only"}),
+            ("Boolean operators", 5, {"apple-only", "apple-phrase", "apple-separated"}),
+            ("Boolean operators", 6, {"apple-only", "apple-orange", "apple-separated"}),
+            ("Phrases & grouping", 2, FRUIT),
+            ("Examples", 1, {"pdf-invoice"}),
+            ("Examples", 2, {"pdf-report", "urgent-later"}),
+            ("Examples", 3, {"pdf-report", "pdf-invoice"}),
+            ("Examples", 4, {"pdf-report"}),
+            ("Examples", 5, {"pdf-report"}),
+        ],
+    )
+    def test_documented_query_results(self, temp_dir, section, row_number, expected):
+        db = self._db(temp_dir)
+        template = Path(__file__).parents[1] / "ownmail" / "templates" / "help.html"
+        document = html.fromstring(template.read_text())
+        rows = document.xpath("//h3[normalize-space()=$section]/following-sibling::table[1]//tr", section=section)
+        query = rows[row_number - 1].xpath("string(td[1]/code)")
+
+        assert {row[0] for row in db.search(query, tz=ZoneInfo("UTC"))} == {_eid(name) for name in expected}, query
 
 
 class TestSearchSorting:
