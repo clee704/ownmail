@@ -1,11 +1,11 @@
 ---
 id: TASK-19
 title: Decide whether to exclude recurring platform and workflow labels at capture
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-07-25 06:20'
-updated_date: '2026-09-30 20:10'
+updated_date: '2026-09-30 20:25'
 labels: []
 dependencies: []
 priority: low
@@ -51,6 +51,8 @@ Review base: 5aa3dba2381ff6009658b1262dac9bc21d967270. Implementation has not st
 
 Implementation checkpoint: validated source exclude_labels is an exact-name, default-empty list. One six-line archive helper is used only at the ordinary capture sidecar write and the new live-capture sidecar construction. Provider extraction, Active data, eligibility, roles, failed-label handling, fingerprints/cursors, reconciliation and cleanup code are unchanged. Documentation prominently describes irrecoverable metadata omission and loss of filing evidence for later reconcile, retaining separate --apply. No actual source settings changed.
 Validation: 44 dedicated synthetic cases plus 471 retained related cases passed together (515 total). The original implementation failed 24 feature regressions with 18 controls passing after correcting a Gmail test fixture's missing cursor. Three disposable-source mutations were caught: wildcard matching, re-filtering a saved capture sidecar, and resetting the live cursor. An initial late-label-failure test injected failure during listing, which correctly reports an incomplete scan rather than a per-message error; the final probe injects failure during the content lookup to exercise the intended retry/held-cursor path. All prior diagnostic outputs preserved outside the repository. Normal full pre-push gate and independent review remain required before task closure and main integration. No browser has been launched for this task.
+
+Completion gate: independent focused review approved exact 3f1eb501ed65831d7b1028800baab70203421e54 against base 5aa3dba2381ff6009658b1262dac9bc21d967270 with no actionable findings and 27 independent synthetic checks. The unchanged mandatory full pre-push gate passed on that exact clean code/tree: 4,455 tests plus 370 subtests, 96.61% branch-inclusive coverage, zero failures/errors/skips. All 161 observed browser subprocesses exited successfully; the post-run private-profile process check was clear and the browser lease was released. Normal hooks passed. This closure changes only task metadata; no additional aggregate is needed for the unchanged tested code. No real source configuration was activated. TASK50 physical-iPhone acceptance and TASK95/TASK6.1 gates remain open and untouched.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -61,3 +63,9 @@ created: 2026-07-25 06:57
 See doc-8 (Archival semantics) for the principle this knob serves: ownmail freezes metadata at capture and does not chase server-side changes. exclude_labels is how a user declares which of their labels are transient workflow state that should therefore not be frozen at all.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added optional exact-name per-source exclude_labels, defaulting to empty, at ordinary and live capture boundaries for Gmail API and IMAP. Existing owned labels, Active/lifecycle state, provider status filtering, failed-label holds and cursor behavior remain unchanged. Documentation prominently explains that omitted label metadata cannot be reconstructed by rebuild and may change later reconcile filing evidence; existing preview/--apply and retention rules are preserved. Dedicated synthetic tests, three caught mutations, independent review and the full mandatory gate passed. Ready for preserved-ref local integration of the tested code; no remote push or actual setting change.
+<!-- SECTION:FINAL_SUMMARY:END -->
