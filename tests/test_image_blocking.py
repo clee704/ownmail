@@ -90,6 +90,34 @@ def test_local_and_inert_references_are_not_detected(markup):
             '<img src="data:image/gif;base64,AA"></picture>',
             '<picture><source media="(prefers-color-scheme: dark)"><img src="data:image/gif;base64,AA"></picture>',
         ),
+        (
+            '<img alt="<img src=" src="https://t.test/x.png">',
+            f'<img alt="<img src=" src="{BLOCKED_IMAGE_PLACEHOLDER}">',
+        ),
+        (
+            '<img alt="<img srcset=" srcset="https://t.test/x.png 2x" src="https://t.test/fallback.png">',
+            f'<img alt="<img srcset=" src="{BLOCKED_IMAGE_PLACEHOLDER}">',
+        ),
+        (
+            '<source title="<source srcset=" srcset="https://t.test/x.png">',
+            '<source title="<source srcset=">',
+        ),
+        (
+            '<p title="<source">before<img src="https://t.test/x.png">after"</p>',
+            f'<p title="<source">before<img src="{BLOCKED_IMAGE_PLACEHOLDER}">after"</p>',
+        ),
+        (
+            '<p title="<img">before<video src="https://t.test/movie.mp4"></video>after"</p>'
+            '<img src="https://t.test/x.png">',
+            '<p title="<img">before<video src="https://t.test/movie.mp4"></video>after"</p>'
+            f'<img src="{BLOCKED_IMAGE_PLACEHOLDER}">',
+        ),
+        (
+            '<!doctype html>\n<!-- <img src="https://t.test/inert.png"> -->\n'
+            '<p title="a > b">A &amp; B</p>\r\n<IMG\n alt="<img src="\n src="https://t.test/x.png" />',
+            '<!doctype html>\n<!-- <img src="https://t.test/inert.png"> -->\n'
+            f'<p title="a > b">A &amp; B</p>\r\n<IMG\n alt="<img src="\n src="{BLOCKED_IMAGE_PLACEHOLDER}" />',
+        ),
     ],
 )
 def test_blocked_images_become_placeholders(markup, expected):
@@ -130,6 +158,37 @@ def open_message(app, query=""):
     response = app.test_client().get("/email/message" + query)
     assert response.status_code == 200
     return response, html.fromstring(response.get_data(as_text=True))
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<img alt="<img src=" src="https://fixture.test/real.svg">',
+        '<img alt="<img srcset=" srcset="https://fixture.test/real.svg 1x" src="https://fixture.test/fallback.svg">',
+        '<picture><source title="<source srcset=" srcset="https://fixture.test/picture.svg">'
+        '<img src="https://fixture.test/fallback.svg"></picture>',
+        '<p title="<source">before<img src="https://fixture.test/real.svg">after"</p>',
+        '<p title="<img">before<video src="https://fixture.test/movie.mp4"></video>after"</p>',
+    ],
+)
+def test_sanitized_attribute_markup_preserves_dom_and_real_image_rewrites(message_app, spacing_sanitizer, markup):
+    # A complete image-looking attribute is a control, not itself a failing rewrite.
+    markup = '<p title="<img src=a.png>">Control</p>' + markup + REMOTE_IMAGE
+    app = message_app(markup, block_images=True, sanitizer=spacing_sanitizer)
+    _, loaded = open_message(app, "?images=load")
+    _, blocked = open_message(app)
+    original = list(loaded.get_element_by_id("ownmail-email-content").iterdescendants())
+    rewritten = list(blocked.get_element_by_id("ownmail-email-content").iterdescendants())
+    assert len(rewritten) == len(original)
+    for before, after in zip(original, rewritten):
+        assert (after.tag, after.text, after.tail) == (before.tag, before.text, before.tail)
+        expected = dict(before.attrib)
+        if before.tag in {"img", "source"}:
+            expected.pop("srcset", None)
+        if before.tag == "img":
+            expected["src"] = BLOCKED_IMAGE_PLACEHOLDER
+        assert dict(after.attrib) == expected
+    assert original[0].get("title") == "<img src=a.png>"
 
 
 REMOTE_IMAGE = '<p><img src="https://t.test/x.png" width="40"></p>'
@@ -392,6 +451,35 @@ def run_image_browser(app, node, path, assertions):
             timeout=60,
         )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("source", [False, True])
+def test_attribute_markup_cannot_hide_real_image_sources(message_app, spacing_sanitizer, contrast_browser, source):
+    markup = '<p id="host" title="<img src=a.png>">Control</p>'
+    if source:
+        markup += '<picture><source id="source" title="<source srcset=" srcset="https://fixture.test/picture.svg">'
+        markup += '<img id="real" src="https://fixture.test/fallback.svg"></picture>'
+    else:
+        markup += '<img id="real" alt="<img src=" src="https://fixture.test/real.svg">'
+    app = message_app(markup, block_images=True, sanitizer=spacing_sanitizer)
+    run_image_browser(
+        app,
+        contrast_browser,
+        "/email/message",
+        """
+        assertRequested([]);
+        assert.equal(await page.locator('#host').getAttribute('title'), '<img src=a.png>');
+        assert.equal(await page.locator('#host').textContent(), 'Control');
+        assert.equal(await page.locator('#ownmail-email-content img').count(), 1);
+        assert.equal(await page.locator('#real').getAttribute('src'), __PLACEHOLDER__);
+        if (__SOURCE__) {
+            assert.equal(await page.locator('#source').getAttribute('title'), '<source srcset=');
+            assert.equal(await page.locator('#source').getAttribute('srcset'), null);
+        } else {
+            assert.equal(await page.locator('#real').getAttribute('alt'), '<img src=');
+        }
+        """.replace("__PLACEHOLDER__", json.dumps(BLOCKED_IMAGE_PLACEHOLDER)).replace("__SOURCE__", json.dumps(source)),
+    )
 
 
 def test_blocked_images_stay_unrequested_until_loaded(image_app, contrast_browser):
