@@ -1,11 +1,11 @@
 ---
 id: TASK-119
 title: Keep message style blocks that contain HTML-like text
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC2
 created_date: '2026-09-29 06:39'
-updated_date: '2026-09-30 11:29'
+updated_date: '2026-09-30 11:34'
 labels:
   - ui
 dependencies: []
@@ -24,7 +24,7 @@ The sanitizer worker drops a message's whole style block in two cases. When the 
 <!-- AC:BEGIN -->
 - [x] #1 A synthetic message whose style rules are wrapped in <!-- --> keeps its scoped rules after sanitization
 - [x] #2 A synthetic message whose CSS comments or strings contain markup-like text keeps its scoped rules, and no style text can close the style element
-- [ ] #3 The full pre-push gate passes
+- [x] #3 The full pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,4 +45,14 @@ Owner: Ownmail IC2. Branch: fix/message-style-text. Review base: 62875a5c627e9d1
 Implemented token-aware stylesheet preparation before PostCSS serialization. Genuine outer HTML-comment markers are removed only outside strings/comments; literal less-than characters in CSS strings/comments are serialized safely while preserving escape parity and CSS meaning. Existing DOMPurify protections, selector scoping, declaration/import filters, source-map suppression and dependency versions remain unchanged.
 
 Regression evidence: the actual original worker failed 14 new subtests; the six new route/browser cases all failed against a private original-worker copy and pass with the change. All 103 sanitizer tests and all 10 reader-body-style browser cases pass. Rendered fixtures compare original CSS in an isolated reference against sanitized computed content, borders and range-query widths, and verify outside-scope controls and absence of injected DOM/events. Ruff check, Ruff format-check and deptry pass. The first development check caught missing map:false on the additional PostCSS Input; this was corrected and the existing/extended source-map guard now passes. Author self-review against the original base found the diff confined to the approved worker/tests/task scope. Independent Astra Ultra security/correctness review is in progress; full pre-push coverage remains pending. No main integration or publication performed.
+
+Final validation on clean implementation checkpoint bcaba621ce9b43417391316dc5713c413bee491f: the required pre-commit run -a --hook-stage pre-push passed, including all normal hooks and complete mandatory-browser coverage. Result: 4040 passed, one pre-existing strict TASK-13 xfail, no skipped tests, 96.66% combined line/branch coverage (95% required). All 13 Chromium startup/close probes passed with original timeouts; the runtime-only observer changed no assertions or selection. The full gate exited successfully before release of the browser interval.
+
+Fresh independent Astra Ultra correctness/security review of the entire original-base-to-implementation diff found no findings or blockers. Its independent checks passed 456 CSS string semantic/parity cases, 10 stylesheet controls and 12 actual-worker/reparsed-DOM probes. Author self-review confirms only the approved worker, two existing test files and this ledger changed. No dependencies, sanitizer protection/settings, selector/filter behavior, source-map suppression, installation/lifecycle code, web.py, templates or unrelated tasks changed. This closure updates only the ledger; production/test files remain byte-identical to the fully validated checkpoint. Main and prior completed branches remain untouched; integration/publication remain manager-owned.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Preserve genuine outer HTML-comment-wrapped styles and markup-like CSS comments/strings using token-aware preparation before PostCSS serialization. Keep CSS escape meaning, scoped rules and existing sanitizer protections. Actual-worker and route/browser regressions fail against the original worker and pass with the fix. Full pre-push gate passed: 4040 tests, one existing TASK-13 xfail, 96.66% coverage; independent Astra Ultra security/correctness review found no issues. Local isolated branch complete; no integration or publication.
+<!-- SECTION:FINAL_SUMMARY:END -->
