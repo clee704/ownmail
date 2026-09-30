@@ -314,10 +314,21 @@ def test_empty_id_is_rejected_before_source_acquisition(tmp_path, monkeypatch, c
     assert not (tmp_path / "absent").exists()
 
 
-def test_standalone_search_to_read_uses_explicit_config_and_clean_json(tmp_path):
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (b"Subject: Standalone\n\nReadable body\n", "Readable body\n"),
+        (
+            b"Subject: Standalone\nContent-Type: text/html; charset=utf-8\n\n"
+            b"<div><style>hidden CSS</style>Visible <script>hiddenScript()</script>following text</div>",
+            "Visible following text",
+        ),
+    ],
+)
+def test_standalone_search_to_read_uses_explicit_config_and_clean_json(tmp_path, raw, expected):
     import subprocess
 
-    archive, identifier, path = store_message(tmp_path, b"Subject: Standalone\n\nReadable body\n")
+    archive, identifier, path = store_message(tmp_path, raw)
     config = tmp_path / "synthetic.yaml"
     config.write_text(f"sources: []\narchive_root: {json.dumps(str(archive.archive_dir))}\n")
     before = substantive_files(tmp_path)
@@ -329,7 +340,7 @@ def test_standalone_search_to_read_uses_explicit_config_and_clean_json(tmp_path)
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["id"] == identifier
-    assert payload["body"] == "Readable body\n"
+    assert payload["body"] == expected
     assert payload["original"]["uri"] == path.as_uri()
     assert "Loaded config" in result.stderr
     assert substantive_files(tmp_path) == before

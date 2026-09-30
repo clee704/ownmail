@@ -808,6 +808,19 @@ class TestStripHtml:
         result = EmailParser._strip_html(html)
         assert result == "Visible"
 
+    @pytest.mark.parametrize(
+        "source,expected",
+        [
+            ("<div>Before <style>hidden CSS</style>After</div>", "Before After"),
+            ("<div><script>hiddenScript()</script>Only visible text</div>", "Only visible text"),
+            ("<div><b>First</b><style>hidden CSS</style> second</div>", "First second"),
+            ("<div>A<style>hidden CSS</style>B<script>hiddenScript()</script>C</div>", "ABC"),
+            ("<div>Before <noscript>hidden fallback</noscript>After</div>", "Before After"),
+        ],
+    )
+    def test_preserves_visible_tails_of_removed_elements(self, source, expected):
+        assert EmailParser._strip_html(source) == expected
+
     def test_regex_fallback_when_lxml_fails(self):
         """If lxml raises, the regex fallback should still strip tags."""
         from unittest.mock import patch
