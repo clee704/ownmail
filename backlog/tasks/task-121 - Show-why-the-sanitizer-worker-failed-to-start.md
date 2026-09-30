@@ -1,11 +1,11 @@
 ---
 id: TASK-121
 title: Show why the sanitizer worker failed to start
-status: In Progress
+status: Done
 assignee:
   - Ownmail IC1
 created_date: '2026-09-30 02:12'
-updated_date: '2026-09-30 13:16'
+updated_date: '2026-09-30 13:29'
 labels:
   - web
 dependencies: []
@@ -26,7 +26,7 @@ HtmlSanitizer._drain_stderr logs the worker's stderr at debug level, and no logg
 <!-- AC:BEGIN -->
 - [x] #1 When the worker exits before signaling ready, the refusal names the worker's first error line, such as a missing module or a syntax error
 - [x] #2 A worker that is still running but sends an invalid ready line is reported without waiting on its stderr
-- [ ] #3 Tests cover both paths and the full pre-push gate passes
+- [x] #3 Tests cover both paths and the full pre-push gate passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -64,4 +64,16 @@ Next action: finish author/independent review, commit the reviewed implementatio
 Author full-diff review completed against the fixed review base; no unrelated paths, supported behavior removals or weakened assertions were found. Independent Astra Ultra re-review confirmed the EOF-race correction and printable-output regression, with no remaining findings. TASK-122 is ready for its browser gate, so the unused browser interval was released before launching any TASK-121 browser process. This is a reviewed implementation checkpoint, not task completion.
 
 Next action: run the prepared full mandatory-browser pre-push gate after TASK-122 releases Chromium; then close only if every required check passes.
+
+Final required gate passed on clean reviewed implementation a2472a7f12d724bc84384f110f79fabc3c204efc: pre-commit run -a --hook-stage pre-push --verbose, including the complete pytest selection and original 95% branch-inclusive coverage floor, with mandatory installed Chromium, private synthetic fixtures/temp/profile state, and a runtime-only lifecycle observer plus maxfail=1. Result: 4,010 passed in 192.08 seconds, total coverage 96.58%, all 13 Chromium startup probes passed, and no skips, expected failures, startup timeouts or product failures. All hook checks passed without changing tracked files. Local Python was 3.14.6; supported-version CI was not run here.
+
+The gate exited successfully and the browser interval was released immediately. A scoped process check found no remaining task-owned worktree/test/profile processes. All acceptance criteria are now verified. This closing change is ledger-only; production, tests and validation configuration remain identical to the tested implementation checkpoint. The EOF race found during independent review was corrected and re-reviewed with no remaining findings.
+
+Next action: preserve the completed local branch for separately authorized integration. Combined startup validation with independently completed TASK-122 remains necessary at later consolidation; no merge, rebase, main update or publication is included here.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented bounded, per-worker startup error summaries while retaining generic repair guidance and refusal behavior. Delayed drains and the stdout EOF/exit race retain the correct diagnostic; live invalid readiness never waits on stderr, and runtime payloads are not captured. All acceptance criteria passed, including 4,010 full-suite tests, 96.58% coverage, 13 Chromium probes and normal hooks. Author and independent Astra Ultra reviews are complete. Delivery is a clean local branch; integration/publication remain separate.
+<!-- SECTION:FINAL_SUMMARY:END -->
