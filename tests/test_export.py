@@ -185,6 +185,8 @@ def test_query_reuses_existing_archive_search(archive, store, run_cli, tmp_path,
         ("", {"owned", "dual"}),
         ("is:active", {"dual"}),
         ("-is:active", {"owned"}),
+        ("-has:attachment is:active", {"dual"}),
+        ("-has:attachment -is:active", {"owned"}),
         ("is:archived", {"owned", "dual"}),
         ("-is:archived", set()),
         ("label:ServerLabel", set()),
@@ -211,6 +213,31 @@ def test_only_owned_bytes_are_exported_with_existing_membership(
     run_cli(archive, output, f"--query={query}")
     assert {str(message["Subject"]).removeprefix("Message ") for message in read_mbox(output)} == expected
     assert snapshot(archive) == before
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("label:active", ["owned"]),
+        ("is:archived", ["owned"]),
+        ("label:active is:archived", ["owned"]),
+        ("is:archived label:active", ["owned"]),
+        ("label:active -is:archived", []),
+    ],
+)
+def test_archive_filters_do_not_open_unrelated_invalid_cache(archive, store, run_cli, tmp_path, query, expected):
+    store("owned", labels=["active"])
+    cache = tmp_path / ".archive-active"
+    cache.mkdir()
+    marker = cache / "unrecognized-marker"
+    marker.write_bytes(b"unrelated synthetic cache")
+    output = tmp_path / "archive-filters.mbox"
+
+    run_cli(archive, output, f"--query={query}")
+
+    assert [str(message["Subject"]) for message in read_mbox(output)] == expected
+    assert list(cache.iterdir()) == [marker]
+    assert marker.read_bytes() == b"unrelated synthetic cache"
 
 
 @pytest.mark.parametrize("query", ['subject:"unclosed', "is:unexpected", "label:Inbox OR label:Work", "-subject:other"])

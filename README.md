@@ -216,8 +216,9 @@ envelope lines and `From ` escaping. Sidecar labels are not added as headers.
 The output directory must exist, and existing files or symlinks are refused.
 Unreadable message files are skipped and reported; the resulting mbox contains the
 readable matches, and the command exits unsuccessfully to flag the partial export.
-An output failure or Ctrl-C removes the new incomplete output so the same command
-can be rerun. Source mail is never changed. PDF export is tracked separately in
+Handled write errors or Ctrl-C remove the new incomplete output so the same command
+can be rerun. The output can be visible while being copied; abrupt process termination
+can leave a partial file. Source mail is never changed. PDF export is tracked separately in
 [TASK-129](backlog/tasks/task-129%20-%20PDF-export-for-archived-messages.md).
 
 ## Commands

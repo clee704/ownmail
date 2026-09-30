@@ -15,7 +15,7 @@ def export_mbox(archive, output: Path, query: str = "") -> tuple[int, list[tuple
     """Write matching owned messages to a new mbox; return count and skipped files.
 
     Selection retains ordinary archive search's Trash and unknown-date exclusions.
-    Source read failures skip that message; output failures or interruption leave
+    Source read failures skip that message; caught output errors or Ctrl-C leave
     no new output, so the same command can be restarted without appending duplicates.
     """
     parsed = parse_query(query)
@@ -26,7 +26,12 @@ def export_mbox(archive, output: Path, query: str = "") -> tuple[int, list[tuple
 
     # Ownership filters can inspect existing verified links, never cached bodies.
     active_ids = set()
-    if "active" in parsed.params and any(clause in {"__STATE__", "__NOT_STATE__"} for clause in parsed.where_clauses):
+    # SQL literals such as has:attachment consume no parameter; markers do.
+    parameter_clauses = (clause for clause in parsed.where_clauses if clause.startswith("__") or "?" in clause)
+    if any(
+        clause in {"__STATE__", "__NOT_STATE__"} and value == "active"
+        for clause, value in zip(parameter_clauses, parsed.params)
+    ):
         active_ids = set(archive_links(archive).values())
     rows = archive.db.search(
         query, limit=-1, sort="date_asc", _active_ids=active_ids, _with_order=True, _raise_fts_errors=True

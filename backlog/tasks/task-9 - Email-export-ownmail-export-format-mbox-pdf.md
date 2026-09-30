@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex-task9'
 created_date: '2026-07-24 20:29'
-updated_date: '2026-09-30 17:09'
+updated_date: '2026-09-30 17:24'
 labels: []
 milestone: m-4
 dependencies: []
@@ -47,4 +47,8 @@ Review base: 95251cc64f328890362757de49d194fa8ca256fe. Implement only archive-ow
 Premise confirmed: no export CLI exists. Exact scope explicitly authorized: mbox-only, ordinary archive search semantics including Trash/date behavior, no synthesized label headers, no Active-only export. PDF is split into TASK-129 using the supported Backlog shared creation lock. Output remains a new user-selected artifact; source mail, credentials, ownership and schema stay unchanged. CLI changes are confined to a new export function/parser/dispatch, with TASK-37 functions excluded.
 
 Implemented archive-only mbox export with exclusive output creation, original byte-based MIME/header preservation, search filters and verified membership, partial-read reporting and restart-safe failure cleanup. Added an opt-in FTS error path to the existing database search helper, preserving default callers: the synthetic leading text-negation probe previously printed an FTS syntax error and falsely succeeded with an empty export; it now fails before output creation. Valid combined negation and valid empty results are covered. AC1 and AC2 verified by 34 focused synthetic cases including the standalone module CLI, plus 489 retained CLI/database/query/ownership tests. Exporter focused statement and branch coverage is 100%. Four deliberate mutations (50-result cap, nonexclusive destination, swallowed FTS error, omitted Active membership) each failed the intended regression and were restored. Earlier MIME fixture comparison normalized CRLF only on its read side; corrected both comparisons to parsebytes. Leading negative CLI values use standard argparse --query=-term spelling. Required full pre-push gate and independent review remain pending; status stays In Progress.
+
+Independent review of f51d4d2 found one P2: a label parameter equal to active combined with is:archived unnecessarily acquired Active membership. Added a parameter-aware ownership check and five unavailable-cache regression cases (three failed before the correction, two controls passed), plus genuine Active filters after parameter-free attachment clauses. All 41 focused cases now pass with exporter statement/branch coverage at 100%. Clarified that exclusive publication cleans up handled errors/Ctrl-C but abrupt termination can leave a partial output; no atomic-publication claim is made. Awaiting mutation check, normal-hook fix checkpoint, same-reviewer recheck and full required gate. Testing/hooks temporarily paused for the coordinator-requested bounded memory measurement; source edits remain local until release.
+
+Resource pause released. The deliberate plain-clause zip mutation fails the two attachment-plus-ownership regressions; restored code passes all 41 export cases. Review correction is ready for same-reviewer recheck.
 <!-- SECTION:NOTES:END -->
