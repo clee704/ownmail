@@ -1,9 +1,11 @@
 ---
 id: TASK-8
 title: Verify CJK attachment filename encoding (RFC 5987)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex-ic2'
 created_date: '2026-07-24 20:29'
+updated_date: '2026-09-30 13:31'
 labels: []
 milestone: m-3
 dependencies: []
@@ -22,3 +24,20 @@ Carried over from ROADMAP.md's 'Web UI Polish' section, filed verbatim as an ope
 - [ ] #1 Determined whether CJK attachment filenames are handled correctly on both extraction and download
 - [ ] #2 A test fixture + test covers a CJK attachment filename either way (regression guard if it works, failing-then-fixed if it doesn't)
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Review base: 35329257b5e86c06be1f016ed50a19e03de908d0 (completed TASK-122); isolated branch test/cjk-attachment-downloads.
+1. Preserve the current passing product behavior. Add one fully synthetic RFC2231 MIME fixture containing Korean, Japanese and Chinese attachment filenames with distinct payload bytes.
+2. Extend only TestWebAttachmentRfc2231 to exercise actual parser filename extraction and actual Flask attachment responses, checking exact names, UTF-8 filename* encoding/round trip, download disposition and unchanged payload bytes. Preserve its existing message-route check.
+3. Demonstrate meaningful assertions with runtime-only wrong-name/header/payload mutations; leave production files unchanged. Run focused fixture/parser/attachment tests, static checks and the complete required browser/coverage pre-push gate with private runtime resources and coordinated Chromium use.
+4. Self-review the complete task diff, commit checkpoints, then record verified acceptance and clean closure without integration or publication.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Verification task, not a production bug: nine private synthetic observations on the review base already preserve Korean/Japanese/Chinese extraction names, UTF-8 extended Content-Disposition filenames and original payload bytes through actual parser/Flask routes. The gap is durable coverage: the existing RFC2231 web test only requests the message page and checks status 200, and no committed MIME fixture uses filename*=.
+Owned scope is the new synthetic RFC2231 fixture, the existing TestWebAttachmentRfc2231 family and this ledger. No production code, real attachments/mail/config/credentials, sanitizer lifecycle, host/security policy or dependencies change. TASK-121 lifecycle ownership and TASK-123 consolidation remain separate. Acceptance is verified for all three requested languages before closing; the mandatory full pre-push gate remains required even for this tests-only task.
+<!-- SECTION:NOTES:END -->
