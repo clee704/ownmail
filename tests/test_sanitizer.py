@@ -701,9 +701,27 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
 
     def test_dark_mode_detected_from_css(self):
         """Test emails with dark mode CSS are detected as supporting dark mode."""
-        html = "<style>p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }</style><p>Hi</p>"
-        _, _, supports_dark = self.sanitizer.sanitize(html)
-        assert supports_dark is True
+        for css in (
+            "p { color: #333; } @media (prefers-color-scheme: dark) { p { color: #fff; } }",
+            "@media screen and (PREFERS-COLOR-SCHEME:dark) and (max-width: 600px) { p { color: #fff; } }",
+            "@supports (display: grid) { @MEDIA (prefers-color-scheme: /* x */ dark) { p { color: #fff; } } }",
+        ):
+            with self.subTest(css=css):
+                _, _, supports_dark = self.sanitizer.sanitize(f"<style>{css}</style><p>Hi</p>")
+                assert supports_dark is True
+
+    def test_dark_mode_text_outside_media_conditions_is_not_detected(self):
+        """Only a parsed @media condition marks dark-mode support."""
+        for css in (
+            """.a{--x:'@media (prefers-color-scheme:dark){';--y:"}';}.b{display:none}"}""",
+            "/* @media (prefers-color-scheme: dark) { p { color: #fff; } } */ p { color: #333; }",
+            "@media /* (prefers-color-scheme: dark) */ print { p { color: #000; } }",
+            '@media foo("(prefers-color-scheme: dark)") { p { color: #fff; } }',
+            "@media (prefers-color-scheme: light) { p { color: #000; } }",
+        ):
+            with self.subTest(css=css):
+                _, _, supports_dark = self.sanitizer.sanitize(f"<style>{css}</style><p>Hi</p>")
+                assert supports_dark is False
 
     def test_dark_mode_detected_from_dark_background(self):
         """Test emails with dark inline backgrounds are detected as supporting dark mode."""

@@ -206,7 +206,7 @@
             timer = setTimeout(function () { timer = null; run(); }, 80);
         }
         function imageChanged(event) {
-            // Rewriting a style element also fires load; it must not restart the probe.
+            // Stylesheet loads must not restart the probe.
             if (event.target.tagName === 'IMG') refresh();
         }
         content.addEventListener('load', imageChanged, true);

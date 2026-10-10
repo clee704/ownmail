@@ -402,6 +402,24 @@ purify.addHook("afterSanitizeAttributes", (node) => {
 });
 
 /**
+ * Whether a parsed @media condition tests prefers-color-scheme: dark. Text in
+ * CSS strings and comments, inside or outside the condition, does not count.
+ */
+function hasDarkModeMedia(css) {
+  let found = false;
+  postcss.parse(css, { map: false }).walkAtRules(/^media$/i, (atRule) => {
+    const tokenizer = tokenizeCSS(new postcss.Input(atRule.params, { map: false }));
+    let condition = "";
+    while (!tokenizer.endOfFile()) {
+      const token = tokenizer.nextToken();
+      condition += token[0] === "string" || token[0] === "comment" ? " " : token[1];
+    }
+    if (/\(\s*prefers-color-scheme\s*:\s*dark\s*\)/i.test(condition)) found = true;
+  });
+  return found;
+}
+
+/**
  * Detect whether an email supports dark mode natively.
  *
  * Returns true if:
@@ -419,9 +437,7 @@ function detectSupportsDarkMode(html) {
     // Check for dark mode media queries in <style> blocks
     const styles = doc.querySelectorAll("style");
     for (const style of styles) {
-      if (/prefers-color-scheme\s*:\s*dark/i.test(style.textContent)) {
-        return true;
-      }
+      if (hasDarkModeMedia(style.textContent)) return true;
     }
 
     // Check if the email uses dark backgrounds explicitly

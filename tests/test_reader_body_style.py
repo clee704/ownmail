@@ -470,3 +470,54 @@ def test_body_background_covers_trailing_content_and_keeps_images_blocked(
         rendered_page=response.get_data(as_text=True),
         page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
     )
+
+
+def test_theme_switches_toggle_parsed_dark_rules_without_unscoping_strings(
+    shell_app, contrast_browser, spacing_sanitizer
+):
+    app, archive = shell_app
+    app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
+    # The strings once let a text rewrite drop a span and re-parse the rest as a top-level rule.
+    css = """
+        .a {--x:'@media (prefers-color-scheme:dark){';--y:"}';}.ownmail-reader-actions{display:none!important}"}
+        .probe {width:1px;height:2px;margin-left:0px;}
+        @media (prefers-color-scheme: dark) {.probe {width:7px;}}
+        @media (prefers-color-scheme: dark) and (max-width: 1px) {.probe {height:9px;}}
+        @supports (display: block) {@media (prefers-color-scheme: dark) {.probe {margin-left:3px;}}}
+    """
+    message = EmailMessage()
+    message["Subject"] = "Synthetic theme rules"
+    message["From"] = "sender@example.com"
+    message.set_content(f'<style>{css}</style><p class="a">Message copy</p><div class="probe"></div>', subtype="html")
+    (archive.archive_dir / "synthetic.eml").write_bytes(message.as_bytes())
+    archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", None, None, None, None)
+    response = app.test_client().get("/email/synthetic")
+    assert response.status_code == 200
+    test_email_contrast.run_contrast_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        r"""
+        const style = page.locator('#ownmail-email-content style');
+        const original = await style.evaluate(el => el.textContent);
+        const read = () => page.evaluate(() => {
+            const probe = getComputedStyle(document.querySelector('#ownmail-email-content .probe'));
+            return {
+                toolbar: getComputedStyle(document.getElementById('ownmail-reader-actions')).display,
+                probe: [probe.width, probe.height, probe.marginLeft],
+            };
+        });
+        for (let i = 0; i < 2; i++) {
+            assert.deepEqual(await read(), {toolbar: 'flex', probe: ['1px', '2px', '0px']}, 'light ' + i);
+            await setTheme('dark');
+            assert.deepEqual(await read(), {toolbar: 'flex', probe: ['7px', '2px', '3px']}, 'dark ' + i);
+            await setTheme('light');
+        }
+        assert.equal(await style.evaluate(el => el.textContent), original, 'Theme changes must not rewrite CSS text');
+        """,
+        theme="light",
+        system_theme="dark",
+        rendered_page=response.get_data(as_text=True),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )

@@ -31,40 +31,36 @@ document.getElementById('ownmail-message-details-toggle').addEventListener('clic
     });
 })();
 
-var originalEmailStyles = new WeakMap();
+var originalEmailMedia = new WeakMap();
+// Rewriting style text would let the browser re-parse sender strings as new
+// rules. A media rule's condition parses only as a media query list.
+function applyEmailMediaTheme(rules, dark) {
+    for (var i = 0; i < rules.length; i++) {
+        var rule = rules[i];
+        if (rule instanceof CSSMediaRule) {
+            if (!originalEmailMedia.has(rule)) originalEmailMedia.set(rule, rule.media.mediaText);
+            var original = originalEmailMedia.get(rule);
+            // Width is never negative, so these conditions are constant and
+            // keep any other condition in the query.
+            var updated = original.replace(/\(\s*prefers-color-scheme\s*:\s*dark\s*\)/gi,
+                dark ? '(width >= 0px)' : '(width < 0px)');
+            if (rule.media.mediaText !== updated) rule.media.mediaText = updated;
+        }
+        if (rule.cssRules) applyEmailMediaTheme(rule.cssRules, dark);
+    }
+}
 function applyEmailTheme(siteIsDark) {
     var area = document.querySelector('.ownmail-email-content-area');
     if (!area) return;
-    var supportsDark = area.getAttribute('data-supports-dark') === 'true';
-    area.classList.toggle('ownmail-email-dark', siteIsDark && supportsDark);
+    var dark = siteIsDark && area.getAttribute('data-supports-dark') === 'true';
+    area.classList.toggle('ownmail-email-dark', dark);
 
-    // Override @media (prefers-color-scheme: dark) blocks in email CSS
-    // so they follow the ownmail theme, not the OS preference.
-    if (!supportsDark) return;
+    // Sender dark-mode rules follow the reader canvas, not the OS preference.
     var content = document.getElementById('ownmail-email-content');
     if (!content) return;
     var styles = content.querySelectorAll('style');
     for (var i = 0; i < styles.length; i++) {
-        var el = styles[i];
-        // Save original CSS on first call
-        if (!originalEmailStyles.has(el)) originalEmailStyles.set(el, el.textContent);
-        var original = originalEmailStyles.get(el);
-        if (original.indexOf('prefers-color-scheme') === -1) continue;
-        var updated;
-        if (siteIsDark) {
-            // Dark mode: unwrap @media dark blocks so rules always apply
-            updated = original.replace(
-                /@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}/gi,
-                '$1'
-            );
-        } else {
-            // Light mode: remove @media dark blocks entirely
-            updated = original.replace(
-                /@media[^{]*prefers-color-scheme\s*:\s*dark[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gi,
-                ''
-            );
-        }
-        if (el.textContent !== updated) el.textContent = updated;
+        if (styles[i].sheet) applyEmailMediaTheme(styles[i].sheet.cssRules, dark);
     }
 }
 var emailContrast = window.ownmailEmailContrast && window.ownmailEmailContrast(
