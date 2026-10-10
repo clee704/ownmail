@@ -29,6 +29,8 @@ const PURIFY_CONFIG = {
     "script", "iframe", "object", "embed",
     "applet", "meta", "base",
     "math", "svg", "noscript",
+    // Unwrapped: KEEP_CONTENT keeps the controls, which then have no form to submit
+    "form",
     // "link" is NOT forbidden — we filter it in the uponSanitizeElement hook
   ],
 
@@ -36,7 +38,10 @@ const PURIFY_CONFIG = {
   FORBID_ATTR: [
     // Event handlers are blocked by DOMPurify by default,
     // but explicitly forbid dangerous attributes
-    "formaction", "xlink:href", "xmlns",
+    "xlink:href", "xmlns",
+    // A control could otherwise join an application form by its id and
+    // choose where and how that form submits
+    "form", "formaction", "formenctype", "formmethod", "formnovalidate", "formtarget",
   ],
 
   // Allow data: URIs for inline images (CID replacements)
@@ -751,8 +756,8 @@ purify.addHook("afterSanitizeAttributes", (node) => {
     }
   }
 
-  // Force links and forms to open in new tab
-  if (node.tagName === "A" || node.tagName === "FORM") {
+  // Links, including image-map areas, open in a new tab without a referrer
+  if (node.tagName === "A" || node.tagName === "AREA") {
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
   }

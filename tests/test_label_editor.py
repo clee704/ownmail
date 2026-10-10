@@ -389,7 +389,8 @@ def test_narrow_editor_wraps_long_names_without_horizontal_overflow(shell_app, l
     )
 
 
-# Sender markup reusing every editor ID, in the form the sanitizer keeps it.
+# Sender markup reusing every editor ID. It skips the sanitizer, which now unwraps
+# forms, so these tests check the scripts on their own.
 FORGED_EDITOR = (
     '<section id="ownmail-label-editor" data-url="/empty-trash">'
     '<button type="button" id="ownmail-edit-labels">Edit labels</button>'

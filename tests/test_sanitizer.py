@@ -118,11 +118,18 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert 'alt="inline"' in result
 
     def test_keeps_links(self):
-        """Test that links are preserved with target=_blank."""
-        html = '<a href="https://example.com">Link</a>'
-        result, *_ = self.sanitizer.sanitize(html)
-        assert 'href="https://example.com"' in result
-        assert "Link" in result
+        """Links and image-map areas keep their target but open a new tab without a referrer."""
+        for html, xpath in (
+            ('<a href="https://example.com">Link</a>', "//a"),
+            ('<map name="m"><area href="https://example.com" target="_self" coords="0,0,9,9">Link</map>', "//area"),
+        ):
+            with self.subTest(html=html):
+                result, *_ = self.sanitizer.sanitize(html)
+                (link,) = lxml_html.fromstring(result).xpath(xpath)
+                assert link.get("href") == "https://example.com"
+                assert link.get("target") == "_blank"
+                assert link.get("rel") == "noopener noreferrer"
+                assert "Link" in result
 
     def test_strips_iframe(self):
         """Test that <iframe> tags are removed."""
@@ -139,15 +146,31 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "<embed" not in result
         assert "Safe" in result
 
-    def test_allows_form_elements(self):
-        """Test that form elements are preserved (matching Gmail behavior)."""
-        html = '<form action="https://example.com"><input type="text" name="title"><button>Submit</button></form><p>Safe</p>'
-        result, *_ = self.sanitizer.sanitize(html)
-        assert "<form" in result
-        assert "<input" in result
-        assert "<button" in result
-        assert 'target="_blank"' in result
-        assert "Safe" in result
+    def test_neutralizes_forms(self):
+        """Forms are unwrapped and form attributes dropped, so message controls cannot submit."""
+        cases = {
+            "POST form": '<form method="post" action="/empty-trash"><button id="control">Read</button></form>',
+            "GET form": (
+                '<form action="/search"><input name="q" value="synthetic">'
+                '<input id="control" type="submit" value="Search"></form>'
+            ),
+            "formaction": (
+                '<form><button id="control" formaction="/empty-trash" formmethod="post" formtarget="_self" '
+                'formenctype="text/plain" formnovalidate>Read</button></form>'
+            ),
+            "form attribute": (
+                '<form id="target" method="post" action="/empty-trash"></form>'
+                '<button id="control" form="target">Read</button>'
+            ),
+        }
+        for name, markup in cases.items():
+            with self.subTest(name):
+                result, *_ = self.sanitizer.sanitize(f"<p>Before</p>{markup}<p>After</p>")
+                tree = lxml_html.document_fromstring(result)
+                assert tree.xpath("//form") == []
+                assert tree.xpath("//@*[starts-with(name(), 'form')]") == []
+                assert len(tree.xpath('//*[@id="control"]')) == 1
+                assert [p.text for p in tree.xpath("//p")] == ["Before", "After"]
 
     def test_strips_meta_refresh(self):
         """Test that <meta http-equiv=refresh> is removed."""

@@ -122,7 +122,8 @@ use the same running server, so this does not provide a separate offline copy.
 ## HTML and remote content
 
 Ownmail sanitizes email HTML through [DOMPurify](https://github.com/cure53/DOMPurify)
-in a Node.js sidecar before displaying it. Remote content blocking is enabled by
+in a Node.js sidecar before displaying it. Form controls in a message are
+displayed but cannot submit anything. Remote content blocking is enabled by
 default. It stops every request a message makes for remote images, fonts, audio,
 and video, including CSS and responsive images and fonts from services such as
 Google Fonts. Use **Load remote content** to reload one message with its remote

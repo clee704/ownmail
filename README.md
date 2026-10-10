@@ -350,8 +350,9 @@ and can contain sensitive information. Use encrypted storage and protect your
 backups; ownmail does not encrypt the archive itself.
 
 The web interface sanitizes message HTML with
-[DOMPurify](https://github.com/cure53/DOMPurify). Remote content blocking is
-enabled by default. It stops every request a message makes for remote images,
+[DOMPurify](https://github.com/cure53/DOMPurify). Form controls in a message
+are displayed but cannot submit anything. Remote content blocking is enabled by
+default. It stops every request a message makes for remote images,
 fonts, audio, and video, including CSS and responsive images and fonts from
 services such as Google Fonts. Loading remote content explicitly can reveal your
 request to the servers that host it.
