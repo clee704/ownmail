@@ -1,6 +1,9 @@
 (function() {
     var storageKey = 'ownmail-result-position';
-    var list = document.getElementById('ownmail-email-list');
+    var reader = document.getElementById('ownmail-reader-actions');
+    // Reader pages render no result list or unavailable notice, so those IDs
+    // there come from message HTML.
+    var list = reader ? null : document.getElementById('ownmail-email-list');
     var backLink = document.getElementById('ownmail-back-to-results');
 
     function sameTabClick(event) {
@@ -26,10 +29,9 @@
 
     // One session-only reader checkpoint: identity/version and offset, never mail.
     var readerKey = 'ownmail-reading-position';
-    var reader = document.getElementById('ownmail-reader-actions');
     var readerUrl = location.pathname + location.search;
     var saved = readPosition(readerKey);
-    if (document.getElementById('ownmail-reader-unavailable') && saved && saved.url === readerUrl) {
+    if (!reader && document.getElementById('ownmail-reader-unavailable') && saved && saved.url === readerUrl) {
         try { sessionStorage.removeItem(readerKey); } catch (error) {}
     }
     if (reader && reader.dataset.readerVersion) {

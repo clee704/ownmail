@@ -162,7 +162,7 @@ _POSITION_HARNESS = """
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const storage = new Map();
-function page(path, reader = false, storageBlocked = false, readyState = 'interactive') {
+function page(path, reader = false, storageBlocked = false, readyState = 'interactive', messageIds = false) {
     const handlers = {};
     const location = new URL(path, 'http://localhost');
     let focused = false;
@@ -188,7 +188,10 @@ function page(path, reader = false, storageBlocked = false, readyState = 'intera
             readyState,
             addEventListener(name, callback) { handlers['document:' + name] = callback; },
             getElementById(id) {
-                if (id === 'ownmail-email-list' && !reader) return list;
+                // Message HTML on a reader page can repeat list-page IDs.
+                if (id === 'ownmail-reader-actions' && messageIds) return {dataset: {}};
+                if (id === 'ownmail-reader-unavailable' && messageIds) return {};
+                if (id === 'ownmail-email-list' && (!reader || messageIds)) return list;
                 if (id === 'ownmail-back-to-results' && reader) return back;
                 return null;
             }
@@ -216,6 +219,7 @@ function page(path, reader = false, storageBlocked = false, readyState = 'intera
             return event;
         },
         show() { handlers.pageshow(); },
+        get bound() { return Object.keys(handlers); },
         get focused() { return focused; },
         get scrolled() { return scrolled; },
         get scrollCalls() { return scrollCalls; },
@@ -314,6 +318,15 @@ const browserBack = page(listUrl);
 browserBack.show();
 assert.equal(browserBack.scrolled, null);
 assert.equal(storage.size, 0);
+""")
+
+
+def test_reader_ignores_message_markup_that_repeats_list_page_ids():
+    run_position_script("""
+storage.set('ownmail-reading-position', JSON.stringify({url: '/email/message', version: 'v1', scrollY: 40}));
+const reader = page('/email/message', true, false, 'interactive', true);
+assert.deepEqual(reader.bound.filter(name => name.startsWith('list:')), []);
+assert(storage.has('ownmail-reading-position'));
 """)
 
 

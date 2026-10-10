@@ -1,13 +1,19 @@
 (function() {
+    // Message HTML can reuse these IDs. Bind only the editor outside the
+    // message, and send requests only to this message's labels route.
+    var actions = document.getElementById('ownmail-reader-actions');
+    var trigger = actions.querySelector('#ownmail-edit-labels');
     var editor = document.getElementById('ownmail-label-editor');
-    if (!editor) return;
-    var trigger = document.getElementById('ownmail-edit-labels');
-    var list = document.getElementById('ownmail-label-items');
-    var status = document.getElementById('ownmail-label-status');
-    var input = document.getElementById('ownmail-label-input');
-    var add = document.getElementById('ownmail-label-add');
-    var save = document.getElementById('ownmail-label-save');
-    var close = document.getElementById('ownmail-label-close');
+    if (!trigger || !editor || document.getElementById('ownmail-email-content').contains(editor)) return;
+    var url = '/labels/' + encodeURIComponent(actions.dataset.emailId);
+    var list = editor.querySelector('#ownmail-label-items');
+    var status = editor.querySelector('#ownmail-label-status');
+    var input = editor.querySelector('#ownmail-label-input');
+    var add = editor.querySelector('#ownmail-label-add');
+    var save = editor.querySelector('#ownmail-label-save');
+    var close = editor.querySelector('#ownmail-label-close');
+    var empty = editor.querySelector('#ownmail-label-empty');
+    var history = editor.querySelector('#ownmail-label-history');
     var labels = [];
     var attempt = 0;
     var saving = false;
@@ -39,8 +45,7 @@
             item.append(name, remove);
             list.append(item);
         });
-        document.getElementById('ownmail-label-empty').hidden = labels.length !== 0;
-        var history = document.getElementById('ownmail-label-history');
+        empty.hidden = labels.length !== 0;
         var notes = [];
         if (labels.includes('INBOX') || labels.includes('DRAFT')) {
             notes.push('INBOX and DRAFT are historical labels, hidden in navigation.');
@@ -58,12 +63,12 @@
         input.value = '';
         input.disabled = add.disabled = save.disabled = true;
         list.replaceChildren();
-        document.getElementById('ownmail-label-empty').hidden = true;
-        document.getElementById('ownmail-label-history').hidden = true;
+        empty.hidden = true;
+        history.hidden = true;
         announce('Loading labels…');
         close.focus();
         try {
-            var data = await window.ownmailRequest(editor.dataset.url, undefined, true);
+            var data = await window.ownmailRequest(url, undefined, true);
             if (current !== attempt) return;
             if (!Array.isArray(data.labels) || !data.labels.every(function(label) { return typeof label === 'string'; })) {
                 throw new Error('Could not read the saved labels.');
@@ -111,7 +116,7 @@
         trigger.setAttribute('aria-expanded', 'false');
         trigger.closest('details').querySelector('summary').focus();
     });
-    document.getElementById('ownmail-label-form').addEventListener('submit', async function(event) {
+    editor.querySelector('#ownmail-label-form').addEventListener('submit', async function(event) {
         event.preventDefault();
         if (saving || save.disabled) return;
         if (labels.includes('UNREAD')) {
@@ -126,7 +131,7 @@
         saving = true;
         announce('Saving labels…');
         var confirmed = await window.ownmailMessageAction({
-            url: editor.dataset.url,
+            url: url,
             request: {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({labels: labels})},
             pending: 'Saving labels…',
             success: 'Labels saved.',

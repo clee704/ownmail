@@ -87,7 +87,7 @@
         {% endif %}
 
         {% if not cached_view %}
-        <section class="ownmail-label-editor" id="ownmail-label-editor" aria-labelledby="ownmail-label-editor-title" data-url="{{ url_for('local_labels', email_id=email_id) }}" hidden>
+        <section class="ownmail-label-editor" id="ownmail-label-editor" aria-labelledby="ownmail-label-editor-title" hidden>
             <h3 id="ownmail-label-editor-title">Edit labels</h3>
             <p>These labels belong to your archived copy. Server labels stay unchanged.</p>
             <p id="ownmail-label-status" role="status" aria-live="polite"></p>
@@ -165,5 +165,7 @@
 
 <script src="{{ url_for('static', filename='email-contrast.js') }}"></script>
 <script src="/static/email-reader.js"></script>
+{% if not cached_view %}
 <script src="{{ url_for('static', filename='label-editor.js') }}"></script>
+{% endif %}
 {% endblock %}

@@ -13,16 +13,21 @@ shell_app = test_ui_shell.shell_app
 label_browser = test_email_contrast.contrast_browser
 
 
-def run_label_browser(app, node, assertions, *, labels=("Work",), viewport=(1100, 900)):
+def render_reader(app, **context):
     with app.test_request_context("/email/synthetic"):
-        page = render_template(
+        return render_template(
             "email.html",
             email_id="synthetic",
             subject="Project planning",
             sender="sender@example.com",
             date="2026-01-01",
             body_text="A synthetic archived message for label editing.",
+            **context,
         )
+
+
+def run_label_browser(app, node, assertions, *, labels=("Work",), viewport=(1100, 900), page=None):
+    page = page or render_reader(app)
     client = app.test_client()
     files = {}
     for path in html.fromstring(page).xpath('//script[@src]/@src | //link[@rel="stylesheet"]/@href'):
@@ -34,6 +39,7 @@ def run_label_browser(app, node, assertions, *, labels=("Work",), viewport=(1100
         "files": files,
         "labels": labels,
         "viewport": {"width": viewport[0], "height": viewport[1]},
+        "editorScript": client.get("/static/label-editor.js").data.decode(),
     }
     script = r"""
 const assert = require('node:assert/strict');
@@ -45,7 +51,9 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
     });
     try {
-        const page = await browser.newPage({viewport: input.viewport});
+        // Route the whole context so message form popups stay offline too.
+        const context = await browser.newContext({viewport: input.viewport});
+        const page = await context.newPage();
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         let getPayload = {labels: input.labels};
@@ -60,10 +68,12 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         let pageLoads = 0;
         let gets = 0;
         const posts = [];
-        await page.route('**/*', async route => {
+        const requests = [];
+        await context.route('**/*', async route => {
             const request = route.request();
             const url = new URL(request.url());
             if (url.origin !== 'http://ownmail.test') return route.abort();
+            if (!input.files[url.pathname]) requests.push(request.method() + ' ' + url.pathname);
             if (url.pathname === '/email/synthetic') {
                 pageLoads++;
                 return route.fulfill({contentType: 'text/html', body: input.page});
@@ -92,14 +102,15 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         });
         await page.goto('http://ownmail.test/email/synthetic', {waitUntil: 'load'});
         const menu = page.locator('summary[aria-label="More message actions"]');
-        const trigger = page.locator('#ownmail-edit-labels');
-        const editor = page.locator('#ownmail-label-editor');
-        const inputBox = page.locator('#ownmail-label-input');
-        const add = page.locator('#ownmail-label-add');
-        const save = page.locator('#ownmail-label-save');
-        const close = page.locator('#ownmail-label-close');
-        const status = page.locator('#ownmail-label-status');
-        const names = () => page.locator('#ownmail-label-items li span').allTextContents();
+        // Message markup may repeat these IDs; address only the app's controls.
+        const trigger = page.locator('#ownmail-reader-actions #ownmail-edit-labels');
+        const editor = page.locator('.ownmail-email-detail > #ownmail-label-editor');
+        const inputBox = editor.locator('#ownmail-label-input');
+        const add = editor.locator('#ownmail-label-add');
+        const save = editor.locator('#ownmail-label-save');
+        const close = editor.locator('#ownmail-label-close');
+        const status = editor.locator('#ownmail-label-status');
+        const names = () => editor.locator('#ownmail-label-items li span').allTextContents();
         const waitStatus = text => page.waitForFunction(text =>
             document.getElementById('ownmail-label-status').textContent.includes(text), text);
         const waitLoaded = () => page.waitForFunction(() =>
@@ -375,4 +386,91 @@ def test_narrow_editor_wraps_long_names_without_horizontal_overflow(shell_app, l
         """,
         labels=("Planning / " + "VeryLongLabel" * 20, '  raw, "quoted" label  '),
         viewport=(375, 900),
+    )
+
+
+# Sender markup reusing every editor ID, in the form the sanitizer keeps it.
+FORGED_EDITOR = (
+    '<section id="ownmail-label-editor" data-url="/empty-trash">'
+    '<button type="button" id="ownmail-edit-labels">Edit labels</button>'
+    '<p id="ownmail-label-status"></p><ul id="ownmail-label-items"></ul>'
+    '<p id="ownmail-label-empty"></p><p id="ownmail-label-history"></p>'
+    '<form id="ownmail-label-form" target="_blank" rel="noopener noreferrer">'
+    '<input id="ownmail-label-input"><button type="button" id="ownmail-label-add">Add</button>'
+    '<button type="submit" id="ownmail-label-save">Confirm</button>'
+    '<button type="button" id="ownmail-label-close">Close</button>'
+    "</form></section>"
+)
+# The native new-tab submission must not raise the reader's loading overlay.
+CLICK_FORGED_SAVE = """
+        await page.locator('#ownmail-email-content #ownmail-label-save').click();
+        await page.waitForTimeout(300);
+        assert.equal(await page.locator('#ownmail-loading-overlay').getAttribute('class'), 'ownmail-loading-overlay');
+"""
+NO_REQUESTS = "assert.deepEqual(requests.filter(request => request !== 'GET /email/synthetic'), []);"
+
+
+@pytest.mark.parametrize("injected", [False, True], ids=["page", "injected-editor-script"])
+def test_cached_message_markup_cannot_send_label_requests(shell_app, label_browser, injected):
+    app, _ = shell_app
+    page = render_reader(app, cached_view=True, active={"active": True, "complete": True}, body_html=FORGED_EDITOR)
+    run_label_browser(
+        app,
+        label_browser,
+        ("await page.addScriptTag({content: input.editorScript});" if injected else "")
+        + CLICK_FORGED_SAVE
+        + NO_REQUESTS
+        + "assert.equal(await page.locator('script[src*=\"label-editor\"]').count(), 0);",
+        page=page,
+    )
+
+
+def test_editor_ignores_message_markup_when_its_own_section_is_missing(shell_app, label_browser):
+    app, _ = shell_app
+    tree = html.fromstring(render_reader(app, body_html=FORGED_EDITOR))
+    tree.get_element_by_id("ownmail-label-editor").drop_tree()
+    run_label_browser(
+        app,
+        label_browser,
+        CLICK_FORGED_SAVE + NO_REQUESTS,
+        page=html.tostring(tree, doctype="<!DOCTYPE html>", encoding="unicode"),
+    )
+
+
+def test_archive_editor_saves_its_own_labels_beside_message_markup(shell_app, label_browser):
+    app, _ = shell_app
+    run_label_browser(
+        app,
+        label_browser,
+        """
+        await open();
+        await waitLoaded();
+        assert.deepEqual(await names(), input.labels);
+        await addLabel('Kept');
+        const reloaded = page.waitForEvent('load');
+        await save.click();
+        await reloaded;
+        """
+        + CLICK_FORGED_SAVE
+        + """
+        assert.deepEqual(posts, [{labels: ['Work', 'Kept']}]);
+        assert.deepEqual(requests.filter(request => request !== 'GET /email/synthetic'),
+            ['GET /labels/synthetic', 'POST /labels/synthetic']);
+        """,
+        page=render_reader(app, body_html=FORGED_EDITOR),
+    )
+
+
+def test_message_pagination_markup_cannot_raise_the_loading_overlay(shell_app, label_browser):
+    app, _ = shell_app
+    forged = '<div class="ownmail-pagination"><a href="https://x.invalid/next" target="_blank">Next page</a></div>'
+    run_label_browser(
+        app,
+        label_browser,
+        """
+        await page.locator('#ownmail-email-content .ownmail-pagination a').click();
+        await page.waitForTimeout(300);
+        assert.equal(await page.locator('#ownmail-loading-overlay').getAttribute('class'), 'ownmail-loading-overlay');
+        """,
+        page=render_reader(app, body_html=forged),
     )
