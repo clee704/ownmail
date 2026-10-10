@@ -3,7 +3,7 @@ id: doc-4
 title: Execution order — 2026-07-24 sequencing decision
 type: specification
 created_date: '2026-07-24 05:10'
-updated_date: '2026-09-30 13:53'
+updated_date: '2026-10-10 05:35'
 ---
 ## Goal
 
@@ -231,6 +231,14 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 9d | TASK-118 | medium | Follow-up to TASK-67: installs that keep node_modules never pick up raised sanitizer dependency floors |
 | 9e | TASK-125 | medium | Follow-up to TASK-120: the message page's inline scripts keep 'unsafe-inline' in the blocking policy, and loaded messages carry no policy at all |
 | 9f | TASK-127 | high | Explicit local reconciliation assignment after TASK-118 and TASK-40: retain upstream install locking/recovery together with strict local validation before later integration |
+| 9g | TASK-130 | medium | /trust-sender redirects to protocol-relative URLs; smallest of the security fixes |
+| 9h | TASK-131 | high | Message CSS that names the reader container escapes scoping and can hide reader controls |
+| 9i | TASK-132 | medium | Font @import checks a url() in its condition instead of its target; same worker CSS path as TASK-131 |
+| 9j | TASK-133 | high | Cached-message markup can make the trusted label editor POST to another route, such as /empty-trash |
+| 9k | TASK-134 | medium | The client theme rewrite can turn inert CSS strings in a message into unscoped rules |
+| 9l | TASK-135 | medium | create_app serves unsanitized HTML when built without a sanitizer, and serve can run npm; confirm deployment before landing |
+| 9m | TASK-136 | medium | Any Host header is accepted; exact origin checks need it first; confirm deployment before landing |
+| 9n | TASK-137 | high | The POST guard accepts header-less, prefix-matched and conflicting requests; depends on TASK-136; confirm deployment before landing |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
@@ -268,6 +276,14 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 Correctness and data loss come before security, then reliability, rendering,
 features and decisions. Within a tier, cheaper fixes and fixes sharing code go
 first. File new tasks into this table when they are created.
+
+TASK-130 through TASK-137 (filed 2026-10-10) join the security tier after
+TASK-127, ahead of all remaining To Do work. Message-content fixes come first
+because they are local and change no request handling. TASK-135, TASK-136 and
+TASK-137 change which requests or startups the server accepts, so each waits
+for the maintainer to confirm the deployment before it lands. TASK-131's notes
+record the sandboxed-iframe alternative to the point fixes in TASK-131,
+TASK-133 and TASK-134.
 
 ## Keeping this current
 
