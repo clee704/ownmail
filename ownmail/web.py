@@ -1122,18 +1122,6 @@ def _message_body(msg) -> dict:
     return {"body": body, "body_html": body_html, "attachments": attachments, "cid_images": cid_images}
 
 
-class _PassthroughSanitizer:
-    """No-op sanitizer that returns HTML unchanged. Used in tests."""
-
-    available = True
-
-    def sanitize(self, html: str):
-        return html, True, False
-
-    def stop(self):
-        pass
-
-
 def create_app(
     archive: EmailArchive,
     verbose: bool = False,
@@ -1160,13 +1148,20 @@ def create_app(
         date_format: strftime format for search result dates (default: "%b %d, %Y")
         auto_scale: Scale down wide emails to fit viewport
         brand_name: Custom branding name shown in header
-        sanitizer: HTML sanitizer instance (default: passthrough for tests)
+        sanitizer: Started HTML sanitizer; required, and must be available
         display_timezone: IANA timezone name (default: server local)
         detail_date_format: strftime format for message view dates (default: "%a, %d %b %Y %H:%M:%S")
 
     Returns:
         Flask application
+
+    Raises:
+        ValueError: No sanitizer was given, or it is not available.
     """
+    # Message pages embed sender HTML, so no construction path may serve it unsanitized.
+    if sanitizer is None or not sanitizer.available:
+        raise ValueError("create_app requires a started, available HTML sanitizer")
+
     # Set templates and static directories relative to this module
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -1183,7 +1178,7 @@ def create_app(
     app.config["timezone_name"] = display_timezone or ""
     app.config["auto_scale"] = auto_scale
     app.config["brand_name"] = brand_name
-    app.config["sanitizer"] = sanitizer or _PassthroughSanitizer()
+    app.config["sanitizer"] = sanitizer
     app.config["trash_expiry_days"] = 30
     downloads = register_downloads(app, archive, config_path)
 
@@ -2192,15 +2187,16 @@ def run_server(
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
     import signal
 
-    from ownmail.sanitizer import HtmlSanitizer
+    from ownmail.sanitizer import SETUP_COMMAND, HtmlSanitizer
 
     sanitizer = HtmlSanitizer(verbose=verbose)
-    sanitizer.start()
+    # Serving never runs npm; ownmail setup installs the dependencies beforehand.
+    sanitizer.start(install=False)
     if not sanitizer.available:
         print("\n❌ HTML sanitizer failed to start.")
         for line in sanitizer.error.splitlines():
             print(f"   {line}")
-        print("   For pipx installs, repair the environment with: pipx reinstall ownmail")
+        print(f"   For pipx installs, repair the environment with: pipx reinstall ownmail, then {SETUP_COMMAND}")
         print("   Refusing to serve without sanitization.\n")
         raise SystemExit(1)
 
@@ -2228,6 +2224,9 @@ def run_server(
         print("\n   ⚠️  WARNING: Binding to non-localhost address!")
         print("   Your email archive will be accessible to anyone on the network.")
         print("   Consider using --host 127.0.0.1 instead.\n")
+        if reload:
+            print("   ⚠️  WARNING: --reload is meant for local development.")
+            print("   Source changes restart a server that other devices can reach.\n")
     if verbose:
         print("   Verbose logging enabled")
     if block_images:

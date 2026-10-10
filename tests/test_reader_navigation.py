@@ -9,9 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 from lxml import html
 
-from ownmail.web import create_app
 from tests import test_ui_shell
-from tests.conftest import mock_archive_db
+from tests.conftest import create_test_app, mock_archive_db
 
 shell_browser = test_ui_shell.shell_browser
 
@@ -31,7 +30,7 @@ def reader(tmp_path):
     archive.db = mock_archive_db()
     archive.db.get_email_by_id.return_value = ("message", "message.eml", None, None, None, None)
     archive.db.get_labels_for_email.return_value = ["Project planning", "Review"]
-    app = create_app(archive)
+    app = create_test_app(archive)
     with app.test_client() as client:
         yield client, archive
 

@@ -1,5 +1,7 @@
 """Tests for CLI module."""
 
+import json
+import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -897,6 +899,128 @@ class TestCmdSetup:
         assert custom_path in config_content
 
 
+class TestSetupWeb:
+    """Tests for the setup step that provisions the web interface's sanitizer dependencies."""
+
+    @pytest.fixture
+    def sanitizer_dir(self, temp_dir, monkeypatch):
+        """A sanitizer directory whose installed dompurify is outside its package.json range."""
+        path = temp_dir / "sanitizer"
+        self._install(path, "3.3.1")
+        (path / "package.json").write_text(json.dumps({"dependencies": {"dompurify": "^3.4.16"}}))
+        monkeypatch.setattr("ownmail.sanitizer._SANITIZER_DIR", str(path))
+        monkeypatch.chdir(temp_dir)
+        return path
+
+    @staticmethod
+    def _install(path, version):
+        package = path / "node_modules" / "dompurify"
+        package.mkdir(parents=True, exist_ok=True)
+        (package / "package.json").write_text(json.dumps({"name": "dompurify", "version": version}))
+
+    @staticmethod
+    def _main(*args):
+        from ownmail.cli import main
+
+        with patch.object(sys, "argv", ["ownmail", "setup", *args]):
+            main()
+
+    @staticmethod
+    def _worker():
+        worker = MagicMock()
+        worker.stdout.readline.return_value = '{"ready": true}\n'
+        worker.stderr.readline.return_value = ""
+        return worker
+
+    def test_web_only_installs_under_the_install_lock_and_checks_the_worker(self, sanitizer_dir, capsys):
+        """setup --web runs npm (mocked) under the install lock and marker, then starts and stops the worker."""
+        from ownmail.download_lock import LockHeld, ProcessLock
+
+        def npm(args, **kwargs):
+            with pytest.raises(LockHeld):
+                with ProcessLock(sanitizer_dir / ".install.lock"):
+                    pass
+            assert (sanitizer_dir / "node_modules" / ".ownmail-install-incomplete").read_text() == "--omit=dev"
+            self._install(sanitizer_dir, "3.4.16")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        worker = self._worker()
+        with (
+            patch("ownmail.sanitizer.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+            patch("ownmail.sanitizer.subprocess.run", side_effect=npm) as run,
+            patch("ownmail.sanitizer.subprocess.Popen", return_value=worker) as popen,
+            patch("ownmail.cli.KeychainStorage") as keychain,
+            patch("ownmail.cli.cmd_setup") as credentials,
+        ):
+            self._main("--web")
+        run.assert_called_once()
+        assert run.call_args.args[0][:3] == ["/usr/bin/npm", "install", "--omit=dev"]
+        assert run.call_args.kwargs["cwd"] == str(sanitizer_dir)
+        assert not (sanitizer_dir / "node_modules" / ".ownmail-install-incomplete").exists()
+        popen.assert_called_once()
+        worker.terminate.assert_called_once()
+        keychain.assert_not_called()
+        credentials.assert_not_called()
+        out = capsys.readouterr().out
+        assert "Updating HTML sanitizer dependencies (dompurify) from npm" in out
+        assert "✓ HTML sanitizer ready for ownmail serve" in out
+
+    def test_failed_install_exits_nonzero_with_repair_guidance(self, sanitizer_dir, capsys):
+        """An npm failure (mocked) exits 1, names the setup step again and never starts the worker."""
+        failed = subprocess.CompletedProcess([], 1, "", "npm error code ENOTFOUND\n")
+        with (
+            patch("ownmail.sanitizer.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+            patch("ownmail.sanitizer.subprocess.run", return_value=failed) as run,
+            patch("ownmail.sanitizer.subprocess.Popen") as popen,
+            patch("ownmail.sanitizer.logger.warning"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            self._main("--web")
+        assert exc_info.value.code == 1
+        run.assert_called_once()
+        popen.assert_not_called()
+        out = capsys.readouterr().out
+        assert "❌ The HTML sanitizer is not ready, so ownmail serve will refuse to start." in out
+        assert "could not be installed: npm install failed with ENOTFOUND." in out
+        assert "Check the internet connection, then run ownmail setup --web again, or install them with:" in out
+
+    def test_setup_provisions_the_web_interface_after_credentials(self, temp_dir, monkeypatch):
+        """Plain setup runs credential setup, then the web step."""
+        monkeypatch.chdir(temp_dir)
+        steps = MagicMock()
+        steps.web.return_value = True
+        with (
+            patch("ownmail.cli.KeychainStorage") as keychain,
+            patch("ownmail.cli.cmd_setup", steps.credentials),
+            patch("ownmail.cli.cmd_setup_web", steps.web),
+        ):
+            self._main("--method", "imap")
+        assert [call[0] for call in steps.mock_calls] == ["credentials", "web"]
+        assert steps.credentials.call_args.args[0] is keychain.return_value
+        assert steps.credentials.call_args.kwargs == {"method": "imap"}
+
+    def test_setup_exits_nonzero_when_the_web_step_fails(self, temp_dir, monkeypatch):
+        """Credential setup that succeeds still reports an unprovisioned web interface as a failure."""
+        monkeypatch.chdir(temp_dir)
+        with (
+            patch("ownmail.cli.KeychainStorage"),
+            patch("ownmail.cli.cmd_setup") as credentials,
+            patch("ownmail.cli.cmd_setup_web", return_value=False),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            self._main()
+        assert exc_info.value.code == 1
+        credentials.assert_called_once()
+
+    def test_web_and_method_are_exclusive(self, capsys):
+        """--web skips credential setup, so it cannot be combined with --method."""
+        with patch("ownmail.cli.cmd_setup_web") as web, pytest.raises(SystemExit) as exc_info:
+            self._main("--web", "--method", "imap")
+        assert exc_info.value.code == 2
+        web.assert_not_called()
+        assert "not allowed with argument" in capsys.readouterr().err
+
+
 class TestMainEdgeCases:
     """Edge case tests for main entry point."""
 
@@ -1148,9 +1272,10 @@ class TestMainEdgeCases:
         # setup should not fail on duplicate names — it needs to run
         # to let the user fix the config
         with patch.object(sys, "argv", ["ownmail", "setup"]):
-            with patch("ownmail.cli.cmd_setup") as mock_setup:
+            with patch("ownmail.cli.cmd_setup") as mock_setup, patch("ownmail.cli.cmd_setup_web") as mock_web:
                 main()
                 mock_setup.assert_called_once()
+                mock_web.assert_called_once_with()
 
 
 class TestDownloadCommand:
@@ -1507,6 +1632,43 @@ class TestMainServeCommand:
         out = capsys.readouterr().out
         expected_error = "Refusing to serve" if refusal == "sanitizer" else "remote code execution"
         assert expected_error in out
+        assert "Running at" not in out
+
+    def test_serve_with_unmet_sanitizer_dependencies_never_runs_npm(self, temp_dir, monkeypatch, capsys):
+        """serve refuses out-of-range dependencies, naming setup, without running npm (mocked) or the worker."""
+        from ownmail.cli import main
+
+        sanitizer_dir = temp_dir / "sanitizer"
+        package = sanitizer_dir / "node_modules" / "dompurify"
+        package.mkdir(parents=True)
+        (package / "package.json").write_text(json.dumps({"name": "dompurify", "version": "3.3.1"}))
+        (sanitizer_dir / "package.json").write_text(json.dumps({"dependencies": {"dompurify": "^3.4.16"}}))
+        self._write_config(temp_dir, "archive_root: .\n")
+        monkeypatch.chdir(temp_dir)
+        with (
+            patch.object(sys, "argv", ["ownmail", "serve", "--no-browser"]),
+            patch("ownmail.cli.EmailArchive") as mock_archive,
+            patch("ownmail.sanitizer._SANITIZER_DIR", str(sanitizer_dir)),
+            patch("ownmail.sanitizer.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+            patch("ownmail.sanitizer.subprocess.run") as npm,
+            patch("ownmail.sanitizer.subprocess.Popen") as worker,
+            patch("flask.Flask.run") as mock_run,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 1
+        npm.assert_not_called()
+        worker.assert_not_called()
+        mock_run.assert_not_called()
+        mock_archive.return_value.auto_expire_trash.assert_not_called()
+        assert not (sanitizer_dir / ".install.lock").exists()
+        assert json.loads((package / "package.json").read_text())["version"] == "3.3.1"
+        out = capsys.readouterr().out
+        assert (
+            "   The sanitizer dependencies (dompurify) are missing or outside the package.json ranges.\n"
+            "   Run ownmail setup --web to install them, then restart ownmail serve.\n"
+        ) in out
+        assert "Refusing to serve without sanitization." in out
         assert "Running at" not in out
 
     def test_serve_passes_web_config_through(self, temp_dir, monkeypatch):

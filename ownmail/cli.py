@@ -91,6 +91,28 @@ def cmd_setup(
         _setup_oauth(keychain, config, config_path, source_name)
 
 
+def cmd_setup_web() -> bool:
+    """Install or refresh the web interface's sanitizer dependencies, then check that it starts.
+
+    ownmail serve never runs npm, so this is the step that provisions them.
+    """
+    from ownmail.sanitizer import HtmlSanitizer
+
+    print("\nSetting up the web interface's HTML sanitizer...")
+    sanitizer = HtmlSanitizer()
+    try:
+        sanitizer.start(install=True)
+        if not sanitizer.available:
+            print("❌ The HTML sanitizer is not ready, so ownmail serve will refuse to start.")
+            for line in sanitizer.error.splitlines():
+                print(f"   {line}")
+            return False
+    finally:
+        sanitizer.stop()
+    print("✓ HTML sanitizer ready for ownmail serve")
+    return True
+
+
 def _update_or_create_config(
     config: dict,
     config_path: Path | None,
@@ -1015,6 +1037,7 @@ Version: {__version__}
 
 Examples:
   %(prog)s setup                           First-time credential setup
+  %(prog)s setup --web                     Install or refresh web interface dependencies
   %(prog)s download                        Download new emails
   %(prog)s download --source gmail_personal  Download specific source
   %(prog)s search "invoice from:amazon"   Search emails
@@ -1060,13 +1083,23 @@ Examples:
     # setup command
     setup_parser = subparsers.add_parser(
         "setup",
-        help="Set up email source credentials",
-        description="Set up credentials for downloading emails. Supports IMAP with App Passwords (recommended) or Gmail API with OAuth.",
+        help="Set up email source credentials and web interface dependencies",
+        description=(
+            "Set up credentials for downloading emails. Supports IMAP with App Passwords (recommended) "
+            "or Gmail API with OAuth. Then install or refresh the web interface's HTML sanitizer "
+            "dependencies through npm; ownmail serve never installs them."
+        ),
     )
-    setup_parser.add_argument(
+    setup_mode = setup_parser.add_mutually_exclusive_group()
+    setup_mode.add_argument(
         "--method",
         choices=["imap", "oauth"],
         help="Setup method: 'imap' (App Password, default) or 'oauth' (Gmail API)",
+    )
+    setup_mode.add_argument(
+        "--web",
+        action="store_true",
+        help="Only install or refresh the web interface's sanitizer dependencies, without credential setup",
     )
     _add_global_opts(setup_parser)
 
@@ -1410,8 +1443,11 @@ Examples:
 
         operation = None
         if args.command == "setup":
-            keychain = KeychainStorage()
-            cmd_setup(keychain, config, config_path, method=getattr(args, "method", None))
+            if not args.web:
+                keychain = KeychainStorage()
+                cmd_setup(keychain, config, config_path, method=getattr(args, "method", None))
+            if not cmd_setup_web():
+                sys.exit(1)
 
         elif args.command == "sources":
             if args.sources_cmd == "list":

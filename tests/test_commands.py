@@ -2496,7 +2496,7 @@ class TestVerifyEndToEnd:
 
     def test_verify_fix_moved_file_then_web_ui_works(self, temp_dir, capsys):
         """Rename file on disk → verify --fix → DB updated → web UI serves it."""
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         archive = EmailArchive(temp_dir, {})
 
@@ -2551,7 +2551,7 @@ class TestVerifyEndToEnd:
         assert row[0] == new_rel
 
         # Web UI should serve the email at the updated path
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get(f"/email/{eid}")
             assert response.status_code == 200

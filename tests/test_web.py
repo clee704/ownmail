@@ -21,7 +21,7 @@ from ownmail.web import (
     parse_email_address,
     parse_recipients,
 )
-from tests.conftest import mock_archive_db
+from tests.conftest import create_test_app, mock_archive_db
 
 
 class TestDecodeHeader:
@@ -183,12 +183,12 @@ class TestCreateApp:
 
     def test_app_creation(self, mock_archive):
         """App should be created successfully."""
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         assert app is not None
 
     def test_index_route(self, mock_archive):
         """Index route should redirect to search."""
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/")
             assert response.status_code == 302
@@ -196,7 +196,7 @@ class TestCreateApp:
 
     def test_search_route_empty(self, mock_archive):
         """Search route with no query should return search page."""
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/search")
             assert response.status_code == 200
@@ -204,7 +204,7 @@ class TestCreateApp:
     def test_search_route_with_query(self, mock_archive):
         """Search route with query should call archive.search."""
         mock_archive.search.return_value = []
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/search?q=test")
             assert response.status_code == 200
@@ -213,7 +213,7 @@ class TestCreateApp:
     def test_search_error_handling(self, mock_archive):
         """Search errors should be handled gracefully."""
         mock_archive.search.side_effect = Exception("FTS syntax error")
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/search?q=tpc-ds")
             assert response.status_code == 200
@@ -221,7 +221,7 @@ class TestCreateApp:
 
     def test_help_route(self, mock_archive):
         """Help route should return help page."""
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/help")
             assert response.status_code == 200
@@ -245,14 +245,14 @@ class TestCreateApp:
     def test_email_route_not_found(self, mock_archive):
         """Email route with invalid ID should return 404."""
         mock_archive.db.get_email_by_id.return_value = None
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/email/nonexistent")
             assert response.status_code == 404
 
     def test_trusted_senders_config(self, mock_archive):
         """Trusted senders should be configured."""
-        app = create_app(
+        app = create_test_app(
             mock_archive,
             trusted_senders=["trusted@example.com"],
         )
@@ -260,7 +260,7 @@ class TestCreateApp:
 
     def test_trust_sender_route(self, mock_archive, tmp_path):
         """Trust sender route should add to trusted set."""
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.post(
                 "/trust-sender",
@@ -272,7 +272,7 @@ class TestCreateApp:
 
     def test_untrust_sender_route(self, mock_archive):
         """Untrust sender route should remove from trusted set."""
-        app = create_app(mock_archive, trusted_senders=["trusted@example.com"])
+        app = create_test_app(mock_archive, trusted_senders=["trusted@example.com"])
         with app.test_client() as client:
             response = client.post(
                 "/untrust-sender",
@@ -283,7 +283,7 @@ class TestCreateApp:
 
     def test_untrust_sender_empty_email(self, mock_archive):
         """Untrust sender with empty email should return error."""
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.post(
                 "/untrust-sender",
@@ -299,7 +299,7 @@ class TestCreateApp:
             (f"msg{i}", f"file{i}.eml", f"Subject {i}", "sender@example.com", "2024-01-01", "snippet", 0)
             for i in range(25)  # More than default page size
         ]
-        app = create_app(mock_archive, page_size=20)
+        app = create_test_app(mock_archive, page_size=20)
         with app.test_client() as client:
             response = client.get("/search?q=test&page=1")
             assert response.status_code == 200
@@ -308,7 +308,7 @@ class TestCreateApp:
     def test_search_sort_options(self, mock_archive):
         """Search with different sort options should work."""
         mock_archive.search.return_value = []
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             # Date desc sort
             response = client.get("/search?q=test&sort=date_desc")
@@ -324,7 +324,7 @@ class TestCreateApp:
 
     def test_verbose_mode(self, mock_archive, capsys):
         """Verbose mode should print timing info."""
-        app = create_app(mock_archive, verbose=True)
+        app = create_test_app(mock_archive, verbose=True)
         with app.test_client() as client:
             response = client.get("/search")
             assert response.status_code == 200
@@ -455,7 +455,7 @@ class TestRawEmailRoute:
         """Raw email route should return file content."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         # Create test .eml file
         eml_content = b"From: test@example.com\nSubject: Test\n\nBody"
@@ -469,7 +469,7 @@ class TestRawEmailRoute:
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/raw/msg1")
             assert response.status_code == 200
@@ -479,7 +479,7 @@ class TestRawEmailRoute:
         """Raw email route should 404 for missing email."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -487,7 +487,7 @@ class TestRawEmailRoute:
         mock_archive.db.get_email_by_id.return_value = None
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/raw/nonexistent")
             assert response.status_code == 404
@@ -500,7 +500,7 @@ class TestAttachmentRoute:
         """Attachment route should 404 for missing email."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -508,7 +508,7 @@ class TestAttachmentRoute:
         mock_archive.db.get_email_by_id.return_value = None
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/attachment/msg1/0")
             assert response.status_code == 404
@@ -517,7 +517,7 @@ class TestAttachmentRoute:
         """Attachment route should 404 for missing file."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -525,7 +525,7 @@ class TestAttachmentRoute:
         mock_archive.db.get_email_by_id.return_value = ("msg1", "missing.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/attachment/msg1/0")
             assert response.status_code == 404
@@ -537,7 +537,7 @@ class TestAttachmentDisposition:
     def _client(self, tmp_path, part_headers: bytes, payload: bytes = b"data"):
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         raw = (
             b"From: a@b.com\r\nSubject: t\r\n"
@@ -551,7 +551,7 @@ class TestAttachmentDisposition:
         archive = MagicMock()
         archive.archive_dir = tmp_path
         archive.db = mock_archive_db(get_email_by_id=("msg1", "m.eml", None, None, None, None))
-        return create_app(archive).test_client()
+        return create_test_app(archive).test_client()
 
     @pytest.mark.parametrize(
         "part_headers",
@@ -715,7 +715,7 @@ class TestViewEmailRoute:
         """View email should render email detail page."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         # Create test .eml file
         eml_content = b"""From: sender@example.com
@@ -736,7 +736,7 @@ This is the email body.
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/test.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/email/msg1")
             assert response.status_code == 200
@@ -747,7 +747,7 @@ This is the email body.
         """View email with HTML body should render HTML."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         eml_content = b"""From: sender@example.com
 To: recipient@example.com
@@ -766,7 +766,7 @@ Content-Type: text/html
         mock_archive.db.get_email_by_id.return_value = ("msg2", "emails/html.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/email/msg2")
             assert response.status_code == 200
@@ -775,7 +775,7 @@ Content-Type: text/html
         """View email with attachment should show attachment info."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         eml_content = b"""From: sender@example.com
 To: recipient@example.com
@@ -804,7 +804,7 @@ PDF content here
         mock_archive.db.get_email_by_id.return_value = ("msg3", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/email/msg3")
             assert response.status_code == 200
@@ -814,7 +814,7 @@ PDF content here
         """View email with missing file should 404."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -822,7 +822,7 @@ PDF content here
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/missing.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/email/msg1")
             assert response.status_code == 404
@@ -831,7 +831,7 @@ PDF content here
         """View multipart/alternative email should prefer HTML."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         eml_content = b"""From: sender@example.com
 To: recipient@example.com
@@ -859,7 +859,7 @@ Content-Type: text/html
         mock_archive.db.get_email_by_id.return_value = ("msg4", "emails/multipart.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/email/msg4")
             assert response.status_code == 200
@@ -872,7 +872,7 @@ class TestDownloadAttachment:
         """Downloading attachment should return file."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         eml_content = b"""From: sender@example.com
 Subject: With Attachment
@@ -900,7 +900,7 @@ PDF CONTENT HERE
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/attachment/msg1/0")
             assert response.status_code == 200
@@ -910,7 +910,7 @@ PDF CONTENT HERE
         """Wrong attachment index should 404."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         eml_content = b"""From: sender@example.com
 Subject: With Attachment
@@ -938,7 +938,7 @@ PDF CONTENT
         mock_archive.db.get_email_by_id.return_value = ("msg1", "emails/attach.eml", None, None, None, None)
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             # Index 99 doesn't exist
             response = client.get("/attachment/msg1/99")
@@ -952,8 +952,8 @@ class TestTrustSenderWithConfig:
         """Trust sender should update config.yaml."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
         from ownmail.yaml_util import load_yaml
+        from tests.conftest import create_test_app
 
         # Create config file
         config_path = tmp_path / "config.yaml"
@@ -964,7 +964,7 @@ class TestTrustSenderWithConfig:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive, config_path=str(config_path))
+        app = create_test_app(mock_archive, config_path=str(config_path))
         with app.test_client() as client:
             # When redirect is "/", returns JSON 200 instead of redirect
             response = client.post(
@@ -982,7 +982,7 @@ class TestTrustSenderWithConfig:
         """Trust sender should redirect when redirect path is not '/'."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         # Create config file
         config_path = tmp_path / "config.yaml"
@@ -993,7 +993,7 @@ class TestTrustSenderWithConfig:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive, config_path=str(config_path))
+        app = create_test_app(mock_archive, config_path=str(config_path))
         with app.test_client() as client:
             response = client.post(
                 "/trust-sender",
@@ -1006,8 +1006,8 @@ class TestTrustSenderWithConfig:
         """Untrust sender should update config.yaml."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
         from ownmail.yaml_util import load_yaml
+        from tests.conftest import create_test_app
 
         # Create config file with trusted sender
         config_path = tmp_path / "config.yaml"
@@ -1018,7 +1018,7 @@ class TestTrustSenderWithConfig:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
 
-        app = create_app(mock_archive, config_path=str(config_path), trusted_senders=["remove@example.com"])
+        app = create_test_app(mock_archive, config_path=str(config_path), trusted_senders=["remove@example.com"])
         with app.test_client() as client:
             response = client.post(
                 "/untrust-sender",
@@ -1038,7 +1038,7 @@ class TestRuntimeConfig:
         """Changing page_size via app.config should take effect immediately."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1047,7 +1047,7 @@ class TestRuntimeConfig:
         mock_archive.search.return_value = []
 
         # Start with page_size=10
-        app = create_app(mock_archive, page_size=10)
+        app = create_test_app(mock_archive, page_size=10)
         with app.test_client() as client:
             client.get("/search?q=hello")
             # Search should use limit=10+1 (fetches one extra to detect "more")
@@ -1283,7 +1283,7 @@ class TestTimezoneSettings:
         """Default timezone is None (server local)."""
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         assert app.config["timezone"] is None
         assert app.config["timezone_name"] == ""
 
@@ -1293,7 +1293,7 @@ class TestTimezoneSettings:
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
-        app = create_app(mock_archive, display_timezone="Asia/Tokyo")
+        app = create_test_app(mock_archive, display_timezone="Asia/Tokyo")
         assert app.config["timezone"] == ZoneInfo("Asia/Tokyo")
         assert app.config["timezone_name"] == "Asia/Tokyo"
 
@@ -1303,7 +1303,7 @@ class TestTimezoneSettings:
         mock_archive.archive_dir = tmp_path
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 0
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/settings")
             assert response.status_code == 200
@@ -1319,7 +1319,7 @@ class TestTimezoneSettings:
         mock_archive.search.return_value = [
             ("msg1", "test.eml", "Test", "a@b.com", "Thu, 02 Jan 2020 00:00:00 +0000", "snippet", 0)
         ]
-        app = create_app(mock_archive, display_timezone="Asia/Tokyo")
+        app = create_test_app(mock_archive, display_timezone="Asia/Tokyo")
         with app.test_client() as client:
             response = client.get("/search?q=test")
             assert response.status_code == 200
@@ -1335,7 +1335,7 @@ class TestTimezoneSettings:
         mock_archive.db = mock_archive_db()
         mock_archive.db.get_email_count.return_value = 100
         mock_archive.search.return_value = []
-        app = create_app(mock_archive, display_timezone="Asia/Tokyo")
+        app = create_test_app(mock_archive, display_timezone="Asia/Tokyo")
         with app.test_client() as client:
             client.get("/search?q=before:2024-01-01")
             mock_archive.search.assert_called_once()
@@ -1391,7 +1391,7 @@ class TestTrashRoutes:
         """Test viewing empty trash."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1401,7 +1401,7 @@ class TestTrashRoutes:
         mock_archive.db.get_trashed_emails.return_value = []
         mock_archive.auto_expire_trash.return_value = 0
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/trash")
             assert response.status_code == 200
@@ -1411,7 +1411,7 @@ class TestTrashRoutes:
         """Test viewing trash with items."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1433,7 +1433,7 @@ class TestTrashRoutes:
         ]
         mock_archive.auto_expire_trash.return_value = 0
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.get("/trash")
             assert response.status_code == 200
@@ -1443,7 +1443,7 @@ class TestTrashRoutes:
         """Test POST /trash/<email_id>."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1453,7 +1453,7 @@ class TestTrashRoutes:
         mock_archive.trash_email.return_value = True
         mock_archive.auto_expire_trash.return_value = 0
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.post("/trash/abc123")
             assert response.status_code == 204
@@ -1463,7 +1463,7 @@ class TestTrashRoutes:
         """Test POST /restore/<email_id>."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1473,7 +1473,7 @@ class TestTrashRoutes:
         mock_archive.restore_email.return_value = True
         mock_archive.auto_expire_trash.return_value = 0
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.post("/restore/abc123")
             assert response.status_code == 204
@@ -1483,7 +1483,7 @@ class TestTrashRoutes:
         """Test POST /trash-bulk."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1492,7 +1492,7 @@ class TestTrashRoutes:
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.auto_expire_trash.return_value = 0
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.post("/trash-bulk", data={"ids": "abc,def"})
             assert response.status_code == 204
@@ -1502,7 +1502,7 @@ class TestTrashRoutes:
         """Test POST /empty-trash."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1512,7 +1512,7 @@ class TestTrashRoutes:
         mock_archive.empty_trash.return_value = 5
         mock_archive.auto_expire_trash.return_value = 0
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.post("/empty-trash")
             assert response.status_code == 302  # redirect to /trash
@@ -1522,7 +1522,7 @@ class TestTrashRoutes:
         """Test POST /delete-forever."""
         from unittest.mock import MagicMock
 
-        from ownmail.web import create_app
+        from tests.conftest import create_test_app
 
         mock_archive = MagicMock()
         mock_archive.archive_dir = tmp_path
@@ -1531,7 +1531,7 @@ class TestTrashRoutes:
         mock_archive.db.get_trash_count.return_value = 0
         mock_archive.auto_expire_trash.return_value = 0
 
-        app = create_app(mock_archive)
+        app = create_test_app(mock_archive)
         with app.test_client() as client:
             response = client.post("/delete-forever", data={"ids": "abc,def"})
             assert response.status_code == 204
@@ -1588,7 +1588,7 @@ class TestCsrfCheck:
         archive.db.get_trash_count.return_value = 0
         archive.auto_expire_trash.return_value = 0
         archive.trash_email.return_value = True
-        return create_app(archive)
+        return create_test_app(archive)
 
     def test_matching_origin_allowed(self, app):
         """A POST whose Origin matches the host should be accepted."""
@@ -1636,7 +1636,7 @@ class TestSettingsRoutes:
 
     def test_settings_page_without_config_path(self, archive):
         """Settings page should render defaults when no config path is set."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/settings")
             assert response.status_code == 200
@@ -1646,7 +1646,7 @@ class TestSettingsRoutes:
         """Settings page should show values loaded from config.yaml."""
         config = tmp_path / "config.yaml"
         config.write_text("web:\n  page_size: 77\n  brand_name: MyMail\n")
-        app = create_app(archive, config_path=str(config))
+        app = create_test_app(archive, config_path=str(config))
         with app.test_client() as client:
             response = client.get("/settings")
             assert response.status_code == 200
@@ -1655,20 +1655,20 @@ class TestSettingsRoutes:
 
     def test_settings_page_unreadable_config(self, archive, tmp_path):
         """An unreadable config should fall back to defaults, not error."""
-        app = create_app(archive, config_path=str(tmp_path / "missing.yaml"))
+        app = create_test_app(archive, config_path=str(tmp_path / "missing.yaml"))
         with app.test_client() as client:
             response = client.get("/settings")
             assert response.status_code == 200
 
     def test_settings_page_saved_banner(self, archive):
         """?saved=1 should be passed through to the template."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/settings?saved=1").status_code == 200
 
     def test_save_settings_without_config_path_redirects(self, archive):
         """POST with no config path should redirect without writing."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.post("/settings", data={"page_size": "50"})
             assert response.status_code == 302
@@ -1681,7 +1681,7 @@ class TestSettingsRoutes:
 
         config = tmp_path / "config.yaml"
         config.write_text("web:\n  page_size: 20\n")
-        app = create_app(archive, config_path=str(config))
+        app = create_test_app(archive, config_path=str(config))
         with app.test_client() as client:
             response = client.post(
                 "/settings",
@@ -1717,7 +1717,7 @@ class TestSettingsRoutes:
         """Omitted checkboxes should store False, not stay at the old value."""
         config = tmp_path / "config.yaml"
         config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config), block_images=True, auto_scale=True)
+        app = create_test_app(archive, config_path=str(config), block_images=True, auto_scale=True)
         with app.test_client() as client:
             client.post("/settings", data={"page_size": "20"})
         assert app.config["block_images"] is False
@@ -1727,7 +1727,7 @@ class TestSettingsRoutes:
         """Empty format fields should clear the configured formats."""
         config = tmp_path / "config.yaml"
         config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config), date_format="%x", detail_date_format="%c")
+        app = create_test_app(archive, config_path=str(config), date_format="%x", detail_date_format="%c")
         with app.test_client() as client:
             client.post("/settings", data={"date_format": "", "detail_date_format": ""})
         assert app.config["date_format"] is None
@@ -1737,7 +1737,7 @@ class TestSettingsRoutes:
         """A blank brand name should fall back to 'ownmail'."""
         config = tmp_path / "config.yaml"
         config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config), brand_name="Custom")
+        app = create_test_app(archive, config_path=str(config), brand_name="Custom")
         with app.test_client() as client:
             client.post("/settings", data={"brand_name": "   "})
         assert app.config["brand_name"] == "ownmail"
@@ -1750,7 +1750,7 @@ class TestSettingsRoutes:
         """Page size should be clamped to 1..500, falling back to 20 if invalid."""
         config = tmp_path / "config.yaml"
         config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config))
+        app = create_test_app(archive, config_path=str(config))
         with app.test_client() as client:
             client.post("/settings", data={"page_size": submitted})
         assert app.config["page_size"] == expected
@@ -1759,7 +1759,7 @@ class TestSettingsRoutes:
         """A corrupt config file should be replaced rather than crash the save."""
         config = tmp_path / "config.yaml"
         config.write_text("{{{ not yaml")
-        app = create_app(archive, config_path=str(config))
+        app = create_test_app(archive, config_path=str(config))
         with app.test_client() as client:
             response = client.post("/settings", data={"page_size": "30"})
             assert response.status_code == 302
@@ -1771,7 +1771,7 @@ class TestSettingsRoutes:
 
         config = tmp_path / "config.yaml"
         config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config), verbose=True)
+        app = create_test_app(archive, config_path=str(config), verbose=True)
         with patch("ownmail.yaml_util.save_yaml", side_effect=OSError("read-only")):
             with app.test_client() as client:
                 response = client.post("/settings", data={"page_size": "30"})
@@ -1798,7 +1798,7 @@ class TestTrustedSenderPersistence:
 
         config = tmp_path / "config.yaml"
         config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config), verbose=True)
+        app = create_test_app(archive, config_path=str(config), verbose=True)
         with app.test_client() as client:
             response = client.post("/trust-sender", data={"email": "New@Example.com", "redirect": "/search"})
             assert response.status_code == 302
@@ -1814,7 +1814,7 @@ class TestTrustedSenderPersistence:
         config = tmp_path / "config.yaml"
         config.write_text("web:\n  trusted_senders:\n    - a@example.com\n")
         before = config.read_bytes()
-        app = create_app(archive, config_path=str(config))
+        app = create_test_app(archive, config_path=str(config))
         with patch("ownmail.web.save_web_config") as save, app.test_client() as client:
             for _ in range(2):
                 response = client.post("/trust-sender", data={"email": "a@example.com", "redirect": "/search"})
@@ -1826,7 +1826,7 @@ class TestTrustedSenderPersistence:
 
     def test_trust_sender_empty_email_redirects(self, archive):
         """An empty email should redirect without touching the trusted set."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.post("/trust-sender", data={"email": "  ", "redirect": "/search"})
             assert response.status_code == 302
@@ -1848,7 +1848,7 @@ class TestTrustedSenderPersistence:
         """Targets a browser could resolve to another host get the default response."""
         config = tmp_path / "config.yaml"
         config.write_text("web: {}\n")
-        app = create_app(archive, config_path=str(config) if saved else None)
+        app = create_test_app(archive, config_path=str(config) if saved else None)
         with app.test_client() as client:
             response = client.post("/trust-sender", data={"email": email, "redirect": redirect_to})
         if saved:
@@ -1872,7 +1872,7 @@ class TestTrustedSenderPersistence:
         config = tmp_path / "config.yaml"
         config.write_text("# Preserve unrelated settings\nweb:\n  page_size: 37\n  trusted_senders: [b@example.com]\n")
         before = config.read_bytes()
-        app = create_app(archive, config_path=str(config), trusted_senders=["b@example.com"], verbose=True)
+        app = create_test_app(archive, config_path=str(config), trusted_senders=["b@example.com"], verbose=True)
         target = "ownmail.web_downloads.os.replace" if operation == "os.replace" else f"ownmail.yaml_util.{operation}"
         with app.test_client() as client:
             with patch(target, side_effect=OSError("synthetic private detail")):
@@ -1903,7 +1903,7 @@ class TestTrustedSenderPersistence:
 
         config = tmp_path / "config.yaml"
         config.write_text("web:\n  trusted_senders:\n    - a@example.com\n    - b@example.com\n")
-        app = create_app(archive, config_path=str(config), trusted_senders=["a@example.com"], verbose=True)
+        app = create_test_app(archive, config_path=str(config), trusted_senders=["a@example.com"], verbose=True)
         with app.test_client() as client:
             response = client.post("/untrust-sender", data={"email": "A@Example.com"})
             assert response.get_json() == {"status": "ok"}
@@ -1916,7 +1916,7 @@ class TestTrustedSenderPersistence:
 
     def test_untrust_sender_empty_email_errors(self, archive):
         """An empty email should return an error payload."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.post("/untrust-sender", data={"email": ""})
             assert response.get_json()["status"] == "error"
@@ -1936,7 +1936,7 @@ class TestTrustedSenderPersistence:
             "# Preserve unrelated settings\nweb:\n  page_size: 37\n  trusted_senders: [a@example.com, b@example.com]\n"
         )
         before = config.read_bytes()
-        app = create_app(
+        app = create_test_app(
             archive, config_path=str(config), trusted_senders=["a@example.com", "b@example.com"], verbose=True
         )
         observed_trust = []
@@ -1999,7 +1999,7 @@ class TestViewTrash:
                 0,
             )
         ]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/trash")
             assert response.status_code == 200
@@ -2009,7 +2009,7 @@ class TestViewTrash:
     def test_missing_subject_and_date(self, archive):
         """A row with no subject or date should render placeholders."""
         archive.db.get_trashed_emails.return_value = [("id2", "f2.eml", "", "", "", "", "2024-01-02", "orig.eml", 0)]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/trash")
             assert response.status_code == 200
@@ -2020,7 +2020,7 @@ class TestViewTrash:
         archive.db.get_trashed_emails.return_value = [
             ("id3", "f3.eml", "Subj", "a@example.com", "20240101 garbage", "snip", "2024-01-02", "orig.eml", 0)
         ]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/trash")
             assert response.status_code == 200
@@ -2074,7 +2074,7 @@ class TestRunServer:
         san_patch, run_patch, _ = self._patches(sanitizer)
         with san_patch, run_patch as mock_run:
             assert run_server(archive, host=host, debug=debug, reload=reload, open_browser=False) is None
-        sanitizer.start.assert_called_once_with()
+        sanitizer.start.assert_called_once_with(install=False)
         sanitizer.stop.assert_called_once()
         mock_run.assert_called_once()
         assert mock_run.call_args.kwargs["host"] == host
@@ -2119,11 +2119,34 @@ class TestRunServer:
         assert "❌ HTML sanitizer failed to start.\n   npm install failed.\n   Install them with:\n" in out
         assert (
             "     npm --prefix /x install --omit=dev\n"
-            "   For pipx installs, repair the environment with: pipx reinstall ownmail\n"
+            "   For pipx installs, repair the environment with: pipx reinstall ownmail, then ownmail setup --web\n"
             "   Refusing to serve without sanitization.\n"
         ) in out
         assert "web interface" not in out
         assert "Running at" not in out
+
+    @pytest.mark.parametrize(
+        "host,reload,warned",
+        [
+            ("0.0.0.0", True, True),
+            ("mail.example.invalid", True, True),
+            ("127.0.0.1", True, False),
+            ("0.0.0.0", False, False),
+        ],
+    )
+    def test_reload_on_public_host_warns_but_starts(self, archive, sanitizer, capsys, host, reload, warned):
+        """--reload on a non-loopback host still serves, with a warning that it is for local development."""
+        from ownmail.web import run_server
+
+        san_patch, run_patch, _ = self._patches(sanitizer)
+        with san_patch, run_patch as mock_run:
+            run_server(archive, host=host, reload=reload, open_browser=False)
+        mock_run.assert_called_once()
+        assert mock_run.call_args.kwargs["use_reloader"] is reload
+        assert mock_run.call_args.kwargs["debug"] is False
+        out = capsys.readouterr().out
+        assert ("WARNING: --reload is meant for local development." in out) is warned
+        assert "Running at" in out
 
     @pytest.mark.parametrize("host", ["0.0.0.0", "::", "mail.example.test"])
     def test_debug_with_public_host_is_refused(self, archive, sanitizer, capsys, host):
@@ -2306,7 +2329,7 @@ class TestViewEmailRendering:
     def test_missing_file_is_404(self, archive):
         """A DB row whose file is gone should 404 rather than error."""
         archive.db.get_email_by_id.return_value = ("id1", "gone.eml", "d", "h", "a@example.com", None)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/email/id1").status_code == 404
 
@@ -2318,7 +2341,7 @@ class TestViewEmailRendering:
             b"Subject: =?UTF-8?B?7YWM7Iqk7Yq4?=\r\n"
             b"Date: Mon, 1 Jan 2024 10:00:00 +0000\r\n\r\nbody\r\n",
         )
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert "테스트".encode() in response.data
@@ -2335,7 +2358,7 @@ class TestViewEmailRendering:
             b"--b1--\r\n"
         )
         self._store(archive, raw)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"html version" in response.data
@@ -2359,7 +2382,7 @@ class TestViewEmailRendering:
             b"--b1\r\n" + part_headers + b"\r\n\r\nPDFDATA\r\n--b1--\r\n"
         )
         self._store(archive, raw)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert response.status_code == 200
@@ -2384,7 +2407,7 @@ class TestViewEmailRendering:
             b"--b1--\r\n"
         )
         self._store(archive, raw)
-        with create_app(archive).test_client() as client:
+        with create_test_app(archive).test_client() as client:
             response = client.get("/email/id1")
             assert response.status_code == 200
             document = html.fromstring(response.data)
@@ -2424,7 +2447,7 @@ class TestViewEmailRendering:
             b"--b1--\r\n"
         )
         self._store(archive, raw)
-        with create_app(archive).test_client() as client:
+        with create_test_app(archive).test_client() as client:
             response = client.get("/email/id1")
             assert b"list footer" in response.data
             assert b"Inner subject" in response.data
@@ -2458,7 +2481,7 @@ class TestViewEmailRendering:
             b'Content-Disposition: attachment; filename="forwarded.eml"\r\n\r\n' + embedded + b"--b1--\r\n"
         )
         self._store(archive, raw)
-        with create_app(archive).test_client() as client:
+        with create_test_app(archive).test_client() as client:
             response = client.get("/email/id1")
             assert b"see the attached message" in response.data
             assert "forwarded café" in response.data.decode()
@@ -2485,7 +2508,7 @@ class TestViewEmailRendering:
             b'Content-Disposition: inline; filename="body.txt"\r\n\r\n' + payload + b"\r\n--b1--\r\n"
         )
         self._store(archive, raw)
-        with create_app(archive).test_client() as client:
+        with create_test_app(archive).test_client() as client:
             response = client.get("/email/id1")
         assert response.status_code == 200
         document = html.fromstring(response.data)
@@ -2505,7 +2528,7 @@ class TestViewEmailRendering:
             b"--b1--\r\n"
         )
         self._store(archive, raw)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"inner@example.com" in response.data
@@ -2516,7 +2539,7 @@ class TestViewEmailRendering:
         """Labels from the database should render on the page."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.get_labels_for_email.return_value = ["Work", "Important"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"Work" in response.data
@@ -2526,7 +2549,7 @@ class TestViewEmailRendering:
         """A localized folder name should read as the role it means."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.get_labels_for_email.return_value = ["Entwürfe"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"Drafts" in response.data
@@ -2539,7 +2562,7 @@ class TestViewEmailRendering:
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.gmail_accounts = frozenset({"a@example.com"})
         archive.db.get_labels_for_email.return_value = ["Junk", "[Gmail]/Trash"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"label%3A%22Junk%22" in response.data
@@ -2549,7 +2572,7 @@ class TestViewEmailRendering:
     def test_imap_folder_chip_still_resolves_by_name(self, archive):
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.get_labels_for_email.return_value = ["Junk"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"role%3Aspam" in response.data
@@ -2558,7 +2581,7 @@ class TestViewEmailRendering:
         """Two spellings of 'sent' say one thing about the message."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.get_labels_for_email.return_value = ["SENT", "[Gmail]/Sent Mail"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert response.data.count(b'class="ownmail-label ownmail-clickable-label"') == 1
@@ -2568,7 +2591,7 @@ class TestViewEmailRendering:
         """UNREAD only exists in old archives, and searching it is an error."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.get_labels_for_email.return_value = ["UNREAD", "Work"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"UNREAD" not in response.data
@@ -2578,7 +2601,7 @@ class TestViewEmailRendering:
         """INBOX says where the message was at capture, not where it is."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.get_labels_for_email.return_value = ["INBOX", "DRAFT", "Work"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"INBOX" not in response.data
@@ -2589,7 +2612,7 @@ class TestViewEmailRendering:
         """The stale rule matches label ids exactly — 'Trash' is a real label."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
         archive.db.get_labels_for_email.return_value = ["Archive", "Trash"]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"Archive" in response.data
@@ -2598,14 +2621,14 @@ class TestViewEmailRendering:
     def test_trashed_email_renders(self, archive):
         """A trashed email should still be viewable."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n", trashed_at="2024-02-01")
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/email/id1").status_code == 200
 
     def test_verbose_logs_timings(self, archive, capsys):
         """Verbose mode should print lookup and parse timings."""
         self._store(archive, b"From: a@example.com\r\nSubject: S\r\n\r\nbody\r\n")
-        app = create_app(archive, verbose=True)
+        app = create_test_app(archive, verbose=True)
         with app.test_client() as client:
             client.get("/email/id1")
         out = capsys.readouterr().out
@@ -2642,7 +2665,7 @@ class TestRawAndDownloadRoutes:
     def test_raw_shows_source(self, archive):
         """The raw view should show the file path and message source."""
         self._store(archive, b"From: a@example.com\r\nSubject: Raw test\r\n\r\nbody\r\n")
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/raw/id1")
         assert response.status_code == 200
@@ -2652,14 +2675,14 @@ class TestRawAndDownloadRoutes:
     def test_raw_unknown_id_is_404(self, archive):
         """An unknown email id should 404."""
         archive.db.get_email_by_id.return_value = None
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/raw/nope").status_code == 404
 
     def test_raw_missing_file_is_404(self, archive):
         """A missing file should 404 rather than raise."""
         archive.db.get_email_by_id.return_value = ("id1", "gone.eml", "d", "h", "a@example.com", None)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/raw/id1").status_code == 404
 
@@ -2675,14 +2698,14 @@ class TestRawAndDownloadRoutes:
             "a@example.com",
             None,
         )
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/raw/id1").status_code == 404
 
     def test_download_returns_eml(self, archive):
         """The download route should return the .eml as an attachment."""
         self._store(archive, b"From: a@example.com\r\nSubject: D\r\n\r\nbody\r\n")
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/download/id1")
         assert response.status_code == 200
@@ -2692,14 +2715,14 @@ class TestRawAndDownloadRoutes:
     def test_download_unknown_id_is_404(self, archive):
         """An unknown id should 404."""
         archive.db.get_email_by_id.return_value = None
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/download/nope").status_code == 404
 
     def test_attachment_download(self, archive):
         """The attachment route should return the decoded payload."""
         self._store(archive, self.ATTACHMENT_EML)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/attachment/id1/0")
         assert response.status_code == 200
@@ -2709,21 +2732,21 @@ class TestRawAndDownloadRoutes:
     def test_attachment_index_out_of_range_is_404(self, archive):
         """An index past the last attachment should 404."""
         self._store(archive, self.ATTACHMENT_EML)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/attachment/id1/5").status_code == 404
 
     def test_attachment_unknown_id_is_404(self, archive):
         """An unknown email id should 404."""
         archive.db.get_email_by_id.return_value = None
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/attachment/nope/0").status_code == 404
 
     def test_attachment_missing_file_is_404(self, archive):
         """A missing .eml file should 404."""
         archive.db.get_email_by_id.return_value = ("id1", "gone.eml", "d", "h", "a@example.com", None)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/attachment/id1/0").status_code == 404
 
@@ -2732,7 +2755,7 @@ class TestRawAndDownloadRoutes:
         outside = tmp_path.parent / "outside2.eml"
         outside.write_bytes(b"secret")
         archive.db.get_email_by_id.return_value = ("id1", f"../{outside.name}", "d", "h", "a@example.com", None)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/attachment/id1/0").status_code == 404
 
@@ -2924,35 +2947,35 @@ class TestSearchRoute:
 
     def test_empty_query_lists_newest_first(self, archive):
         """With no query, results should be sorted newest-first."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             client.get("/search")
         assert archive.search.call_args.kwargs["sort"] == "date_desc"
 
     def test_filter_only_query_switches_off_relevance(self, archive):
         """A query with only filters has no relevance signal, so sort by date."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             client.get("/search?q=label:Work")
         assert archive.search.call_args.kwargs["sort"] == "date_desc"
 
     def test_text_query_keeps_relevance(self, archive):
         """A query with real search terms should keep relevance ordering."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             client.get("/search?q=invoice")
         assert archive.search.call_args.kwargs["sort"] == "relevance"
 
     def test_date_filter_alone_sorts_by_date(self, archive):
         """before:/after: filters alone should not use relevance."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             client.get("/search?q=after:2024-01-01")
         assert archive.search.call_args.kwargs["sort"] == "date_desc"
 
     def test_invalid_sort_falls_back(self, archive):
         """An unrecognized sort value should fall back to relevance."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             client.get("/search?q=invoice&sort=bogus")
         assert archive.search.call_args.kwargs["sort"] == "relevance"
@@ -2962,7 +2985,7 @@ class TestSearchRoute:
     def test_explicit_sort_is_honoured(self, archive, query, sort):
         """The requested date order stays selected and survives pagination."""
         archive.search.return_value = [self._row(i) for i in range(2)]
-        app = create_app(archive, page_size=1)
+        app = create_test_app(archive, page_size=1)
         with app.test_client() as client:
             response = client.get("/search", query_string={"q": query, "sort": sort, "page": 2})
         assert archive.search.call_args.kwargs["sort"] == sort
@@ -2975,7 +2998,7 @@ class TestSearchRoute:
 
     def test_pagination_offset(self, archive):
         """Page 3 at 20 per page should request offset 40."""
-        app = create_app(archive, page_size=20)
+        app = create_test_app(archive, page_size=20)
         with app.test_client() as client:
             client.get("/search?q=invoice&page=3")
         assert archive.search.call_args.kwargs["offset"] == 40
@@ -2984,7 +3007,7 @@ class TestSearchRoute:
     def test_extra_row_signals_more_pages(self, archive):
         """Fetching per_page+1 rows should trim the extra and offer page 2."""
         archive.search.return_value = [self._row(i, subject=f"Subject {i}") for i in range(4)]
-        app = create_app(archive, page_size=3)
+        app = create_test_app(archive, page_size=3)
         with app.test_client() as client:
             response = client.get("/search?q=invoice")
         assert response.status_code == 200
@@ -3001,7 +3024,7 @@ class TestSearchRoute:
                 snippet="=?UTF-8?B?7YWM7Iqk7Yq4?=",
             )
         ]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/search?q=x")
         assert "테스트".encode() in response.data
@@ -3009,7 +3032,7 @@ class TestSearchRoute:
 
     def test_snippet_entities_render_as_text(self, archive):
         archive.search.return_value = [self._row(snippet="Hello&#8199;world &lt;img src=x onerror=alert(1)&gt;")]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/search?q=is:active")
         assert response.status_code == 200
@@ -3021,7 +3044,7 @@ class TestSearchRoute:
     def test_missing_subject_placeholder(self, archive):
         """A result with no subject should show a placeholder."""
         archive.search.return_value = [self._row(subject="")]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/search?q=x")
         assert b"(No subject)" in response.data
@@ -3029,14 +3052,14 @@ class TestSearchRoute:
     def test_unparseable_date_degrades_to_first_token(self, archive):
         """A date that cannot be parsed should show its leading token."""
         archive.search.return_value = [self._row(date="20240101 garbage")]
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/search?q=x")
         assert b"20240101" in response.data
 
     def test_verbose_logs_search_timing(self, archive, capsys):
         """Verbose mode should log the query and its duration."""
-        app = create_app(archive, verbose=True)
+        app = create_test_app(archive, verbose=True)
         with app.test_client() as client:
             client.get("/search?q=invoice")
         out = capsys.readouterr().out
@@ -3048,7 +3071,7 @@ class TestSearchRoute:
         # Query has to parse cleanly to reach search() at all — an unbalanced
         # paren is now rejected before that, and is covered separately below.
         archive.search.side_effect = RuntimeError("fts5 syntax error")
-        app = create_app(archive, verbose=True)
+        app = create_test_app(archive, verbose=True)
         with app.test_client() as client:
             response = client.get("/search?q=bad")
         assert response.status_code == 200
@@ -3057,7 +3080,7 @@ class TestSearchRoute:
 
     def test_parse_error_is_shown_instead_of_no_results(self, archive):
         """A malformed query used to render as an empty archive."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/search?q=bad(")
         assert response.status_code == 200
@@ -3067,7 +3090,7 @@ class TestSearchRoute:
 
     def test_unknown_role_error_reaches_the_page(self, archive):
         """The role: message names the valid slugs, which is only useful if seen."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/search?q=role:starred")
         assert b"Unknown role" in response.data
@@ -3075,7 +3098,7 @@ class TestSearchRoute:
 
     def test_parse_error_skips_the_fts_quoting_hint(self, archive):
         """The quoting hint is for cryptic FTS5 errors, not for a clear message."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             parse = client.get("/search?q=role:starred")
             archive.search.side_effect = RuntimeError("fts5 syntax error")
@@ -3100,20 +3123,20 @@ class TestTrashMutationRoutes:
     def test_trash_unknown_email_is_404(self, archive):
         """Trashing an email that isn't there should 404."""
         archive.trash_email.return_value = False
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.post("/trash/nope").status_code == 404
 
     def test_restore_unknown_email_is_404(self, archive):
         """Restoring an email that isn't in trash should 404."""
         archive.restore_email.return_value = False
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             assert client.post("/restore/nope").status_code == 404
 
     def test_restore_bulk(self, archive):
         """Bulk restore should restore each listed id."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.post("/restore-bulk", data={"ids": "a,b,c"})
         assert response.status_code == 204
@@ -3121,14 +3144,14 @@ class TestTrashMutationRoutes:
 
     def test_bulk_routes_ignore_blank_ids(self, archive):
         """Empty segments in the id list should be skipped."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             client.post("/trash-bulk", data={"ids": "a,,  ,b"})
         assert archive.trash_email.call_count == 2
 
     def test_delete_forever_with_no_ids_does_nothing(self, archive):
         """An empty id list should not call through to the archive."""
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.post("/delete-forever", data={"ids": ""})
         assert response.status_code == 204
@@ -3207,7 +3230,7 @@ class TestInlineImagesAndSanitizer:
                 b'Content-ID: <logo123>\r\nContent-Disposition: inline; filename="logo.gif"\r\n',
             )
         self._store(archive, raw)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             response = client.get("/email/id1")
         assert b"cid:logo123" not in response.data
@@ -3229,7 +3252,7 @@ class TestInlineImagesAndSanitizer:
     def test_verbose_logs_sanitization(self, archive, capsys):
         """Verbose mode should log the sanitization step."""
         self._store(archive, self.CID_EML)
-        app = create_app(archive, verbose=True)
+        app = create_test_app(archive, verbose=True)
         with app.test_client() as client:
             client.get("/email/id1")
         assert "Sanitizing HTML" in capsys.readouterr().out
@@ -3343,7 +3366,7 @@ class TestCreateAppStartup:
         archive = self._archive(tmp_path)
         archive.auto_expire_trash.return_value = 6
 
-        create_app(archive)
+        create_test_app(archive)
 
         assert "Auto-expired 6 email(s) from trash" in capsys.readouterr().out
 
@@ -3352,22 +3375,24 @@ class TestCreateAppStartup:
         archive = self._archive(tmp_path)
         archive.auto_expire_trash.side_effect = OSError("db locked")
 
-        app = create_app(archive)
+        app = create_test_app(archive)
 
         with app.test_client() as client:
             assert client.get("/search").status_code == 200
 
-    def test_passthrough_sanitizer_is_the_default(self, tmp_path):
-        """Without an explicit sanitizer, HTML should pass through unchanged."""
+    @pytest.mark.parametrize("given", ["missing", "unavailable"])
+    def test_requires_an_available_sanitizer(self, tmp_path, given):
+        """Without an available sanitizer, create_app refuses before any startup work."""
+        from ownmail.sanitizer import HtmlSanitizer
+
         archive = self._archive(tmp_path)
-        archive.auto_expire_trash.return_value = 0
+        # A sanitizer that was never started, or whose start failed, is unavailable.
+        options = {} if given == "missing" else {"sanitizer": HtmlSanitizer()}
 
-        app = create_app(archive)
-        sanitizer = app.config["sanitizer"]
+        with pytest.raises(ValueError, match="requires a started, available HTML sanitizer"):
+            create_app(archive, **options)
 
-        assert sanitizer.available is True
-        assert sanitizer.sanitize("<p>x</p>") == ("<p>x</p>", True, False)
-        assert sanitizer.stop() is None
+        archive.auto_expire_trash.assert_not_called()
 
 
 class TestDecodeHtmlBodyCharsetEdges:
@@ -3484,7 +3509,7 @@ class TestViewEmailMultipartVariants:
     def _get(self, archive, raw):
         (archive.archive_dir / "mail.eml").write_bytes(raw)
         archive.db.get_email_by_id.return_value = ("id1", "mail.eml", "d", "h", "a@example.com", None)
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             return client.get("/email/id1")
 
@@ -3583,7 +3608,7 @@ class TestLabelSidebar:
         return archive
 
     def _nav(self, archive, path="/search"):
-        app = create_app(archive)
+        app = create_test_app(archive)
         with app.test_client() as client:
             return client.get(path).data.decode()
 
@@ -3693,7 +3718,7 @@ class TestLabelSidebar:
     def test_unreadable_database_degrades_to_no_labels(self, archive, capsys):
         """Losing the sidebar must not take the page down with it."""
         archive.db.get_label_counts.side_effect = sqlite3.OperationalError("database is locked")
-        app = create_app(archive, verbose=True)
+        app = create_test_app(archive, verbose=True)
         with app.test_client() as client:
             response = client.get("/search")
         assert response.status_code == 200

@@ -8,9 +8,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from ownmail.parser import EmailParser, _try_decode
-from ownmail.web import _decode_html_body, _decode_text_body, create_app
+from ownmail.web import _decode_html_body, _decode_text_body
 from tests import test_email_contrast
-from tests.conftest import mock_archive_db
+from tests.conftest import create_test_app, mock_archive_db
 
 contrast_browser = test_email_contrast.contrast_browser
 
@@ -116,7 +116,7 @@ def test_recovered_html_renders_in_browser(tmp_path, contrast_browser, text, enc
         "sender@example.com",
         None,
     )
-    app = create_app(archive)
+    app = create_test_app(archive)
     with app.test_client() as client:
         response = client.get("/email/synthetic")
     assert response.status_code == 200

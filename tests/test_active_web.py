@@ -7,9 +7,8 @@ import pytest
 from lxml import html
 
 from ownmail.archive import EmailArchive
-from ownmail.web import create_app
 from tests import test_email_contrast, test_ui_shell
-from tests.conftest import mock_archive_db
+from tests.conftest import create_test_app, mock_archive_db
 from tests.test_live_sync import MailServer, cache_message, message, owned_rows, sync
 
 shell_browser = test_ui_shell.shell_browser
@@ -76,7 +75,7 @@ class ActiveWebArchive:
 @pytest.fixture
 def active_app(tmp_path, sample_eml_multipart):
     archive = ActiveWebArchive(tmp_path, sample_eml_multipart)
-    app = create_app(archive, display_timezone="UTC")
+    app = create_test_app(archive, display_timezone="UTC")
     return app, archive
 
 
@@ -169,7 +168,7 @@ def test_dual_state_label_post_changes_only_the_owned_snapshot(tmp_path):
     before_content = cache.read(cache_id)
     before_server = dict(provider.messages)
     provider.reads.clear()
-    client = create_app(archive).test_client()
+    client = create_test_app(archive).test_client()
 
     response = client.post(f"/labels/{email_id}", json={"labels": ["Local edit"]})
 

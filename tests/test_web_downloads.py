@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ownmail.web import create_app, run_server
+from ownmail.web import run_server
 from ownmail.yaml_util import load_yaml
+from tests.conftest import create_test_app
 from tests.test_web import mock_archive_db
 
 
@@ -27,7 +28,7 @@ def configured_app(archive, tmp_path):
     config = tmp_path / "config.yaml"
     config.write_text("# Keep this comment\nsources: []\nweb:\n  page_size: 37\n")
     config.chmod(0o600)
-    app = create_app(archive, config_path=str(config))
+    app = create_test_app(archive, config_path=str(config))
     yield app, config
     app.extensions["downloads"].stop()
 
@@ -43,7 +44,7 @@ def test_schedule_persists_across_app_restart(configured_app, archive):
     assert "# Keep this comment" in config.read_text()
     assert config.stat().st_mode & 0o777 == 0o600
     assert load_yaml(config) == {"sources": [], "web": {"page_size": 37, "download_interval_minutes": 60}}
-    restarted = create_app(archive, config_path=str(config))
+    restarted = create_test_app(archive, config_path=str(config))
     try:
         assert restarted.test_client().get("/downloads").json["interval_minutes"] == 60
         response = restarted.test_client().post("/downloads/schedule", json={"interval_minutes": 0})
@@ -90,12 +91,12 @@ def test_config_failure_preserves_file_and_schedule(configured_app, operation):
 def test_bad_config_disables_schedule(archive, tmp_path, body):
     config = tmp_path / "config.yaml"
     config.write_text(body)
-    app = create_app(archive, config_path=str(config))
+    app = create_test_app(archive, config_path=str(config))
     assert app.test_client().get("/downloads").json["interval_minutes"] == 0
 
 
 def test_no_config_disables_downloads(archive):
-    app = create_app(archive)
+    app = create_test_app(archive)
     client = app.test_client()
     assert client.get("/downloads").json["available"] is False
     assert client.post("/downloads", json={}).status_code == 503

@@ -19,7 +19,7 @@ from ownmail.web import (
     create_app,
 )
 from tests import test_email_contrast, test_reader_spacing
-from tests.conftest import mock_archive_db
+from tests.conftest import create_test_app, mock_archive_db
 
 contrast_browser = test_email_contrast.contrast_browser
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
@@ -149,7 +149,7 @@ def message_app(tmp_path):
         archive.archive_dir = tmp_path
         archive.db = mock_archive_db()
         archive.db.get_email_by_id.return_value = ("message", "message.eml", None, None, None, None)
-        return create_app(archive, **options)
+        return create_test_app(archive, **options)
 
     return create
 

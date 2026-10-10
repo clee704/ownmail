@@ -36,6 +36,30 @@ def mock_archive_db(**overrides):
     return db
 
 
+class PassthroughSanitizer:
+    """Returns message HTML unchanged, for web tests that do not exercise sanitization.
+
+    Production code has no passthrough: create_app refuses to run without an
+    available sanitizer, so only tests can construct an app with this one.
+    """
+
+    available = True
+
+    def sanitize(self, html: str):
+        return html, True, False
+
+    def stop(self):
+        pass
+
+
+def create_test_app(archive, **options):
+    """create_app with a PassthroughSanitizer, unless the test passes its own sanitizer."""
+    from ownmail.web import create_app
+
+    options.setdefault("sanitizer", PassthroughSanitizer())
+    return create_app(archive, **options)
+
+
 @pytest.fixture
 def sample_eml_simple():
     """A simple plain text email."""

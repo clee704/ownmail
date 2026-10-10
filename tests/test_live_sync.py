@@ -597,14 +597,14 @@ def test_local_trash_in_one_source_does_not_suppress_another_source_capture(arch
 def test_real_cached_mail_is_readable_in_web_and_rejects_local_label_edits(archive):
     from lxml import html
 
-    from ownmail.web import create_app
+    from tests.conftest import create_test_app
 
     active = message()
     server = MailServer([active])
     sync(archive, server)
     cache = archive.active_cache()
     entry = cache.list_entries()[0]
-    client = create_app(archive, display_timezone="UTC").test_client()
+    client = create_test_app(archive, display_timezone="UTC").test_client()
     response = client.get("/search?q=is%3Aactive")
     assert response.status_code == 200
     listing = html.fromstring(response.data)
@@ -625,7 +625,7 @@ def test_real_cached_mail_is_readable_in_web_and_rejects_local_label_edits(archi
 def test_real_owned_reader_stays_archived_after_server_return_and_edit(archive):
     from lxml import html
 
-    from ownmail.web import create_app
+    from tests.conftest import create_test_app
 
     original = message(state="eligible", labels=("Saved",))
     server = MailServer([original])
@@ -636,7 +636,7 @@ def test_real_owned_reader_stays_archived_after_server_return_and_edit(archive):
     )
     sync(archive, server)
     assert archive.active_cache().list_entries() == []
-    client = create_app(archive, display_timezone="UTC").test_client()
+    client = create_test_app(archive, display_timezone="UTC").test_client()
     listing = html.fromstring(client.get("/search").data)
     assert len(listing.xpath('//ul[@id="ownmail-email-list"]/li')) == 1
     owned = html.fromstring(client.get(f"/email/{email_id}").data)

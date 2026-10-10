@@ -1296,16 +1296,17 @@ class TestSanitizerLifecycle(unittest.TestCase):
         return (
             "The sanitizer worker did not start. Check that Node.js is a supported LTS release (node --version).\n"
             f"If it is, delete {os.path.join(sanitizer_module._SANITIZER_DIR, 'node_modules')} "
-            "and run ownmail serve again to reinstall the sanitizer dependencies."
+            "and run ownmail setup --web to reinstall the sanitizer dependencies."
         )
 
     def test_start_without_node_stays_unavailable(self):
-        """With no node on PATH, start() should degrade rather than raise."""
+        """With no node on PATH, start() should degrade rather than raise, naming the setup step."""
         san = HtmlSanitizer()
         with patch.object(HtmlSanitizer, "is_node_available", return_value=False):
             san.start()
         self.assertFalse(san.available)
         self.assertIn("Node.js was not found", san.error)
+        self.assertTrue(san.error.endswith("then run ownmail setup --web."))
 
     def test_start_aborts_when_deps_unavailable(self):
         """A failed dependency install should leave the sanitizer unavailable."""
@@ -1429,7 +1430,7 @@ class TestSanitizerLifecycle(unittest.TestCase):
             san.start()
             self.assertTrue(san.available)
             san._restart()
-        self.assertEqual([call.args for call in deps.call_args_list], [(True,), (False,)])
+        self.assertEqual([call.args for call in deps.call_args_list], [(False,), (False,)])
         self.assertEqual(old.stderr.tell(), len(old.stderr.getvalue()))
         self.assertEqual(new.stderr.tell(), len(new.stderr.getvalue()))
         self.assertEqual(san.error, "Error: replacement failed\n" + self._fallback())
@@ -1612,18 +1613,18 @@ class TestSanitizerDeps(unittest.TestCase):
 
         self.run.side_effect = run
 
-    def _ensure(self, san=None, npm="/usr/bin/npm", **kwargs):
+    def _ensure(self, san=None, npm="/usr/bin/npm", install=True):
         """Run _ensure_deps with `npm` on PATH, returning its result and printed output."""
         san = san or HtmlSanitizer()
         with patch("shutil.which", return_value=npm), patch("sys.stdout", new=io.StringIO()) as out:
-            return san._ensure_deps(**kwargs), out.getvalue()
+            return san._ensure_deps(install), out.getvalue()
 
     def test_satisfied_install_needs_no_npm(self):
         """Installed versions within every range start without npm, even when npm is missing."""
         self._install(dompurify="3.9.0", jsdom="26.0.0", postcss="8.5.28+build.1")
         san = HtmlSanitizer()
         with patch("shutil.which", return_value=None) as which, patch("sys.stdout", new=io.StringIO()) as out:
-            self.assertTrue(san._ensure_deps())
+            self.assertTrue(san._ensure_deps(install=True))
         self.assertEqual(out.getvalue(), "")
         which.assert_not_called()
         self.run.assert_not_called()
@@ -1766,13 +1767,13 @@ class TestSanitizerDeps(unittest.TestCase):
                     patch("subprocess.Popen") as worker,
                     patch("sys.stdout", new=io.StringIO()) as out,
                 ):
-                    san.start()
+                    san.start(install=True)
                 self.assertFalse(san.available)
                 worker.assert_not_called()
                 self.assertNotIn("dependencies installed", out.getvalue())
                 cause, remedy, command = san.error.splitlines()
                 self.assertEqual(cause, f"The sanitizer dependencies (dompurify) could not be installed: {reason}.")
-                self.assertEqual(remedy, f"{hint}, then run ownmail serve again, or install them with:")
+                self.assertEqual(remedy, f"{hint}, then run ownmail setup --web again, or install them with:")
                 self.assertEqual(shlex.split(command), ["npm", "--prefix", self.dir, "install", "--omit=dev"])
                 if tree == "kept":
                     self.assertFalse(os.path.exists(self.marker))
@@ -1815,7 +1816,7 @@ class TestSanitizerDeps(unittest.TestCase):
         self.assertFalse(self._ensure(san)[0])
         cause, remedy, _ = san.error.splitlines()
         self.assertIn("could not be installed: the install could not start (", cause)
-        self.assertTrue(remedy.startswith(f"Check that {self.dir} is writable, then run ownmail serve again"))
+        self.assertTrue(remedy.startswith(f"Check that {self.dir} is writable, then run ownmail setup --web again"))
         self.run.assert_not_called()
 
     def test_missing_npm_is_reported(self):
@@ -1829,13 +1830,13 @@ class TestSanitizerDeps(unittest.TestCase):
                     patch("shutil.which", return_value=None),
                     patch("subprocess.Popen") as worker,
                 ):
-                    san.start()
+                    san.start(install=True)
                 self.assertFalse(san.available)
                 worker.assert_not_called()
                 self.assertEqual(
                     san.error,
                     f"npm was not found, so the sanitizer dependencies ({names}) could not be installed.\n"
-                    "Install Node.js with npm from https://nodejs.org, then run ownmail serve again.",
+                    "Install Node.js with npm from https://nodejs.org, then run ownmail setup --web again.",
                 )
                 self.run.assert_not_called()
 
@@ -1848,7 +1849,7 @@ class TestSanitizerDeps(unittest.TestCase):
         self.assertEqual(
             san.error,
             "Another ownmail process is installing the sanitizer dependencies.\n"
-            "Wait for it to finish, then run ownmail serve again.",
+            "Wait for it to finish, then run ownmail setup --web again.",
         )
         self.run.assert_not_called()
         self.assertEqual(sanitizer_module._installed_version("dompurify"), "3.3.1")
@@ -1874,19 +1875,35 @@ class TestSanitizerDeps(unittest.TestCase):
         san = HtmlSanitizer()
         self.assertFalse(self._ensure(san)[0])
         self.assertTrue(san.error.startswith("The sanitizer dependencies (dompurify) could not be installed ("))
-        self.assertTrue(san.error.endswith(f"Check that {self.dir} is writable, then run ownmail serve again."))
+        self.assertTrue(san.error.endswith(f"Check that {self.dir} is writable, then run ownmail setup --web again."))
         self.run.assert_not_called()
 
-    def test_restart_never_installs(self):
-        """With install False, unmet or unfinished dependencies are reported rather than installed."""
-        for label in ("stale", "unfinished"):
+    def test_start_without_install_names_setup(self):
+        """By default, start() reports unmet or unfinished dependencies with the setup step and never runs npm."""
+        remedy = "\nRun ownmail setup --web to install them, then restart ownmail serve."
+        cases = (
+            ("missing", {}, "The sanitizer dependencies (dompurify, jsdom, postcss) are missing"),
+            ("stale", self.STALE, "The sanitizer dependencies (dompurify) are missing"),
+            ("unfinished", self.CURRENT, "An earlier install of the sanitizer dependencies did not finish."),
+        )
+        for label, installed, problem in cases:
             with self.subTest(label):
-                self._reset(**(self.STALE if label == "stale" else self.CURRENT))
+                self._reset(**installed)
                 if label == "unfinished":
                     open(self.marker, "w").close()
                 san = HtmlSanitizer()
-                self.assertFalse(self._ensure(san, install=False)[0])
-                self.assertIn("changed while ownmail serve was running", san.error)
+                with (
+                    patch.object(san, "is_node_available", return_value=True),
+                    patch("shutil.which", return_value="/usr/bin/npm"),
+                    patch("subprocess.Popen") as worker,
+                    patch("sys.stdout", new=io.StringIO()) as out,
+                ):
+                    san.start()
+                self.assertFalse(san.available)
+                self.assertTrue(san.error.startswith(problem), san.error)
+                self.assertTrue(san.error.endswith(remedy), san.error)
+                self.assertEqual(out.getvalue(), "")
+                worker.assert_not_called()
                 self.run.assert_not_called()
 
     def test_unremovable_unfinished_install_is_reported(self):
@@ -1900,7 +1917,7 @@ class TestSanitizerDeps(unittest.TestCase):
             san.error,
             "The sanitizer dependencies (dompurify, jsdom, postcss) could not be installed: "
             "an unfinished install could not be removed (busy).\n"
-            f"Delete {self.node_modules}, then run ownmail serve again.",
+            f"Delete {self.node_modules}, then run ownmail setup --web again.",
         )
         self.assertTrue(os.path.exists(self.marker))
         self.run.assert_not_called()
@@ -1929,7 +1946,7 @@ class TestSanitizerDeps(unittest.TestCase):
                     patch("shutil.which", return_value="/usr/bin/npm") as which,
                     patch("subprocess.Popen") as worker,
                 ):
-                    san.start()
+                    san.start(install=True)
                 self.assertFalse(san.available)
                 self.assertIn("The sanitizer's package.json could not be read", san.error)
                 self.assertIn("Reinstall ownmail", san.error)
@@ -1956,7 +1973,7 @@ class TestSanitizerDeps(unittest.TestCase):
             patch("shutil.which", return_value="/usr/bin/npm"),
             patch("subprocess.Popen") as worker,
         ):
-            san.start()
+            san.start(install=True)
         self.assertFalse(san.available)
         self.assertIn("left dompurify outside the package.json ranges", san.error)
         self.run.assert_called_once()
@@ -2118,7 +2135,7 @@ class TestSanitizeErrorHandling(unittest.TestCase):
         """If restarting also fails, sanitize should still return escaped HTML and log why."""
 
         def fail_start(install):
-            san._error = "The sanitizer dependencies changed while ownmail serve was running."
+            san._error = "The sanitizer dependencies (dompurify) are missing or outside the package.json ranges."
 
         for failure in (OSError("no fork"), fail_start):
             with self.subTest(failure=failure):

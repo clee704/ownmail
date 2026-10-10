@@ -9,8 +9,8 @@ from lxml import html
 
 from ownmail import ArchiveDatabase
 from ownmail.query import parse_query
-from ownmail.web import create_app, sender_search_url
-from tests.conftest import mock_archive_db
+from ownmail.web import sender_search_url
+from tests.conftest import create_test_app, mock_archive_db
 
 
 def search_query(url):
@@ -81,7 +81,7 @@ def test_list_trash_and_reader_share_sender_rule(tmp_path, path, sender, expecte
     archive.db.get_trashed_emails.return_value = [
         ("message", "message.eml", "Synthetic", sender, "2024-01-01", "Body", "2024-01-02", "original.eml", 0)
     ]
-    app = create_app(archive)
+    app = create_test_app(archive)
     contexts = []
 
     def record(sender, template, context, **extra):

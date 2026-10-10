@@ -23,6 +23,9 @@ source venv/bin/activate
 # Install in development mode
 pip install -e ".[dev]"
 
+# Install the web interface's HTML sanitizer dependencies (needs Node.js with npm)
+ownmail setup --web
+
 # Install commit and message checks, and the full test suite at push time
 pre-commit install
 ```
@@ -45,8 +48,9 @@ ownmail serve --reload
 
 Python source edits restart the server, and template edits appear on the next
 page refresh. This leaves the interactive debugger disabled. `--debug` enables
-both reloading and the debugger and is restricted to localhost. Add
-`--no-browser` to suppress the initial browser tab.
+both reloading and the debugger and is restricted to localhost. `--reload` with a
+non-localhost `--host` prints a warning but still starts. Add `--no-browser` to
+suppress the initial browser tab.
 
 ## Code Style
 
@@ -81,10 +85,11 @@ These tests skip when Playwright or its browser is unavailable locally. CI
 requires them on Python 3.12. Set `OWNMAIL_BROWSER_ENGINE=webkit` to check WebKit
 after installing it with `playwright install webkit`.
 
-When `package.json` raises a version under `dependencies`, the first test run or
-`ownmail serve` updates the installed packages through npm and keeps Playwright
-if it is installed. A new Playwright version still needs the `npm install`
-command above.
+Tests and `ownmail serve` never run npm. Until the sanitizer dependencies are
+installed, the sanitizer integration tests skip and `ownmail serve` refuses to
+start. When `package.json` raises a version under `dependencies`, run
+`ownmail setup --web` again; it keeps Playwright if it is installed. A new
+Playwright version still needs the `npm install` command above.
 
 ### Code Coverage
 
@@ -144,8 +149,8 @@ versions you aren't. Local hooks are a fast filter; CI is the gate.
 
 - **lint** — `ruff check`, `ruff format --check`, `deptry` (once, on 3.12)
 - **test** — the full suite with coverage across Python 3.10, 3.11, and 3.12,
-  with Node.js available so the HTML-sanitizer integration tests actually run
-  instead of skipping
+  with Node.js and `ownmail setup --web` so the HTML-sanitizer integration tests
+  actually run instead of skipping
 
 The matrix mirrors the versions in `pyproject.toml`'s classifiers. If you change
 the supported Python range, update both.

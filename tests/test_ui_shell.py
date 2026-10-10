@@ -11,8 +11,7 @@ import pytest
 from lxml import html
 
 from ownmail.sanitizer import HtmlSanitizer
-from ownmail.web import create_app
-from tests.conftest import mock_archive_db
+from tests.conftest import create_test_app, mock_archive_db
 
 
 @pytest.fixture
@@ -25,7 +24,7 @@ def shell_app(tmp_path):
         get_label_counts={"Work": 3},
         get_role_counts={"inbox": 4, "trash": 1},
     )
-    return create_app(archive), archive
+    return create_test_app(archive), archive
 
 
 @pytest.mark.parametrize(

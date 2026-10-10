@@ -4,7 +4,8 @@ Provides server-side HTML/CSS sanitization for email content before
 rendering in the browser. Communicates with a long-lived Node.js child
 process over stdin/stdout using newline-delimited JSON.
 
-If Node.js is not available, the web server refuses to start.
+`ownmail setup` installs the worker's npm dependencies. Serving never runs
+npm, and the web server refuses to start while the sanitizer is unavailable.
 """
 
 from __future__ import annotations
@@ -61,9 +62,11 @@ _RELEASE_VERSION = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
 
+# The step that installs the dependencies; ownmail serve only checks them.
+SETUP_COMMAND = "ownmail setup --web"
+
 _NODE_MISSING = (
-    "Node.js was not found.\n"
-    "Install a Node.js LTS release with npm from https://nodejs.org, then run ownmail serve again."
+    f"Node.js was not found.\nInstall a Node.js LTS release with npm from https://nodejs.org, then run {SETUP_COMMAND}."
 )
 
 # Node may print a source location and excerpt before the actual error summary.
@@ -191,12 +194,12 @@ class HtmlSanitizer:
         """Check if Node.js is installed and accessible."""
         return shutil.which("node") is not None
 
-    def _ensure_deps(self, install: bool = True) -> bool:
-        """Make the installed npm dependencies meet package.json.
+    def _ensure_deps(self, install: bool = False) -> bool:
+        """Check that the installed npm dependencies meet package.json.
 
-        npm runs only when a dependency is missing or outside its range, or
-        an earlier install did not finish. With install False, that is
-        reported instead.
+        With install True, npm runs when a dependency is missing or outside
+        its range, or an earlier install did not finish. Otherwise that is
+        reported, naming the setup step that installs them.
 
         Returns True if deps are ready. On failure, sets error.
         """
@@ -212,22 +215,25 @@ class HtmlSanitizer:
             self._error = f"The sanitizer's package.json could not be read ({e}).\nReinstall ownmail."
             return False
         unmet = _unmet(dependencies)
-        if not unmet and not _unfinished(os.path.join(_SANITIZER_DIR, "node_modules")):
+        unfinished = _unfinished(os.path.join(_SANITIZER_DIR, "node_modules"))
+        if not unmet and not unfinished:
             return True
 
+        names = ", ".join(unmet or dependencies)
         if not install:
-            self._error = (
-                "The sanitizer dependencies changed while ownmail serve was running.\n"
-                "Restart ownmail serve to install them."
+            problem = (
+                "An earlier install of the sanitizer dependencies did not finish."
+                if unfinished
+                else f"The sanitizer dependencies ({names}) are missing or outside the package.json ranges."
             )
+            self._error = f"{problem}\nRun {SETUP_COMMAND} to install them, then restart ownmail serve."
             return False
 
-        names = ", ".join(unmet or dependencies)
         npm = shutil.which("npm")
         if not npm:
             self._error = (
                 f"npm was not found, so the sanitizer dependencies ({names}) could not be installed.\n"
-                "Install Node.js with npm from https://nodejs.org, then run ownmail serve again."
+                f"Install Node.js with npm from https://nodejs.org, then run {SETUP_COMMAND} again."
             )
             return False
 
@@ -237,12 +243,12 @@ class HtmlSanitizer:
         except LockHeld:
             self._error = (
                 "Another ownmail process is installing the sanitizer dependencies.\n"
-                "Wait for it to finish, then run ownmail serve again."
+                f"Wait for it to finish, then run {SETUP_COMMAND} again."
             )
         except OSError as e:
             self._error = (
                 f"The sanitizer dependencies ({names}) could not be installed ({e}).\n"
-                f"Check that {_SANITIZER_DIR} is writable, then run ownmail serve again."
+                f"Check that {_SANITIZER_DIR} is writable, then run {SETUP_COMMAND} again."
             )
         return False
 
@@ -269,7 +275,7 @@ class HtmlSanitizer:
                 self._error = (
                     f"The sanitizer dependencies ({names}) could not be installed: "
                     f"an unfinished install could not be removed ({e}).\n"
-                    f"Delete {node_modules}, then run ownmail serve again."
+                    f"Delete {node_modules}, then run {SETUP_COMMAND} again."
                 )
                 return False
         elif os.path.isdir(node_modules):
@@ -340,7 +346,7 @@ class HtmlSanitizer:
         command = subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
         self._error = (
             f"The sanitizer dependencies ({names}) could not be installed: {reason}.\n"
-            f"{hint}, then run ownmail serve again, or install them with:\n"
+            f"{hint}, then run {SETUP_COMMAND} again, or install them with:\n"
             f"  {command}"
         )
         return False
@@ -367,12 +373,13 @@ class HtmlSanitizer:
             # Process closed
             pass
 
-    def start(self, install: bool = True) -> None:
+    def start(self, install: bool = False) -> None:
         """Start the DOMPurify sidecar process.
 
-        Installs or updates its npm dependencies first, unless install is
-        False. If Node.js is not available or setup fails, error says why
-        and what to do, and sanitize() returns HTML escaped.
+        Only setup passes install True to install or update its npm
+        dependencies first; every other caller just checks them. If Node.js
+        is not available or a check or install fails, error says why and
+        what to do, and sanitize() returns HTML escaped.
         """
         self._error = None
         if not self.is_node_available():
@@ -433,7 +440,7 @@ class HtmlSanitizer:
             self._kill_process()
             self._error = (
                 "The sanitizer worker did not start. Check that Node.js is a supported LTS release (node --version).\n"
-                f"If it is, delete {os.path.join(_SANITIZER_DIR, 'node_modules')} and run ownmail serve again "
+                f"If it is, delete {os.path.join(_SANITIZER_DIR, 'node_modules')} and run {SETUP_COMMAND} "
                 "to reinstall the sanitizer dependencies."
             )
             if diagnostic:

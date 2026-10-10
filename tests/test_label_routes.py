@@ -8,7 +8,7 @@ import pytest
 from ownmail import sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
-from ownmail.web import create_app
+from tests.conftest import create_test_app
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def label_client(tmp_path, sample_eml_simple):
     assert archive.backup(provider)["success_count"] == 1
     email_id = ArchiveDatabase.make_email_id(provider.account, "message")
     path = tmp_path / archive.db.get_email_by_id(email_id)[1]
-    client = create_app(archive).test_client()
+    client = create_test_app(archive).test_client()
     return client, archive, email_id, path
 
 

@@ -61,6 +61,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # Tests and ownmail serve never run npm; setup installs the sanitizer
+      # dependencies so its integration tests run.
+      - name: Install sanitizer
+        run: ownmail setup --web
+
       - name: Install browser tests
         if: matrix.python-version == '3.12'
         working-directory: ownmail/sanitizer

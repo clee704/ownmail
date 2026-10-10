@@ -6,7 +6,9 @@
 
 `ownmail setup` connects a provider, saves its credentials in the system keychain,
 and creates `config.yaml` in your working directory. It asks where to store the
-archive. Running setup again can add another source.
+archive. Running setup again can add another source. Setup then installs the web
+interface's sanitizer dependencies; see
+[Browser and mobile access](#browser-and-mobile-access).
 
 ### IMAP with an app password
 
@@ -87,8 +89,18 @@ remote content preferences.
 
 ## Browser and mobile access
 
-Install a supported [Node.js LTS release](https://nodejs.org/en/download) with npm,
-then start the server:
+Install a supported [Node.js LTS release](https://nodejs.org/en/download) with npm
+before running setup. Setup installs the HTML sanitizer's dependencies through
+npm, which needs internet access. To install or refresh only those dependencies,
+for example after upgrading ownmail or if Node.js was missing during setup, run:
+
+```bash
+ownmail setup --web
+```
+
+It skips credential setup, reports npm failures with an npm command that installs
+the dependencies by hand, and then checks that the sanitizer starts. Then start
+the server:
 
 ```bash
 ownmail serve
@@ -98,12 +110,12 @@ It opens <http://127.0.0.1:8080> automatically. Use `--no-browser` to suppress t
 step or `--port 8081` to choose another port. Keep the process running while using
 the interface.
 
-The first launch downloads the sanitizer dependencies through npm, and so does
-the first launch after an update that raises their required versions. Otherwise
-local reading and search can work without internet, though remote content and
-external links still need their respective servers. If the sanitizer cannot
-start, ownmail does not start the server. It prints the reason and what to do,
-including an npm command that installs the dependencies by hand when npm failed.
+`ownmail serve` never runs npm. If the sanitizer dependencies are missing or
+outside the required versions, such as after an update raises them, or the
+sanitizer cannot start for another reason, ownmail does not start the server. It
+prints the reason and what to do, usually `ownmail setup --web`. With the
+dependencies installed, local reading and search can work without internet,
+though remote content and external links still need their respective servers.
 
 To reach the server from a phone on a trusted network:
 

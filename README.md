@@ -69,6 +69,8 @@ pipx reinstall ownmail
 
 Reinstallation uses the original source and resolves dependencies again. It also
 picks up new commits when the development version number has not changed.
+After installing or reinstalling, run `ownmail setup --web` before `ownmail serve`
+so the web interface's sanitizer dependencies match the new version.
 For a source checkout or editable installation, see [Contributing](CONTRIBUTING.md).
 
 ### Published version from PyPI
@@ -100,15 +102,16 @@ ownmail serve
 Setup creates the configuration and stores credentials in your system keychain.
 Choose IMAP for a provider that accepts an app password, or Gmail API with OAuth
 for read-only Gmail access. See [provider setup and configuration](docs/setup.md).
+Setup then installs the HTML sanitizer's Node.js dependencies for the web
+interface, which needs npm and internet access.
 
-The browser opens at <http://127.0.0.1:8080>. The first launch installs the HTML
-sanitizer's Node.js dependencies and needs internet access. Later launches check
-installed versions and refresh missing or incompatible dependencies automatically,
-so an upgrade may also need npm and internet access. With dependencies already
-satisfied, local reading and search work without internet; keep `ownmail serve`
-running while you browse. If setup or refresh fails, the server refuses to start
-and prints repair guidance for pipx and source installs. A phone also needs a
-connection to that server. See
+The browser opens at <http://127.0.0.1:8080>. `ownmail serve` never installs
+packages. If the sanitizer dependencies are missing or outside the versions this
+ownmail requires, for example after an upgrade, the server refuses to start and
+asks you to run `ownmail setup --web`. That command installs or refreshes only
+those dependencies, without credential prompts. With them installed, local
+reading and search work without internet; keep `ownmail serve` running while you
+browse. A phone also needs a connection to that server. See
 [browser and mobile access](docs/setup.md#browser-and-mobile-access).
 
 ### Download from the browser
@@ -314,7 +317,7 @@ abrupt process termination can leave partial output. Source mail is never change
 
 | Command | Purpose |
 |---|---|
-| `setup` | Connect a mail source and store credentials |
+| `setup` | Connect a mail source, store credentials, and install web interface dependencies; `--web` installs only the dependencies |
 | `download` | Refresh Active mail and archive eligible filed and Sent mail |
 | `cleanup --source NAME` | Preview server cleanup; `--apply` requests eligible Gmail Trash moves |
 | `authorize-cleanup --source NAME` | Grant separate Gmail cleanup access through explicit browser consent |

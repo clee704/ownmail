@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 
 from ownmail.archive import EmailArchive
-from ownmail.web import create_app
 from ownmail.yaml_util import load_yaml
+from tests.conftest import create_test_app
 
 
 def wait_for_status(client, predicate):
@@ -101,7 +101,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
         """)
     )
     archive = EmailArchive(tmp_path / "archive", load_yaml(config))
-    app = create_app(archive, config_path=str(config))
+    app = create_test_app(archive, config_path=str(config))
     manager = app.extensions["downloads"]
     real_popen = subprocess.Popen
 
@@ -150,7 +150,7 @@ def test_live_counts_and_failure_survive_cli_completion(tmp_path):
 def test_startup_failure_reaches_settings_without_console_output(tmp_path, configuration, reason):
     config = tmp_path / "config.yaml"
     config.write_text(configuration)
-    app = create_app(EmailArchive(tmp_path / "archive", {}), config_path=str(config))
+    app = create_test_app(EmailArchive(tmp_path / "archive", {}), config_path=str(config))
     manager = app.extensions["downloads"]
     try:
         client = app.test_client()
