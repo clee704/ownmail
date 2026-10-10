@@ -1833,17 +1833,31 @@ class TestTrustedSenderPersistence:
             assert response.location == "/search"
         assert app.config["trusted_senders"] == set()
 
-    def test_trust_sender_rejects_offsite_redirect(self, archive):
-        """An absolute redirect target should be forced back to '/'."""
-        app = create_app(archive)
+    @pytest.mark.parametrize(
+        "redirect_to",
+        [
+            "https://attacker.invalid",
+            "//attacker.invalid",
+            "///attacker.invalid",
+            "/\\attacker.invalid",
+            "/\t/attacker.invalid",
+        ],
+    )
+    @pytest.mark.parametrize("email, saved", [("", False), ("a@example.com", False), ("a@example.com", True)])
+    def test_trust_sender_rejects_offsite_redirect(self, archive, tmp_path, email, saved, redirect_to):
+        """Targets a browser could resolve to another host get the default response."""
+        config = tmp_path / "config.yaml"
+        config.write_text("web: {}\n")
+        app = create_app(archive, config_path=str(config) if saved else None)
         with app.test_client() as client:
-            response = client.post(
-                "/trust-sender",
-                data={"email": "a@example.com", "redirect": "https://evil.example.com"},
-            )
+            response = client.post("/trust-sender", data={"email": email, "redirect": redirect_to})
+        if saved:
+            assert response.status_code == 200
+            assert response.get_json() == {"status": "ok"}
+        else:
             assert response.status_code == 302
             assert response.location == "/"
-        assert "a@example.com" in app.config["trusted_senders"]
+        assert app.config["trusted_senders"] == ({email} if email else set())
 
     @pytest.mark.parametrize("operation", ["load_yaml", "save_yaml", "os.replace"])
     @pytest.mark.parametrize("redirect_to", ["/", "/search"])

@@ -703,6 +703,18 @@ def _is_remote_url(url: str) -> bool:
     return REMOTE_URL_RE.match(url) is not None
 
 
+def _has_ambiguous_url_characters(url: str) -> bool:
+    """Whether a browser may read url differently from urlsplit."""
+    # Browsers drop tabs and newlines and read a backslash as a slash.
+    return "\\" in url or any(ord(char) < 32 or ord(char) == 127 for char in url)
+
+
+def _is_local_path(url: str) -> bool:
+    """Whether a browser resolves url to a path on the current origin."""
+    # Any run of two or more leading slashes names another host.
+    return url.startswith("/") and not url.startswith("//") and not _has_ambiguous_url_characters(url)
+
+
 def _css_has_remote_urls(css: str) -> bool:
     """Whether CSS loads anything from outside the archive's host."""
     css = CSS_COMMENT_RE.sub("", css)
@@ -1319,7 +1331,7 @@ def create_app(
         """Recover a local results URL from the link or the previous page."""
         explicit = "return_to" in request.args
         target = request.args.get("return_to", "") if explicit else request.headers.get("Referer", "")
-        if not target or "\\" in target or any(ord(char) < 32 or ord(char) == 127 for char in target):
+        if not target or _has_ambiguous_url_characters(target):
             return None
         try:
             parsed = urlsplit(target)
@@ -1969,7 +1981,7 @@ def create_app(
         """Add a sender to the trusted senders list in config.yaml."""
         sender_email = request.form.get("email", "").strip().lower()
         redirect_to = request.form.get("redirect", "/")
-        if not redirect_to.startswith("/"):
+        if not _is_local_path(redirect_to):
             redirect_to = "/"
 
         if not sender_email:
@@ -2009,8 +2021,6 @@ def create_app(
             }, 500
 
         # Return JSON for AJAX, redirect for form submit
-        if request.headers.get("Content-Type") == "application/x-www-form-urlencoded" and not redirect_to:
-            return {"status": "ok"}
         if redirect_to == "/":
             return {"status": "ok"}
         return redirect(redirect_to)
