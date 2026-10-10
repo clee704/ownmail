@@ -1097,19 +1097,66 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 assert needs_padding is True
 
     def test_allows_google_fonts_import(self):
-        """Test that @import from Google Fonts is preserved."""
-        html = '<style>@import url("https://fonts.googleapis.com/css2?family=Roboto"); p { font-family: Roboto; }</style><p>Hi</p>'
-        result, *_ = self.sanitizer.sanitize(html)
-        assert "@import" in result
-        assert "fonts.googleapis.com" in result
-        assert "font-family" in result
+        """Test that @import from Google Fonts is preserved in each target form."""
+        for rule in (
+            '@import url("https://fonts.googleapis.com/css2?family=Roboto");',
+            "@import url( 'https://fonts.googleapis.com/css2?family=Roboto' ) screen;",
+            "@import url(https://fonts.googleapis.com/css2?family=Roboto) layer(fonts) supports(display: grid);",
+            '@import "https://fonts.googleapis.com/css2?family=Roboto" screen and (min-width: 600px);',
+            "@import 'https://fonts.googleapis.com/css2?family=Roboto';",
+            "@import URL(https://fonts.googleapis.com/css2?family=Roboto) /* printed */ print;",
+            # postcss reads this differently from browsers, but not its target.
+            "@import url( https://fonts.googleapis.com/css2?family=Roboto );",
+        ):
+            with self.subTest(rule=rule):
+                html = f"<style>{rule} p {{ font-family: Roboto; }}</style><p>Hi</p>"
+                result, *_ = self.sanitizer.sanitize(html)
+                assert rule in result
+                assert "font-family" in result
 
     def test_strips_untrusted_import(self):
-        """Test that @import from untrusted domain is removed."""
-        html = '<style>@import url("https://evil.com/spy.css"); p { color: red; }</style><p>Text</p>'
-        result, *_ = self.sanitizer.sanitize(html)
-        assert "evil.com" not in result
-        assert "Text" in result
+        """Test that @import is removed unless its target names a trusted host."""
+        for rule in (
+            '@import url("https://untrusted.invalid/spy.css");',
+            # Conditions load nothing, so their url() cannot vouch for the target.
+            '@import "https://untrusted.invalid/x.css" supports(background: url("https://fonts.googleapis.com/"));',
+            '@import "https://untrusted.invalid/x.css" layer(url("https://fonts.googleapis.com/"));',
+            '@import "https://untrusted.invalid/x.css" screen and (url("https://fonts.googleapis.com/"));',
+            # Browsers decode the escape to "@", making untrusted.invalid the host.
+            r'@import "https://fonts.googleapis.com\40 untrusted.invalid/x.css";',
+            r"@import url(https://fonts.googleapis.com\40 untrusted.invalid/x.css);",
+            # Browsers decode the escaped name to @import.
+            r"@imp\6f rt url(https://untrusted.invalid/x.css);",
+            # Browsers read the comment as the start of a relative URL.
+            "@import url( /*x*/https://fonts.googleapis.com/x.css);",
+            # Preload scanners do not decode escapes, so they can read another URL.
+            r'@import "https://fonts.googleapis.com/css2?family=Open\+Sans";',
+            # A commented-out import is removed rather than read as a hidden one.
+            "/* @import url(https://untrusted.invalid/x.css); */",
+        ):
+            with self.subTest(rule=rule):
+                html = f"<style>{rule} p {{ color: red; }}</style><p>Text</p>"
+                result, *_ = self.sanitizer.sanitize(html)
+                assert "<style>#ownmail-email-content p { color: red; }</style>" in result
+                assert "Text" in result
+
+    def test_drops_untrusted_imports_hidden_by_parser_differences(self):
+        """No untrusted @import survives that postcss reads as part of a trusted one, or only a preload scanner reads."""
+        for css in (
+            # For postcss only, a comment opener inside url() swallows the next rule.
+            "@import url( https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            "@import URL(https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            r"@import u\72l(https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            r"@import url( https://fonts.googleapis.com/a/*);@imp\6f rt 'https://untrusted.invalid/b.css';/*)*/;",
+            # For postcss only, a string continues past a newline.
+            '@import url(https://fonts.googleapis.com/css) "a\n;@import url(https://untrusted.invalid/c.css);\n";',
+            "@import 'https://fonts.googleapis.com/css' 'a\n;@import \"https://untrusted.invalid/c.css\";\n';",
+            # For Chromium's preload scanner only, a url() or string ends at ";".
+            "@import 'https://fonts.googleapis.com/css' url(;@import url(https://untrusted.invalid/d.css);;",
+            '@import url(https://fonts.googleapis.com/css) supports(content: ";@import url(https://untrusted.invalid/e.css)");',
+        ):
+            with self.subTest(css=css):
+                assert "untrusted.invalid" not in self._stylesheet(css)
 
     def test_allows_google_fonts_font_face_url(self):
         """Test that @font-face with Google Fonts url() is preserved."""

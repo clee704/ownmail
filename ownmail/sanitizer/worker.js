@@ -95,11 +95,7 @@ function ensureFontFallback(value) {
  */
 function isTrustedFontUrl(url) {
   try {
-    // Extract URL from url() or @import url() or @import "..."
-    const match = url.match(/url\s*\(\s*['"]?([^'")\s]+)/i) || url.match(/['"]([^'"]+)['"]/);
-    if (!match) return false;
-    const parsed = new URL(match[1]);
-    return TRUSTED_FONT_HOSTS.includes(parsed.hostname);
+    return TRUSTED_FONT_HOSTS.includes(new URL(url).hostname);
   } catch {
     return false;
   }
@@ -135,12 +131,14 @@ function prepareStyleText(css) {
 // continues strings across newlines and recognizes fewer url() forms, so a rule
 // it reads as string or comment text can still reach the page. These helpers
 // follow the browser tokenizer (https://drafts.csswg.org/css-syntax-3/#tokenization)
-// for structure only: where tokens, blocks and comments begin and end.
+// for where tokens, blocks and comments begin and end, and for the decoded
+// names, strings and URLs that decide what a rule is and what it loads.
 const isDigit = (char) => char >= "0" && char <= "9";
 const isHexDigit = (char) => isDigit(char) || (char >= "a" && char <= "f") || (char >= "A" && char <= "F");
 const isWhitespace = (char) => char === " " || char === "\t" || char === "\n";
 const isIdentStart = (char) => char !== undefined && (/[A-Za-z_]/.test(char) || char >= "\u0080");
 const isIdentChar = (char) => isIdentStart(char) || isDigit(char) || char === "-";
+const isNonPrintable = (char) => /[\x00-\x08\x0b\x0e-\x1f\x7f]/.test(char);
 const BLOCK_ENDS = { "(": ")", "[": "]", "{": "}", function: ")" };
 
 /** Apply the newline and NUL replacements a browser makes before tokenizing. */
@@ -148,7 +146,10 @@ function preprocessCSS(css) {
   return css.replace(/\r\n?|\f/g, "\n").replace(/\0/g, "\uFFFD");
 }
 
-/** Tokenize preprocessed CSS. Comments are dropped; values are kept for names. */
+/**
+ * Tokenize preprocessed CSS. Comments are dropped. Names, strings and URLs
+ * carry their decoded values.
+ */
 function cssTokens(css) {
   const tokens = [];
   let i = 0;
@@ -198,6 +199,7 @@ function cssTokens(css) {
     } else if (char === '"' || char === "'") {
       // An unescaped newline ends the string; the rest of the line is CSS again.
       type = "string";
+      value = "";
       for (i++; i < css.length; ) {
         if (css[i] === char) {
           i++;
@@ -207,9 +209,10 @@ function cssTokens(css) {
           type = "bad-string";
           break;
         }
-        if (css[i] === "\\" && css[i + 1] === "\n") i += 2;
-        else if (validEscape(i)) escape();
-        else i++;
+        if (css[i] !== "\\") value += css[i++];
+        else if (i + 1 === css.length) i++;
+        else if (css[i + 1] === "\n") i += 2;
+        else value += escape();
       }
     } else if (char === "#" && (isIdentChar(css[i + 1]) || validEscape(i + 1))) {
       i++;
@@ -245,9 +248,21 @@ function cssTokens(css) {
         // comment, quote and bracket characters inside it are inert.
         if (asciiLower(value) === "url" && css[next] !== '"' && css[next] !== "'") {
           type = "url";
+          value = "";
           for (i = next; i < css.length && css[i] !== ")"; ) {
-            if (validEscape(i)) escape();
-            else i++;
+            if (validEscape(i)) {
+              value += escape();
+              continue;
+            }
+            const code = css[i++];
+            if (isWhitespace(code)) {
+              while (isWhitespace(css[i])) i++;
+              if (i < css.length && css[i] !== ")") type = "bad-url";
+            } else if (code === '"' || code === "'" || code === "(" || code === "\\" || isNonPrintable(code)) {
+              type = "bad-url";
+            } else {
+              value += code;
+            }
           }
           i = Math.min(i + 1, css.length);
         }
@@ -471,8 +486,7 @@ function isScopedSelectorList(tokens) {
  * Read scoped output as a browser does and confirm that every style rule and
  * @scope root it finds is confined to the reader container.
  */
-function isScopedStylesheet(css) {
-  const tokens = cssTokens(preprocessCSS(css));
+function isScopedStylesheet(tokens) {
   // Blocks whose contents are declarations and rules, or plain values.
   const blocks = [];
   let statement = 0;
@@ -520,13 +534,55 @@ function isScopedStylesheet(css) {
 }
 
 /**
+ * Whether the @import prelude that starts at tokens[from] loads from a trusted
+ * font provider. A browser loads only its first component, a string or url();
+ * a url() in a later layer(), supports() or media condition loads nothing.
+ */
+function isTrustedImport(css, tokens, from) {
+  let k = from;
+  const next = () => {
+    while (tokens[k] && tokens[k].type === "whitespace") k++;
+    return tokens[k++] || { type: "end" };
+  };
+  const first = next();
+  let target = first;
+  // url("...") is a function holding a string; it must close right after it.
+  if (first.type === "function" && asciiLower(first.value) === "url") {
+    target = next();
+    if (next().type !== ")") return false;
+  }
+  if (target.type !== "string" && target.type !== "url") return false;
+  // Speculative preload scanners read the raw text without decoding escapes.
+  if (css.slice(first.start, tokens[k - 1].end).includes("\\")) return false;
+  return isTrustedFontUrl(target.value);
+}
+
+/**
+ * Confirm that every @import a browser finds in preprocessed output loads
+ * from a trusted font provider. Chromium's preload scanner also requests
+ * "@import" text that its CSS parser reads as part of a string or url(), so
+ * that text may appear only where an @import rule starts.
+ */
+function hasOnlyTrustedImports(css, tokens) {
+  const imports = new Set();
+  for (const [k, token] of tokens.entries()) {
+    if (token.type !== "at-keyword" || asciiLower(token.value) !== "import") continue;
+    if (!isTrustedImport(css, tokens, k + 1)) return false;
+    imports.add(token.start);
+  }
+  return Array.from(css.matchAll(/@import/gi)).every((match) => imports.has(match.index));
+}
+
+/**
  * Scope and sanitize a CSS stylesheet using postcss AST.
- * - Removes @charset; allows @import only from trusted font providers
+ * - Removes @charset and escaped at-rule names; allows @import only from
+ *   trusted font providers
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
  * - Keeps remote url() values, including @font-face sources from any host; the
  *   reader's content security policy blocks them until remote content is loaded
  * - Scopes every selector and @scope root under #ownmail-email-content, and
  *   discards the stylesheet if a browser would read a rule outside that scope
+ *   or an @import from another host, or could preload one
  * - Leaves @font-face, @keyframes and other global at-rules unscoped
  */
 function scopeAndSanitizeCSS(css, body = null) {
@@ -541,13 +597,20 @@ function scopeAndSanitizeCSS(css, body = null) {
   // Remove @import and @charset (allow @import from trusted font providers)
   root.walkAtRules((atRule) => {
     const name = atRule.name.toLowerCase();
-    if (name === "charset") {
+    // postcss ends a name at a backslash, but browsers decode the escape and
+    // read on, so "@imp\6f rt" is an @import. Drop it rather than guess.
+    const escapedName = !atRule.raws.afterName && atRule.params.startsWith("\\");
+    if (escapedName || name === "charset") {
       atRule.remove();
     } else if (name === "import") {
-      if (!isTrustedFontUrl(atRule.params)) {
-        atRule.remove();
-      }
+      // Read the prelude as printed; postcss drops some comments from params.
+      const prelude = preprocessCSS(atRule.raws.params ? atRule.raws.params.raw : atRule.params);
+      if (!isTrustedImport(prelude, cssTokens(prelude), 0)) atRule.remove();
     }
+  });
+  // A commented-out @import would otherwise discard the stylesheet below.
+  root.walkComments((comment) => {
+    if (/@import/i.test(comment.text)) comment.remove();
   });
 
   // Sanitize declarations
@@ -614,8 +677,11 @@ function scopeAndSanitizeCSS(css, body = null) {
     else atRule.remove();
   });
 
+  // postcss may still have read an @import or a rule differently from browsers.
   const scoped = root.toString();
-  return isScopedStylesheet(scoped) ? scoped : "/* CSS parse error */";
+  const text = preprocessCSS(scoped);
+  const tokens = cssTokens(text);
+  return isScopedStylesheet(tokens) && hasOnlyTrustedImports(text, tokens) ? scoped : "/* CSS parse error */";
 }
 
 /**
@@ -658,13 +724,8 @@ purify.addHook("uponSanitizeElement", (node, data) => {
   if (data.tagName === "link") {
     const rel = (node.getAttribute && node.getAttribute("rel") || "").toLowerCase();
     const href = node.getAttribute && node.getAttribute("href") || "";
-    if (rel === "stylesheet" && href) {
-      try {
-        const parsed = new URL(href);
-        if (TRUSTED_FONT_HOSTS.includes(parsed.hostname)) {
-          return; // keep it
-        }
-      } catch {}
+    if (rel === "stylesheet" && isTrustedFontUrl(href)) {
+      return; // keep it
     }
     // Remove all other <link> tags
     node.parentNode && node.parentNode.removeChild(node);

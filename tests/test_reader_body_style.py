@@ -5,6 +5,7 @@ from email.message import EmailMessage
 
 import pytest
 
+from ownmail.web import MESSAGE_CSP
 from tests import test_email_contrast, test_reader_spacing
 
 shell_app = test_email_contrast.shell_app
@@ -463,6 +464,82 @@ def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, contrast_browse
         theme="light",
         rendered_page=response.get_data(as_text=True),
         page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )
+
+
+@pytest.mark.parametrize(
+    ("css", "remote"),
+    [
+        pytest.param(
+            "@import url( https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            [],
+            id="comment-inside-url",
+        ),
+        pytest.param(
+            "@import URL(https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            [],
+            id="uppercase-url",
+        ),
+        pytest.param(
+            r"@import u\72l(https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            [],
+            id="escaped-url",
+        ),
+        pytest.param(
+            '@import url(https://fonts.googleapis.com/css) "a\n;@import url(https://untrusted.invalid/b.css);\n";',
+            [],
+            id="string-ended-by-newline",
+        ),
+        pytest.param(
+            "@import 'https://fonts.googleapis.com/css' url(;@import url(https://untrusted.invalid/b.css);;",
+            [],
+            id="preload-scanner-reads-past-url",
+        ),
+        pytest.param(
+            '@import url(https://fonts.googleapis.com/css) supports(content:";@import url(https://untrusted.invalid/b.css)");',
+            [],
+            id="preload-scanner-reads-past-string",
+        ),
+        # Shows that imports load in this harness once remote content is allowed.
+        pytest.param(
+            "@import url(https://fonts.googleapis.com/css);", ["https://fonts.googleapis.com/css"], id="trusted"
+        ),
+    ],
+)
+def test_loaded_remote_content_imports_only_trusted_font_stylesheets(
+    shell_app, contrast_browser, spacing_sanitizer, css, remote
+):
+    app, archive = shell_app
+    app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
+    message = EmailMessage()
+    message["Subject"] = "Synthetic imports"
+    message["From"] = "sender@example.com"
+    # A later rule would let the scope check discard these stylesheets by itself.
+    message.set_content(f"<style>{css}</style><p>Synthetic</p>", subtype="html")
+    (archive.archive_dir / "synthetic.eml").write_bytes(message.as_bytes())
+    archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", None, None, None, None)
+    response = app.test_client().get("/email/synthetic?images=load")
+    assert response.status_code == 200
+    # Loaded remote content lifts the policy that blocks remote stylesheets.
+    assert response.headers["Content-Security-Policy"] == MESSAGE_CSP
+    test_email_contrast.run_contrast_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        """
+        const remote = [...requests.keys()].filter(url => new URL(url).origin !== 'http://ownmail.test');
+        assert.deepEqual(remote, __REMOTE__);
+        const toolbar = page.locator('#ownmail-reader-actions');
+        assert.equal(await toolbar.evaluate(el => getComputedStyle(el).display), 'flex');
+        """.replace("__REMOTE__", json.dumps(remote)),
+        theme="light",
+        rendered_page=response.get_data(as_text=True),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+        external_stylesheets={
+            "https://fonts.googleapis.com/css": "",
+            "https://untrusted.invalid/b.css": ".ownmail-reader-actions {display:none !important}",
+        },
     )
 
 
