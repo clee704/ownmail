@@ -473,22 +473,31 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                     )
                     assert tree.xpath("//style")[0].text_content() == prefix + " .probe { color: red; }"
 
-    def test_qualified_body_selectors_keep_author_scoped_rules_unchanged(self):
-        """Deferred head styles must retain the provenance of already-scoped rules."""
-        scoped_rules = (
+    def test_qualified_body_selectors_scope_rules_naming_the_container_once(self):
+        """Deferred head styles are scoped once from their source, like body styles.
+
+        Rules that name the reader container used to pass through unchanged as
+        already scoped. That shortcut let :not() and :has() reach the app, so
+        these rules are now scoped like any other sender selector.
+        """
+        css = (
+            "body.main .probe { color: red; }"
             "#ownmail-email-content body.main .probe { color: blue; }"
             "body.main #ownmail-email-content .probe { color: green; }"
         )
         for placement in ("head", "body"):
             with self.subTest(placement=placement):
-                style = f"<style>body.main .probe {{ color: red; }}{scoped_rules}</style>"
+                style = f"<style>{css}</style>"
                 result, *_ = self.sanitizer.sanitize(
                     f"<html><head>{style if placement == 'head' else ''}</head><body class=main>"
                     f'{style if placement == "body" else ""}<p class="probe">Text</p></body></html>'
                 )
                 stylesheet = lxml_html.fromstring(result).xpath("//style")[0].text_content()
-                assert scoped_rules in stylesheet
-                assert "#ownmail-email-content:not(body.main) .probe { color: red; }" in stylesheet
+                assert stylesheet == (
+                    "#ownmail-email-content:not(body.main) .probe { color: red; }"
+                    "#ownmail-email-content #ownmail-email-content body.main .probe { color: blue; }"
+                    "#ownmail-email-content:not(body.main) #ownmail-email-content .probe { color: green; }"
+                )
 
     def test_qualified_body_selectors_keep_unsupported_roots_unchanged(self):
         """Dynamic, escaped and malformed body compounds retain the existing fallback."""
@@ -682,6 +691,127 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         result, *_ = self.sanitizer.sanitize(html)
         assert "@media" in result
         assert "#ownmail-email-content .col" in result
+
+    def _stylesheet(self, css):
+        """Return the sanitized text of one synthetic stylesheet."""
+        result, *_ = self.sanitizer.sanitize(f"<style>{css}</style><p>Text</p>")
+        return lxml_html.fromstring(result).xpath("//style")[0].text_content()
+
+    def test_selectors_naming_the_container_are_scoped(self):
+        """Naming the reader container does not exempt a selector from scoping, in any context."""
+        selectors = (
+            (
+                ".ownmail-reader-actions:not(#ownmail-email-content)",
+                "#ownmail-email-content .ownmail-reader-actions:not(#ownmail-email-content)",
+            ),
+            (
+                ":is(#ownmail-email-content, .ownmail-reader-actions)",
+                "#ownmail-email-content :is(#ownmail-email-content, .ownmail-reader-actions)",
+            ),
+            (
+                ".ownmail-reader-actions:where(:not(#ownmail-email-content *))",
+                "#ownmail-email-content .ownmail-reader-actions:where(:not(#ownmail-email-content *))",
+            ),
+            (
+                "body:has(#ownmail-email-content) .ownmail-reader-actions",
+                "#ownmail-email-content body:has(#ownmail-email-content) .ownmail-reader-actions",
+            ),
+            (
+                "#ownmail-email-content ~ .ownmail-reader-actions",
+                "#ownmail-email-content #ownmail-email-content ~ .ownmail-reader-actions",
+            ),
+            (
+                ".ownmail-reader-actions + #ownmail-email-content",
+                "#ownmail-email-content .ownmail-reader-actions + #ownmail-email-content",
+            ),
+            (
+                "p, .ownmail-reader-actions:not(#ownmail-email-content p)",
+                "#ownmail-email-content p, #ownmail-email-content .ownmail-reader-actions:not(#ownmail-email-content p)",
+            ),
+        )
+        contexts = (
+            ("{}", "{}"),
+            ("@media screen {{ {} }}", "@media screen {{ {} }}"),
+            ("@supports (display: grid) {{ {} }}", "@supports (display: grid) {{ {} }}"),
+            ("@layer base {{ {} }}", "@layer base {{ {} }}"),
+            ("@container (min-width: 1px) {{ {} }}", "@container (min-width: 1px) {{ {} }}"),
+            (".probe {{ {} }}", "#ownmail-email-content .probe {{ {} }}"),
+        )
+        rule = "{} {{ display: none; }}"
+        for selector, expected in selectors:
+            for source, scoped in contexts:
+                with self.subTest(selector=selector, context=source):
+                    stylesheet = self._stylesheet(source.format(rule.format(selector)))
+                    assert stylesheet == scoped.format(rule.format(expected))
+
+    def test_sibling_combinators_cannot_select_container_siblings(self):
+        """No mapping may relate the reader container to the app elements beside it."""
+        for css, expected in (
+            ("body + .shell { color: red; }", "#ownmail-email-content body + .shell { color: red; }"),
+            ("html ~ .shell { color: red; }", "#ownmail-email-content html ~ .shell { color: red; }"),
+            ("BODY\t~ .shell { color: red; }", "#ownmail-email-content BODY\t~ .shell { color: red; }"),
+            ("body /* note */ ~ .shell { color: red; }", "#ownmail-email-content body  ~ .shell { color: red; }"),
+            # Invalid in a top-level rule, so the browser drops the whole rule.
+            ("p { color: blue; } + .shell, p { color: red; }", "#ownmail-email-content p { color: blue; }"),
+            ("p { color: blue; } ~ .shell { color: red; }", "#ownmail-email-content p { color: blue; }"),
+        ):
+            with self.subTest(css=css):
+                assert self._stylesheet(css) == expected
+
+    def test_selector_lists_split_at_the_commas_browsers_see(self):
+        """A comment, string or block hides a comma from splitting only where browsers agree."""
+        for css, expected in (
+            (
+                ".probe/*(*/, .shell { color: red; }",
+                "#ownmail-email-content .probe/*(*/, #ownmail-email-content .shell { color: red; }",
+            ),
+            (
+                '.probe/*"*/, .shell/*"*/ { color: red; }',
+                '#ownmail-email-content .probe/*"*/, #ownmail-email-content .shell/*"*/ { color: red; }',
+            ),
+            (
+                'a[title="x, y"], :is(b, i), .md\\:flex { color: red; }',
+                '#ownmail-email-content a[title="x, y"], #ownmail-email-content :is(b, i), '
+                "#ownmail-email-content .md\\:flex { color: red; }",
+            ),
+        ):
+            with self.subTest(css=css):
+                assert self._stylesheet(css) == expected
+
+    def test_scope_roots_are_scoped(self):
+        """Declarations directly inside @scope style its root, so the root is scoped too."""
+        for css, expected in (
+            (
+                "@scope (.shell) { color: red; .probe { color: blue; } }",
+                "@scope (#ownmail-email-content .shell) { color: red; #ownmail-email-content .probe { color: blue; } }",
+            ),
+            ("@scope { color: red; }", "@scope (#ownmail-email-content) { color: red; }"),
+            ("@scope to (.limit) { color: red; }", "@scope (#ownmail-email-content) to (.limit) { color: red; }"),
+            (
+                "@scope (body, .shell) to (.limit) { color: red; }",
+                "@scope (#ownmail-email-content, #ownmail-email-content .shell) to (.limit) { color: red; }",
+            ),
+            ("p { color: blue; } @scope (~ .shell) { color: red; }", "#ownmail-email-content p { color: blue; }"),
+        ):
+            with self.subTest(css=css):
+                assert self._stylesheet(css) == expected
+
+    def test_stylesheets_browsers_read_differently_are_discarded(self):
+        """A rule postcss reads as string or comment text cannot reach the page unscoped."""
+        shell = ".shell { display: none; }"
+        for css in (
+            # A newline ends a CSS string; postcss continues it to the next quote.
+            f'.probe {{ content: "x\n}} {shell} .probe {{ content: "; }}',
+            # Browsers read every spelling of unquoted url( to ")"; postcss sees a comment.
+            f".probe {{ background: URL(/*) }} {shell} .probe {{ color: red/**/) }}",
+            f".probe {{ background: x.url(/*) }} {shell} .probe {{ color: red /**/ ) }}",
+            f".probe {{ background: url( /*) }} {shell} .probe {{ color: red /**/ ) }}",
+            f".probe {{ background: u\\rl(/*) }} {shell} .probe {{ color: red /**/ ) }}",
+        ):
+            with self.subTest(css=css):
+                assert self._stylesheet(css) == "/* CSS parse error */"
+        kept = '.probe { background: URL(https://example.invalid/a.png), url( "b.png" ); content: "a;b{c}"; }'
+        assert self._stylesheet(kept) == "#ownmail-email-content " + kept
 
     def test_preserves_font_face(self):
         """Font face descriptors retain the single family required by CSS."""
@@ -950,7 +1080,8 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 ' class="sender"',
                 "",
                 ".sender #ownmail-email-content .canvas",
-                ".sender #ownmail-email-content .canvas",
+                # Naming the container does not exempt a selector from scoping.
+                "#ownmail-email-content .sender #ownmail-email-content .canvas",
             ),
             ("non-CSS style", "", ' type="text/plain"', ".canvas", "#ownmail-email-content .canvas"),
         ):

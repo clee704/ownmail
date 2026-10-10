@@ -410,6 +410,62 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
     )
 
 
+@pytest.mark.parametrize(
+    ("css", "kept"),
+    [
+        pytest.param(
+            """
+            .ownmail-reader-actions:not(#ownmail-email-content) {display:none !important}
+            body:has(#ownmail-email-content) .ownmail-reader-actions {display:none !important}
+            :is(.ownmail-reader-actions, #ownmail-email-content x) {display:none !important}
+            .ownmail-reader-actions:where(:not(#ownmail-email-content *)) {display:none !important}
+            """,
+            True,
+            id="selectors-naming-the-container",
+        ),
+        pytest.param(".probe/*(*/, .ownmail-reader-actions {display:none !important}", True, id="comment-hidden-comma"),
+        pytest.param("@scope (.ownmail-reader-actions) {display:none !important}", True, id="scope-root"),
+        pytest.param(
+            '.probe {content:"x\n} .ownmail-reader-actions {display:none !important} .probe {content:"}',
+            False,
+            id="string-ended-by-newline",
+        ),
+        pytest.param(
+            ".probe {background:URL(/*)} .ownmail-reader-actions {display:none !important} .probe {color:red/**/)}",
+            False,
+            id="comment-inside-url",
+        ),
+    ],
+)
+def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, contrast_browser, spacing_sanitizer, css, kept):
+    app, archive = shell_app
+    app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
+    message = EmailMessage()
+    message["Subject"] = "Synthetic toolbar styles"
+    message["From"] = "sender@example.com"
+    message.set_content(f'<style>.probe {{width:37px}} {css}</style><div class="probe">Synthetic</div>', subtype="html")
+    (archive.archive_dir / "synthetic.eml").write_bytes(message.as_bytes())
+    archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", None, None, None, None)
+    response = app.test_client().get("/email/synthetic")
+    assert response.status_code == 200
+    test_email_contrast.run_contrast_browser(
+        app,
+        contrast_browser,
+        "",
+        "",
+        r"""
+        const toolbar = page.locator('#ownmail-reader-actions');
+        assert.equal(await toolbar.evaluate(el => getComputedStyle(el).display), 'flex', 'The trusted toolbar must stay displayed');
+        const width = await page.locator('#ownmail-email-content .probe').evaluate(el => getComputedStyle(el).width);
+        // Scoped stylesheets keep working; ones a browser reads differently are discarded.
+        assert.equal(width === '37px', __KEPT__);
+        """.replace("__KEPT__", json.dumps(kept)),
+        theme="light",
+        rendered_page=response.get_data(as_text=True),
+        page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )
+
+
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("quoted", [False, True])
 def test_body_background_covers_trailing_content_and_keeps_images_blocked(

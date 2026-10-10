@@ -131,6 +131,189 @@ function prepareStyleText(css) {
   return wrapped ? result.replace(/^(\s*)<!--/, "$1") : result;
 }
 
+// Browsers, not postcss, decide which rules message CSS contains. postcss
+// continues strings across newlines and recognizes fewer url() forms, so a rule
+// it reads as string or comment text can still reach the page. These helpers
+// follow the browser tokenizer (https://drafts.csswg.org/css-syntax-3/#tokenization)
+// for structure only: where tokens, blocks and comments begin and end.
+const isDigit = (char) => char >= "0" && char <= "9";
+const isHexDigit = (char) => isDigit(char) || (char >= "a" && char <= "f") || (char >= "A" && char <= "F");
+const isWhitespace = (char) => char === " " || char === "\t" || char === "\n";
+const isIdentStart = (char) => char !== undefined && (/[A-Za-z_]/.test(char) || char >= "\u0080");
+const isIdentChar = (char) => isIdentStart(char) || isDigit(char) || char === "-";
+const BLOCK_ENDS = { "(": ")", "[": "]", "{": "}", function: ")" };
+
+/** Apply the newline and NUL replacements a browser makes before tokenizing. */
+function preprocessCSS(css) {
+  return css.replace(/\r\n?|\f/g, "\n").replace(/\0/g, "\uFFFD");
+}
+
+/** Tokenize preprocessed CSS. Comments are dropped; values are kept for names. */
+function cssTokens(css) {
+  const tokens = [];
+  let i = 0;
+  const validEscape = (at) => css[at] === "\\" && css[at + 1] !== "\n";
+  const startsIdent = (at) => (css[at] === "-"
+    ? isIdentStart(css[at + 1]) || css[at + 1] === "-" || validEscape(at + 1)
+    : isIdentStart(css[at]) || validEscape(at));
+  const startsNumber = (at) => {
+    if (css[at] === "+" || css[at] === "-") at++;
+    return isDigit(css[at]) || (css[at] === "." && isDigit(css[at + 1]));
+  };
+  function escape() {
+    let hex = "";
+    for (i++; hex.length < 6 && isHexDigit(css[i]); i++) hex += css[i];
+    if (hex) {
+      if (isWhitespace(css[i])) i++;
+      const code = parseInt(hex, 16);
+      return code === 0 || (code >= 0xd800 && code <= 0xdfff) || code > 0x10ffff
+        ? "\uFFFD" : String.fromCodePoint(code);
+    }
+    if (i >= css.length) return "\uFFFD";
+    const char = String.fromCodePoint(css.codePointAt(i));
+    i += char.length;
+    return char;
+  }
+  function identSequence() {
+    let value = "";
+    for (;;) {
+      if (isIdentChar(css[i])) value += css[i++];
+      else if (validEscape(i)) value += escape();
+      else return value;
+    }
+  }
+
+  while (i < css.length) {
+    const start = i;
+    const char = css[i];
+    let type = char;
+    let value = char;
+    if (char === "/" && css[i + 1] === "*") {
+      const end = css.indexOf("*/", i + 2);
+      i = end < 0 ? css.length : end + 2;
+      continue;
+    } else if (isWhitespace(char)) {
+      while (isWhitespace(css[i])) i++;
+      type = "whitespace";
+    } else if (char === '"' || char === "'") {
+      // An unescaped newline ends the string; the rest of the line is CSS again.
+      type = "string";
+      for (i++; i < css.length; ) {
+        if (css[i] === char) {
+          i++;
+          break;
+        }
+        if (css[i] === "\n") {
+          type = "bad-string";
+          break;
+        }
+        if (css[i] === "\\" && css[i + 1] === "\n") i += 2;
+        else if (validEscape(i)) escape();
+        else i++;
+      }
+    } else if (char === "#" && (isIdentChar(css[i + 1]) || validEscape(i + 1))) {
+      i++;
+      type = "hash";
+      value = identSequence();
+    } else if (char === "@" && startsIdent(i + 1)) {
+      i++;
+      type = "at-keyword";
+      value = identSequence();
+    } else if (startsNumber(i)) {
+      if (char === "+" || char === "-") i++;
+      while (isDigit(css[i])) i++;
+      if (css[i] === "." && isDigit(css[i + 1])) for (i++; isDigit(css[i]); i++);
+      if ((css[i] === "e" || css[i] === "E") &&
+          (isDigit(css[i + 1]) || ((css[i + 1] === "+" || css[i + 1] === "-") && isDigit(css[i + 2])))) {
+        for (i += 2; isDigit(css[i]); i++);
+      }
+      if (startsIdent(i)) identSequence();
+      else if (css[i] === "%") i++;
+      type = "number";
+    } else if (css.startsWith("-->", i) || css.startsWith("<!--", i)) {
+      i += char === "-" ? 3 : 4;
+      type = "html-comment";
+    } else if (startsIdent(i)) {
+      value = identSequence();
+      type = "ident";
+      if (css[i] === "(") {
+        i++;
+        type = "function";
+        let next = i;
+        while (isWhitespace(css[next])) next++;
+        // Any spelling of url( without a quote is one token up to ")", so
+        // comment, quote and bracket characters inside it are inert.
+        if (asciiLower(value) === "url" && css[next] !== '"' && css[next] !== "'") {
+          type = "url";
+          for (i = next; i < css.length && css[i] !== ")"; ) {
+            if (validEscape(i)) escape();
+            else i++;
+          }
+          i = Math.min(i + 1, css.length);
+        }
+      }
+    } else {
+      i++;
+      if (!"()[]{},:;".includes(char)) type = "delim";
+    }
+    tokens.push({ type, value, start, end: i });
+  }
+  return tokens;
+}
+
+/** Index of the token that closes the block opened at tokens[open], or -1. */
+function blockEnd(tokens, open) {
+  const ends = [BLOCK_ENDS[tokens[open].type]];
+  for (let k = open + 1; k < tokens.length; k++) {
+    if (tokens[k].type === ends[ends.length - 1]) {
+      ends.pop();
+      if (!ends.length) return k;
+    } else if (BLOCK_ENDS[tokens[k].type]) {
+      ends.push(BLOCK_ENDS[tokens[k].type]);
+    }
+  }
+  return -1;
+}
+
+/** Token indexes of the parenthesized root that begins an @scope prelude. */
+function scopeRoot(tokens, from = 0) {
+  let open = from;
+  while (tokens[open] && tokens[open].type === "whitespace") open++;
+  if (!tokens[open] || tokens[open].type !== "(") return null;
+  const close = blockEnd(tokens, open);
+  return close < 0 ? null : [open, close];
+}
+
+/** Indexes of the commas that separate a selector list, outside any block. */
+function topLevelCommas(tokens) {
+  const ends = [];
+  const commas = [];
+  tokens.forEach((token, index) => {
+    if (token.type === ends[ends.length - 1]) ends.pop();
+    else if (BLOCK_ENDS[token.type]) ends.push(BLOCK_ENDS[token.type]);
+    else if (token.type === "," && !ends.length) commas.push(index);
+  });
+  return commas;
+}
+
+function splitSelectorList(selector) {
+  const css = preprocessCSS(selector);
+  const tokens = cssTokens(css);
+  const pieces = [];
+  let start = 0;
+  for (const index of topLevelCommas(tokens)) {
+    pieces.push(css.slice(start, tokens[index].start));
+    start = tokens[index].end;
+  }
+  pieces.push(css.slice(start));
+  return pieces;
+}
+
+function startsWithSiblingCombinator(selector) {
+  const first = cssTokens(preprocessCSS(selector)).find((token) => token.type !== "whitespace");
+  return first !== undefined && first.type === "delim" && (first.value === "+" || first.value === "~");
+}
+
 // Only literal identifiers/strings are resolved here; escaped and dynamic roots
 // keep the existing fallback. Do not use jsdom.matches: its predicate semantics
 // differ from browsers for missing attributes, whitespace and case folding.
@@ -220,13 +403,120 @@ function scopeQualifiedBodySelector(selector, body) {
   }
   const suffix = selector.slice(end);
   if (suffix && !/^[\t\n\f\r >]/.test(suffix)) return null;
-  const relationship = suffix.replace(/^(?:[\t\n\f\r ]|\/\*[\s\S]*?\*\/)*/, "");
   // A sibling of the message container belongs to the app, not the message.
-  if (/^[+~]/.test(relationship)) return null;
+  if (startsWithSiblingCombinator(suffix)) return null;
   const compound = selector.slice(0, end);
   // The reader container is a DIV, so :not(body...) matches it while retaining
   // the original specificity. Unlike :is(), :not() does not forgive invalid CSS.
   return `#ownmail-email-content:not(${compound})${suffix}`;
+}
+
+/**
+ * Confine one sender selector to the reader container. Naming the container
+ * proves nothing: :not(), :has() or a sibling combinator can still leave it.
+ * Returns null when the selector would select a sibling of the container.
+ */
+function scopeSelector(selector, body) {
+  const sel = selector.trim();
+  if (!sel) return sel;
+  const qualified = scopeQualifiedBodySelector(sel, body);
+  if (qualified) return qualified;
+  // Replace standalone html/body with #ownmail-email-content
+  if (/^(html|body)$/i.test(sel)) return "#ownmail-email-content";
+  // Replace html/body prefix: "body .foo" → "#ownmail-email-content .foo"
+  const root = sel.match(/^(html|body)\s+/i);
+  if (root && !startsWithSiblingCombinator(sel.slice(root[0].length))) {
+    return "#ownmail-email-content " + sel.slice(root[0].length);
+  }
+  // A leading + or ~ is invalid in a top-level rule and would otherwise
+  // relate the container to its siblings.
+  if (startsWithSiblingCombinator(sel)) return null;
+  return "#ownmail-email-content " + sel;
+}
+
+/** Scope each selector of a list, or return null when any cannot be scoped. */
+function scopeSelectorList(selectors, body) {
+  const scoped = splitSelectorList(selectors).map((sel) => scopeSelector(sel, body));
+  return scoped.includes(null) ? null : scoped;
+}
+
+/** Whether a selector can only match the container or its descendants. */
+function isScopedSelector(tokens) {
+  let k = 0;
+  while (tokens[k] && tokens[k].type === "whitespace") k++;
+  // An empty selector invalidates its whole rule.
+  if (k === tokens.length) return true;
+  if (tokens[k].type !== "hash" || tokens[k].value !== "ownmail-email-content") return false;
+  const ends = [];
+  for (k++; k < tokens.length; k++) {
+    const { type, value } = tokens[k];
+    if (type === ends[ends.length - 1]) ends.pop();
+    else if (BLOCK_ENDS[type]) ends.push(BLOCK_ENDS[type]);
+    else if (!ends.length && (type === "whitespace" || (type === "delim" && ">+~".includes(value)))) break;
+  }
+  while (tokens[k] && tokens[k].type === "whitespace") k++;
+  return !(tokens[k] && tokens[k].type === "delim" && (tokens[k].value === "+" || tokens[k].value === "~"));
+}
+
+function isScopedSelectorList(tokens) {
+  let start = 0;
+  for (const index of [...topLevelCommas(tokens), tokens.length]) {
+    if (!isScopedSelector(tokens.slice(start, index))) return false;
+    start = index + 1;
+  }
+  return true;
+}
+
+/**
+ * Read scoped output as a browser does and confirm that every style rule and
+ * @scope root it finds is confined to the reader container.
+ */
+function isScopedStylesheet(css) {
+  const tokens = cssTokens(preprocessCSS(css));
+  // Blocks whose contents are declarations and rules, or plain values.
+  const blocks = [];
+  let statement = 0;
+  for (let k = 0; k < tokens.length; k++) {
+    const { type } = tokens[k];
+    const block = blocks[blocks.length - 1];
+    if (block && type === block.end) {
+      blocks.pop();
+      if (block.statements) statement = k + 1;
+      continue;
+    }
+    const statementLevel = !block || block.statements;
+    // A top-level rule does not end at ";", but such a prelude is no selector.
+    if (statementLevel && (type === ";" || type === "}")) {
+      statement = k + 1;
+    } else if (type === "{" && statementLevel) {
+      let first = statement;
+      // At the top level a browser skips HTML comment markers between rules.
+      while (first < k && (tokens[first].type === "whitespace" ||
+        (!block && tokens[first].type === "html-comment"))) first++;
+      const prelude = tokens.slice(first, k);
+      const head = prelude[0];
+      const next = prelude.find((token, index) => index && token.type !== "whitespace");
+      let entry = { end: "}", statements: true, keyframes: block && block.keyframes };
+      if (head && head.type === "at-keyword") {
+        const name = asciiLower(head.value);
+        if (/^(-webkit-)?keyframes$/.test(name)) entry.keyframes = true;
+        if (name === "scope") {
+          const range = scopeRoot(prelude, 1);
+          if (!range || !isScopedSelectorList(prelude.slice(range[0] + 1, range[1]))) return false;
+        }
+      } else if (head && head.type === "ident" && head.value.startsWith("--") && next && next.type === ":") {
+        // A custom property value, not a rule.
+        entry = { end: "}", statements: false };
+      } else if (!entry.keyframes && !isScopedSelectorList(prelude)) {
+        return false;
+      }
+      blocks.push(entry);
+      statement = k + 1;
+    } else if (BLOCK_ENDS[type]) {
+      blocks.push({ end: BLOCK_ENDS[type], statements: false });
+    }
+  }
+  return true;
 }
 
 /**
@@ -235,8 +525,9 @@ function scopeQualifiedBodySelector(selector, body) {
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
  * - Keeps remote url() values, including @font-face sources from any host; the
  *   reader's content security policy blocks them until remote content is loaded
- * - Scopes all selectors under #ownmail-email-content
- * - Leaves @font-face, @keyframes unscoped
+ * - Scopes every selector and @scope root under #ownmail-email-content, and
+ *   discards the stylesheet if a browser would read a rule outside that scope
+ * - Leaves @font-face, @keyframes and other global at-rules unscoped
  */
 function scopeAndSanitizeCSS(css, body = null) {
   let root;
@@ -301,25 +592,30 @@ function scopeAndSanitizeCSS(css, body = null) {
       return;
     }
 
-    rule.selectors = rule.selectors.map((sel) => {
-      sel = sel.trim();
-      if (!sel) return sel;
-      // Already scoped
-      if (sel.includes("#ownmail-email-content")) return sel;
-      const qualified = scopeQualifiedBodySelector(sel, body);
-      if (qualified) return qualified;
-      // Replace standalone html/body with #ownmail-email-content
-      if (/^(html|body)$/i.test(sel)) return "#ownmail-email-content";
-      // Replace html/body prefix: "body .foo" → "#ownmail-email-content .foo"
-      if (/^(html|body)\s/i.test(sel)) {
-        return sel.replace(/^(html|body)\s+/i, "#ownmail-email-content ");
-      }
-      // Prefix everything else
-      return "#ownmail-email-content " + sel;
-    });
+    const selectors = scopeSelectorList(rule.selector, body);
+    if (selectors) rule.selectors = selectors;
+    else rule.remove();
   });
 
-  return root.toString();
+  // Declarations directly inside @scope style its root, so the root is scoped
+  // like any selector. A missing root becomes the reader container explicitly.
+  root.walkAtRules(/^scope$/i, (atRule) => {
+    const params = preprocessCSS(atRule.params);
+    const tokens = cssTokens(params);
+    const first = tokens.find((token) => token.type !== "whitespace");
+    if (!first || (first.type === "ident" && asciiLower(first.value) === "to")) {
+      atRule.params = `(#ownmail-email-content) ${params.trim()}`.trim();
+      atRule.raws.afterName = " ";
+      return;
+    }
+    const range = scopeRoot(tokens);
+    const roots = range && scopeSelectorList(params.slice(tokens[range[0]].end, tokens[range[1]].start), body);
+    if (roots) atRule.params = `(${roots.join(", ")})${params.slice(tokens[range[1]].end)}`;
+    else atRule.remove();
+  });
+
+  const scoped = root.toString();
+  return isScopedStylesheet(scoped) ? scoped : "/* CSS parse error */";
 }
 
 /**
