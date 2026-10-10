@@ -3,7 +3,7 @@ id: doc-4
 title: Execution order — 2026-07-24 sequencing decision
 type: specification
 created_date: '2026-07-24 05:10'
-updated_date: '2026-10-10 05:35'
+updated_date: '2026-10-10 05:41'
 ---
 ## Goal
 
@@ -239,6 +239,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 9l | TASK-135 | medium | create_app serves unsanitized HTML when built without a sanitizer, and serve can run npm; confirm deployment before landing |
 | 9m | TASK-136 | medium | Any Host header is accepted; exact origin checks need it first; confirm deployment before landing |
 | 9n | TASK-137 | high | The POST guard accepts header-less, prefix-matched and conflicting requests; depends on TASK-136; confirm deployment before landing |
+| 9o | TASK-138 | medium | Message CSS and markup keep escaping container scoping; decide whether a sandboxed frame should replace it. Evaluation only, after the point fixes |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
@@ -284,6 +285,10 @@ TASK-137 change which requests or startups the server accepts, so each waits
 for the maintainer to confirm the deployment before it lands. TASK-131's notes
 record the sandboxed-iframe alternative to the point fixes in TASK-131,
 TASK-133 and TASK-134.
+
+TASK-138 (filed 2026-10-10) follows TASK-137 and re-evaluates that
+alternative against the reasons 55d2fc8 gave for leaving the iframe. It
+changes no production code; the point fixes land first.
 
 ## Keeping this current
 
