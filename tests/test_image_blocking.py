@@ -18,6 +18,7 @@ from ownmail.web import (
     _hide_blocked_images,
     create_app,
 )
+from ownmail.web_hosts import resolve_allowed_hosts
 from tests import test_email_contrast, test_reader_spacing
 from tests.conftest import create_test_app, mock_archive_db
 
@@ -437,6 +438,8 @@ def image_app(tmp_path, spacing_sanitizer):
 def serve(app):
     """Serve the app on a local port so the browser follows its reloads."""
     server = make_server("127.0.0.1", 0, app, threaded=True)
+    # As ownmail serve does, accept loopback names with the serving port.
+    app.config["allowed_hosts"] = resolve_allowed_hosts(None, server.server_port)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

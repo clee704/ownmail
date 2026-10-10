@@ -117,6 +117,15 @@ sources:
 # ─── Web Interface ────────────────────────────────────────────
 
 web:
+  # Host names and addresses browsers use to reach this server. Requests for
+  # any other Host get 400. An entry without a port also accepts the serving
+  # port. The list replaces the default, so keep localhost if you use it.
+  # See docs/setup.md#allowed-hosts for reverse proxies.
+  # Default: localhost, 127.0.0.1, [::1]
+  # allowed_hosts:
+  #   - localhost
+  #   - 192.0.2.10
+
   # Automatic downloads use the same Active refresh and capture lifecycle.
   # Keep ownmail serve running. Off by default (0); supported intervals:
   # 15, 30, 60, 360, or 1440 minutes after the previous run finishes.

@@ -43,6 +43,8 @@ sources:
 # Web UI settings (used by 'ownmail serve')
 # web:
 #   port: 8080              # Default: 8080
+#   allowed_hosts:           # Names and addresses browsers use (default: loopback only)
+#     - 192.0.2.10
 #   page_size: 50            # Emails per search page (default: 50)
 #   block_images: true       # Block remote content by default (default: true)
 #   trusted_senders:         # Always load remote content from these senders
@@ -1330,6 +1332,13 @@ Examples:
     serve_parser.add_argument("--archive-dir", type=Path, help=argparse.SUPPRESS)
     serve_parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
     serve_parser.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
+    serve_parser.add_argument(
+        "--allowed-host",
+        action="append",
+        metavar="HOST",
+        help="Accept requests addressed to this host name or address; repeat for more. "
+        "Replaces web.allowed_hosts (default: localhost, 127.0.0.1 and [::1])",
+    )
     serve_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     serve_parser.add_argument(
         "--reload", action="store_true", help="Reload on Python source changes without enabling the debugger"
@@ -1547,6 +1556,7 @@ Examples:
                 auto_scale = web_config.get("auto_scale", True)
                 brand_name = web_config.get("brand_name", "ownmail")
                 display_timezone = web_config.get("timezone")
+                allowed_hosts = args.allowed_host or web_config.get("allowed_hosts")
                 run_server(
                     serve_archive,
                     args.host,
@@ -1564,6 +1574,7 @@ Examples:
                     detail_date_format,
                     open_browser=not args.no_browser,
                     reload=args.reload,
+                    allowed_hosts=allowed_hosts,
                 )
 
     except DownloadInProgress as e:

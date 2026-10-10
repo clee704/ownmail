@@ -362,8 +362,10 @@ request to the servers that host it.
 
 The server listens on localhost by default and has no built-in login. If you
 make it reachable from other devices, control access through a trusted network
-or an authenticated proxy. Home Screen access uses the same server; it does not
-store an offline archive on the phone.
+or an authenticated proxy, and list the names and addresses browsers use in
+[`web.allowed_hosts`](docs/setup.md#allowed-hosts); requests addressed to any
+other host get `400 Bad Request`. Home Screen access uses the same server; it
+does not store an offline archive on the phone.
 
 The Home Screen manifest uses the configured app name, root navigation scope,
 app icons, and the existing theme colors. A loaded reader saves only its local

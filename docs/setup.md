@@ -117,19 +117,56 @@ prints the reason and what to do, usually `ownmail setup --web`. With the
 dependencies installed, local reading and search can work without internet,
 though remote content and external links still need their respective servers.
 
-To reach the server from a phone on a trusted network:
+To reach the server from a phone on a trusted network, listen on all interfaces
+and allow the serving computer's network address, here `192.0.2.10`:
 
 ```bash
-ownmail serve --host 0.0.0.0
+ownmail serve --host 0.0.0.0 --allowed-host 192.0.2.10
 ```
 
-Open the serving computer's network address and port in the phone's browser.
-This exposes the archive to other devices that can reach that address. There is
-no built-in login; use network access controls or an authenticated proxy, and do
-not expose the server directly to the public internet.
+Open `http://192.0.2.10:8080` in the phone's browser. This exposes the archive
+to other devices that can reach that address. There is no built-in login; use
+network access controls or an authenticated proxy, and do not expose the server
+directly to the public internet.
 
 You can add the site to the phone's Home Screen. Its icon and standalone layout
 use the same running server, so this does not provide a separate offline copy.
+
+### Allowed hosts
+
+The server answers only requests whose `Host` header names an allowed host.
+Other requests get `400 Bad Request` before any page, static file, attachment,
+or action runs. This keeps a web page whose domain name has been pointed at your
+server (DNS rebinding) from using your browser to read or change the archive.
+
+With nothing configured, only `localhost`, `127.0.0.1`, and `[::1]` are allowed,
+with or without the serving port. List every other name or address browsers use
+under `web.allowed_hosts` in `config.yaml`:
+
+```yaml
+web:
+  allowed_hosts:
+    - localhost
+    - 192.0.2.10
+    - mail.example
+```
+
+The list replaces the default, so keep `localhost` if you also open the server
+on the serving computer. An entry without a port also accepts the serving port;
+an entry with a port, such as `mail.example:8443`, accepts only that port. Names
+are case-insensitive, and IPv6 addresses go in brackets, such as
+`[2001:db8::1]`. Each `--allowed-host` option adds one entry on the command line,
+and together they replace `web.allowed_hosts`. `ownmail serve` prints the
+effective list at startup and refuses to start if an entry is not a host name or
+address, or if `--port` is outside 1 to 65535. The browser tab it opens uses an
+allowed host that reaches the listening address, preferring `localhost` for
+`--host 0.0.0.0`. If no allowed host does, serve prints that instead of opening
+a page that would get `400 Bad Request`.
+
+Behind a reverse proxy, list the host the browser's address bar shows, with its
+port if the address includes one. Configure the proxy to forward the browser's
+`Host` header, or list the `Host` value the proxy sends instead. Forwarding
+headers such as `X-Forwarded-Host` are ignored.
 
 ## HTML and remote content
 

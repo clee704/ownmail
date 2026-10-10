@@ -30,6 +30,7 @@ from ownmail.parser import (
 )
 from ownmail.query import parse_query
 from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_web_config, serialize_config_writes
+from ownmail.web_hosts import browser_url, register_host_check, resolve_allowed_hosts
 
 # While remote content is blocked, the page loads only from the archive's host
 # and data: URIs, so the browser refuses every remote image, font, stylesheet,
@@ -1135,6 +1136,7 @@ def create_app(
     sanitizer=None,
     display_timezone: str = None,
     detail_date_format: str = None,
+    allowed_hosts: list = None,
 ) -> Flask:
     """Create the Flask application.
 
@@ -1151,6 +1153,7 @@ def create_app(
         sanitizer: Started HTML sanitizer; required, and must be available
         display_timezone: IANA timezone name (default: server local)
         detail_date_format: strftime format for message view dates (default: "%a, %d %b %Y %H:%M:%S")
+        allowed_hosts: Host header values to accept (default: loopback names)
 
     Returns:
         Flask application
@@ -1180,6 +1183,8 @@ def create_app(
     app.config["brand_name"] = brand_name
     app.config["sanitizer"] = sanitizer
     app.config["trash_expiry_days"] = 30
+    app.config["allowed_hosts"] = resolve_allowed_hosts(allowed_hosts)
+    register_host_check(app)
     downloads = register_downloads(app, archive, config_path)
 
     # Auto-expire old trash on startup
@@ -2158,6 +2163,7 @@ def run_server(
     detail_date_format: str = None,
     open_browser: bool = True,
     reload: bool = False,
+    allowed_hosts: list = None,
 ) -> None:
     """Run the web server.
 
@@ -2178,11 +2184,18 @@ def run_server(
         detail_date_format: strftime format for message view dates (default: "%a, %d %b %Y %H:%M:%S")
         open_browser: Open the web interface in a browser once the server is up
         reload: Reload Python source and templates without enabling debug mode
+        allowed_hosts: Host names and addresses browsers use (default: loopback names)
     """
     if debug and host not in ("127.0.0.1", "localhost", "::1"):
         print("   ERROR: --debug cannot be used with non-localhost --host")
         print("   The Werkzeug debugger allows remote code execution.")
         raise SystemExit(1)
+    hosts_configured = bool(allowed_hosts)
+    try:
+        allowed_hosts = resolve_allowed_hosts(allowed_hosts, port)
+    except ValueError as error:
+        print(f"   ERROR: {error}")
+        raise SystemExit(1) from None
 
     # Start HTML sanitizer sidecar (DOMPurify via Node.js)
     import signal
@@ -2213,6 +2226,7 @@ def run_server(
         sanitizer=sanitizer,
         display_timezone=display_timezone,
         detail_date_format=detail_date_format,
+        allowed_hosts=allowed_hosts,
     )
     if reload:
         app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -2220,10 +2234,14 @@ def run_server(
     print(f"\n🌐 {brand_name} web interface")
     print(f"   Running at: http://{host}:{port}")
     print(f"   Page size: {page_size}")
+    print(f"   Allowed hosts: {', '.join(allowed_hosts)}")
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("\n   ⚠️  WARNING: Binding to non-localhost address!")
         print("   Your email archive will be accessible to anyone on the network.")
-        print("   Consider using --host 127.0.0.1 instead.\n")
+        print("   Consider using --host 127.0.0.1 instead.")
+        if not hosts_configured:
+            print("   Only loopback Host names are accepted; add the address other devices use to web.allowed_hosts.")
+        print()
         if reload:
             print("   ⚠️  WARNING: --reload is meant for local development.")
             print("   Source changes restart a server that other devices can reach.\n")
@@ -2238,8 +2256,11 @@ def run_server(
 
     # The supervisor survives reloads; its children must not open more tabs.
     if open_browser and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
-        browser_host = "localhost" if host in ("0.0.0.0", "::") else host
-        threading.Timer(1.0, lambda: webbrowser.open(f"http://{browser_host}:{port}")).start()
+        url = browser_url(host, port, allowed_hosts)
+        if url:
+            threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        else:
+            print("   Browser not opened: no allowed host reaches this address and port.\n")
 
     previous_sigterm = None
     if threading.current_thread() is threading.main_thread():
