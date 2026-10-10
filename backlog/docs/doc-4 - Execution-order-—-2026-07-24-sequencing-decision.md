@@ -3,7 +3,7 @@ id: doc-4
 title: Execution order — 2026-07-24 sequencing decision
 type: specification
 created_date: '2026-07-24 05:10'
-updated_date: '2026-10-10 06:22'
+updated_date: '2026-10-10 08:12'
 ---
 ## Goal
 
@@ -241,6 +241,8 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 9n | TASK-137 | high | The POST guard accepts header-less, prefix-matched and conflicting requests; depends on TASK-136; confirm deployment before landing |
 | 9o | TASK-139 | high | Message markup can submit forms to the application's own routes, such as /empty-trash; sanitizer-only fix |
 | 9p | TASK-138 | medium | Message CSS and markup keep escaping container scoping; decide whether a sandboxed frame should replace it. Evaluation only, after the point fixes |
+| 9q | TASK-140 | medium | Follow-up to TASK-131 and TASK-139: global at-rules, fixed positioning and popovers in a message still affect application UI |
+| 9r | TASK-141 | low | Found in TASK-131 review: rules inside a message @scope never match after scoping; same worker CSS path as TASK-140 |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
@@ -294,6 +296,11 @@ changes no production code; the point fixes land first.
 TASK-139 (filed 2026-10-10) sits between TASK-137 and TASK-138. Its sanitizer
 fix stops message content from submitting forms and changes no request
 handling, so it needs no deployment confirmation.
+
+TASK-140 and TASK-141 (filed 2026-10-10) follow TASK-138 because its
+recommendation decides how much of TASK-140 stays a point fix. TASK-140 covers
+the effects that TASK-131 and TASK-139 left open; TASK-141 is a rendering bug
+in the same scoping code and comes after it.
 
 ## Keeping this current
 
