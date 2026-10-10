@@ -168,6 +168,62 @@ port if the address includes one. Configure the proxy to forward the browser's
 `Host` header, or list the `Host` value the proxy sends instead. Forwarding
 headers such as `X-Forwarded-Host` are ignored.
 
+### Cross-site request protection
+
+Any request that changes something, such as moving mail to trash, editing labels,
+saving settings, or starting a download, must come from a page the server
+rendered. `GET`, `HEAD`, and `OPTIONS` requests do not change the archive or
+settings. Every other request method needs both of these, or it gets
+`403 Forbidden` before anything runs:
+
+- An `Origin` header exactly equal to an allowed origin. `Origin: null` is
+  rejected. Without `Origin`, the origin of the `Referer` must match exactly, and
+  a request with neither header is rejected.
+- A CSRF token from the page, sent as the `X-CSRF-Token` header or the
+  `csrf_token` form field. It is tied to an `ownmail_csrf` cookie that holds a
+  random value, is `HttpOnly` and `SameSite=Strict`, and lasts until the
+  browser closes. The cookie has no `Domain`, so other host names never get
+  it, but browsers send it to every port on the same host.
+
+The allowed origin is the one the request was sent to: its scheme and its
+`Host`, such as `http://localhost:8080` when you open that address. Another
+allowed host, or the same host on another port, is a different origin and is
+rejected. Behind a proxy that serves HTTPS and forwards plain HTTP to ownmail,
+the browser's origin starts with `https://` while ownmail sees `http://`, so add
+the origin from the browser's address bar:
+
+```yaml
+web:
+  allowed_hosts:
+    - mail.example
+  allowed_origins:
+    - https://mail.example
+```
+
+Configured origins are accepted in addition to each request's own origin, so
+addresses you open directly need no entry. Each `--allowed-origin` option adds
+one entry on the command line, and together they replace `web.allowed_origins`.
+`ownmail serve` prints the configured origins at startup and refuses to start if
+an entry is not a scheme, a host, and an optional port. `X-Forwarded-Proto` and
+similar headers are ignored.
+
+The cookie is `Secure` when the request uses HTTPS, or when its `Host` names a
+configured `https://` origin, as it does behind a proxy that forwards the
+browser's `Host`. Pages and responses that contain a token are sent with
+`Cache-Control: no-store`.
+
+Tokens are signed with a key created when the server starts and never saved,
+so a restart, including a `--reload` restart, expires the tokens in open pages.
+Buttons on an open page then fetch a new token from `GET /csrf-token` and send
+the request once more; the server rejected the first attempt before acting. A
+submitted Settings form shows "This page expired" instead; reload the page and
+submit again. Following a link to ownmail from another site replaces the
+cookie, which expires other open pages the same way.
+
+There is no way for scripts, `curl`, or other clients without a browser to make
+these changes, because ownmail has no login or API credential. The `ownmail`
+commands work on the archive directly and do not need the web server.
+
 ## HTML and remote content
 
 Ownmail sanitizes email HTML through [DOMPurify](https://github.com/cure53/DOMPurify)

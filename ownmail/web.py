@@ -29,6 +29,7 @@ from ownmail.parser import (
     is_attachment,
 )
 from ownmail.query import parse_query
+from ownmail.web_csrf import register_csrf_protection, resolve_allowed_origins
 from ownmail.web_downloads import DOWNLOAD_INTERVALS, register_downloads, save_web_config, serialize_config_writes
 from ownmail.web_hosts import browser_url, register_host_check, resolve_allowed_hosts
 
@@ -1137,6 +1138,7 @@ def create_app(
     display_timezone: str = None,
     detail_date_format: str = None,
     allowed_hosts: list = None,
+    allowed_origins: list = None,
 ) -> Flask:
     """Create the Flask application.
 
@@ -1154,6 +1156,8 @@ def create_app(
         display_timezone: IANA timezone name (default: server local)
         detail_date_format: strftime format for message view dates (default: "%a, %d %b %Y %H:%M:%S")
         allowed_hosts: Host header values to accept (default: loopback names)
+        allowed_origins: Origins accepted for state-changing requests
+            (default: the request scheme with each allowed host)
 
     Returns:
         Flask application
@@ -1184,7 +1188,9 @@ def create_app(
     app.config["sanitizer"] = sanitizer
     app.config["trash_expiry_days"] = 30
     app.config["allowed_hosts"] = resolve_allowed_hosts(allowed_hosts)
+    app.config["allowed_origins"] = resolve_allowed_origins(allowed_origins)
     register_host_check(app)
+    register_csrf_protection(app)
     downloads = register_downloads(app, archive, config_path)
 
     # Auto-expire old trash on startup
@@ -1202,23 +1208,6 @@ def create_app(
             "stats": get_stats(),
             "label_nav": get_label_nav(),
         }
-
-    # CSRF protection: validate Origin/Referer on POST requests
-    @app.before_request
-    def csrf_check():
-        if request.method == "POST":
-            origin = request.headers.get("Origin") or ""
-            referer = request.headers.get("Referer") or ""
-            # Accept if Origin or Referer starts with our own URL
-            # (flask test client sends neither, so allow empty for tests)
-            if not origin and not referer:
-                return  # Allow (e.g., curl, test client)
-            host_url = request.host_url.rstrip("/")
-            if origin and origin.rstrip("/") == host_url:
-                return
-            if referer and referer.startswith(host_url):
-                return
-            abort(403)
 
     def get_stats():
         """Get email count stats."""
@@ -1642,23 +1631,35 @@ def create_app(
         response.headers["Content-Security-Policy"] = IMAGE_BLOCKING_CSP if images_blocked else MESSAGE_CSP
         return response
 
-    @app.route("/labels/<email_id>", methods=["GET", "POST"])
-    def local_labels(email_id: str):
-        """Read or replace the labels owned by an archived copy."""
+    def label_response(action):
+        """Run a label read or write, answering archive errors with a JSON message."""
         try:
-            if request.method == "GET":
-                return {"labels": archive.get_local_labels(email_id)}
-            data = request.get_json(silent=True)
-            if not isinstance(data, dict) or "labels" not in data:
-                return {"error": "Provide a list of labels."}, 400
-            indexed = archive.set_local_labels(email_id, data["labels"])
-            return {"indexed": indexed}
+            return action()
         except FileNotFoundError:
             return {"error": "Archived message file is unavailable."}, 404
         except ValueError as error:
             return {"error": str(error)}, 400
         except (OSError, sqlite3.Error):
             return {"error": "Labels could not be read or saved. Please try again."}, 503
+
+    # Flask sends HEAD to the GET view and the CSRF check exempts it, so the
+    # write gets its own POST-only view.
+    @app.get("/labels/<email_id>")
+    def local_labels(email_id: str):
+        """Return the labels owned by an archived copy."""
+        return label_response(lambda: {"labels": archive.get_local_labels(email_id)})
+
+    @app.post("/labels/<email_id>")
+    def save_local_labels(email_id: str):
+        """Replace the labels owned by an archived copy."""
+
+        def save():
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict) or "labels" not in data:
+                return {"error": "Provide a list of labels."}, 400
+            return {"indexed": archive.set_local_labels(email_id, data["labels"])}
+
+        return label_response(save)
 
     @app.route("/raw/<email_id>")
     def view_raw(email_id: str):
@@ -2164,6 +2165,7 @@ def run_server(
     open_browser: bool = True,
     reload: bool = False,
     allowed_hosts: list = None,
+    allowed_origins: list = None,
 ) -> None:
     """Run the web server.
 
@@ -2185,6 +2187,8 @@ def run_server(
         open_browser: Open the web interface in a browser once the server is up
         reload: Reload Python source and templates without enabling debug mode
         allowed_hosts: Host names and addresses browsers use (default: loopback names)
+        allowed_origins: Browser origins for state-changing requests, such as an
+            HTTPS proxy's (default: http:// with each allowed host)
     """
     if debug and host not in ("127.0.0.1", "localhost", "::1"):
         print("   ERROR: --debug cannot be used with non-localhost --host")
@@ -2193,6 +2197,7 @@ def run_server(
     hosts_configured = bool(allowed_hosts)
     try:
         allowed_hosts = resolve_allowed_hosts(allowed_hosts, port)
+        allowed_origins = resolve_allowed_origins(allowed_origins)
     except ValueError as error:
         print(f"   ERROR: {error}")
         raise SystemExit(1) from None
@@ -2227,6 +2232,7 @@ def run_server(
         display_timezone=display_timezone,
         detail_date_format=detail_date_format,
         allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
     )
     if reload:
         app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -2235,6 +2241,8 @@ def run_server(
     print(f"   Running at: http://{host}:{port}")
     print(f"   Page size: {page_size}")
     print(f"   Allowed hosts: {', '.join(allowed_hosts)}")
+    if allowed_origins:
+        print(f"   Allowed origins: {', '.join(allowed_origins)}")
     if host not in ("127.0.0.1", "localhost", "::1"):
         print("\n   ⚠️  WARNING: Binding to non-localhost address!")
         print("   Your email archive will be accessible to anyone on the network.")

@@ -367,6 +367,13 @@ or an authenticated proxy, and list the names and addresses browsers use in
 other host get `400 Bad Request`. Home Screen access uses the same server; it
 does not store an offline archive on the phone.
 
+Changes made through the web interface, such as trash, labels, and settings,
+need an allowed origin and a CSRF token from a page the server rendered, so
+another website cannot make them through your browser. Requests without both,
+including scripts and other clients without a browser, get `403 Forbidden`.
+Behind an HTTPS proxy, list the browser's origin in
+[`web.allowed_origins`](docs/setup.md#cross-site-request-protection).
+
 The Home Screen manifest uses the configured app name, root navigation scope,
 app icons, and the existing theme colors. A loaded reader saves only its local
 URL, message-file version, and vertical scroll offset in session storage. A

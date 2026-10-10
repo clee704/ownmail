@@ -40,8 +40,10 @@ def run_download_browser(app, node, assertions, *, viewport=(1100, 900)):
         response = client.get(path)
         assert response.status_code == 200, path
         files[path] = {"body": response.data.decode(), "contentType": response.mimetype}
+    (token,) = html.fromstring(page).xpath('//script[@id="ownmail-csrf-token"]/text()')
     payload = {
         "page": page,
+        "token": json.loads(token),
         "files": files,
         "snapshot": snapshot,
         "viewport": {"width": viewport[0], "height": viewport[1]},
@@ -67,6 +69,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         let settingsLoads = 0;
         const starts = [];
         const schedules = [];
+        const tokens = [];
         await page.route('**/*', async route => {
             const request = route.request();
             const url = new URL(request.url());
@@ -80,6 +83,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
                 if (offline) return route.abort();
                 return route.fulfill({json: state});
             }
+            if (request.method() === 'POST') tokens.push(request.headers()['x-csrf-token']);
             if (url.pathname === '/downloads' && request.method() === 'POST') {
                 starts.push(request.postDataJSON());
                 if (startGate) await startGate;
@@ -119,6 +123,8 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         };
         await waitStatus('Ready to download');
         __ASSERTIONS__
+        assert.equal(tokens.length, starts.length + schedules.length);
+        assert(tokens.every(token => token === input.token), 'Every download control sends the page token');
         assert.deepEqual(errors, []);
     } finally {
         await browser.close();

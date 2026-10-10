@@ -126,6 +126,14 @@ web:
   #   - localhost
   #   - 192.0.2.10
 
+  # More origins whose pages may make changes, such as moving mail to trash
+  # or saving settings. Each request's own origin (its scheme and Host) is
+  # always accepted. Set this behind a proxy that serves HTTPS and forwards
+  # plain HTTP to ownmail. See docs/setup.md#cross-site-request-protection.
+  # Default: none
+  # allowed_origins:
+  #   - https://mail.example
+
   # Automatic downloads use the same Active refresh and capture lifecycle.
   # Keep ownmail serve running. Off by default (0); supported intervals:
   # 15, 30, 60, 360, or 1440 minutes after the previous run finishes.

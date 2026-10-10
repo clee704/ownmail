@@ -7,6 +7,7 @@
         <h2>Trash</h2>
         {% if results %}
         <form action="/empty-trash" method="post" onsubmit="return emptyTrash(event)">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" data-message-action class="ownmail-empty-trash-btn">Empty Trash</button>
         </form>
         {% endif %}

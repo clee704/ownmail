@@ -1689,7 +1689,9 @@ class TestMainServeCommand:
             "  brand_name: MyMail\n"
             "  timezone: Asia/Seoul\n"
             "  allowed_hosts:\n"
-            "    - mail.example\n",
+            "    - mail.example\n"
+            "  allowed_origins:\n"
+            "    - https://mail.example\n",
         )
         monkeypatch.chdir(temp_dir)
 
@@ -1709,6 +1711,7 @@ class TestMainServeCommand:
         assert args[13] == "%Y-%m-%d %H:%M"  # detail_date_format
         assert kwargs["open_browser"] is True
         assert kwargs["allowed_hosts"] == ["mail.example"]
+        assert kwargs["allowed_origins"] == ["https://mail.example"]
 
     def test_serve_defaults_without_web_config(self, temp_dir, monkeypatch):
         """With no [web] section, run_server should get the documented defaults."""
@@ -1729,6 +1732,7 @@ class TestMainServeCommand:
         assert args[11] == "ownmail"  # brand_name
         assert kwargs["reload"] is False
         assert kwargs["allowed_hosts"] is None  # run_server applies the loopback default
+        assert kwargs["allowed_origins"] is None  # only each request's own origin
 
     def test_serve_reload_without_debug(self, temp_dir, monkeypatch):
         from ownmail.cli import main
@@ -1744,14 +1748,16 @@ class TestMainServeCommand:
         assert mock_run.call_args.args[3] is False  # debug
 
     def test_serve_cli_flags_override(self, temp_dir, monkeypatch):
-        """--host/--port/--allowed-host/--no-browser should be honoured."""
+        """--host/--port/--allowed-host/--allowed-origin/--no-browser should be honoured."""
         from ownmail.cli import main
 
-        self._write_config(temp_dir, "archive_root: .\nweb:\n  allowed_hosts: [mail.example]\n")
+        config = "archive_root: .\nweb:\n  allowed_hosts: [mail.example]\n  allowed_origins: [https://mail.example]\n"
+        self._write_config(temp_dir, config)
         monkeypatch.chdir(temp_dir)
 
         argv = ["ownmail", "serve", "--host", "0.0.0.0", "--port", "9000", "--no-browser"]
         argv += ["--allowed-host", "192.0.2.10", "--allowed-host", "[2001:db8::1]:9000"]
+        argv += ["--allowed-origin", "https://192.0.2.10"]
         with patch("ownmail.web.run_server") as mock_run:
             with patch.object(sys, "argv", argv):
                 main()
@@ -1761,6 +1767,7 @@ class TestMainServeCommand:
         assert args[2] == 9000
         assert kwargs["open_browser"] is False
         assert kwargs["allowed_hosts"] == ["192.0.2.10", "[2001:db8::1]:9000"]
+        assert kwargs["allowed_origins"] == ["https://192.0.2.10"]
 
     def test_serve_archive_dir_overrides_root(self, temp_dir, monkeypatch):
         """serve --archive-dir should serve that directory instead of the root."""

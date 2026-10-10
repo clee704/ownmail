@@ -45,6 +45,8 @@ sources:
 #   port: 8080              # Default: 8080
 #   allowed_hosts:           # Names and addresses browsers use (default: loopback only)
 #     - 192.0.2.10
+#   allowed_origins:         # Browser origins behind an HTTPS proxy (a page's own origin is always accepted)
+#     - https://mail.example
 #   page_size: 50            # Emails per search page (default: 50)
 #   block_images: true       # Block remote content by default (default: true)
 #   trusted_senders:         # Always load remote content from these senders
@@ -1339,6 +1341,13 @@ Examples:
         help="Accept requests addressed to this host name or address; repeat for more. "
         "Replaces web.allowed_hosts (default: localhost, 127.0.0.1 and [::1])",
     )
+    serve_parser.add_argument(
+        "--allowed-origin",
+        action="append",
+        metavar="ORIGIN",
+        help="Also accept changes from pages at this origin, such as https://mail.example behind an HTTPS proxy; "
+        "repeat for more. Replaces web.allowed_origins (a page's own origin is always accepted)",
+    )
     serve_parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     serve_parser.add_argument(
         "--reload", action="store_true", help="Reload on Python source changes without enabling the debugger"
@@ -1557,6 +1566,7 @@ Examples:
                 brand_name = web_config.get("brand_name", "ownmail")
                 display_timezone = web_config.get("timezone")
                 allowed_hosts = args.allowed_host or web_config.get("allowed_hosts")
+                allowed_origins = args.allowed_origin or web_config.get("allowed_origins")
                 run_server(
                     serve_archive,
                     args.host,
@@ -1575,6 +1585,7 @@ Examples:
                     open_browser=not args.no_browser,
                     reload=args.reload,
                     allowed_hosts=allowed_hosts,
+                    allowed_origins=allowed_origins,
                 )
 
     except DownloadInProgress as e:

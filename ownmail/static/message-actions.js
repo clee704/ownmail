@@ -50,6 +50,35 @@
         announce(text, 'error', url || location.href);
     };
 
+    var csrfToken;
+    function pageToken() {
+        if (csrfToken === undefined) {
+            var element = document.getElementById('ownmail-csrf-token');
+            csrfToken = element ? JSON.parse(element.textContent) : '';
+        }
+        return csrfToken;
+    }
+
+    // State-changing requests carry the token the page was rendered with. A
+    // server restart expires it, and the server then rejects the request
+    // before acting, so sending it once more with a fresh token cannot repeat
+    // a change.
+    window.ownmailFetch = async function(url, options) {
+        options = options || {};
+        var method = (options.method || 'GET').toUpperCase();
+        if (method === 'GET' || method === 'HEAD') return fetch(url, options);
+        function send() {
+            var headers = Object.assign({}, options.headers, {'X-CSRF-Token': pageToken()});
+            return fetch(url, Object.assign({}, options, {headers: headers}));
+        }
+        var response = await send();
+        if (response.status !== 403 || response.headers.get('X-CSRF-Rejected') !== 'token') return response;
+        var refreshed = await fetch('/csrf-token', {cache: 'no-store', signal: options.signal});
+        if (!refreshed.ok) return response;
+        csrfToken = (await refreshed.json()).token;
+        return send();
+    };
+
     // Bound the entire response, including JSON decoding. A late response cannot
     // announce success after the deadline, even when abort is slow to settle.
     window.ownmailRequest = async function(url, options, json) {
@@ -58,7 +87,7 @@
         try {
             return await Promise.race([
                 (async function() {
-                    var response = await fetch(url, Object.assign({}, options, {signal: controller.signal}));
+                    var response = await window.ownmailFetch(url, Object.assign({}, options, {signal: controller.signal}));
                     var data = json ? await response.json() : response;
                     if (!response.ok) throw new Error(json && data && data.error || 'HTTP ' + response.status);
                     return data;

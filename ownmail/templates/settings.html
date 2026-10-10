@@ -49,6 +49,7 @@
         <script src="/static/downloads.js"></script>
 
         <form method="POST" action="/settings" class="ownmail-settings-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <fieldset class="ownmail-settings-section">
                 <legend>Appearance</legend>
 

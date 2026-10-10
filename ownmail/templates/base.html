@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/active.css">
     <script src="/static/app-preferences.js"></script>
+    {# Element text, unlike an attribute, cannot be matched by message CSS selectors. #}
+    <script type="application/json" id="ownmail-csrf-token">{{ csrf_token() | tojson }}</script>
 </head>
 <body class="ownmail-app-shell {% block body_class %}{% endblock %}">
     <a href="#ownmail-main" class="ownmail-skip-link">Skip to content</a>

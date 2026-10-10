@@ -543,8 +543,11 @@ def test_trusting_sender_reloads_the_message_with_images(image_app, contrast_bro
 @pytest.mark.parametrize("query", ["", "?images=load"])
 def test_reader_app_markup_uses_only_external_scripts(message_app, query):
     _, page = open_message(message_app(REMOTE_IMAGE, block_images=True), query)
-    assert not page.xpath("//script[not(@src)]")
-    assert all(script.get("src").startswith("/static/") for script in page.xpath("//script"))
+    # The only inline script element is the CSRF token, a JSON data block that never runs.
+    assert [(script.get("id"), script.get("type")) for script in page.xpath("//script[not(@src)]")] == [
+        ("ownmail-csrf-token", "application/json")
+    ]
+    assert all(script.get("src").startswith("/static/") for script in page.xpath("//script[@src]"))
     assert not [(node.tag, attr) for node in page.iter() for attr in node.attrib if attr.lower().startswith("on")]
 
 

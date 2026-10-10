@@ -141,6 +141,103 @@ assert(navigated);
     )
 
 
+TOKEN_PAGE = """
+    <script type="application/json" id="ownmail-csrf-token">"page-token"</script>
+    <button data-message-action>Move to trash</button>
+    <label class="ownmail-email-checkbox"><input type="checkbox" checked value="message"></label>
+    <div id="ownmail-action-feedback" hidden><span id="ownmail-action-message"></span>
+        <a id="ownmail-action-retry" hidden>Retry</a><button id="ownmail-action-dismiss">Dismiss</button></div>
+"""
+
+# Records each request and answers from a queue of synthetic responses.
+TOKEN_FETCH = """
+const requests = [];
+function respond(status, rejected, body) {
+    return {ok: status < 400, status, headers: {get: name => name === 'X-CSRF-Rejected' ? rejected : null},
+        json: () => Promise.resolve(body)};
+}
+function serve(responses) {
+    window.fetch = (url, options) => {
+        requests.push({url, method: (options && options.method) || 'GET',
+            token: options && options.headers && options.headers['X-CSRF-Token'],
+            type: options && options.headers && options.headers['Content-Type'],
+            cache: options && options.cache, signal: Boolean(options && options.signal)});
+        return Promise.resolve(responses.shift());
+    };
+}
+"""
+
+
+def test_mutation_sends_the_page_token_and_reads_without_one(shell_browser):
+    run_action_script(
+        shell_browser,
+        TOKEN_FETCH
+        + """
+serve([respond(200, null, {labels: []}), respond(204, null)]);
+await window.ownmailRequest('/labels/message', undefined, true);
+action.request.headers = {'Content-Type': 'application/x-www-form-urlencoded'};
+assert.equal(await window.ownmailMessageAction(action), true);
+assert.deepEqual(requests.map(request => [request.method, request.url, request.token, request.type]), [
+    ['GET', '/labels/message', undefined, undefined],
+    ['POST', '/trash-bulk', 'page-token', 'application/x-www-form-urlencoded'],
+]);
+""",
+        page=TOKEN_PAGE,
+    )
+
+
+def test_expired_token_is_refreshed_and_the_mutation_sent_once_more(shell_browser):
+    run_action_script(
+        shell_browser,
+        TOKEN_FETCH
+        + """
+serve([respond(403, 'token', {}), respond(200, null, {token: 'fresh-token'}), respond(204, null),
+    respond(204, null)]);
+assert.equal(await window.ownmailMessageAction(action), true);
+assert.equal(feedback.dataset.state, 'success');
+assert.deepEqual(requests.map(request => [request.method, request.url, request.token]), [
+    ['POST', '/trash-bulk', 'page-token'],
+    ['GET', '/csrf-token', undefined],
+    ['POST', '/trash-bulk', 'fresh-token'],
+]);
+assert.equal(requests[1].cache, 'no-store');
+assert(requests.every(request => request.signal));
+// Later mutations from the same page use the refreshed token.
+assert.equal(await window.ownmailMessageAction(action), true);
+assert.equal(requests[3].token, 'fresh-token');
+""",
+        page=TOKEN_PAGE,
+    )
+
+
+@pytest.mark.parametrize(
+    "responses,methods",
+    [
+        # A second token rejection is reported, not retried again.
+        (
+            "[respond(403, 'token', {}), respond(200, null, {token: 'fresh'}), respond(403, 'token', {})]",
+            ["POST", "GET", "POST"],
+        ),
+        # An origin rejection cannot be fixed by a new token.
+        ("[respond(403, 'origin', {})]", ["POST"]),
+        # Without a fresh token the original rejection is reported.
+        ("[respond(403, 'token', {}), respond(503, null, {})]", ["POST", "GET"]),
+    ],
+)
+def test_token_rejection_is_retried_at_most_once(shell_browser, responses, methods):
+    run_action_script(
+        shell_browser,
+        TOKEN_FETCH
+        + """
+serve(RESPONSES);
+assert.equal(await window.ownmailMessageAction(action), false);
+assert.equal(feedback.dataset.state, 'error');
+assert.deepEqual(requests.map(request => request.method), METHODS);
+""".replace("RESPONSES", responses).replace("METHODS", json.dumps(methods)),
+        page=TOKEN_PAGE,
+    )
+
+
 def test_success_feedback_disappears_after_four_seconds_without_moving_focus(shell_browser):
     run_action_script(
         shell_browser,

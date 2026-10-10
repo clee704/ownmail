@@ -132,20 +132,10 @@ def test_spawn_failure_is_visible(configured_app):
 
 
 @pytest.mark.parametrize("endpoint", ["/downloads", "/downloads/schedule"])
-def test_download_mutations_reject_cross_origin_and_forms(configured_app, endpoint):
+def test_download_mutations_reject_forms(configured_app, endpoint):
+    """Origins and tokens are covered for every route in test_web_csrf.py."""
     app, _ = configured_app
-    client = app.test_client()
-    assert client.post(endpoint, data={"interval_minutes": 0}).status_code == 415
-    for headers in (
-        {"Origin": "http://attacker.invalid"},
-        {"Referer": "http://localhost.attacker.invalid/settings"},
-        {"Origin": "null", "Referer": "http://localhost/settings"},
-    ):
-        assert client.post(endpoint, json={"interval_minutes": 0}, headers=headers).status_code == 403
-    response = client.post(
-        "/downloads/schedule", json={"interval_minutes": 0}, headers={"Referer": "http://localhost/settings"}
-    )
-    assert response.status_code == 200
+    assert app.test_client().post(endpoint, data={"interval_minutes": 0}).status_code == 415
 
 
 @pytest.mark.parametrize(

@@ -259,6 +259,7 @@ class TestServeStartup:
         assert make_app.call_args.kwargs["allowed_hosts"] == resolve_allowed_hosts(None, 9000)
         out = capsys.readouterr().out
         assert "   Allowed hosts: localhost, localhost:9000, 127.0.0.1, 127.0.0.1:9000, [::1], [::1]:9000\n" in out
+        assert "Allowed origins" not in out
         assert "add the address other devices use" not in out
 
     def test_wildcard_bind_without_configuration_explains_rejections(self, started, capsys):
@@ -266,15 +267,26 @@ class TestServeStartup:
         assert "Only loopback Host names are accepted; add the address other devices use" in capsys.readouterr().out
 
     def test_configured_hosts_are_used(self, started, capsys):
-        make_app, _ = started(host="0.0.0.0", allowed_hosts=["mail.example"])
+        make_app, _ = started(
+            host="0.0.0.0", allowed_hosts=["mail.example"], allowed_origins=["HTTPS://Mail.Example:443/"]
+        )
         assert make_app.call_args.kwargs["allowed_hosts"] == ("mail.example", "mail.example:8080")
+        assert make_app.call_args.kwargs["allowed_origins"] == ("https://mail.example",)
         out = capsys.readouterr().out
         assert "   Allowed hosts: mail.example, mail.example:8080\n" in out
+        assert "   Allowed origins: https://mail.example\n" in out
         assert "add the address other devices use" not in out
 
-    def test_invalid_configuration_refuses_before_startup(self, started, sanitizer, capsys):
+    @pytest.mark.parametrize(
+        "option,value,error",
+        [
+            ("allowed_hosts", ["http://mail.example"], "Invalid allowed host 'http://mail.example'"),
+            ("allowed_origins", ["mail.example"], "Invalid allowed origin 'mail.example'"),
+        ],
+    )
+    def test_invalid_configuration_refuses_before_startup(self, started, sanitizer, capsys, option, value, error):
         with pytest.raises(SystemExit) as exc_info:
-            started(allowed_hosts=["http://mail.example"])
+            started(**{option: value})
         assert exc_info.value.code == 1
         sanitizer.start.assert_not_called()
-        assert "ERROR: Invalid allowed host 'http://mail.example'" in capsys.readouterr().out
+        assert f"ERROR: {error}" in capsys.readouterr().out

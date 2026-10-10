@@ -1576,51 +1576,6 @@ class TestServerTimezoneName:
         assert ":" in name
 
 
-class TestCsrfCheck:
-    """Tests for the Origin/Referer CSRF guard on POST requests."""
-
-    @pytest.fixture
-    def app(self, tmp_path):
-        archive = MagicMock()
-        archive.archive_dir = tmp_path
-        archive.db = mock_archive_db()
-        archive.db.get_email_count.return_value = 1
-        archive.db.get_trash_count.return_value = 0
-        archive.auto_expire_trash.return_value = 0
-        archive.trash_email.return_value = True
-        return create_test_app(archive)
-
-    def test_matching_origin_allowed(self, app):
-        """A POST whose Origin matches the host should be accepted."""
-        with app.test_client() as client:
-            response = client.post("/trash/abc", headers={"Origin": "http://localhost"})
-            assert response.status_code == 204
-
-    def test_matching_referer_allowed(self, app):
-        """A POST whose Referer is under the host URL should be accepted."""
-        with app.test_client() as client:
-            response = client.post("/trash/abc", headers={"Referer": "http://localhost/search?q=x"})
-            assert response.status_code == 204
-
-    def test_foreign_origin_rejected(self, app):
-        """A POST from another origin should be rejected with 403."""
-        with app.test_client() as client:
-            response = client.post("/trash/abc", headers={"Origin": "http://evil.example.com"})
-            assert response.status_code == 403
-
-    def test_foreign_referer_rejected(self, app):
-        """A POST with a foreign Referer should be rejected with 403."""
-        with app.test_client() as client:
-            response = client.post("/trash/abc", headers={"Referer": "http://evil.example.com/page"})
-            assert response.status_code == 403
-
-    def test_get_request_not_checked(self, app):
-        """GET requests should bypass the CSRF check entirely."""
-        with app.test_client() as client:
-            response = client.get("/search", headers={"Origin": "http://evil.example.com"})
-            assert response.status_code == 200
-
-
 class TestSettingsRoutes:
     """Tests for the settings page and its POST handler."""
 

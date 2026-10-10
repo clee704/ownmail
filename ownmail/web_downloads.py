@@ -6,7 +6,6 @@ import tempfile
 import threading
 from functools import wraps
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from flask import abort, current_app, jsonify, request
 
@@ -71,16 +70,9 @@ def register_downloads(app, archive, config_path):
     app.extensions["config_write_lock"] = threading.RLock()
 
     def require_json():
-        # HTML forms cannot send JSON; validate browser origins as well.
+        # The origin and token were checked before this handler; HTML forms cannot send JSON.
         if not request.is_json:
             abort(415)
-        origin = request.headers.get("Origin")
-        referer = request.headers.get("Referer")
-        if origin or referer:
-            source = urlsplit(origin if origin else referer)
-            target = urlsplit(request.host_url)
-            if (source.scheme, source.netloc) != (target.scheme, target.netloc):
-                abort(403)
 
     def status_response(code=200):
         response = jsonify(manager.snapshot())

@@ -133,7 +133,7 @@
         var controller = new AbortController();
         var timeout = setTimeout(function() { controller.abort(); }, 15000);
         try {
-            var response = await fetch(url, {
+            var response = await window.ownmailFetch(url, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body),

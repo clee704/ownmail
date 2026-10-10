@@ -3,8 +3,48 @@
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
+from urllib.parse import urlsplit
 
 import pytest
+from flask import Flask
+from flask.testing import FlaskClient
+from werkzeug.datastructures import Headers
+
+
+class CsrfTestClient(FlaskClient):
+    """Send state-changing requests as the app's own pages do.
+
+    Each one gets a token from GET /csrf-token and, unless the test sets Origin
+    or Referer, a same-origin Origin. ``app.test_client(csrf=False)`` sends
+    requests exactly as written.
+    """
+
+    def __init__(self, *args, csrf=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.csrf = csrf
+        self.tokens = {}
+
+    def open(self, *args, **kwargs):
+        method = kwargs.get("method", "GET").upper()
+        if self.csrf and method not in ("GET", "HEAD", "OPTIONS") and args and isinstance(args[0], str):
+            headers = Headers(kwargs.get("headers"))
+            base = urlsplit(kwargs.get("base_url") or "http://localhost")
+            host = headers.get("Host", base.netloc)
+            if "Origin" not in headers and "Referer" not in headers:
+                headers["Origin"] = f"{base.scheme}://{host}"
+            if "X-CSRF-Token" not in headers:
+                if (base, host) not in self.tokens:
+                    response = self.get("/csrf-token", base_url=kwargs.get("base_url"), headers={"Host": host})
+                    self.tokens[base, host] = response.json["token"] if response.status_code == 200 else ""
+                headers["X-CSRF-Token"] = self.tokens[base, host]
+            kwargs["headers"] = headers
+        return super().open(*args, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def csrf_test_client(monkeypatch):
+    """Make app.test_client() pass the CSRF checks for tests of other behavior."""
+    monkeypatch.setattr(Flask, "test_client_class", CsrfTestClient)
 
 
 @pytest.fixture
