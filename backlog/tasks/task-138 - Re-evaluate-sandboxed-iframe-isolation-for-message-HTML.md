@@ -4,7 +4,7 @@ title: Re-evaluate sandboxed iframe isolation for message HTML
 status: In Progress
 assignee: []
 created_date: '2026-10-10 05:41'
-updated_date: '2026-10-10 20:44'
+updated_date: '2026-10-11 02:17'
 labels:
   - security
 dependencies: []
@@ -57,9 +57,9 @@ Also check:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each earlier reason listed above is re-checked against the allow-same-origin, no-scripts variant with a synthetic prototype or cited evidence, naming the browsers tested.
+- [x] #1 Each earlier reason listed above is re-checked against the allow-same-origin, no-scripts variant with a synthetic prototype or cited evidence, naming the browsers tested.
 - [ ] #2 CSP inheritance for srcdoc, print and PDF export, and Home Screen web app behavior are each checked, or recorded as unaffected with the reason.
-- [ ] #3 A recommendation and its rationale are recorded in this task's notes; any implementation work is filed as a separate task.
+- [x] #3 A recommendation and its rationale are recorded in this task's notes; any implementation work is filed as a separate task.
 - [x] #4 No production code, template or stylesheet changes in this task.
 <!-- AC:END -->
 
@@ -87,4 +87,12 @@ Recommendation (conditional on the find-bar check): render reader messages in th
 Implementation outline for the follow-up task: an iframe in email.html whose srcdoc carries the sanitized document, the frame stylesheet and the body attributes; the frame stylesheet; an unscoped sanitizer mode with the viewport-unit rewrite; auto-height and zoom in email-fit.js; email-contrast.js and applyEmailTheme pointed at the frame document with WebKit-safe listeners; a reader print decision; Chromium and WebKit tests.
 
 Next action: the maintainer checks the native find bar and the Home Screen app against a synthetic page with text inside such a frame. Then record the result, finalize the recommendation, and file the implementation task.
+
+2026-10-10: the maintainer confirmed that native find in page finds text inside the frame on the synthetic page. New requirement from the maintainer: the frame must behave like a normal element, with no internal scroll; the earlier iframe also had scrolling problems. Checking scroll behavior before finalizing the recommendation.
+
+2026-10-10: the maintainer added that the frame must not clip images or text. Hiding overflow passes only if all content stays fully visible.
+
+2026-10-10 scroll and clipping results (Chromium 145 and WebKit 26 through Playwright; synthetic pages). Iframe-era history shows height problems only (e83c604 late images, 9602cb3 onload timing and a scrollHeight feedback loop); no commit mentions wheel, keyboard, touch or horizontal scrolling. With an auto-height frame: wheel over the frame scrolls the page at its top, middle and end in both engines; no internal overflow after a late image, a font swap, a width change, or a page without a doctype; PageDown and ArrowDown after clicking in the message scroll the page. Failures and fixes: auto-height must attach to the srcdoc document, not the initial about:blank document Chromium exposes, or the frame stays at 8px or 150px; vh-sized content clips until the sanitizer rewrites viewport units; an unfitted 900px table scrolls and clips in a 375px viewport and passes once email-fit.js zoom or an actual-size wrapper is applied through contentDocument; long URLs pass with overflow-wrap:anywhere. Space and Shift+Space after clicking in the message do not scroll the page in either engine: a parent keydown forwarder works only in Chromium, and returning focus to the parent works in both but drops the frame selection in Chromium. overflow:hidden and scrolling=no add nothing once the frame fits, and overflow:hidden clipped 525px of a 900px table, so it fails the no-clipping requirement. Emulated touch scrolling passed in Chromium; iOS swipe, fling and pinch are unverified because Playwright WebKit has no swipe API. Trackpad momentum and Firefox were not tested.
+
+2026-10-10 recommendation: render reader messages in the allow-same-origin, no-scripts frame and keep PDF export on direct embedding with container scoping; filed as TASK-142 with the no-internal-scroll and no-clipping requirements as acceptance criteria. Open risks: Space and Shift+Space after clicking in the message have no cross-engine fix yet, and iOS touch scrolling and the Home Screen web app are unverified. Next action: the maintainer checks swipe, fling, pinch, a wide message and find on an iPhone in Safari and the Home Screen app against a synthetic frame page; then check AC2 and close this task.
 <!-- SECTION:NOTES:END -->
