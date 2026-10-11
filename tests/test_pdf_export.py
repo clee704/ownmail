@@ -434,7 +434,9 @@ def test_actual_renderer_does_not_execute_unsanitized_page_scripts(tmp_path, pdf
             ).stdout.strip()
         )
         wrapper = tmp_path / "slow-close-browser"
-        wrapper.write_text(f'#!/bin/sh\n"{browser}" "$@"\necho $$ > "{tmp_path}/wrapper.pid"\nexec sleep 60\n')
+        # Record the PID first: under load Chromium itself can overrun the
+        # deadline, and the wrapper is killed before reaching its sleep.
+        wrapper.write_text(f'#!/bin/sh\necho $$ > "{tmp_path}/wrapper.pid"\n"{browser}" "$@"\nexec sleep 60\n')
         wrapper.chmod(0o755)
         monkeypatch.setenv("OWNMAIL_BROWSER_EXECUTABLE", str(wrapper))
     # Exercise the browser boundary even if a future sanitizer accidentally keeps

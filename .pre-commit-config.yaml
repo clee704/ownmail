@@ -3,8 +3,9 @@
 #
 # Stages are split by cost. The commit-message check is instant. Lint and
 # hygiene run per-commit (~0.4s) so they don't tax the commit-often policy in
-# AGENTS.md. The test suite runs per-push (~11s) — once per push regardless of
-# how many commits it carries, at the moment master actually becomes exposed.
+# AGENTS.md. The test suite runs per-push (~70s, in parallel across CPU cores;
+# a plain `pytest` stays serial) — once per push regardless of how many commits
+# it carries, at the moment master actually becomes exposed.
 #
 # CI (.github/workflows/ci.yml) runs the same checks and stays the real gate:
 # local runs can't prove a green build on their own, since the supported range
@@ -62,7 +63,7 @@ repos:
 
       - id: pytest
         name: pytest (with coverage gate)
-        entry: pytest --cov=ownmail -q
+        entry: pytest --cov=ownmail -q -n auto --dist loadfile
         language: system
         types: [python]
         pass_filenames: false

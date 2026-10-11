@@ -76,4 +76,4 @@ jobs:
       - name: pytest
         env:
           OWNMAIL_REQUIRE_BROWSER_TESTS: ${{ matrix.python-version == '3.12' && '1' || '0' }}
-        run: pytest --cov=ownmail --cov-report=term-missing
+        run: pytest --cov=ownmail --cov-report=term-missing -n auto --dist loadfile

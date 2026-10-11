@@ -111,12 +111,13 @@ When adding new code, write tests to maintain or improve coverage. The build wil
 |---|---|---|
 | **on commit** | File hygiene (trailing whitespace, final newline, LF endings), `ruff check --fix`, `ruff format`, `deptry` | ~0.5s |
 | **on commit message** | The header follows [Commit Messages](#commit-messages) | instant |
-| **on push** | The above, plus `pytest` with the coverage gate | ~11s |
+| **on push** | The above, plus `pytest` with the coverage gate, in parallel | ~70s |
 
 Tests run at push rather than at commit deliberately: it's once per push no
 matter how many commits it carries, and a push is the point where anything
 actually becomes visible to anyone else. Committing stays cheap enough to do
-constantly.
+constantly. The hook and CI run the suite in parallel with `-n auto --dist
+loadfile` (pytest-xdist); a plain `pytest` run stays serial.
 
 To run the full set by hand, against the whole repo:
 
