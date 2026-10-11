@@ -22,6 +22,13 @@ async function deadline(promise, milliseconds) {
   }
 }
 
+// Closing only releases resources once the PDF is written, so a slow close must
+// not fail the export. Exiting at the end lets Playwright kill a browser still
+// closing; render failures already propagate from the try block.
+async function closeWithin(promise, milliseconds) {
+  await deadline(promise, milliseconds).catch(() => {});
+}
+
 async function main() {
   const { chromium } = requireSanitizer("playwright");
   const executablePath = process.env.OWNMAIL_BROWSER_EXECUTABLE || chromium.executablePath();
@@ -65,15 +72,15 @@ async function main() {
           await page.pdf({path: path.join(directory, name + ".pdf"), format: "A4", printBackground: true, preferCSSPageSize: true});
         })(), 45000);
       } finally {
-        await deadline(context.close(), 5000);
+        await closeWithin(context.close(), 5000);
       }
     }
   } finally {
-    await deadline(browser.close(), 5000);
+    await closeWithin(browser.close(), 5000);
   }
 }
 
 main().catch(error => {
   console.error(error.message);
   process.exitCode = 1;
-});
+}).finally(() => process.exit());

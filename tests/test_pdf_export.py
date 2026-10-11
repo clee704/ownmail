@@ -410,10 +410,33 @@ def test_actual_pdfs_are_readable_and_block_untrusted_resources(archive, store, 
     test_export.assert_no_temporary_exports(output)
 
 
-def test_actual_renderer_does_not_execute_unsanitized_page_scripts(tmp_path, pdf_browser_node):
+@pytest.mark.parametrize(
+    "slow_close",
+    [False, pytest.param(True, marks=pytest.mark.skipif(os.name != "posix", reason="POSIX shell wrapper"))],
+)
+def test_actual_renderer_does_not_execute_unsanitized_page_scripts(tmp_path, pdf_browser_node, monkeypatch, slow_close):
     import shutil
     import subprocess
+    import time
 
+    if slow_close:
+        # The browser outlives its close deadline after writing the PDF, as under
+        # heavy load: the wrapper keeps running after Chromium exits.
+        browser = (
+            os.environ.get("OWNMAIL_BROWSER_EXECUTABLE")
+            or subprocess.run(
+                [pdf_browser_node, "-e", "console.log(require('playwright').chromium.executablePath())"],
+                cwd=pdf_export._RENDERER.with_name("sanitizer"),
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=15,
+            ).stdout.strip()
+        )
+        wrapper = tmp_path / "slow-close-browser"
+        wrapper.write_text(f'#!/bin/sh\n"{browser}" "$@"\necho $$ > "{tmp_path}/wrapper.pid"\nexec sleep 60\n')
+        wrapper.chmod(0o755)
+        monkeypatch.setenv("OWNMAIL_BROWSER_EXECUTABLE", str(wrapper))
     # Exercise the browser boundary even if a future sanitizer accidentally keeps
     # a script. This is trusted synthetic runner input, never raw production mail.
     document = tmp_path / "000001.html"
@@ -429,6 +452,17 @@ def test_actual_renderer_does_not_execute_unsanitized_page_scripts(tmp_path, pdf
             [extractor, str(result), "-"], capture_output=True, text=True, check=True, timeout=15
         ).stdout
         assert "SAFE BODY" in text and "SCRIPT RAN" not in text
+    if slow_close:
+        wrapper_pid = int((tmp_path / "wrapper.pid").read_text())
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                os.kill(wrapper_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("Browser left closing outlived the renderer")
 
 
 def test_missing_browser_fails_without_installation_or_output(archive, store, tmp_path, monkeypatch):
