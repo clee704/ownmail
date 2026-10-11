@@ -1,7 +1,7 @@
 """Active exclusions narrow Gmail requests without narrowing archival candidates."""
 
 from dataclasses import replace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -9,7 +9,10 @@ from ownmail import capture
 from ownmail.archive import EmailArchive
 from ownmail.live import LiveLookupError
 from ownmail.providers.gmail import GmailProvider
+from tests import test_live_gmail_batch
 from tests.test_live_gmail_batch import GmailTransport, provider_for
+
+batch_retry_sleep = test_live_gmail_batch.batch_retry_sleep
 
 
 def test_scoped_first_and_repeat_scans_omit_retained_archive_metadata():
@@ -226,7 +229,7 @@ def test_deleted_history_candidate_advances_cursor_after_explicit_metadata_not_f
 
 
 @pytest.mark.parametrize("failure", [403, 429, 500, "omitted"])
-def test_unconfirmed_history_candidate_retains_cursor(failure, tmp_path):
+def test_unconfirmed_history_candidate_retains_cursor(failure, tmp_path, batch_retry_sleep):
     transport = GmailTransport(0)
     provider = provider_for(transport)
     archive = EmailArchive(tmp_path / "archive")
@@ -243,6 +246,7 @@ def test_unconfirmed_history_candidate_retains_cursor(failure, tmp_path):
 
     assert not result["active_complete"]
     assert archive.active_cache().source_status(provider.source_name, provider.account)["capture_state"] == state
+    assert batch_retry_sleep.call_args_list == ([call(1.0), call(2.0)] if failure == 429 else [])
 
 
 def test_only_sampled_excluded_role_members_can_defer_without_holding_history():
@@ -345,7 +349,7 @@ def test_saved_scope_check_only_excludes_confirmed_label_membership(entry, allow
     assert provider.live_entry_in_scope(entry) is allowed
 
 
-def test_failed_scoped_metadata_keeps_state_for_caller_without_marking_complete():
+def test_failed_scoped_metadata_keeps_state_for_caller_without_marking_complete(batch_retry_sleep):
     transport = GmailTransport(2)
     transport.messages["m0"]["labelIds"] = ["INBOX"]
     transport.messages["m1"]["labelIds"] = ["DRAFT"]
@@ -356,6 +360,7 @@ def test_failed_scoped_metadata_keeps_state_for_caller_without_marking_complete(
     assert not snapshot.complete
     assert snapshot.sync_state == "next"
     assert [message.message_id for message in snapshot.messages] == ["m1"]
+    assert batch_retry_sleep.call_args_list == [call(1.0), call(2.0)]
 
 
 def test_incremental_scope_interrupt_propagates():

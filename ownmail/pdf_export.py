@@ -19,6 +19,8 @@ from ownmail.web import INLINE_SAFE_TYPES, _extract_body_content, _hide_blocked_
 
 _RENDERER = Path(__file__).with_name("pdf_renderer.js")
 _RENDER_SECONDS = 60
+# Seconds a renderer group gets to exit after each SIGTERM before escalation.
+_TERM_GRACE_SECONDS = (5, 1)
 
 
 def _run_renderer(node: str, *args: str, timeout: float) -> None:
@@ -48,11 +50,11 @@ def _run_renderer(node: str, *args: str, timeout: float) -> None:
                 # kill remaining members of our group, even if the leader exited.
                 signal_group(signal.SIGTERM)
                 try:
-                    process.wait(timeout=5)
+                    process.wait(timeout=_TERM_GRACE_SECONDS[0])
                 except subprocess.TimeoutExpired:
                     signal_group(signal.SIGTERM)
                     try:
-                        process.wait(timeout=1)
+                        process.wait(timeout=_TERM_GRACE_SECONDS[1])
                     except subprocess.TimeoutExpired:
                         pass
                 finally:

@@ -520,6 +520,7 @@ def test_stubborn_renderer_descendant_is_stopped_with_bounded_cleanup(
     caller.write_text(
         "import sys\nfrom pathlib import Path\nfrom ownmail import pdf_export\n"
         "pdf_export._RENDERER=Path(__file__).with_name('renderer.py')\n"
+        "pdf_export._TERM_GRACE_SECONDS=(0.3, 0.1)\n"
         f"try:\n    pdf_export._run_renderer(sys.executable, timeout={20 if interrupt else 1})\n"
         "except KeyboardInterrupt:\n    sys.exit(42)\n"
         "except OSError as error:\n    print(error)\n"
@@ -533,7 +534,7 @@ def test_stubborn_renderer_descendant_is_stopped_with_bounded_cleanup(
                 time.sleep(0.02)
             assert (tmp_path / "descendant.pid").exists()
             process.send_signal(signal.SIGINT)
-        stdout, stderr = process.communicate(timeout=12 if stubborn_leader else 9)
+        stdout, stderr = process.communicate(timeout=6)
         assert process.returncode == (42 if interrupt else 0), (stdout, stderr)
         if not interrupt:
             assert b"timed out" in stdout

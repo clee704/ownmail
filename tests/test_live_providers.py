@@ -3,7 +3,7 @@
 import base64
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 from googleapiclient.errors import HttpError
@@ -163,7 +163,9 @@ def test_gmail_missing_lookup_identity_is_not_absence(identity):
 
 
 @pytest.mark.parametrize("status", [401, 403, 404, 429, 500])
-def test_gmail_only_not_found_confirms_absence(status):
+def test_gmail_only_not_found_confirms_absence(status, monkeypatch):
+    sleep = MagicMock()
+    monkeypatch.setattr("time.sleep", sleep)
     provider = gmail()
     provider._service.users().messages().get().execute.side_effect = HttpError(
         SimpleNamespace(status=status, reason="unavailable"), b"{}"
@@ -174,6 +176,7 @@ def test_gmail_only_not_found_confirms_absence(status):
         with pytest.raises(LiveLookupError):
             provider.read_live_message("a")
     assert not provider.list_live_messages().complete
+    assert sleep.call_args_list == ([call(1.0), call(2.0)] if status == 429 else [])
 
 
 def test_gmail_other_failures_hide_exception_details_and_interrupts_propagate():

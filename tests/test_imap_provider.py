@@ -8,6 +8,12 @@ import pytest
 from ownmail import capture
 
 
+@pytest.fixture(autouse=True)
+def no_folder_pacing(monkeypatch):
+    # Folder-scan pacing protects real servers; these tests use fake connections.
+    monkeypatch.setattr("ownmail.providers.imap.FOLDER_BATCH_DELAY", 0)
+
+
 def _watermarks(state_json):
     """The per-folder watermark map inside a stored capture state."""
     return json.loads(capture.load(state_json).cursor)

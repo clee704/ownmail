@@ -606,7 +606,12 @@ class TestDownloadMessagesBatch:
             )
             provider.authenticate()
 
-            results = provider.download_messages_batch(["msg1", "msg2"])
+            with patch("time.sleep") as sleep:
+                results = provider.download_messages_batch(["msg1", "msg2"])
+
+            from ownmail.providers.gmail import BATCH_DELAY
+
+            sleep.assert_called_once_with(BATCH_DELAY)
 
             assert "msg1" in results
             raw_data, labels, error = results["msg1"]
@@ -678,7 +683,8 @@ class TestDownloadMessagesBatch:
             )
             provider.authenticate()
 
-            results = provider.download_messages_batch(["msg1"])
+            with patch("time.sleep"):
+                results = provider.download_messages_batch(["msg1"])
 
             assert "msg1" in results
             raw_data, labels, error = results["msg1"]
