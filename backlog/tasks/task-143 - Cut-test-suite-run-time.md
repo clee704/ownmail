@@ -4,7 +4,7 @@ title: Cut test suite run time
 status: In Progress
 assignee: []
 created_date: '2026-10-11 22:23'
-updated_date: '2026-10-11 22:57'
+updated_date: '2026-10-11 22:58'
 labels:
   - testing
 dependencies: []
@@ -48,4 +48,6 @@ AC #3 (parallel run), partial, blocked on two parallel-only failures:
 - Full runs, -n auto (10 workers), coverage on: --dist load 86s, loadfile 70s, loadscope 72s (61s without coverage); serial was about 290s. Coverage 96.69% in each run, same as serial, and the fail_under 95 line is printed ("Required test coverage of 95.0% reached"), so the gate still applies. Passing runs report 5024 passed, matching serial.
 - Flaky only in parallel: 4 of 7 parallel runs failed. (1) test_pdf_export.py::test_actual_pdfs_are_readable_and_block_untrusted_resources and ::test_actual_renderer_does_not_execute_unsanitized_page_scripts fail with "PDF rendering timed out". Instrumenting the deadline showed the 5000 ms browser.close() deadline in pdf_renderer.js expires under load (serial: 3.6s and 1.6s per test). Fixing it means changing a product deadline or how the renderer treats a slow close after the PDFs are written, so it needs a decision. (2) test_download_shutdown.py::test_sigterm_reaps_real_detached_download once hung past its 15s communicate timeout (0.38s serial). Suspected: SIGTERM arriving while the server is still inside start_download/start_scheduler; cause not confirmed.
 - Hook and CI still run serially; -n auto is not wired in, and the docs still quote ~11s, until the failures above are resolved.
+
+2026-10-11: parallel runs are blocked on TASK-145 (PDF close deadline under load) and TASK-146 (SIGTERM hang during a detached download). AC #3 and #4 wait for both.
 <!-- SECTION:NOTES:END -->
