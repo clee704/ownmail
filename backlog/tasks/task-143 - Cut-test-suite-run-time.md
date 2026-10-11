@@ -4,7 +4,7 @@ title: Cut test suite run time
 status: In Progress
 assignee: []
 created_date: '2026-10-11 22:23'
-updated_date: '2026-10-11 22:46'
+updated_date: '2026-10-11 22:57'
 labels:
   - testing
 dependencies: []
@@ -42,4 +42,10 @@ AC #2 (shared browser):
 - tests/conftest.py starts one Playwright browser server per pytest process (session fixture browser_server: launchServer on 127.0.0.1 port 0, endpoint exported as OWNMAIL_BROWSER_WS_ENDPOINT, so xdist workers each get their own). Test scripts call connect() instead of launch(); every test still makes its own newContext/newPage and browser.close() discards it. The function fixture browser_node replaces the contrast_browser probe and its download_browser/label_browser aliases, and fails with the server log if the browser died. Server exits when the browser closes or when pytest closes its stdin. OWNMAIL_BROWSER_ENGINE, OWNMAIL_BROWSER_EXECUTABLE, PLAYWRIGHT_NODE_MODULE and the OWNMAIL_REQUIRE_BROWSER_TESTS skip/fail behavior are unchanged.
 - 15 browser test files, 334 tests, serial, no coverage: 154.2s to 137.7s wall, 124s to 99s CPU. Launch is cheaper than estimated here (launch script 0.31s vs connect 0.25s); Node startup plus require('playwright') (about 0.17s) is now the main fixed cost per test. A persistent Node runner would remove it but runs every test script in one process.
 - Break checks, each failing then restored: list density fallback (4 failed), CSRF header (2), download counts text (5), contrast ratio (9), duplicate label check (1). Repeated three files in one process with --keep-duplicates: 56 passed. Killing the server or its browser fails the next test at setup with the log. WebKit: 4 test_label_editor failures existed before this change and are unchanged.
+
+AC #3 (parallel run), partial, blocked on two parallel-only failures:
+- pytest-xdist added to the dev extra (deptry DEP002 ignore like the other dev tools). test_restart_failure_is_survivable passed an OSError instance as a subTest kwarg, which xdist cannot serialize; it now labels the subtest with repr(failure).
+- Full runs, -n auto (10 workers), coverage on: --dist load 86s, loadfile 70s, loadscope 72s (61s without coverage); serial was about 290s. Coverage 96.69% in each run, same as serial, and the fail_under 95 line is printed ("Required test coverage of 95.0% reached"), so the gate still applies. Passing runs report 5024 passed, matching serial.
+- Flaky only in parallel: 4 of 7 parallel runs failed. (1) test_pdf_export.py::test_actual_pdfs_are_readable_and_block_untrusted_resources and ::test_actual_renderer_does_not_execute_unsanitized_page_scripts fail with "PDF rendering timed out". Instrumenting the deadline showed the 5000 ms browser.close() deadline in pdf_renderer.js expires under load (serial: 3.6s and 1.6s per test). Fixing it means changing a product deadline or how the renderer treats a slow close after the PDFs are written, so it needs a decision. (2) test_download_shutdown.py::test_sigterm_reaps_real_detached_download once hung past its 15s communicate timeout (0.38s serial). Suspected: SIGTERM arriving while the server is still inside start_download/start_scheduler; cause not confirmed.
+- Hook and CI still run serially; -n auto is not wired in, and the docs still quote ~11s, until the failures above are resolved.
 <!-- SECTION:NOTES:END -->

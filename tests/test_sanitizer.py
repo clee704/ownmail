@@ -2138,7 +2138,7 @@ class TestSanitizeErrorHandling(unittest.TestCase):
             san._error = "The sanitizer dependencies (dompurify) are missing or outside the package.json ranges."
 
         for failure in (OSError("no fork"), fail_start):
-            with self.subTest(failure=failure):
+            with self.subTest(failure=repr(failure)):
                 san = HtmlSanitizer()
                 self._ready(san, [""])
                 with patch.object(san, "start", side_effect=failure):
