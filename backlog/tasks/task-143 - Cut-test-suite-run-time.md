@@ -1,10 +1,10 @@
 ---
 id: TASK-143
 title: Cut test suite run time
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-11 22:23'
-updated_date: '2026-10-11 23:46'
+updated_date: '2026-10-11 23:54'
 labels:
   - testing
 dependencies: []
@@ -25,7 +25,7 @@ The pre-push gate takes about five minutes. A profile showed about 370 tests (7%
 - [x] #2 Browser tests reuse one browser per test process, each test still gets a fresh browser context, and the tests still fail when the behavior they cover is broken
 - [x] #3 The pre-push hook and CI run the suite in parallel with pytest-xdist, the coverage gate still applies, and repeated full runs show no new flaky failures
 - [x] #4 CONTRIBUTING.md and .pre-commit-config.yaml state the measured run time
-- [ ] #5 The full pre-push gate passes with browser tests required
+- [x] #5 The full pre-push gate passes with browser tests required
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -56,4 +56,6 @@ AC #3 and #4 (2026-10-11, after TASK-145 and TASK-146):
 - First 5 parallel runs: 3 failed test_actual_renderer_does_not_execute_unsanitized_page_scripts[True] (the TASK-145 slow-close test) with a missing wrapper.pid. The wrapper wrote its PID only after Chromium exited; under load Chromium itself overran the 5s close deadline and the wrapper was killed first. The wrapper now records its PID before launching Chromium (same process, exec keeps the PID); assertions unchanged. Break check: restoring the failing close deadline still fails the test. Observation: removing the renderer's final process.exit() does not fail it (passes in about 33s instead of 9s).
 - After the fix, 5 full parallel runs with coverage and browser tests required (10 workers): all 5025 passed, 0 skipped (5025 collected), 61-68s each, coverage 96.69% and 'Required test coverage of 95.0% reached' printed each time.
 - pre-commit run -a --hook-stage pre-push: passed in 69s. CONTRIBUTING.md and .pre-commit-config.yaml now say ~70s and that the gate runs in parallel.
+
+2026-10-11: final pre-push gate passed in parallel with browser tests required, 69s wall time (was about 315s).
 <!-- SECTION:NOTES:END -->
