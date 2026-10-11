@@ -10,7 +10,6 @@ from lxml import html
 from tests import test_email_contrast, test_ui_shell
 
 shell_app = test_ui_shell.shell_app
-label_browser = test_email_contrast.contrast_browser
 
 
 def render_reader(app, **context):
@@ -47,9 +46,7 @@ const fs = require('node:fs');
 const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 (async () => {
-    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launch({
-        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
-    });
+    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         // Route the whole context so message form popups stay offline too.
         const context = await browser.newContext({viewport: input.viewport});
@@ -141,11 +138,11 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert result.returncode == 0, result.stderr
 
 
-def test_open_and_edit_preserves_raw_label_text_and_focus(shell_app, label_browser):
+def test_open_and_edit_preserves_raw_label_text_and_focus(shell_app, browser_node):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         r"""
         assert.equal(await editor.isVisible(), false);
         await open();
@@ -175,11 +172,11 @@ def test_open_and_edit_preserves_raw_label_text_and_focus(shell_app, label_brows
     )
 
 
-def test_validation_keeps_pending_text_and_can_save_an_empty_label_list(shell_app, label_browser):
+def test_validation_keeps_pending_text_and_can_save_an_empty_label_list(shell_app, browser_node):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         await open();
         await waitLoaded();
@@ -217,11 +214,11 @@ def test_validation_keeps_pending_text_and_can_save_an_empty_label_list(shell_ap
     )
 
 
-def test_pending_save_disables_controls_and_prevents_duplicate_submission(shell_app, label_browser):
+def test_pending_save_disables_controls_and_prevents_duplicate_submission(shell_app, browser_node):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         await open();
         await waitLoaded();
@@ -250,11 +247,11 @@ def test_pending_save_disables_controls_and_prevents_duplicate_submission(shell_
 
 
 @pytest.mark.parametrize("failure", ["postStatus = 503", "postOffline = true", "postInvalidJSON = true"])
-def test_failed_save_keeps_draft_labels_and_allows_retry(shell_app, label_browser, failure):
+def test_failed_save_keeps_draft_labels_and_allows_retry(shell_app, browser_node, failure):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         await open();
         await waitLoaded();
@@ -280,11 +277,11 @@ def test_failed_save_keeps_draft_labels_and_allows_retry(shell_app, label_browse
     )
 
 
-def test_partial_save_keeps_search_warning_visible_until_retry(shell_app, label_browser):
+def test_partial_save_keeps_search_warning_visible_until_retry(shell_app, browser_node):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         await open();
         await waitLoaded();
@@ -312,11 +309,11 @@ def test_partial_save_keeps_search_warning_visible_until_retry(shell_app, label_
 
 
 @pytest.mark.parametrize("failure", ["getStatus = 503", "getOffline = true", "getPayload = {labels: [1]}"])
-def test_load_failure_keeps_save_disabled_and_reopening_retries(shell_app, label_browser, failure):
+def test_load_failure_keeps_save_disabled_and_reopening_retries(shell_app, browser_node, failure):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         __FAILURE__;
         await open();
@@ -338,11 +335,11 @@ def test_load_failure_keeps_save_disabled_and_reopening_retries(shell_app, label
     )
 
 
-def test_closing_during_loading_ignores_the_late_response_after_reopening(shell_app, label_browser):
+def test_closing_during_loading_ignores_the_late_response_after_reopening(shell_app, browser_node):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         let release;
         getGate = new Promise(resolve => release = resolve);
@@ -368,11 +365,11 @@ def test_closing_during_loading_ignores_the_late_response_after_reopening(shell_
     )
 
 
-def test_narrow_editor_wraps_long_names_without_horizontal_overflow(shell_app, label_browser):
+def test_narrow_editor_wraps_long_names_without_horizontal_overflow(shell_app, browser_node):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         await open();
         await waitLoaded();
@@ -412,12 +409,12 @@ NO_REQUESTS = "assert.deepEqual(requests.filter(request => request !== 'GET /ema
 
 
 @pytest.mark.parametrize("injected", [False, True], ids=["page", "injected-editor-script"])
-def test_cached_message_markup_cannot_send_label_requests(shell_app, label_browser, injected):
+def test_cached_message_markup_cannot_send_label_requests(shell_app, browser_node, injected):
     app, _ = shell_app
     page = render_reader(app, cached_view=True, active={"active": True, "complete": True}, body_html=FORGED_EDITOR)
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         ("await page.addScriptTag({content: input.editorScript});" if injected else "")
         + CLICK_FORGED_SAVE
         + NO_REQUESTS
@@ -426,23 +423,23 @@ def test_cached_message_markup_cannot_send_label_requests(shell_app, label_brows
     )
 
 
-def test_editor_ignores_message_markup_when_its_own_section_is_missing(shell_app, label_browser):
+def test_editor_ignores_message_markup_when_its_own_section_is_missing(shell_app, browser_node):
     app, _ = shell_app
     tree = html.fromstring(render_reader(app, body_html=FORGED_EDITOR))
     tree.get_element_by_id("ownmail-label-editor").drop_tree()
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         CLICK_FORGED_SAVE + NO_REQUESTS,
         page=html.tostring(tree, doctype="<!DOCTYPE html>", encoding="unicode"),
     )
 
 
-def test_archive_editor_saves_its_own_labels_beside_message_markup(shell_app, label_browser):
+def test_archive_editor_saves_its_own_labels_beside_message_markup(shell_app, browser_node):
     app, _ = shell_app
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         await open();
         await waitLoaded();
@@ -462,12 +459,12 @@ def test_archive_editor_saves_its_own_labels_beside_message_markup(shell_app, la
     )
 
 
-def test_message_pagination_markup_cannot_raise_the_loading_overlay(shell_app, label_browser):
+def test_message_pagination_markup_cannot_raise_the_loading_overlay(shell_app, browser_node):
     app, _ = shell_app
     forged = '<div class="ownmail-pagination"><a href="https://x.invalid/next" target="_blank">Next page</a></div>'
     run_label_browser(
         app,
-        label_browser,
+        browser_node,
         """
         await page.locator('#ownmail-email-content .ownmail-pagination a').click();
         await page.waitForTimeout(300);

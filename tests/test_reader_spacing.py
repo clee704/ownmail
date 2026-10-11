@@ -8,11 +8,10 @@ from ownmail.sanitizer import HtmlSanitizer
 from tests import test_email_contrast
 
 shell_app = test_email_contrast.shell_app
-contrast_browser = test_email_contrast.contrast_browser
 
 
 @pytest.fixture(scope="module")
-def spacing_sanitizer(contrast_browser):
+def spacing_sanitizer(browser_server):
     sanitizer = HtmlSanitizer()
     sanitizer.start()
     try:
@@ -142,7 +141,7 @@ def spacing_sanitizer(contrast_browser):
     ],
 )
 def test_message_spacing_preserves_sender_layout_and_reader_insets(
-    shell_app, contrast_browser, spacing_sanitizer, body, needs_padding, copy_inset
+    shell_app, browser_node, spacing_sanitizer, body, needs_padding, copy_inset
 ):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=True)
@@ -171,7 +170,7 @@ def test_message_spacing_preserves_sender_layout_and_reader_insets(
     assert (b"ownmail-email-content-padded" in response.data) is needs_padding
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """

@@ -12,8 +12,6 @@ from ownmail.web import _decode_html_body, _decode_text_body
 from tests import test_email_contrast
 from tests.conftest import create_test_app, mock_archive_db
 
-contrast_browser = test_email_contrast.contrast_browser
-
 RECOVERY_CASES = [
     pytest.param("Café �", "utf-8", "utf-8", "", id="literal-replacement-character"),
     pytest.param("Привет �", "utf-8", "utf-8", "", id="cyrillic-literal-replacement-character"),
@@ -101,7 +99,7 @@ def test_latin1_html_meta_uses_the_same_recovery_rule(encoding):
 
 
 @pytest.mark.parametrize("text,encoding,declared,prefix", RECOVERY_CASES)
-def test_recovered_html_renders_in_browser(tmp_path, contrast_browser, text, encoding, declared, prefix):
+def test_recovered_html_renders_in_browser(tmp_path, browser_node, text, encoding, declared, prefix):
     raw, _ = body_message(text, encoding, declared, "text/html", prefix)
     (tmp_path / "synthetic.eml").write_bytes(raw)
     archive = MagicMock()
@@ -122,7 +120,7 @@ def test_recovered_html_renders_in_browser(tmp_path, contrast_browser, text, enc
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         f"assert.equal(await page.locator('#ownmail-email-content').innerText(), {json.dumps(text)});",

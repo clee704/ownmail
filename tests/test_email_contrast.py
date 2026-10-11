@@ -1,8 +1,6 @@
 """Synthetic message rendering checks in an actual browser engine."""
 
 import json
-import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -14,37 +12,6 @@ from tests import test_ui_shell
 
 shell_app = test_ui_shell.shell_app
 SANITIZER_DIR = Path(__file__).parents[1] / "ownmail" / "sanitizer"
-
-
-@pytest.fixture(scope="module")
-def contrast_browser():
-    node = shutil.which("node")
-    required = os.environ.get("OWNMAIL_REQUIRE_BROWSER_TESTS") == "1"
-    if not node:
-        if required:
-            pytest.fail("Node.js is required for message contrast browser tests")
-        pytest.skip("Node.js is unavailable")
-    probe = subprocess.run(
-        [
-            node,
-            "-e",
-            """
-const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
-const engine = playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'];
-engine.launch({headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE})
-    .then(browser => browser.close()).catch(error => {console.error(error); process.exitCode = 1;});
-""",
-        ],
-        cwd=SANITIZER_DIR,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if probe.returncode:
-        if required:
-            pytest.fail(probe.stderr)
-        pytest.skip("Playwright or its browser is unavailable; install it to run message contrast tests")
-    return node
 
 
 def run_contrast_browser(
@@ -103,9 +70,7 @@ const fs = require('node:fs');
 const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 (async () => {
-    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launch({
-        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
-    });
+    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         const page = await browser.newPage({viewport: input.viewport, colorScheme: input.systemTheme,
             isMobile: input.isMobile, hasTouch: input.isMobile});
@@ -175,11 +140,11 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 
 
 @pytest.mark.parametrize(("theme", "system_theme"), [("dark", "light"), ("dark", "dark"), ("auto", "dark")])
-def test_repair_missing_and_faint_text_preserves_native_dark_panels(shell_app, contrast_browser, theme, system_theme):
+def test_repair_missing_and_faint_text_preserves_native_dark_panels(shell_app, browser_node, theme, system_theme):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <table role="presentation" style="width:100%;background:white"><tr><td style="background:white;padding:12px">
             <h2 id="missing">Synthetic heading</h2>
@@ -213,11 +178,11 @@ def test_repair_missing_and_faint_text_preserves_native_dark_panels(shell_app, c
     )
 
 
-def test_repair_preserves_descendant_colors_and_currentcolor_decoration(shell_app, contrast_browser):
+def test_repair_preserves_descendant_colors_and_currentcolor_decoration(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <div id="parent">Missing text <span id="inherited">and inherited text</span>
             <a id="button" href="https://example.com">Keep button</a>
@@ -243,11 +208,11 @@ def test_repair_preserves_descendant_colors_and_currentcolor_decoration(shell_ap
     )
 
 
-def test_nested_transparent_layout_table_uses_outer_opaque_cell(shell_app, contrast_browser):
+def test_nested_transparent_layout_table_uses_outer_opaque_cell(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <table role="presentation" style="width:100%"><tr><td style="background:white;padding:12px">
             <table role="presentation"><tr><td><p id="text">Text inside nested tables</p></td></tr></table>
@@ -261,11 +226,11 @@ def test_nested_transparent_layout_table_uses_outer_opaque_cell(shell_app, contr
     )
 
 
-def test_existing_low_contrast_and_changed_backgrounds_are_not_recolored(shell_app, contrast_browser):
+def test_existing_low_contrast_and_changed_backgrounds_are_not_recolored(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <p id="preexisting">Already white text</p><p id="moderate">Moderate contrast change</p>
         <p id="background-changed">Different background</p><p id="unchanged">Unchanged foreground</p>
@@ -306,11 +271,11 @@ def test_existing_low_contrast_and_changed_backgrounds_are_not_recolored(shell_a
         ('aria-disabled="true"', ""),
     ],
 )
-def test_ambiguous_or_noncontent_text_is_not_recolored(shell_app, contrast_browser, attributes, extra_css):
+def test_ambiguous_or_noncontent_text_is_not_recolored(shell_app, browser_node, attributes, extra_css):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         f'<div style="background:white;padding:12px"><div id="excluded" {attributes}>Synthetic text</div></div>',
         f"""
         #ownmail-email-content #excluded {{padding:12px;background:white;color:#111111;{extra_css}}}
@@ -320,11 +285,11 @@ def test_ambiguous_or_noncontent_text_is_not_recolored(shell_app, contrast_brows
     )
 
 
-def test_table_column_background_is_not_mistaken_for_table_background(shell_app, contrast_browser):
+def test_table_column_background_is_not_mistaken_for_table_background(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <table style="width:100%;background:white"><colgroup><col style="background:#222"></colgroup>
             <tr><td id="column">Text on a column background</td></tr></table>
@@ -337,11 +302,11 @@ def test_table_column_background_is_not_mistaken_for_table_background(shell_app,
     )
 
 
-def test_overlapping_sibling_background_is_not_treated_as_white_ancestor(shell_app, contrast_browser):
+def test_overlapping_sibling_background_is_not_treated_as_white_ancestor(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <div style="background:white">
             <div style="position:relative;height:50px;margin-bottom:-50px;background:#222222"></div>
@@ -356,11 +321,11 @@ def test_overlapping_sibling_background_is_not_treated_as_white_ancestor(shell_a
     )
 
 
-def test_theme_swapped_and_moved_text_is_not_recolored(shell_app, contrast_browser):
+def test_theme_swapped_and_moved_text_is_not_recolored(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<p id="swapped">Dark-only text</p><p id="moved">Moved text</p><p id="pseudo">Decorated text</p>',
         """
         #ownmail-email-content p {padding:12px;background:white;color:#111111}
@@ -380,11 +345,11 @@ def test_theme_swapped_and_moved_text_is_not_recolored(shell_app, contrast_brows
     )
 
 
-def test_theme_toggles_restore_pristine_inline_declarations(shell_app, contrast_browser):
+def test_theme_toggles_restore_pristine_inline_declarations(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<p id="text" style="color:rgb(17, 17, 17);padding:12px;background:white">Synthetic text</p>',
         """
         @media (prefers-color-scheme:dark) {#ownmail-email-content #text {color:white !important}}
@@ -404,11 +369,11 @@ def test_theme_toggles_restore_pristine_inline_declarations(shell_app, contrast_
 
 
 @pytest.mark.parametrize("system_theme", ["light", "dark"])
-def test_light_app_keeps_base_sender_colors(shell_app, contrast_browser, system_theme):
+def test_light_app_keeps_base_sender_colors(shell_app, browser_node, system_theme):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<p id="text">Synthetic text</p><p id="dark-design">An intentionally dark panel</p>',
         """
         #ownmail-email-content #text {padding:12px;background:white;color:#111111}
@@ -425,11 +390,11 @@ def test_light_app_keeps_base_sender_colors(shell_app, contrast_browser, system_
     )
 
 
-def test_resizing_reassesses_repairs_without_refetching_resources(shell_app, contrast_browser):
+def test_resizing_reassesses_repairs_without_refetching_resources(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <img src="https://fixture.test/logo.svg" width="40" height="20" alt="Synthetic logo">
         <p id="text">Responsive message text</p>
@@ -455,11 +420,11 @@ def test_resizing_reassesses_repairs_without_refetching_resources(shell_app, con
     )
 
 
-def test_image_load_reassesses_changed_background(shell_app, contrast_browser):
+def test_image_load_reassesses_changed_background(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<img id="image" width="40" height="20" alt="Synthetic logo"><p id="text">Synthetic text</p>',
         """
         #ownmail-email-content #text {padding:12px;background:white;color:#111111}
@@ -479,11 +444,11 @@ def test_image_load_reassesses_changed_background(shell_app, contrast_browser):
     )
 
 
-def test_sender_span_selectors_cannot_change_layout_during_repair(shell_app, contrast_browser):
+def test_sender_span_selectors_cannot_change_layout_during_repair(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<p id="text">Synthetic text <a id="link" href="https://example.com">Read details</a></p>',
         """
         #ownmail-email-content #text {padding:12px;background:white;color:#111111}
@@ -499,11 +464,11 @@ def test_sender_span_selectors_cannot_change_layout_during_repair(shell_app, con
     )
 
 
-def test_sender_span_selectors_cannot_hide_images_during_repair(shell_app, contrast_browser):
+def test_sender_span_selectors_cannot_hide_images_during_repair(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <p id="text">Synthetic text</p>
         <img id="image" src="https://fixture.test/logo.svg" width="40" height="20" alt="Synthetic logo">
@@ -520,11 +485,11 @@ def test_sender_span_selectors_cannot_hide_images_during_repair(shell_app, contr
     )
 
 
-def test_resource_and_resize_event_bursts_eventually_stop_mutating_content(shell_app, contrast_browser):
+def test_resource_and_resize_event_bursts_eventually_stop_mutating_content(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<p id="text">Synthetic text</p>',
         """
         #ownmail-email-content #text {padding:12px;background:white;color:#111111}
@@ -548,11 +513,11 @@ def test_resource_and_resize_event_bursts_eventually_stop_mutating_content(shell
     )
 
 
-def test_oversized_messages_keep_native_colors_without_partial_repairs(shell_app, contrast_browser):
+def test_oversized_messages_keep_native_colors_without_partial_repairs(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<div id="large">' + "<p>Synthetic text</p>" * 5100 + "</div>",
         """
         #ownmail-email-content #large {background:white}
@@ -568,11 +533,11 @@ def test_oversized_messages_keep_native_colors_without_partial_repairs(shell_app
     )
 
 
-def test_baseline_probe_does_not_fetch_assets_unused_by_native_dark_styles(shell_app, contrast_browser):
+def test_baseline_probe_does_not_fetch_assets_unused_by_native_dark_styles(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<div id="decoration"></div><p id="text">Synthetic text</p>',
         """
         #ownmail-email-content #decoration {width:40px;height:20px;

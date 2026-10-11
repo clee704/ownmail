@@ -22,7 +22,6 @@ from ownmail.web_hosts import resolve_allowed_hosts
 from tests import test_email_contrast, test_reader_spacing
 from tests.conftest import create_test_app, mock_archive_db
 
-contrast_browser = test_email_contrast.contrast_browser
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 
@@ -316,9 +315,7 @@ const fs = require('node:fs');
 const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 (async () => {
-    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launch({
-        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
-    });
+    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         const page = await browser.newPage({viewport: {width: 900, height: 1400}});
         const errors = [];
@@ -385,7 +382,7 @@ def browser_message_app(tmp_path, spacing_sanitizer):
 
 
 @pytest.mark.parametrize("wrapper", ["p", "body", "html", "head"])
-def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_message_app, contrast_browser, wrapper):
+def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_message_app, browser_node, wrapper):
     # A <link> the sender wrote inside an attribute value carries event handlers.
     # Ensure extraction keeps the attribute inert independently of CSP.
     handler = "window.__ownmail_pwned=true"
@@ -396,7 +393,7 @@ def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_me
     markup = markup.replace(start, start[:-1] + f' title="{prefix}{link}">')
     run_image_browser(
         browser_message_app(markup),
-        contrast_browser,
+        browser_node,
         "/email/synthetic",
         """
         const assertInert = async () => {
@@ -463,7 +460,7 @@ def run_image_browser(app, node, path, assertions):
 
 
 @pytest.mark.parametrize("source", [False, True])
-def test_attribute_markup_cannot_hide_real_image_sources(message_app, spacing_sanitizer, contrast_browser, source):
+def test_attribute_markup_cannot_hide_real_image_sources(message_app, spacing_sanitizer, browser_node, source):
     markup = '<p id="host" title="<img src=a.png>">Control</p>'
     if source:
         markup += '<picture><source id="source" title="<source srcset=" srcset="https://fixture.test/picture.svg">'
@@ -473,7 +470,7 @@ def test_attribute_markup_cannot_hide_real_image_sources(message_app, spacing_sa
     app = message_app(markup, block_images=True, sanitizer=spacing_sanitizer)
     run_image_browser(
         app,
-        contrast_browser,
+        browser_node,
         "/email/message",
         """
         assertRequested([]);
@@ -491,10 +488,10 @@ def test_attribute_markup_cannot_hide_real_image_sources(message_app, spacing_sa
     )
 
 
-def test_blocked_images_stay_unrequested_until_loaded(image_app, contrast_browser):
+def test_blocked_images_stay_unrequested_until_loaded(image_app, browser_node):
     run_image_browser(
         image_app,
-        contrast_browser,
+        browser_node,
         "/email/synthetic?return_to=%2Fsearch%3Fq%3Dsale",
         """
         const loaded = __LOADED__;
@@ -522,10 +519,10 @@ def test_blocked_images_stay_unrequested_until_loaded(image_app, contrast_browse
     )
 
 
-def test_trusting_sender_reloads_the_message_with_images(image_app, contrast_browser):
+def test_trusting_sender_reloads_the_message_with_images(image_app, browser_node):
     run_image_browser(
         image_app,
-        contrast_browser,
+        browser_node,
         "/email/synthetic?return_to=%2Fsearch%3Fq%3Dsale",
         """
         assertRequested([]);
@@ -552,7 +549,7 @@ def test_reader_app_markup_uses_only_external_scripts(message_app, query):
 
 
 @pytest.mark.parametrize("query", ["", "?images=load"])
-def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, contrast_browser, query):
+def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, browser_node, query):
     # Deliberately retain a benign handler to test the response policy independently
     # of sanitizer correctness. The browser must receive the actual Flask headers.
     handler = "window.__retainedHandlerRan = true"
@@ -566,7 +563,7 @@ def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, con
     app = message_app(markup, block_images=True, sanitizer=sanitizer)
     run_image_browser(
         app,
-        contrast_browser,
+        browser_node,
         "/email/message" + query,
         """
         const policy = response.headers()['content-security-policy'];

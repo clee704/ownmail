@@ -16,7 +16,6 @@ from ownmail.yaml_util import load_yaml
 from tests import test_email_contrast, test_reader_spacing
 from tests.conftest import mock_archive_db
 
-contrast_browser = test_email_contrast.contrast_browser
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 # A sender's form aimed at a mutation route. The sanitizer unwraps forms, so
@@ -35,9 +34,7 @@ const fs = require('node:fs');
 const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 (async () => {
-    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launch({
-        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
-    });
+    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         const context = await browser.newContext();
         await context.route('**/*', route =>
@@ -164,9 +161,9 @@ def run_browser(node, archive, config, sanitizer, assertions):
     assert result.returncode == 0, result.stderr
 
 
-def test_reader_actions_work_and_recover_after_restart(contrast_browser, spacing_sanitizer, archive, config):
+def test_reader_actions_work_and_recover_after_restart(browser_node, spacing_sanitizer, archive, config):
     run_browser(
-        contrast_browser,
+        browser_node,
         archive,
         config,
         spacing_sanitizer,
@@ -218,7 +215,7 @@ def test_reader_actions_work_and_recover_after_restart(contrast_browser, spacing
     assert load_yaml(config)["web"]["trusted_senders"] == []
 
 
-def test_noreferrer_message_form_cannot_post_a_mutation(contrast_browser, archive, config):
+def test_noreferrer_message_form_cannot_post_a_mutation(browser_node, archive, config):
     """A message form with rel=noreferrer posts with Origin: null and is rejected before the route runs."""
     sanitizer = MagicMock()
     sanitizer.sanitize.side_effect = lambda body: (
@@ -227,7 +224,7 @@ def test_noreferrer_message_form_cannot_post_a_mutation(contrast_browser, archiv
         False,
     )
     run_browser(
-        contrast_browser,
+        browser_node,
         archive,
         config,
         sanitizer,
@@ -247,12 +244,12 @@ def test_noreferrer_message_form_cannot_post_a_mutation(contrast_browser, archiv
     archive.empty_trash.assert_not_called()
 
 
-def test_same_origin_message_form_is_stopped_by_the_token(contrast_browser, archive, config):
+def test_same_origin_message_form_is_stopped_by_the_token(browser_node, archive, config):
     """Without noreferrer the browser sends the reader's own Origin, and only the token stops the form."""
     sanitizer = MagicMock()
     sanitizer.sanitize.side_effect = lambda body: (body, True, False)
     run_browser(
-        contrast_browser,
+        browser_node,
         archive,
         config,
         sanitizer,
@@ -266,11 +263,9 @@ def test_same_origin_message_form_is_stopped_by_the_token(contrast_browser, arch
     archive.empty_trash.assert_not_called()
 
 
-def test_plain_forms_and_json_controls_work_and_expire_after_restart(
-    contrast_browser, spacing_sanitizer, archive, config
-):
+def test_plain_forms_and_json_controls_work_and_expire_after_restart(browser_node, spacing_sanitizer, archive, config):
     run_browser(
-        contrast_browser,
+        browser_node,
         archive,
         config,
         spacing_sanitizer,

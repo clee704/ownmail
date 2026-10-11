@@ -5,7 +5,6 @@ import pytest
 from tests import test_email_contrast
 
 shell_app = test_email_contrast.shell_app
-contrast_browser = test_email_contrast.contrast_browser
 run_message_browser = test_email_contrast.run_contrast_browser
 TINY_FOOTER = """
 <div style="height:1px;font-size:13px;line-height:1"><img width="1" height="1"
@@ -13,11 +12,11 @@ TINY_FOOTER = """
 """
 
 
-def test_tiny_message_overflow_does_not_capture_vertical_scrolling(shell_app, contrast_browser):
+def test_tiny_message_overflow_does_not_capture_vertical_scrolling(shell_app, browser_node):
     app, _ = shell_app
     run_message_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<table style="width:100%;height:1600px"><tr><td>Long synthetic message</td></tr></table>' + TINY_FOOTER,
         "",
         """
@@ -52,11 +51,11 @@ def test_tiny_message_overflow_does_not_capture_vertical_scrolling(shell_app, co
     ],
     ids=["table", "image"],
 )
-def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, contrast_browser, body):
+def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, browser_node, body):
     app, _ = shell_app
     run_message_browser(
         app,
-        contrast_browser,
+        browser_node,
         body + TINY_FOOTER,
         "",
         """
@@ -140,11 +139,11 @@ def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, contrast_browser
     )
 
 
-def test_late_image_load_and_resize_recalculate_fit(shell_app, contrast_browser):
+def test_late_image_load_and_resize_recalculate_fit(shell_app, browser_node):
     app, _ = shell_app
     run_message_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<p>Message with a delayed image</p><img id="late" alt="">',
         "",
         """
@@ -182,11 +181,11 @@ def test_late_image_load_and_resize_recalculate_fit(shell_app, contrast_browser)
 
 
 @pytest.mark.parametrize("constraint", ["height:240px", "max-height:240px"])
-def test_constrained_message_preserves_content_and_attachment_position(shell_app, contrast_browser, constraint):
+def test_constrained_message_preserves_content_and_attachment_position(shell_app, browser_node, constraint):
     app, _ = shell_app
     run_message_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <p id="start" style="margin:32px 0 24px;height:36px">Message start</p>
         <div id="float" style="float:left;width:180px;height:900px;position:relative">
@@ -225,11 +224,11 @@ def test_constrained_message_preserves_content_and_attachment_position(shell_app
 
 
 @pytest.mark.parametrize("auto_scale", [True, False], ids=["fitted", "actual-size"])
-def test_percentage_height_content_does_not_grow_when_exposing_footer(shell_app, contrast_browser, auto_scale):
+def test_percentage_height_content_does_not_grow_when_exposing_footer(shell_app, browser_node, auto_scale):
     app, _ = shell_app
     run_message_browser(
         app,
-        contrast_browser,
+        browser_node,
         """
         <div id="percentage" style="height:100%;width:1200px">Authored percentage height</div>
         <div id="footer" style="height:25px;width:1200px;line-height:25px">Complete message footer</div>
@@ -274,11 +273,11 @@ def test_percentage_height_content_does_not_grow_when_exposing_footer(shell_app,
     )
 
 
-def test_sender_flex_layout_survives_fitting_and_actual_size(shell_app, contrast_browser):
+def test_sender_flex_layout_survives_fitting_and_actual_size(shell_app, browser_node):
     app, _ = shell_app
     run_message_browser(
         app,
-        contrast_browser,
+        browser_node,
         '<div id="left" style="width:600px;flex:none">Left</div>'
         '<div id="right" style="width:600px;flex:none">Right</div>',
         "#ownmail-email-content {display:flex}",
@@ -326,7 +325,7 @@ def test_sender_flex_layout_survives_fitting_and_actual_size(shell_app, contrast
     )
 
 
-def test_reader_reload_restores_session_position_after_fitting(shell_app, contrast_browser):
+def test_reader_reload_restores_session_position_after_fitting(shell_app, browser_node):
     """A real layout verifies restoration; this is not a physical iPhone check."""
     app, archive = shell_app
     (archive.archive_dir / "message.eml").write_text(
@@ -338,7 +337,7 @@ def test_reader_reload_restores_session_position_after_fitting(shell_app, contra
     assert response.status_code == 200
     run_message_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """

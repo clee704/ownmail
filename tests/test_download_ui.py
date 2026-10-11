@@ -10,7 +10,6 @@ from lxml import html
 from tests import test_email_contrast, test_ui_shell
 
 shell_app = test_ui_shell.shell_app
-download_browser = test_email_contrast.contrast_browser
 
 
 def run_download_browser(app, node, assertions, *, viewport=(1100, 900)):
@@ -54,9 +53,7 @@ const fs = require('node:fs');
 const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 (async () => {
-    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launch({
-        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
-    });
+    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         const page = await browser.newPage({viewport: input.viewport, timezoneId: 'UTC'});
         const errors = [];
@@ -142,11 +139,11 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
     assert result.returncode == 0, result.stderr
 
 
-def test_manual_download_prevents_duplicates_and_polls_completion_and_failure(shell_app, download_browser):
+def test_manual_download_prevents_duplicates_and_polls_completion_and_failure(shell_app, browser_node):
     app, _ = shell_app
     run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         await page.locator('#brand_name').fill('Unsaved appearance');
         let releaseStart;
@@ -195,11 +192,11 @@ def test_manual_download_prevents_duplicates_and_polls_completion_and_failure(sh
 
 
 @pytest.mark.parametrize("has_progress", [True, False])
-def test_finished_run_distinguishes_zero_new_mail_from_missing_progress(shell_app, download_browser, has_progress):
+def test_finished_run_distinguishes_zero_new_mail_from_missing_progress(shell_app, browser_node, has_progress):
     app, _ = shell_app
     run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         state = {...state, state: 'succeeded', phase: 'finished', has_progress: __HAS_PROGRESS__};
         await refresh();
@@ -210,11 +207,11 @@ def test_finished_run_distinguishes_zero_new_mail_from_missing_progress(shell_ap
     )
 
 
-def test_live_download_keeps_skipped_work_visible_through_completion(shell_app, download_browser):
+def test_live_download_keeps_skipped_work_visible_through_completion(shell_app, browser_node):
     app, _ = shell_app
     run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         state = {...state, running: true, state: 'running', has_progress: true, phase: 'scanning',
             source: 'Primary', scan_checked: 7, downloaded: 2, active_refreshed: 3, skipped: 1, errors: 0};
@@ -245,11 +242,11 @@ def test_live_download_keeps_skipped_work_visible_through_completion(shell_app, 
     )
 
 
-def test_failure_reason_and_source_are_plain_text_and_clear_on_next_run(shell_app, download_browser):
+def test_failure_reason_and_source_are_plain_text_and_clear_on_next_run(shell_app, browser_node):
     app, _ = shell_app
     run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         const source = '<img src=x onerror="window.unsafeSource = true">';
         const reason = 'Cannot sign in to <b>Primary</b>. Run ownmail setup to reconnect it.';
@@ -292,11 +289,11 @@ def test_failure_reason_and_source_are_plain_text_and_clear_on_next_run(shell_ap
     )
 
 
-def test_schedule_preserves_edits_and_recovers_from_errors_without_reloading(shell_app, download_browser):
+def test_schedule_preserves_edits_and_recovers_from_errors_without_reloading(shell_app, browser_node):
     app, _ = shell_app
     run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         await page.locator('#brand_name').fill('Keep my draft');
         await interval.selectOption('60');
@@ -338,11 +335,11 @@ def test_schedule_preserves_edits_and_recovers_from_errors_without_reloading(she
     )
 
 
-def test_download_controls_fit_phone_viewport(shell_app, download_browser):
+def test_download_controls_fit_phone_viewport(shell_app, browser_node):
     app, _ = shell_app
     run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         state = {...state, running: true, state: 'running', phase: 'refreshing', source: 'Personal archive',
             has_progress: true, downloaded: 42, active_refreshed: 8, skipped: 3, errors: 1,

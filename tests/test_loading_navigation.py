@@ -8,7 +8,6 @@ from lxml import html
 
 from tests import test_email_contrast, test_ui_shell
 
-contrast_browser = test_email_contrast.contrast_browser
 shell_app = test_ui_shell.shell_app
 shell_list_app = test_ui_shell.shell_list_app
 
@@ -30,9 +29,7 @@ const fs = require('node:fs');
 const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 (async () => {
-    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launch({
-        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
-    });
+    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         const page = await browser.newPage({viewport: {width: input.width, height: 900}});
         const errors = [];
@@ -178,10 +175,10 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 
 
 @pytest.mark.parametrize("path", ["/search", "/trash"])
-def test_repeated_message_click_preserves_visible_feedback(shell_list_app, contrast_browser, path):
+def test_repeated_message_click_preserves_visible_feedback(shell_list_app, browser_node, path):
     run_loading_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await click('first');
         await requestAt('/email/first');
@@ -197,10 +194,10 @@ def test_repeated_message_click_preserves_visible_feedback(shell_list_app, contr
     )
 
 
-def test_latest_message_navigation_replaces_feedback_and_destination(shell_list_app, contrast_browser):
+def test_latest_message_navigation_replaces_feedback_and_destination(shell_list_app, browser_node):
     run_loading_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await click('first');
         const first = await requestAt('/email/first');
@@ -217,10 +214,10 @@ def test_latest_message_navigation_replaces_feedback_and_destination(shell_list_
     )
 
 
-def test_settings_navigation_clears_pending_message_feedback(shell_list_app, contrast_browser):
+def test_settings_navigation_clears_pending_message_feedback(shell_list_app, browser_node):
     run_loading_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await click('first');
         const first = await requestAt('/email/first');
@@ -235,10 +232,10 @@ def test_settings_navigation_clears_pending_message_feedback(shell_list_app, con
     )
 
 
-def test_fast_message_navigation_does_not_flash_feedback(shell_list_app, contrast_browser):
+def test_fast_message_navigation_does_not_flash_feedback(shell_list_app, browser_node):
     run_loading_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await click('first');
         const first = await requestAt('/email/first');
@@ -248,10 +245,10 @@ def test_fast_message_navigation_does_not_flash_feedback(shell_list_app, contras
     )
 
 
-def test_checkbox_and_search_editing_preserve_pending_message(shell_list_app, contrast_browser):
+def test_checkbox_and_search_editing_preserve_pending_message(shell_list_app, browser_node):
     run_loading_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await click('first');
         const first = await requestAt('/email/first');
@@ -272,10 +269,10 @@ def test_checkbox_and_search_editing_preserve_pending_message(shell_list_app, co
     )
 
 
-def test_escape_cancels_navigation_and_allows_retry(shell_list_app, contrast_browser):
+def test_escape_cancels_navigation_and_allows_retry(shell_list_app, browser_node):
     run_loading_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await click('first');
         const first = await requestAt('/email/first');
@@ -296,10 +293,10 @@ def test_escape_cancels_navigation_and_allows_retry(shell_list_app, contrast_bro
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("width", [1280, 390])
-def test_row_spinner_matches_theme_without_shifting_date(shell_list_app, contrast_browser, theme, width):
+def test_row_spinner_matches_theme_without_shifting_date(shell_list_app, browser_node, theme, width):
     run_loading_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await page.emulateMedia({reducedMotion: 'reduce'});
         await click('first');

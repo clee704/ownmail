@@ -9,7 +9,6 @@ from ownmail.web import MESSAGE_CSP
 from tests import test_email_contrast, test_reader_spacing
 
 shell_app = test_email_contrast.shell_app
-contrast_browser = test_email_contrast.contrast_browser
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 
@@ -88,7 +87,7 @@ spacing_sanitizer = test_reader_spacing.spacing_sanitizer
     ],
 )
 def test_static_body_predicates_keep_original_browser_matching(
-    shell_app, contrast_browser, spacing_sanitizer, style_location, doctype, body_attributes, predicates
+    shell_app, browser_node, spacing_sanitizer, style_location, doctype, body_attributes, predicates
 ):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
@@ -111,7 +110,7 @@ def test_static_body_predicates_keep_original_browser_matching(
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         r"""
@@ -155,9 +154,7 @@ def test_static_body_predicates_keep_original_browser_matching(
 
 
 @pytest.mark.parametrize("style_location", ["head", "body"])
-def test_malformed_body_qualifiers_do_not_activate_rules(
-    shell_app, contrast_browser, spacing_sanitizer, style_location
-):
+def test_malformed_body_qualifiers_do_not_activate_rules(shell_app, browser_node, spacing_sanitizer, style_location):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
     css = """
@@ -188,7 +185,7 @@ def test_malformed_body_qualifiers_do_not_activate_rules(
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         r"""
@@ -212,7 +209,7 @@ def test_malformed_body_qualifiers_do_not_activate_rules(
 
 @pytest.mark.parametrize("style_location", ["head", "body"])
 def test_qualified_body_rules_keep_matching_cascade_and_message_scope(
-    shell_app, contrast_browser, spacing_sanitizer, style_location
+    shell_app, browser_node, spacing_sanitizer, style_location
 ):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
@@ -262,7 +259,7 @@ def test_qualified_body_rules_keep_matching_cascade_and_message_scope(
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         r"""
@@ -328,7 +325,7 @@ def test_qualified_body_rules_keep_matching_cascade_and_message_scope(
     ],
 )
 def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
-    shell_app, contrast_browser, spacing_sanitizer, css_text
+    shell_app, browser_node, spacing_sanitizer, css_text
 ):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
@@ -351,7 +348,7 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         r"""
@@ -438,7 +435,7 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
         ),
     ],
 )
-def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, contrast_browser, spacing_sanitizer, css, kept):
+def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, browser_node, spacing_sanitizer, css, kept):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
     message = EmailMessage()
@@ -451,7 +448,7 @@ def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, contrast_browse
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         r"""
@@ -507,7 +504,7 @@ def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, contrast_browse
     ],
 )
 def test_loaded_remote_content_imports_only_trusted_font_stylesheets(
-    shell_app, contrast_browser, spacing_sanitizer, css, remote
+    shell_app, browser_node, spacing_sanitizer, css, remote
 ):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
@@ -524,7 +521,7 @@ def test_loaded_remote_content_imports_only_trusted_font_stylesheets(
     assert response.headers["Content-Security-Policy"] == MESSAGE_CSP
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """
@@ -546,7 +543,7 @@ def test_loaded_remote_content_imports_only_trusted_font_stylesheets(
 @pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("quoted", [False, True])
 def test_body_background_covers_trailing_content_and_keeps_images_blocked(
-    shell_app, contrast_browser, spacing_sanitizer, theme, quoted
+    shell_app, browser_node, spacing_sanitizer, theme, quoted
 ):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=True)
@@ -571,7 +568,7 @@ def test_body_background_covers_trailing_content_and_keeps_images_blocked(
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """
@@ -605,9 +602,7 @@ def test_body_background_covers_trailing_content_and_keeps_images_blocked(
     )
 
 
-def test_theme_switches_toggle_parsed_dark_rules_without_unscoping_strings(
-    shell_app, contrast_browser, spacing_sanitizer
-):
+def test_theme_switches_toggle_parsed_dark_rules_without_unscoping_strings(shell_app, browser_node, spacing_sanitizer):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=False)
     # The strings once let a text rewrite drop a span and re-parse the rest as a top-level rule.
@@ -628,7 +623,7 @@ def test_theme_switches_toggle_parsed_dark_rules_without_unscoping_strings(
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         r"""

@@ -1,5 +1,9 @@
 """Pytest fixtures for ownmail tests."""
 
+import os
+import select
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -45,6 +49,80 @@ class CsrfTestClient(FlaskClient):
 def csrf_test_client(monkeypatch):
     """Make app.test_client() pass the CSRF checks for tests of other behavior."""
     monkeypatch.setattr(Flask, "test_client_class", CsrfTestClient)
+
+
+# Launching a browser costs up to a second and a half, so each test process
+# starts one Playwright browser server. Test scripts connect to it and create
+# their own context, which keeps cookies, storage and routes per test. Port 0
+# and the per-process endpoint let pytest-xdist workers each run their own.
+BROWSER_SERVER = """
+const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
+(async () => {
+    const server = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launchServer({
+        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE, host: '127.0.0.1', port: 0
+    });
+    server.on('close', () => { console.error('The browser closed unexpectedly'); process.exit(1); });
+    // pytest closes stdin at session end, or by exiting if it dies first.
+    process.stdin.on('end', async () => {
+        server.removeAllListeners('close');
+        await server.close();
+        process.exit(0);
+    });
+    process.stdin.resume();
+    console.log(server.wsEndpoint());
+})().catch(error => { console.error(error); process.exit(1); });
+"""
+
+
+@pytest.fixture(scope="session")
+def browser_server():
+    """Start the shared browser server, or skip unless OWNMAIL_REQUIRE_BROWSER_TESTS=1."""
+    required = os.environ.get("OWNMAIL_REQUIRE_BROWSER_TESTS") == "1"
+    node = shutil.which("node")
+    if not node:
+        if required:
+            pytest.fail("Node.js is required for browser tests")
+        pytest.skip("Node.js is unavailable")
+    with tempfile.TemporaryFile("w+") as log:
+        server = subprocess.Popen(
+            [node, "-e", BROWSER_SERVER],
+            cwd=Path(__file__).parents[1] / "ownmail" / "sanitizer",
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=log,
+            text=True,
+        )
+        try:
+            ready, _, _ = select.select([server.stdout], [], [], 30)
+            endpoint = server.stdout.readline().strip() if ready else ""
+            if not endpoint:
+                server.kill()
+                server.wait()
+                log.seek(0)
+                if required:
+                    pytest.fail(f"Could not start the browser:\n{log.read()}")
+                pytest.skip("Playwright or its browser is unavailable; install it to run browser tests")
+            with pytest.MonkeyPatch.context() as env:
+                env.setenv("OWNMAIL_BROWSER_WS_ENDPOINT", endpoint)
+                yield node, server, log
+        finally:
+            if server.poll() is None:
+                server.stdin.close()
+                try:
+                    server.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.wait()
+
+
+@pytest.fixture
+def browser_node(browser_server):
+    """Path to Node; scripts connect to OWNMAIL_BROWSER_WS_ENDPOINT instead of launching."""
+    node, server, log = browser_server
+    if server.poll() is not None:
+        log.seek(0)
+        pytest.fail(f"The shared browser server exited with status {server.returncode}:\n{log.read()}")
+    return node
 
 
 @pytest.fixture

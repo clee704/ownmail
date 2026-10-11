@@ -16,7 +16,6 @@ clock = test_downloads.clock
 process = test_downloads.process
 manager = test_downloads.manager
 shell_app = test_download_ui.shell_app
-download_browser = test_download_ui.download_browser
 
 
 def source(kind="imap", **updates):
@@ -194,11 +193,11 @@ def test_active_settings_accept_directory_path_and_boolean(enabled):
     assert validate_config({"sources": [source(active_downloads=enabled)], "active_cache_dir": "~/mail-cache"}) == []
 
 
-def test_running_refresh_shows_active_counts_before_completion(shell_app, download_browser):
+def test_running_refresh_shows_active_counts_before_completion(shell_app, browser_node):
     app, _ = shell_app
     test_download_ui.run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         state = {...state, running: true, state: 'running', has_progress: true, phase: 'refreshing',
             source: 'Synthetic', downloaded: 2, active_refreshed: 4, active_complete: null};
@@ -211,11 +210,11 @@ def test_running_refresh_shows_active_counts_before_completion(shell_app, downlo
 
 
 @pytest.mark.parametrize("source", [None, "Synthetic"])
-def test_running_scan_shows_checked_count_before_capture(shell_app, download_browser, source):
+def test_running_scan_shows_checked_count_before_capture(shell_app, browser_node, source):
     app, _ = shell_app
     test_download_ui.run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         state = {...state, running: true, state: 'running', has_progress: true, phase: 'scanning',
             source: __SOURCE__, scan_checked: 0, active_refreshed: 0, active_complete: null};
@@ -236,11 +235,11 @@ def test_running_scan_shows_checked_count_before_capture(shell_app, download_bro
 
 
 @pytest.mark.parametrize("complete", [True, False])
-def test_finished_download_distinguishes_active_refresh_completeness(shell_app, download_browser, complete):
+def test_finished_download_distinguishes_active_refresh_completeness(shell_app, browser_node, complete):
     app, _ = shell_app
     test_download_ui.run_download_browser(
         app,
-        download_browser,
+        browser_node,
         """
         state = {...state, running: false, state: 'succeeded', has_progress: true, phase: 'finished',
             downloaded: 2, active_refreshed: 4, active_complete: __COMPLETE__};

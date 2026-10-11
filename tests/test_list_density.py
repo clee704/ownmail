@@ -10,7 +10,6 @@ from tests import test_email_contrast, test_ui_shell
 
 shell_app = test_ui_shell.shell_app
 shell_list_app = test_ui_shell.shell_list_app
-contrast_browser = test_email_contrast.contrast_browser
 
 
 def run_density_browser(app, node, assertions, preference=None):
@@ -32,9 +31,7 @@ const fs = require('node:fs');
 const playwright = require(process.env.PLAYWRIGHT_NODE_MODULE || 'playwright');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 (async () => {
-    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].launch({
-        headless: true, executablePath: process.env.OWNMAIL_BROWSER_EXECUTABLE
-    });
+    const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         const context = await browser.newContext({viewport: {width: 1280, height: 900}});
         const errors = [];
@@ -78,10 +75,10 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 
 
 @pytest.mark.parametrize("preference", [None, "invalid-density"])
-def test_missing_or_invalid_preference_defaults_to_standard(shell_list_app, contrast_browser, preference):
+def test_missing_or_invalid_preference_defaults_to_standard(shell_list_app, browser_node, preference):
     run_density_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await visit('/settings');
         assert.equal(await density(), 'standard');
@@ -91,10 +88,10 @@ def test_missing_or_invalid_preference_defaults_to_standard(shell_list_app, cont
     )
 
 
-def test_density_setting_persists_and_changes_message_and_sidebar_spacing(shell_list_app, contrast_browser):
+def test_density_setting_persists_and_changes_message_and_sidebar_spacing(shell_list_app, browser_node):
     run_density_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         const heights = {};
         const navigationHeights = {};
@@ -140,10 +137,10 @@ def test_density_setting_persists_and_changes_message_and_sidebar_spacing(shell_
 
 
 @pytest.mark.parametrize("width", [430, 900])
-def test_density_keeps_mobile_row_and_drawer_spacing(shell_list_app, contrast_browser, width):
+def test_density_keeps_mobile_row_and_drawer_spacing(shell_list_app, browser_node, width):
     run_density_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await page.setViewportSize({width: WIDTH, height: 900});
         await visit('/search?q=annual');
@@ -169,10 +166,10 @@ def test_density_keeps_mobile_row_and_drawer_spacing(shell_list_app, contrast_br
     )
 
 
-def test_cached_list_restores_density_on_pageshow(shell_list_app, contrast_browser):
+def test_cached_list_restores_density_on_pageshow(shell_list_app, browser_node):
     run_density_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await visit('/search?q=annual');
         const standardHeight = await rowHeight();
@@ -186,10 +183,10 @@ def test_cached_list_restores_density_on_pageshow(shell_list_app, contrast_brows
     )
 
 
-def test_open_lists_and_settings_follow_preferences_from_another_tab(shell_list_app, contrast_browser):
+def test_open_lists_and_settings_follow_preferences_from_another_tab(shell_list_app, browser_node):
     run_density_browser(
         shell_list_app,
-        contrast_browser,
+        browser_node,
         """
         await visit('/search?q=annual');
         const standardHeight = await rowHeight();

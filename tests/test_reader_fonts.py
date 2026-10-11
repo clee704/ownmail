@@ -6,11 +6,10 @@ from email.message import EmailMessage
 from tests import test_email_contrast, test_reader_spacing
 
 shell_app = test_email_contrast.shell_app
-contrast_browser = test_email_contrast.contrast_browser
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 
-def test_sender_stylesheet_and_embedded_fonts_load_in_reader(shell_app, contrast_browser, spacing_sanitizer):
+def test_sender_stylesheet_and_embedded_fonts_load_in_reader(shell_app, browser_node, spacing_sanitizer):
     app, archive = shell_app
     app.config.update(sanitizer=spacing_sanitizer, block_images=True, auto_scale=True)
     font_paths = list(
@@ -50,7 +49,7 @@ def test_sender_stylesheet_and_embedded_fonts_load_in_reader(shell_app, contrast
     assert response.status_code == 200
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """

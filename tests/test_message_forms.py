@@ -5,7 +5,6 @@ from email.message import EmailMessage
 from tests import test_email_contrast, test_reader_spacing
 
 shell_app = test_email_contrast.shell_app
-contrast_browser = test_email_contrast.contrast_browser
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
 MESSAGE = """<!doctype html><html><body>
@@ -46,12 +45,12 @@ def reader_response(app, archive, sanitizer, body):
     return response
 
 
-def test_message_submit_controls_send_no_request(shell_app, contrast_browser, spacing_sanitizer):
+def test_message_submit_controls_send_no_request(shell_app, browser_node, spacing_sanitizer):
     app, archive = shell_app
     response = reader_response(app, archive, spacing_sanitizer, MESSAGE)
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """
@@ -84,12 +83,12 @@ def test_message_submit_controls_send_no_request(shell_app, contrast_browser, sp
     )
 
 
-def test_message_links_open_a_new_tab_without_a_referrer(shell_app, contrast_browser, spacing_sanitizer):
+def test_message_links_open_a_new_tab_without_a_referrer(shell_app, browser_node, spacing_sanitizer):
     app, archive = shell_app
     response = reader_response(app, archive, spacing_sanitizer, LINKS)
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """

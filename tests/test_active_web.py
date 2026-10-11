@@ -12,7 +12,6 @@ from tests.conftest import create_test_app, mock_archive_db
 from tests.test_live_sync import MailServer, cache_message, message, owned_rows, sync
 
 shell_browser = test_ui_shell.shell_browser
-contrast_browser = test_email_contrast.contrast_browser
 
 
 class ActiveWebArchive:
@@ -224,12 +223,12 @@ assert(selectAll.checked);
     )
 
 
-def test_active_details_open_only_from_menu_and_close_with_focus_return(active_app, contrast_browser):
+def test_active_details_open_only_from_menu_and_close_with_focus_return(active_app, browser_node):
     app, archive = active_app
     archive.info.update(complete=True, refresh_error="Another message could not be checked")
     test_email_contrast.run_contrast_browser(
         app,
-        contrast_browser,
+        browser_node,
         "",
         "",
         """
