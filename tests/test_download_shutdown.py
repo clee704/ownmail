@@ -115,6 +115,7 @@ def test_sigterm_reaps_real_detached_download(tmp_path):
         import signal
         import subprocess
         import sys
+        import threading
         from pathlib import Path
         from types import SimpleNamespace
         from unittest.mock import Mock
@@ -123,14 +124,28 @@ def test_sigterm_reaps_real_detached_download(tmp_path):
 
         marker = sys.argv[1]
         child_code = sys.argv[2]
+        shutdown = threading.Event()
         real_popen = subprocess.Popen
-        downloads.subprocess.Popen = lambda args, **kwargs: real_popen(
-            [sys.executable, "-c", child_code, marker], **kwargs
-        )
+
+        def popen(args, **kwargs):
+            process = real_popen([sys.executable, "-c", child_code, marker], **kwargs)
+            # Hold start_download inside Popen until shutdown begins, the window SIGTERM can land in.
+            shutdown.wait(10)
+            return process
+
+        downloads.subprocess.Popen = popen
         manager = downloads.DownloadManager(Path(marker).parent, "synthetic-config.yaml")
+        real_stop = manager.stop
+
+        def stop():
+            shutdown.set()
+            real_stop()
+
+        manager.stop = stop
 
         def serve(**kwargs):
-            assert manager.start_download()
+            # Flask's threaded server starts downloads on request threads, never the main one.
+            threading.Thread(target=lambda: print(f"DOWNLOAD_STARTED:{manager.start_download()}")).start()
             while True:
                 signal.pause()
 
@@ -165,6 +180,7 @@ def test_sigterm_reaps_real_detached_download(tmp_path):
         os.kill(server.pid, signal.SIGTERM)
         output, _ = server.communicate(timeout=15)
         assert server.returncode == 0, output
+        assert b"DOWNLOAD_STARTED:True" in output, output
         assert int(marker.read_text()) == signal.SIGINT
         with pytest.raises(ProcessLookupError):
             os.kill(child_pid, 0)
