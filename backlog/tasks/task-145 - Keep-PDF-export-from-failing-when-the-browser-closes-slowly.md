@@ -4,7 +4,7 @@ title: Keep PDF export from failing when the browser closes slowly
 status: Done
 assignee: []
 created_date: '2026-10-11 22:58'
-updated_date: '2026-10-11 23:26'
+updated_date: '2026-10-11 23:52'
 labels:
   - pdf
 dependencies: []
@@ -34,4 +34,6 @@ The renderer now ignores a context.close() or browser.close() that overruns its 
 Process cleanup: pdf_export.py only signals the renderer's process group when the renderer times out or is interrupted, and Playwright launches Chromium detached in its own group, so that cleanup never reached a slow-closing browser after a normal renderer exit. The renderer now calls process.exit() when main settles; Playwright's exit handler then SIGKILLs the browser's process group of any browser not yet closed. Without the explicit exit, the open browser pipe kept Node alive until the close finished.
 
 Test: test_actual_renderer_does_not_execute_unsanitized_page_scripts gains a POSIX slow_close variant. OWNMAIL_BROWSER_EXECUTABLE points at a shell wrapper that runs the real Chromium and then execs sleep 60, so browser.close() cannot finish within its deadline. The test asserts the PDF is produced and the wrapper is gone within 2s of renderer exit. It failed with 'PDF rendering timed out' against the previous renderer. Caveat: the liveness check treats a zombie as running; a minimal container init that never reaps orphans could make it fail.
+
+Follow-up: the slow_close test now bounds the renderer's exit from the moment Chromium exits (a marker the wrapper touches before sleeping). With process.exit() the interval is about 5s (the close deadline); without it Playwright waits its 30s default before force-killing, so the test asserts under 15s. Verified it fails with process.exit() removed and with the TASK-145 change reverted.
 <!-- SECTION:NOTES:END -->

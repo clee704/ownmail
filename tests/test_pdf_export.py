@@ -435,8 +435,12 @@ def test_actual_renderer_does_not_execute_unsanitized_page_scripts(tmp_path, pdf
         )
         wrapper = tmp_path / "slow-close-browser"
         # Record the PID first: under load Chromium itself can overrun the
-        # deadline, and the wrapper is killed before reaching its sleep.
-        wrapper.write_text(f'#!/bin/sh\necho $$ > "{tmp_path}/wrapper.pid"\n"{browser}" "$@"\nexec sleep 60\n')
+        # deadline, and the wrapper is killed before reaching its sleep. The
+        # closed marker times the slow close independently of render speed.
+        wrapper.write_text(
+            f'#!/bin/sh\necho $$ > "{tmp_path}/wrapper.pid"\n"{browser}" "$@"\n'
+            f'touch "{tmp_path}/closed"\nexec sleep 60\n'
+        )
         wrapper.chmod(0o755)
         monkeypatch.setenv("OWNMAIL_BROWSER_EXECUTABLE", str(wrapper))
     # Exercise the browser boundary even if a future sanitizer accidentally keeps
@@ -446,6 +450,7 @@ def test_actual_renderer_does_not_execute_unsanitized_page_scripts(tmp_path, pdf
         '<!doctype html><p>SAFE BODY</p><script>document.querySelector("p").textContent="SCRIPT RAN";</script>'
     )
     pdf_export._run_renderer(pdf_browser_node, str(tmp_path), "1", timeout=60)
+    finished = time.time()
     result = tmp_path / "000001.pdf"
     assert result.read_bytes().startswith(b"%PDF-")
     extractor = shutil.which("pdftotext")
@@ -455,6 +460,11 @@ def test_actual_renderer_does_not_execute_unsanitized_page_scripts(tmp_path, pdf
         ).stdout
         assert "SAFE BODY" in text and "SCRIPT RAN" not in text
     if slow_close:
+        # The renderer stops waiting 5s after close starts; Playwright alone
+        # would wait 30s before force-killing the browser.
+        closed = tmp_path / "closed"
+        if closed.exists():
+            assert finished - closed.stat().st_mtime < 15, "Renderer waited for the slow close"
         wrapper_pid = int((tmp_path / "wrapper.pid").read_text())
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
