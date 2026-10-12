@@ -1,10 +1,10 @@
 ---
 id: TASK-138
 title: Re-evaluate sandboxed iframe isolation for message HTML
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-10 05:41'
-updated_date: '2026-10-12 03:19'
+updated_date: '2026-10-12 03:27'
 labels:
   - security
 dependencies: []
@@ -58,7 +58,7 @@ Also check:
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Each earlier reason listed above is re-checked against the allow-same-origin, no-scripts variant with a synthetic prototype or cited evidence, naming the browsers tested.
-- [ ] #2 CSP inheritance for srcdoc, print and PDF export, and Home Screen web app behavior are each checked, or recorded as unaffected with the reason.
+- [x] #2 CSP inheritance for srcdoc, print and PDF export, and Home Screen web app behavior are each checked, or recorded as unaffected with the reason.
 - [x] #3 A recommendation and its rationale are recorded in this task's notes; any implementation work is filed as a separate task.
 - [x] #4 No production code, template or stylesheet changes in this task.
 <!-- AC:END -->
@@ -101,4 +101,10 @@ Next action: the maintainer checks the native find bar and the Home Screen app a
 2026-10-11 iOS Simulator results (iPhone 17 Pro, iOS 26.5, Safari 26.5, Xcode 27.0; synthetic pages under IMAGE_BLOCKING_CSP). Layout only: in Safari the auto-height frame grew when a late image loaded 3 s after the message, with no internal scroll, and the last paragraph stayed inside the frame's box. A 900px table fitted the way email-fit.js fits wide messages stayed within the frame (zoom 0.425) with no page or frame overflow. Unfitted, the frame kept the viewport width and clipped the table; iOS did not expand the frame to its content. A 512px image clipped the same way because the long prototype did not apply fitting; TASK-142 AC3 and AC5 cover both. Not tested: swipe, fling, pinch, link taps, Find on Page, text selection, and every Home Screen web app check, because this session could not send touch input to the simulator. AC2 stays open for those; TASK-142 AC9 already requires the same checks on an iPhone before landing.
 
 Next action: the maintainer either runs the touch and Home Screen checks (in the simulator with touch input, or on an iPhone) so AC2 can be checked, or agrees to leave them to TASK-142 AC9 so this task can close.
+
+2026-10-11 iOS Simulator touch results (same environment, with touch input through the simulator). Safari: a slow swipe and a fling starting over the frame scrolled the page, the fling continuing after touch-up (417 to 1036 px), and a pinch zoomed the page to 2.5x and back; the frame's internal scroll stayed at 0 throughout. A horizontal swipe over the fitted wide frame did not scroll it; over the unfitted frame it scrolled the frame internally (scrollLeft 387), as on desktop, so fitting is required. A target=_blank link opened a new tab. Find on Page found a word inside the frame and scrolled the page to it. Long-press selected a word inside the frame, and Copy put it on the clipboard.
+
+Home Screen web app (Open as Web App, display standalone): the frame grew when the late image loaded, with no internal scroll. Slow swipe, fling (527 to 1341 px) and pinch matched Safari, with the frame's internal scroll at 0. Tapping the status bar scrolled to the top. The link opened in an in-app browser sheet over the app, and closing it returned to the unchanged page. Long-press selection worked, and its Find Selection action opened the find bar, which found matches inside the frame and scrolled the page to them. Not tested in the web app: the wide-message page, because the app's start URL was the long page.
+
+AC2 checked: Home Screen web app behavior was checked in the simulator with no frame-specific problem. The recommendation stands. Physical-iPhone confirmation remains TASK-142 AC9, and Space and Shift+Space after clicking in the message remain open under TASK-142 AC4.
 <!-- SECTION:NOTES:END -->
