@@ -200,14 +200,15 @@ Simulator app may be absent; verify the installed UI instead of assuming its
 location.
 
 Use the same synthetic fixture. When a local server is authorized, set these
-variables to the fixture paths printed above, then run from the activated
-checkout environment:
+`TASK50_CONFIG` and `TASK50_ARCHIVE` to the fixture paths printed above, and
+`TASK50_PORT` to an unused local port. Set `TASK50_LOG` to a local evidence file.
+Run from the activated checkout environment:
 
 ```sh
-python -m ownmail --config "$TASK50_CONFIG" --archive-root "$TASK50_ARCHIVE" serve --no-browser
+python -u -m ownmail --config "$TASK50_CONFIG" --archive-root "$TASK50_ARCHIVE" serve --host 127.0.0.1 --port "$TASK50_PORT" --no-browser > "$TASK50_LOG" 2>&1
 ```
 
-Leave the default loopback binding in place. Confirm the printed archive,
+Keep the loopback binding. Inspect the log to confirm the printed archive,
 page size and allowed hosts, and verify the real sanitizer starts. Open the
 printed loopback URL in simulated Safari, add it to the Home Screen and repeat
 the available manual checks. Capture simulator results separately, including
@@ -215,6 +216,18 @@ unsupported keyboard, lock/resume, orientation or connectivity checks. If
 loopback access fails, record the failure before considering any network
 change. Simulator evidence does not establish physical cutout, touch, keyboard,
 background/resume or Home Screen acceptance.
+
+With Codex computer controls, select DeviceHub by its installed app path. Enable
+Capture Keyboard and focus the simulated screen before typing; otherwise keys
+can reach the host sidebar. Web content may lack accessibility elements, so
+use a fresh screenshot for coordinates. Observe again after scrolling settles;
+an immediate screenshot can show a transient blank page or the old position.
+Captured Page Down and a drag within the message both moved the reader in the
+iOS 26.5 run. After testing, stop the server started for this run and shut down
+the selected simulator if it was initially shut down.
+Retain the server log when checking mutation replay; an interactive tool session
+can disappear after an agent handoff. Compare mutation requests before and after
+Retry, including any explicitly rejected CSRF request.
 
 ## Results template
 
