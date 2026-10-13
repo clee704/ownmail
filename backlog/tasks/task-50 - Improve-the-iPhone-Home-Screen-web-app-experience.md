@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-13 04:50'
-updated_date: '2026-10-13 17:59'
+updated_date: '2026-10-13 18:05'
 labels:
   - ui
   - mobile
@@ -73,4 +73,10 @@ All original acceptance criteria remain unchecked pending the physical-iPhone ev
 Held navigation, label loading and label save ended with failure feedback and usable Retry by the next observations, respectively 41, 37 and 49 seconds after initiation; these observations do not measure the exact 30-second firing time. Retry opened the requested reader or reloaded the current one. The held original label save completed after timeout; the app correctly reported an unconfirmed result and the saved label was visible after reload. No second Save was performed, but the original interactive server log was unavailable after handoff, so request-count proof of no replay remains open. The owned server and selected simulator were shut down after this phase.
 
 Simulator validation exposed a narrow recovery notification that wrapped the error into a tall column. The minimal fix adds width: max-content while retaining the existing viewport and desktop maximum widths. Synthetic Chromium and WebKit renders at 320, 390, 430 and 1280 pixels reproduce the old defect and verify the fix: at 390 pixels, the notification grows from 195 to 366 pixels and its long-error height falls from about 360 to 94 pixels. Viewport margins, short success sizing, Retry/dismiss clicks and keyboard access remain usable. No new dependencies or navigation behavior were added. The runbook now records keyboard capture, settled-scroll observations, loopback port selection, persistent request logs and resource cleanup. The corrected full gate and a fresh simulator recheck are running; original physical-iPhone criteria remain open.
+
+Final corrected checkpoint: application revision a0043016b476afab3dc5c89fe0133c725e12050a passed the stable mandatory pre-push gate with browser tests required. The preceding test run also passed all 5,025 cases with 96.69% branch-inclusive coverage, but its hook rejected concurrent repository changes; the stable rerun passed every hook. No checks were weakened.
+
+The fresh standalone iPhone 17 Pro / iOS 26.5 recheck verified the corrected notification: the full unconfirmed-save message fits in three readable lines with Retry and dismiss visible. Persistent synthetic server logs record exactly one original label-save POST after the paused server resumed, followed by the reader GET from explicit Retry and a label GET confirming the saved label. No second mutation or CSRF rejection occurred. This supplies the previously missing request-count evidence that Retry does not replay the unconfirmed save. The owned server stopped, its loopback port was clear, and the selected simulator returned to Start.
+
+TASK-50 remains In Progress with every original acceptance criterion retained and unchecked. Simulator evidence is supplemental. Physical-iPhone checks remain required; missing/stale-reader recovery, unavailable cold launch, native Back, keyboard row focus, a fresh software-keyboard submission, dark theme and full list orientation checks were not completed in these simulator phases. Next action: use docs/home-screen-validation.md on an authorized physical iPhone with the current build and synthetic archive, record the device/iOS and remaining observations, then evaluate the original criteria. Final ledger changes do not alter the tested application or test files.
 <!-- SECTION:NOTES:END -->
