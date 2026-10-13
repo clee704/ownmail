@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-13 04:50'
-updated_date: '2026-09-30 19:47'
+updated_date: '2026-10-13 17:40'
 labels:
   - ui
   - mobile
@@ -65,4 +65,6 @@ Browser evidence: 26 affected reader/navigation/label/CSP cases passed on the or
 Reviewed code checkpoint complete; task remains In Progress. The same independent reviewer approved exact d6fe017b27728a19451c8c94b9289e6b9ce1e9b2 after all 13 narrow recheck cases passed, including the unchanged original P2 reproductions. The corrected mandatory pre-push gate passed: 4,411 test cases plus 370 subtests, zero failures/errors/skips, 96.60% branch-inclusive coverage, with unchanged requirements. All 161 observed browser subprocesses exited successfully and the private-profile process check was clear; the browser lease is released. The final progress checkpoint changes only this ledger; production code and tests remain byte-for-byte equivalent to the reviewed/tested d6fe017 tree. Local integration preserves the prior clean master and all existing branch/evidence history.
 
 All original acceptance criteria remain unchecked pending the physical-iPhone evidence needed to evaluate the complete task. Next action: on an already authorized reachable server with synthetic messages, record the tested build, iPhone model and iOS version, then check (1) Home Screen install/name/icon/theme/scope and cold launch, (2) query/sort/page/scroll/focus through list-message-Back, (3) long-message background/resume/reload plus stale or missing message recovery, (4) keyboard and portrait/landscape cutout/home-indicator usability, (5) interrupted navigation/action and explicit Retry without mutation replay, and (6) unavailable cold-launch behavior. No emulation substitutes for these checks. This checkpoint does not authorize HTTPS/public service setup, device permissions, private-mail caching or a new offline/security policy.
+
+2026-10-13 resume: current validation base is d6f39827d7fdabc7805358571ddf5cfb9694e8f6. Later CSRF and reader changes require current-build evidence; the mandatory pre-push gate passed with browser tests required. Added docs/home-screen-validation.md and an agent doc-map pointer: the verified source-free fixture imports numbered synthetic messages and a long HTML reader, with repeatable physical-device checks and a results form. The maintainer requested simulator validation; iPhone 17 Pro on iOS 26.5 is controllable through Xcode 27 Device Hub. Supplemental simulator checks are in progress. Original physical-iPhone criteria remain open.
 <!-- SECTION:NOTES:END -->

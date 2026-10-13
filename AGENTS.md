@@ -15,6 +15,7 @@ format, branch naming, dev setup, testing, migrations — live in
 |------|----------|----------|
 | [README.md](README.md) | Everyone | What ownmail is, install, usage |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Humans + AI | Repo rules: commits, branches, PRs, setup, testing, migrations |
+| [Home Screen validation](docs/home-screen-validation.md) | Humans + AI | Synthetic fixtures, iPhone checks, simulator procedure, and results record |
 | **AGENTS.md** (this file) | AI only | Autonomy policy, session start, hygiene guardrails, STOP list |
 | [CLAUDE.md](CLAUDE.md) | Claude Code | Thin pointer — imports this file |
 | [.github/copilot-instructions.md](.github/copilot-instructions.md) | Copilot | Thin pointer — points at this file |
