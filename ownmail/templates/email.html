@@ -13,6 +13,7 @@
             <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
                 <a href="/raw/{{ email_id }}" title="Show original message">{{ icon('file') }}<span>Original</span></a>
                 <a href="/download/{{ email_id }}" title="Download message">{{ icon('download') }}<span>Download</span></a>
+                <a href="{{ url_for('print_email', email_id=email_id, images='block' if images_blocked else 'load') }}" target="_blank" rel="noopener" title="Print message">{{ icon('print') }}<span>Print</span></a>
                 {% if not cached_view %}<button type="button" id="ownmail-edit-labels" data-message-action aria-expanded="false" aria-controls="ownmail-label-editor">{{ icon('label') }}<span>Edit labels</span></button>{% endif %}
                 {% if active %}<button type="button" id="ownmail-active-status-toggle" aria-expanded="false" aria-controls="ownmail-active-status">{{ icon('refresh') }}<span>Message status</span></button>{% endif %}
                 {% if body_html %}
@@ -132,6 +133,7 @@
                 <iframe id="ownmail-email-frame" title="Message" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ message_document | forceescape }}"></iframe>
             </div>
             <script src="/static/email-fit.js"></script>
+            <p class="ownmail-print-note">To print this message, choose Print from the message actions menu.</p>
         {% else %}
             <div id="ownmail-email-content" class="ownmail-email-content-plain">
                 <pre class="ownmail-email-body">{{ body | safe }}</pre>

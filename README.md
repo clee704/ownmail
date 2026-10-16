@@ -22,7 +22,8 @@ product philosophy, Active ownership, and server-cleanup limits.
 - **Read on desktop or phone:** A collapsible sidebar becomes a navigation drawer
   on smaller screens. Add the site to your phone's Home Screen for app-style access.
 - **Read messages and attachments:** View sanitized HTML, expand message details,
-  and preview supported attachment formats or download the originals.
+  print a message, and preview supported attachment formats or download the
+  originals.
 - **Choose your appearance:** Light, dark, or system theme, with adjustable desktop
   message and sidebar density, dates, time zone, and page size. In Settings, choose
   Comfortable, Standard (the default), or Compact spacing; density is saved
@@ -359,6 +360,13 @@ default. It stops every request a message makes for remote images,
 fonts, audio, and video, including CSS and responsive images and fonts from
 services such as Google Fonts. Loading remote content explicitly can reveal your
 request to the servers that host it.
+
+To print a message, choose Print from the reader's message actions menu. It
+opens the message alone in a new tab, laid out like a PDF export with the
+reader's remote-content setting, and opens the print dialog. The browser's own
+print command in the reader prints plain-text messages directly; for HTML
+messages it prints a note that points to the Print action, because browsers do
+not split the reader's message frame across pages.
 
 The server listens on localhost by default and has no built-in login. If you
 make it reachable from other devices, control access through a trusted network

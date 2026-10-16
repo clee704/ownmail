@@ -126,6 +126,7 @@ def test_secondary_metadata_disclosure_keeps_headers_and_actions_accessible(read
     assert [(link.get("href"), link.text_content().strip()) for link in menu.xpath(".//a")] == [
         ("/raw/message", "Original"),
         ("/download/message", "Download"),
+        ("/print/message?images=load", "Print"),
     ]
 
 

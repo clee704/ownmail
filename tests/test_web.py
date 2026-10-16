@@ -2,12 +2,15 @@
 
 import email
 import sqlite3
+from html import escape as html_escape
 from unittest.mock import MagicMock
 
 import pytest
 from lxml import html
 
 from ownmail.web import (
+    IMAGE_BLOCKING_CSP,
+    MESSAGE_CSP,
     _extract_body_content,
     _extract_snippet,
     _format_date_long,
@@ -2591,7 +2594,7 @@ class TestViewEmailRendering:
 
 
 class TestRawAndDownloadRoutes:
-    """Tests for /raw, /download and /attachment."""
+    """Tests for /raw, /print, /download and /attachment."""
 
     @pytest.fixture
     def archive(self, tmp_path):
@@ -2655,6 +2658,81 @@ class TestRawAndDownloadRoutes:
         app = create_test_app(archive)
         with app.test_client() as client:
             assert client.get("/raw/id1").status_code == 404
+
+    HTML_EML = (
+        b"From: Sender <a@example.com>\r\nTo: b@example.com\r\nSubject: Print test\r\n"
+        b"MIME-Version: 1.0\r\nContent-Type: text/html\r\n\r\n"
+        b'<p id="copy">Printable body</p><img src="https://fixture.test/i.png" width="4" height="2">\r\n'
+    )
+
+    @pytest.mark.parametrize(
+        ("query", "trusted", "blocked"),
+        [
+            ("", [], True),
+            ("", ["a@example.com"], False),
+            ("?images=load", [], False),
+            ("?images=block", ["a@example.com"], True),
+        ],
+    )
+    def test_print_presents_message_with_reader_remote_content_decision(self, archive, query, trusted, blocked):
+        """The Print page embeds the message as PDF export does, under the reader's CSP for the request."""
+        self._store(archive, self.HTML_EML)
+        app = create_test_app(archive, block_images=True, trusted_senders=trusted)
+        with app.test_client() as client:
+            reader = client.get("/email/id1" + query)
+            response = client.get("/print/id1" + query)
+        assert response.status_code == 200
+        assert response.headers["Content-Security-Policy"] == reader.headers["Content-Security-Policy"]
+        assert response.headers["Content-Security-Policy"] == (IMAGE_BLOCKING_CSP if blocked else MESSAGE_CSP)
+        tree = html.fromstring(response.data)
+        assert tree.xpath('//div[@id="ownmail-pdf-body"]/div[@id="ownmail-email-content"]/p[@id="copy"]')
+        assert tree.xpath("//h1/text()") == ["Print test"]
+        assert not tree.xpath("//iframe | //nav | //*[contains(@class, 'ownmail-reader-actions')]")
+        assert tree.xpath("//script/@src") == ["/static/message-print.js"]
+        assert [script.text for script in tree.xpath("//script")] == [None]
+        assert ("fixture.test" in tree.xpath("//img/@src")[0]) is not blocked
+        assert bool(tree.xpath('//p[@class="ownmail-pdf-note"]')) is blocked
+        link = html.fromstring(reader.data).xpath('//a[span="Print"]')[0]
+        assert link.get("href") == "/print/id1?images=" + ("block" if blocked else "load")
+        assert link.get("target") == "_blank"
+
+    def test_reader_offers_print_for_plain_text(self, archive):
+        """A plain-text message links to its Print page too."""
+        self._store(archive, b"From: a@example.com\r\nSubject: Plain\r\n\r\nplain body\r\n")
+        app = create_test_app(archive)
+        with app.test_client() as client:
+            reader = client.get("/email/id1")
+            response = client.get(html.fromstring(reader.data).xpath('//a[span="Print"]/@href')[0])
+        assert response.status_code == 200
+        assert html.fromstring(response.data).xpath('//pre[@class="ownmail-email-content-plain"]/text()') == [
+            "plain body\n"
+        ]
+
+    def test_print_unknown_message_is_404(self, archive):
+        """An unknown message has no Print page."""
+        archive.db.get_email_by_id.return_value = None
+        app = create_test_app(archive)
+        with app.test_client() as client:
+            assert client.get("/print/nope").status_code == 404
+
+    def test_print_reports_failed_sanitization(self, archive):
+        """A failed sanitization answers 503 instead of printing escaped markup."""
+
+        class FailingSanitizer:
+            available = True
+
+            def sanitize(self, body):
+                return html_escape(body), True, False
+
+            def stop(self):
+                pass
+
+        self._store(archive, self.HTML_EML)
+        app = create_test_app(archive, sanitizer=FailingSanitizer())
+        with app.test_client() as client:
+            response = client.get("/print/id1")
+        assert response.status_code == 503
+        assert b"Printable body" not in response.data
 
     def test_download_returns_eml(self, archive):
         """The download route should return the .eml as an attachment."""

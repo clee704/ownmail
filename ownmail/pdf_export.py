@@ -89,8 +89,14 @@ def _run_renderer(node: str, *args: str, timeout: float) -> None:
             raise OSError(f"PDF renderer unavailable or failed: {reason}")
 
 
-def _document(raw: bytes, sanitizer: HtmlSanitizer, template) -> str:
-    """Build the printable reader presentation without app routes or controls."""
+def _document(
+    raw: bytes, sanitizer: HtmlSanitizer, template, *, images_blocked: bool = True, print_page: bool = False
+) -> str:
+    """Build the printable reader presentation without app routes or controls.
+
+    The reader's Print page passes its remote-content decision and asks for the
+    script that opens the print dialog; PDF export uses the defaults.
+    """
     headers = EmailParser.parse_file(content=raw)
     message = email.message_from_bytes(raw, policy=email_policy)
     content = _message_body(message)
@@ -111,7 +117,9 @@ def _document(raw: bytes, sanitizer: HtmlSanitizer, template) -> str:
         # a failed request followed by a successful worker restart.
         if body_html == html.escape(original):
             raise OSError("HTML sanitization failed; no PDF export was written")
-        body_html, body_attributes = _extract_body_content(_hide_blocked_images(body_html))
+        if images_blocked:
+            body_html = _hide_blocked_images(body_html)
+        body_html, body_attributes = _extract_body_content(body_html)
     return template.render(
         subject=decode_header(headers["subject"]) or "(No subject)",
         sender=decode_header(headers["sender"]),
@@ -122,6 +130,8 @@ def _document(raw: bytes, sanitizer: HtmlSanitizer, template) -> str:
         body_attributes=body_attributes,
         needs_padding=needs_padding,
         attachments=content["attachments"],
+        images_blocked=images_blocked,
+        print_page=print_page,
     )
 
 

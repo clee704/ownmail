@@ -12,7 +12,3 @@ a:hover { text-decoration: underline; }
 /* Most HTML email assumes a light canvas; preserve the existing opt-in dark behavior. */
 html.ownmail-dark:not(.ownmail-email-dark) #ownmail-email-content { background: #fff; color: #333; color-scheme: light; --ownmail-accent-ink: #7a5900; }
 html.ownmail-dark.ownmail-email-dark #ownmail-email-content { color-scheme: dark; }
-@media print {
-    html, html.ownmail-dark { color-scheme: light; }
-    #ownmail-email-content, html.ownmail-dark #ownmail-email-content { background: none !important; color: #222 !important; --ownmail-accent-ink: #333; }
-}

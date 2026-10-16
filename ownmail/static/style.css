@@ -490,6 +490,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-label-editor { padding: var(--ownmail-space-3); }
     .ownmail-label-editor :is(button, input) { min-height: 44px; font-size: 16px; }
 }
+.ownmail-print-note { display: none; }
 @media print {
     :root, html.ownmail-dark { color-scheme: light; --ownmail-bg: #fff; --ownmail-text: #222; --ownmail-secondary: #444; --ownmail-muted: #555; --ownmail-border: #ddd; --ownmail-selected: #eee; --ownmail-accent: #333; --ownmail-accent-hover: #333; --ownmail-accent-soft: #eee; --ownmail-accent-ink: #333; --ownmail-on-accent: #fff; }
     .ownmail-app-shell:not(.ownmail-reader-page) { padding-top: 0; }
@@ -501,4 +502,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-email-content-area { background: none; }
     .ownmail-labels, .ownmail-label-editor { display: none; }
     .ownmail-attachments { break-inside: avoid; }
+    /* Browsers do not paginate a frame, so HTML messages print from the Print page. */
+    #ownmail-email-viewport { display: none !important; }
+    .ownmail-print-note { display: block; }
 }
