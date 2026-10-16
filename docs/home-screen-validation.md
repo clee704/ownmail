@@ -1,10 +1,13 @@
 # iPhone Home Screen validation
 
-Use this runbook for the remaining physical-device checks in
-[TASK-50](../backlog/tasks/task-50%20-%20Improve-the-iPhone-Home-Screen-web-app-experience.md).
-Record observations against the exact tested commit. Browser tests, responsive
-emulation and an iPhone simulator provide supporting evidence; they do not
-complete the physical-iPhone checks.
+Use this runbook to check the Home Screen app on a physical iPhone, for example
+after a change to the reader or navigation.
+[TASK-50](../backlog/tasks/task-50%20-%20Improve-the-iPhone-Home-Screen-web-app-experience.md)
+closed on simulator checks and the maintainer's sign-off without a recorded
+physical run; its notes list what neither covered. Record observations against
+the exact tested commit. Browser tests, responsive emulation and an iPhone
+simulator provide supporting evidence; they do not complete the physical-iPhone
+checks.
 
 ## Prerequisites and inputs
 
@@ -189,7 +192,7 @@ The current reader directly embeds sanitized HTML.
 [TASK-142](../backlog/tasks/task-142%20-%20Render-reader-messages-in-a-sandboxed-frame.md)
 has not landed: do not claim frame isolation or frame-specific device checks
 from this run. If the tested revision changes the reader, update this procedure
-before attributing its results to TASK-50.
+before relying on its results.
 
 ## Supplemental simulator checks
 
@@ -257,7 +260,8 @@ Supporting simulator/browser evidence (separate from physical checks):
 Failures, blocked portions and next action:
 ```
 
-Summarize device observations in TASK-50 without private deployment details.
+Summarize device observations in the task that requested the run, without
+private deployment details.
 Keep incomplete checks open; a fixture import or passing desktop gate supplies
 no physical-device evidence. Retain the disposable fixture until results are
 recorded; any cleanup must target only the verified directory created by this

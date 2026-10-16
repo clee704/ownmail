@@ -1,11 +1,11 @@
 ---
 id: TASK-50
 title: Improve the iPhone Home Screen web app experience
-status: In Progress
+status: Done
 assignee:
   - Ownmail audit IC4
 created_date: '2026-09-13 04:50'
-updated_date: '2026-10-13 18:05'
+updated_date: '2026-10-16 05:04'
 labels:
   - ui
   - mobile
@@ -28,19 +28,19 @@ ordinal: 28000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Make ownmail reliable and comfortable when launched from the iPhone Home Screen. Prioritize navigation, resuming after backgrounding, and validation on an actual iPhone, then complete installation metadata and connection recovery.
 
-TASK-49, TASK-51, TASK-52, and TASK-53 cover most navigation and resume behavior; physical-device confirmation remains. TASK-49 added a minimal manifest with root navigation scope and configured branding, prevented automatic search focus on return, and improved list restoration and loading feedback. Its standalone navigation was verified in an iPhone simulator. TASK-50.1 adds the Archive app icon through Apple touch and manifest declarations. The reviewed code checkpoint adds theme colors, app-managed reading-position recovery and in-page connection recovery. Actual iPhone validation remains open, including the unavailable-cold-launch boundary described below.
+TASK-49, TASK-51, TASK-52, and TASK-53 cover most navigation and resume behavior. TASK-49 added a minimal manifest with root navigation scope and configured branding, prevented automatic search focus on return, and improved list restoration and loading feedback. Its standalone navigation was verified in an iPhone simulator. TASK-50.1 adds the Archive app icon through Apple touch and manifest declarations. The reviewed code checkpoint adds theme colors, app-managed reading-position recovery and in-page connection recovery. Simulator checks and the maintainer's sign-off replace a recorded physical-iPhone run; see the implementation notes.
 
 Implement this incrementally in the existing Flask UI. A cached offline fallback depends on a trusted HTTPS origin over LAN; record that dependency before selecting a service-worker strategy. Full offline mail storage is a separate product decision.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 List-to-message-to-list navigation preserves the search, sort, page, scroll position, and focused message without toolbar jumps or disruptive intermediate layouts.
-- [ ] #2 Backgrounding and reopening preserve the current view and reading position where valid; stale or missing messages recover to a usable view.
-- [ ] #3 Controls and content remain usable around the status bar, home indicator, keyboard, and landscape cutout; desktop and keyboard navigation still work.
-- [ ] #4 Installation has a manifest, app icons, name, launch URL, navigation scope, and theme colors, verified from the iPhone Home Screen.
-- [ ] #5 Connection loss and an unavailable server produce recoverable feedback with Retry; loading states terminate and failed actions never appear successful. Document the HTTPS prerequisite and intended scope for a cached offline fallback.
-- [ ] #6 Record actual iPhone Home Screen checks for cold launch, Back, long-message scrolling, background/resume, keyboard use, portrait/landscape, and connection recovery, including the tested iOS version. Add focused regression coverage for changed navigation and recovery behavior.
+- [x] #1 List-to-message-to-list navigation preserves the search, sort, page, scroll position, and focused message without toolbar jumps or disruptive intermediate layouts.
+- [x] #2 Backgrounding and reopening preserve the current view and reading position where valid; stale or missing messages recover to a usable view.
+- [x] #3 Controls and content remain usable around the status bar, home indicator, keyboard, and landscape cutout; desktop and keyboard navigation still work.
+- [x] #4 Installation has a manifest, app icons, name, launch URL, navigation scope, and theme colors, verified from the iPhone Home Screen.
+- [x] #5 Connection loss and an unavailable server produce recoverable feedback with Retry; loading states terminate and failed actions never appear successful. Document the HTTPS prerequisite and intended scope for a cached offline fallback.
+- [x] #6 iPhone simulator checks of cold launch, Back, long-message scrolling, background/resume, keyboard use, portrait/landscape and connection recovery are recorded with the tested iOS version, the maintainer has signed off on physical-iPhone behavior, and focused regression coverage exists for changed navigation and recovery behavior.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -79,4 +79,12 @@ Final corrected checkpoint: application revision a0043016b476afab3dc5c89fe0133c7
 The fresh standalone iPhone 17 Pro / iOS 26.5 recheck verified the corrected notification: the full unconfirmed-save message fits in three readable lines with Retry and dismiss visible. Persistent synthetic server logs record exactly one original label-save POST after the paused server resumed, followed by the reader GET from explicit Retry and a label GET confirming the saved label. No second mutation or CSRF rejection occurred. This supplies the previously missing request-count evidence that Retry does not replay the unconfirmed save. The owned server stopped, its loopback port was clear, and the selected simulator returned to Start.
 
 TASK-50 remains In Progress with every original acceptance criterion retained and unchecked. Simulator evidence is supplemental. Physical-iPhone checks remain required; missing/stale-reader recovery, unavailable cold launch, native Back, keyboard row focus, a fresh software-keyboard submission, dark theme and full list orientation checks were not completed in these simulator phases. Next action: use docs/home-screen-validation.md on an authorized physical iPhone with the current build and synthetic archive, record the device/iOS and remaining observations, then evaluate the original criteria. Final ledger changes do not alter the tested application or test files.
+
+2026-10-15 closure: the maintainer judged that the remaining checks do not justify a recorded physical-iPhone run and signed off that the Home Screen app works on their iPhone in normal use. AC #6 was rewritten to record that sign-off in place of a physical run. AC #1-5 are checked on that sign-off together with the simulator evidence and regression coverage above. Not separately observed on a device or simulator: changed-version reader recovery (covered by regression tests), unavailable cold launch, native Back, hardware-keyboard row focus, a fresh software-keyboard submission, dark theme and full list orientation. docs/home-screen-validation.md remains the procedure for a later device check, for example after TASK-142 changes the reader.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Theme colors, session-only reading-position recovery, a usable unavailable-message view and bounded loading with explicit Retry (no mutation replay) were added on top of the TASK-49/50.1/51-53 navigation work. A simulator run exposed a narrow recovery notification, now fixed. Evidence is the iPhone 17 Pro / iOS 26.5 simulator run, regression tests and the maintainer's sign-off; the maintainer waived a recorded physical-iPhone run. No service worker or offline cache was added; trusted HTTPS is documented as the prerequisite for one.
+<!-- SECTION:FINAL_SUMMARY:END -->
