@@ -372,7 +372,8 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
             probe.textContent = 'Reference';
             shadow.append(style, probe);
         }, authoredCSS);
-        for (const width of [600, 1100]) {
+        // Media queries match the message frame, which is at most the reader column wide.
+        for (const width of [600, 360]) {
             await page.setViewportSize({width, height:900});
             await settle();
             const result = await page.evaluate(() => {

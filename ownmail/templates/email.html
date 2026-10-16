@@ -16,7 +16,7 @@
                 {% if not cached_view %}<button type="button" id="ownmail-edit-labels" data-message-action aria-expanded="false" aria-controls="ownmail-label-editor">{{ icon('label') }}<span>Edit labels</span></button>{% endif %}
                 {% if active %}<button type="button" id="ownmail-active-status-toggle" aria-expanded="false" aria-controls="ownmail-active-status">{{ icon('refresh') }}<span>Message status</span></button>{% endif %}
                 {% if body_html %}
-                <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-content" hidden>Show actual size</button>
+                <button type="button" id="ownmail-fit-message" aria-controls="ownmail-email-frame" hidden>Show actual size</button>
                 {% endif %}
                 {% if has_remote_content %}
                 <hr class="ownmail-email-menu-divider">
@@ -126,8 +126,10 @@
         {% endif %}
 
         {% if body_html %}
+            {#- A set block is Markup, so srcdoc needs forceescape. #}
+            {% set message_document %}<!doctype html><html><head><link rel="stylesheet" href="{{ url_for('static', filename='email-frame.css') }}"></head><body><div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}"{{ body_attributes | default({}) | xmlattr }}>{{ body_html | safe }}</div></body></html>{% endset %}
             <div id="ownmail-email-viewport" data-auto-scale="{{ 'true' if auto_scale else 'false' }}">
-                <div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}"{{ body_attributes | default({}) | xmlattr }}>{{ body_html | safe }}</div>
+                <iframe id="ownmail-email-frame" title="Message" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ message_document | forceescape }}"></iframe>
             </div>
             <script src="/static/email-fit.js"></script>
         {% else %}

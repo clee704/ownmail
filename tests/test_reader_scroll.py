@@ -64,10 +64,12 @@ def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, browser_node, bo
         const button = page.locator('#ownmail-fit-message');
         const wide = message().locator('#wide');
         const authoredStyle = await wide.getAttribute('style');
+        assert.equal(await button.getAttribute('aria-controls'), await page.locator('#ownmail-email-frame').getAttribute('id'));
         const toggle = async () => {
             await page.locator('.ownmail-email-menu > summary').click();
             await button.click();
             await settle();
+            assert.equal(await page.locator('.ownmail-email-menu').evaluate(el => el.open), false);
         };
         const checkFitted = async () => {
             assert.equal(await button.textContent(), 'Show actual size');
@@ -136,6 +138,30 @@ def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, browser_node, bo
         theme="light",
         auto_scale=True,
         viewport=(390, 740),
+    )
+
+
+@pytest.mark.parametrize("sender_sizing", ["", "box-sizing:border-box;"])
+def test_message_image_box_sizing_matches_standalone_html(shell_app, browser_node, sender_sizing):
+    app, _ = shell_app
+    run_message_browser(
+        app,
+        browser_node,
+        f'<img id="padded-logo" alt="" style="width:120px;height:40px;padding-right:24px;{sender_sizing}">',
+        "",
+        """
+        const sizing = await message().locator('#padded-logo').evaluate(el => ({
+            boxSizing: getComputedStyle(el).boxSizing, width: el.getBoundingClientRect().width
+        }));
+        assert.deepEqual(sizing, SIZING);
+        assert.equal(await message().locator('#ownmail-email-content').evaluate(el => getComputedStyle(el).boxSizing), 'border-box');
+        assert.equal(await page.locator('.ownmail-app-shell').evaluate(el => getComputedStyle(el).boxSizing), 'border-box');
+        """.replace(
+            "SIZING",
+            '{boxSizing: "border-box", width: 120}' if sender_sizing else '{boxSizing: "content-box", width: 144}',
+        ),
+        theme="light",
+        auto_scale=True,
     )
 
 
@@ -344,7 +370,8 @@ def test_reader_reload_restores_session_position_after_fitting(shell_app, browse
         assert.equal(await page.locator('head meta[name="theme-color"]').getAttribute('content'), '#ffffff');
         await setTheme('dark');
         assert.equal(await page.locator('head meta[name="theme-color"]').getAttribute('content'), '#202124');
-        await page.addInitScript(() => { history.scrollRestoration = 'manual'; });
+        // Init scripts also run in the message frame's initial document.
+        await page.addInitScript(() => { if (window === window.top) history.scrollRestoration = 'manual'; });
         await page.evaluate(() => {
             history.scrollRestoration = 'manual';
             window.scrollTo(0, 870);

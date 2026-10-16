@@ -68,8 +68,7 @@ html.ownmail-dark {
     --ownmail-overlay: rgb(0 0 0 / 48%);
     --ownmail-shadow: 0 4px 18px rgb(0 0 0 / 28%), 0 1px 3px rgb(0 0 0 / 20%);
 }
-/* Authored message dimensions can rely on the browser's content-box default. */
-*:not(:where(#ownmail-email-content *)) { box-sizing: border-box; }
+* { box-sizing: border-box; }
 body {
     margin: 0;
     background: var(--ownmail-bg);
@@ -304,8 +303,9 @@ span.ownmail-email-sender { pointer-events: none; }
 /* Let sender backgrounds reach the reader edges while app controls keep their inset. */
 #ownmail-email-viewport { display: flow-root; overflow: clip visible; margin-inline: calc(-1 * var(--ownmail-reader-inset)); }
 #ownmail-email-content { min-height: 200px; overflow: auto; overflow-wrap: break-word; font-family: var(--ownmail-font); font-size: 16px; }
-#ownmail-email-content:where(.ownmail-email-content-html) { display: flow-root; overflow: visible; }
-.ownmail-email-content-padded { padding: var(--ownmail-space-4) calc(var(--ownmail-reader-inset) + var(--ownmail-space-4)); }
+#ownmail-email-frame { display: block; width: 100%; height: 200px; border: 0; --ownmail-message-padding: var(--ownmail-space-4) calc(var(--ownmail-reader-inset) + var(--ownmail-space-4)); }
+/* Hidden until the first theme sync, so dark mode has no light flash. */
+#ownmail-email-frame:not([data-ready]) { visibility: hidden; }
 .ownmail-email-content-plain { padding: var(--ownmail-space-4) 0; }
 .ownmail-email-body { font-family: inherit; margin: 0; max-width: 70ch; line-height: 1.65; }
 .ownmail-email-body a { color: var(--ownmail-accent-ink); }
@@ -329,10 +329,6 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-image-banner button { min-height: 28px; padding: var(--ownmail-space-1) var(--ownmail-space-2); border: 1px solid transparent; border-radius: var(--ownmail-radius); background: var(--ownmail-accent-soft); color: var(--ownmail-accent-ink); }
 .ownmail-image-banner .ownmail-trust-btn { background: transparent; }
 .ownmail-image-banner button:hover { background: var(--ownmail-selected); }
-/* Most HTML email assumes a light canvas; preserve the existing opt-in dark behavior. */
-html.ownmail-dark .ownmail-email-content-area:not(.ownmail-email-dark) #ownmail-email-content { background: #fff; color: #333; color-scheme: light; }
-html.ownmail-dark .ownmail-email-content-area:not(.ownmail-email-dark) .ownmail-email-content-html { --ownmail-accent-ink: #7a5900; }
-html.ownmail-dark .ownmail-email-content-area.ownmail-email-dark #ownmail-email-content { color-scheme: dark; }
 html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { background: transparent !important; color: var(--ownmail-text) !important; color-scheme: dark; }
 
 /* Settings and help use the same type and controls as the archive. */
@@ -451,7 +447,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-reader-page .ownmail-email-detail { --ownmail-reader-inset: var(--ownmail-space-4); padding: var(--ownmail-space-4) var(--ownmail-reader-inset); }
     .ownmail-reader-subject { font-size: 22px; }
     .ownmail-email-header { padding-bottom: var(--ownmail-space-4); }
-    .ownmail-email-content-padded { padding: var(--ownmail-space-2) calc(var(--ownmail-reader-inset) + var(--ownmail-space-2)); }
+    #ownmail-email-frame { --ownmail-message-padding: var(--ownmail-space-2) calc(var(--ownmail-reader-inset) + var(--ownmail-space-2)); }
     .ownmail-email-content-plain { padding: var(--ownmail-space-3) 0; }
     #ownmail-email-content.ownmail-email-content-plain { font-size: 17px; }
     .ownmail-attachments { margin-top: var(--ownmail-space-4); padding-top: var(--ownmail-space-3); }
@@ -499,7 +495,7 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-layout { display: block; max-width: none; }
     .ownmail-reader-page .ownmail-layout, .ownmail-reader-page .ownmail-main { min-height: 0; }
     .ownmail-reader-page .ownmail-email-detail { --ownmail-reader-inset: 0px; padding: 0; max-width: none; }
-    #ownmail-email-content, html.ownmail-dark #ownmail-email-content { background: none !important; color: #222 !important; --ownmail-accent-ink: #333; }
+    #ownmail-email-content, html.ownmail-dark #ownmail-email-content { background: none !important; color: #222 !important; }
     .ownmail-email-content-area { background: none; }
     .ownmail-labels, .ownmail-label-editor { display: none; }
     .ownmail-attachments { break-inside: avoid; }

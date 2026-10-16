@@ -1,46 +1,134 @@
 (function() {
     var viewport = document.getElementById('ownmail-email-viewport');
-    var content = document.getElementById('ownmail-email-content');
+    var frame = document.getElementById('ownmail-email-frame');
     var fitButton = document.getElementById('ownmail-fit-message');
     var fitToWidth = viewport.dataset.autoScale === 'true';
+    // The frame cannot inherit custom properties, so the parent copies them.
+    var mirrored = ['--ownmail-text', '--ownmail-accent-ink', '--ownmail-font', '--ownmail-message-padding'];
+    // Message viewport units keep their reader meaning (see the sanitizer).
+    var probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; visibility: hidden; pointer-events: none;';
+    document.body.appendChild(probe);
+    var doc = null, content = null, callbacks = [], pending = false;
+    var sizes = new WeakMap();
 
-    function scaleToFit() {
-        // Measure the authored width before applying the reader's zoom.
+    function sync() {
+        var root = doc.documentElement, style = getComputedStyle(frame);
+        mirrored.forEach(function(name) { root.style.setProperty(name, style.getPropertyValue(name)); });
+        var box = probe.getBoundingClientRect(), w = box.width / 100, h = box.height / 100;
+        root.style.setProperty('--ownmail-vw', w + 'px');
+        root.style.setProperty('--ownmail-vh', h + 'px');
+        root.style.setProperty('--ownmail-vmin', Math.min(w, h) + 'px');
+        root.style.setProperty('--ownmail-vmax', Math.max(w, h) + 'px');
+    }
+
+    function layout() {
+        if (!doc) return;
+        var root = doc.documentElement, scroller = doc.scrollingElement || root;
         var scrollLeft = viewport.scrollLeft;
+        // Collapsing the frame below would otherwise clamp the page scroll position.
+        viewport.style.minHeight = frame.offsetHeight + 'px';
+        sync();
         content.style.zoom = '';
-        content.style.overflow = 'visible';
-        viewport.style.minHeight = '';
-        viewport.style.overflow = 'clip visible';
-        void content.offsetWidth;
+        frame.style.width = '';
+        viewport.style.overflow = '';
 
-        var cw = viewport.clientWidth;
-        var sw = viewport.scrollWidth;
-        var wide = sw > cw + 1 && cw > 0;
-        fitButton.hidden = !wide;
+        // Fit first: the height read below includes the zoom.
+        var cw = scroller.clientWidth, sw = scroller.scrollWidth;
+        // Any overflow would scroll inside the frame; the button needs a visible amount.
+        var wide = sw > cw && cw > 0;
+        fitButton.hidden = !(wide && sw > cw + 1);
         fitButton.textContent = fitToWidth ? 'Show actual size' : 'Fit to width';
+        // The loop below shrinks the zoom further if rounding leaves overflow.
+        if (wide && fitToWidth) content.style.zoom = cw / sw;
+        // scrollWidth and scrollHeight round to the nearest pixel, hence the + 1.
+        else if (wide) frame.style.width = (sw + 1) + 'px';
 
-        if (wide && fitToWidth) {
-            var scale = cw / sw;
-            content.style.zoom = scale;
-        } else if (wide) {
+        // At zero height, content sized against the frame viewport cannot feed back.
+        frame.style.height = '0px';
+        var height = Math.ceil(root.getBoundingClientRect().height);
+        // Positioned or transformed content overflows the root box.
+        if (scroller.scrollHeight > height) height = scroller.scrollHeight + 1;
+        frame.style.height = height + 'px';
+        for (var pass = 0; pass < 4; pass++) {
+            var overWidth = scroller.scrollWidth > scroller.clientWidth;
+            var overHeight = scroller.scrollHeight > scroller.clientHeight;
+            if (!overWidth && !overHeight) break;
+            if (overWidth && fitToWidth) {
+                content.style.zoom = (Number(content.style.zoom) || 1) * scroller.clientWidth / (scroller.scrollWidth + 1);
+            } else if (overWidth) {
+                frame.style.width = (frame.offsetWidth + scroller.scrollWidth - scroller.clientWidth + 1) + 'px';
+            }
+            if (overHeight) frame.style.height = (scroller.scrollHeight + 1) + 'px';
+        }
+        if (frame.style.width) {
             viewport.style.overflow = 'auto hidden';
+            viewport.scrollLeft = scrollLeft;
         }
+        viewport.style.minHeight = '';
+    }
 
-        // Reserve overflow space without changing sender percentage heights.
-        if (viewport.scrollHeight > viewport.clientHeight) {
-            var borderHeight = viewport.offsetHeight - viewport.clientHeight;
-            viewport.style.minHeight = (viewport.scrollHeight + borderHeight) + 'px';
+    function schedule() {
+        if (pending) return;
+        pending = true;
+        requestAnimationFrame(function() { pending = false; layout(); });
+    }
+
+    // Parent listeners on nodes in a frame without scripts never fire in
+    // WebKit, so changes inside the frame are observed from here.
+    var observer = window.ResizeObserver && new ResizeObserver(function(entries) {
+        entries.forEach(function(entry) {
+            var rect = entry.contentRect;
+            // The layout sets the frame height itself; only its width is input.
+            var size = entry.target === frame ? String(rect.width) : rect.width + ':' + rect.height;
+            if (sizes.get(entry.target) === size) return;
+            sizes.set(entry.target, size);
+            schedule();
+        });
+    });
+
+    function start(frameDocument) {
+        doc = frameDocument;
+        content = doc.getElementById('ownmail-email-content');
+        layout();
+        if (observer) {
+            observer.observe(frame);
+            observer.observe(content);
+            Array.from(doc.images).forEach(function(image) { observer.observe(image); });
         }
-        if (wide && !fitToWidth) viewport.scrollLeft = scrollLeft;
+        if (doc.fonts) doc.fonts.ready.then(layout);
+        var waiting = callbacks;
+        callbacks = null;
+        waiting.forEach(function(callback) { callback(); });
+        // Shown only after the first theme sync, so dark mode has no light flash.
+        frame.dataset.ready = '';
+    }
+
+    // At script time contentDocument is still the initial about:blank.
+    function poll() {
+        if (doc) return;
+        var current = frame.contentDocument;
+        if (current && current.URL === 'about:srcdoc' && current.readyState !== 'loading') start(current);
+        else requestAnimationFrame(poll);
     }
 
     fitButton.addEventListener('click', function() {
         fitToWidth = !fitToWidth;
-        scaleToFit();
+        layout();
     });
-    scaleToFit();
-    content.addEventListener('load', scaleToFit, true);
-    window.addEventListener('load', scaleToFit);
-    window.addEventListener('resize', scaleToFit);
-    if (document.fonts) document.fonts.ready.then(scaleToFit);
+    // Load fires after the frame's images and stylesheet.
+    frame.addEventListener('load', function() {
+        poll();
+        layout();
+    });
+    window.addEventListener('resize', layout);
+    window.ownmailMessageFrame = {
+        ready: function(callback) {
+            if (callbacks) callbacks.push(callback);
+            else callback();
+        },
+        layout: layout
+    };
+    poll();
 })();

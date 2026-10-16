@@ -403,106 +403,44 @@ dom.window.close();
     assert result.returncode == 0, result.stderr
 
 
-def run_fit_browser(reader, browser_dir, auto_scale, width, assertions):
+def run_reader_dom(reader, browser_dir, assertions):
     client, archive = reader
     (archive.archive_dir / "message.eml").write_text(
         "From: sender@example.com\nSubject: Wide HTML\nContent-Type: text/html\n\n"
         '<div id="authored" style="width:1200px;font-size:20px">Readable at actual size.</div>'
     )
-    client.application.config["auto_scale"] = auto_scale
     page = client.get("/email/message").data.decode()
     script = """
 const assert = require('node:assert/strict');
 const { JSDOM, ResourceLoader } = require('jsdom');
 __SCRIPT_LOADER__
 (async () => {
-let contentWidth = WIDTH;
 const dom = new JSDOM(PAGE, {
     url: 'http://localhost/email/message', runScripts: 'dangerously', resources: new LocalScripts(),
+    pretendToBeVisual: true,
     beforeParse(window) {
         window.matchMedia = () => ({ matches: false, addEventListener() {} });
-        Object.defineProperty(window.HTMLElement.prototype, 'clientWidth', {
-            get() { return ['ownmail-email-content', 'ownmail-email-viewport'].includes(this.id) ? contentWidth : 0; }
-        });
-        Object.defineProperty(window.HTMLElement.prototype, 'scrollWidth', {
-            get() { return ['ownmail-email-content', 'ownmail-email-viewport'].includes(this.id) ? 1200 : 0; }
-        });
     }
 });
 await new Promise(resolve => dom.window.addEventListener('load', resolve));
 const { window } = dom;
 const { document } = window;
-const content = document.getElementById('ownmail-email-content');
-const viewport = document.getElementById('ownmail-email-viewport');
-const button = document.getElementById('ownmail-fit-message');
 const menu = document.querySelector('.ownmail-email-menu');
 ASSERTIONS
 dom.window.close();
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     script = test_ui_shell.with_local_scripts(
-        script.replace("WIDTH", str(width)).replace("PAGE", json.dumps(page)).replace("ASSERTIONS", assertions)
+        script.replace("PAGE", json.dumps(page)).replace("ASSERTIONS", assertions)
     )
     result = subprocess.run(["node", "-e", script], cwd=browser_dir, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("auto_scale", [True, False])
-def test_wide_message_can_toggle_fit_without_changing_authored_styles(reader, shell_browser, auto_scale):
-    run_fit_browser(
-        reader,
-        shell_browser,
-        auto_scale,
-        400,
-        """
-const initiallyFit = INITIAL_FIT;
-assert(!button.hidden);
-assert.equal(button.getAttribute('aria-controls'), content.id);
-assert.equal(button.textContent, initiallyFit ? 'Show actual size' : 'Fit to width');
-assert.equal(String(content.style.zoom), initiallyFit ? String(1 / 3) : '');
-menu.open = true;
-button.click();
-assert.equal(button.textContent, initiallyFit ? 'Fit to width' : 'Show actual size');
-assert.equal(String(content.style.zoom), initiallyFit ? '' : String(1 / 3));
-assert.equal(viewport.style.overflow, initiallyFit ? 'auto hidden' : 'clip visible');
-assert(!menu.open);
-assert.equal(document.activeElement, menu.querySelector('summary'));
-button.click();
-assert.equal(String(content.style.zoom), initiallyFit ? String(1 / 3) : '');
-assert.equal(document.getElementById('authored').getAttribute('style'), 'width:1200px;font-size:20px');
-""".replace("INITIAL_FIT", json.dumps(auto_scale)),
-    )
-    assert reader[0].application.config["auto_scale"] is auto_scale
-
-
-def test_fit_control_follows_overflow_when_viewport_changes(reader, shell_browser):
-    run_fit_browser(
-        reader,
-        shell_browser,
-        True,
-        1200,
-        """
-assert(button.hidden);
-assert.equal(content.style.zoom, '');
-contentWidth = 390;
-window.dispatchEvent(new window.Event('resize'));
-assert(!button.hidden);
-assert.equal(Number(content.style.zoom), 390 / 1200);
-contentWidth = 1400;
-window.dispatchEvent(new window.Event('resize'));
-assert(button.hidden);
-assert.equal(content.style.zoom, '');
-assert.equal(viewport.style.overflow, 'clip visible');
-""",
-    )
-
-
 def test_message_download_closes_menu_without_canceling_navigation(reader, shell_browser):
-    run_fit_browser(
+    run_reader_dom(
         reader,
         shell_browser,
-        True,
-        1200,
         """
 const download = menu.querySelector('a[href="/download/message"]');
 menu.open = true;
@@ -517,11 +455,9 @@ assert.equal(document.activeElement, menu.querySelector('summary'));
 
 
 def test_timestamp_toggles_metadata_without_moving_keyboard_focus(reader, shell_browser):
-    run_fit_browser(
+    run_reader_dom(
         reader,
         shell_browser,
-        True,
-        1200,
         """
 const timestamp = document.getElementById('ownmail-message-details-toggle');
 const metadata = document.getElementById(timestamp.getAttribute('aria-controls'));
@@ -537,34 +473,6 @@ assert.equal(timestamp.getAttribute('aria-expanded'), 'false');
 assert(metadata.hidden);
 assert.equal(document.activeElement, timestamp);
 """,
-    )
-
-
-@pytest.mark.parametrize("sender_sizing", ["", "box-sizing:border-box;"])
-def test_message_image_box_sizing_matches_standalone_html(reader, shell_browser, sender_sizing):
-    client, archive = reader
-    image = f'<img id="padded-logo" style="width:120px;height:40px;padding-right:24px;{sender_sizing}">'
-    (archive.archive_dir / "message.eml").write_text(
-        "From: sender@example.com\nSubject: Padded logo\nContent-Type: text/html\n\n" + image
-    )
-    stylesheet = client.get("/static/style.css").data.decode()
-    test_ui_shell.run_shell_browser(
-        client.application,
-        shell_browser,
-        """
-const style = document.createElement('style');
-style.textContent = STYLESHEET;
-document.head.appendChild(style);
-const standalone = new JSDOM(IMAGE);
-const expected = standalone.window.getComputedStyle(
-    standalone.window.document.querySelector('img')
-).boxSizing;
-assert.equal(window.getComputedStyle(byId('padded-logo')).boxSizing, expected);
-assert.equal(window.getComputedStyle(byId('ownmail-email-content')).boxSizing, 'border-box');
-assert.equal(window.getComputedStyle(document.querySelector('.ownmail-app-shell')).boxSizing, 'border-box');
-standalone.window.close();
-""".replace("STYLESHEET", json.dumps(stylesheet)).replace("IMAGE", json.dumps(image)),
-        path="/email/message",
     )
 
 

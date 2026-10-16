@@ -43,6 +43,7 @@
         var dark = false;
         var timer = null;
         var repairs = new Map();
+        var doc = content.ownerDocument;
         var resources = /url\s*\(|image-set\s*\(|@import\b|@font-face\b|\\/i;
         var originalHasResources = Array.from(content.querySelectorAll('style')).some(function (el) {
             return resources.test(el.textContent);
@@ -57,14 +58,14 @@
 
         function collect() {
             var elements = [content];
-            var walker = document.createTreeWalker(content, NodeFilter.SHOW_ELEMENT);
+            var walker = doc.createTreeWalker(content, NodeFilter.SHOW_ELEMENT);
             var node;
             while ((node = walker.nextNode())) {
                 if (elements.length >= MAX_ELEMENTS) return null;
                 elements.push(node);
             }
             var texts = [];
-            walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+            walker = doc.createTreeWalker(content, NodeFilter.SHOW_TEXT);
             while ((node = walker.nextNode())) {
                 if (texts.length >= MAX_TEXT_NODES) return null;
                 if (!/^(STYLE|SCRIPT|TITLE)$/.test(node.parentElement.tagName) && /[\p{L}\p{N}]/u.test(node.data)) texts.push(node);
@@ -113,7 +114,7 @@
                 if (!foreground || foreground[3] !== 1 || parseFloat(s.fontSize) < 4 ||
                     s.textShadow !== 'none' || parseFloat(s.webkitTextStrokeWidth || '0') > 0 ||
                     (s.webkitTextFillColor && s.webkitTextFillColor !== s.color)) return;
-                var range = document.createRange();
+                var range = doc.createRange();
                 range.selectNodeContents(node);
                 var rect = range.getBoundingClientRect();
                 if (rect.width < 1 || rect.height < 2 || rect.right <= 0 || rect.bottom <= 0) return;
@@ -178,7 +179,7 @@
             });
             candidates.forEach(function (original, node) {
                 // A parent color override would also change links and currentColor decoration.
-                var wrapper = document.createElement('span');
+                var wrapper = doc.createElement('span');
                 wrapper.style.cssText = 'all: unset !important; color: ' + original.color + ' !important;';
                 node.replaceWith(wrapper);
                 wrapper.appendChild(node);
@@ -205,20 +206,22 @@
             clearTimeout(timer);
             timer = setTimeout(function () { timer = null; run(); }, 80);
         }
-        function imageChanged(event) {
-            // Stylesheet loads must not restart the probe.
-            if (event.target.tagName === 'IMG') refresh();
-        }
-        content.addEventListener('load', imageChanged, true);
-        content.addEventListener('error', imageChanged, true);
+        // Parent listeners on nodes in a frame without scripts never fire in
+        // WebKit; the frame's load event follows its images instead.
+        var frame = doc.defaultView && doc.defaultView.frameElement;
+        if (frame) frame.addEventListener('load', refresh);
         window.addEventListener('resize', refresh);
-        if (document.fonts) document.fonts.ready.then(refresh);
+        if (doc.fonts) doc.fonts.ready.then(refresh);
         if (window.ResizeObserver) {
-            var lastSize = '';
-            new ResizeObserver(function (entries) {
-                var rect = entries[0].contentRect, size = rect.width + ':' + rect.height;
-                if (size !== lastSize) { lastSize = size; refresh(); }
-            }).observe(content);
+            var sizes = new WeakMap();
+            var observer = new ResizeObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    var rect = entry.contentRect, size = rect.width + ':' + rect.height;
+                    if (sizes.get(entry.target) !== size) { sizes.set(entry.target, size); refresh(); }
+                });
+            });
+            observer.observe(content);
+            content.querySelectorAll('img').forEach(function (image) { observer.observe(image); });
         }
         return { update: function (isDark) {
             clearTimeout(timer);

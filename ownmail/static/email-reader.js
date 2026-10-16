@@ -34,10 +34,11 @@ document.getElementById('ownmail-message-details-toggle').addEventListener('clic
 var originalEmailMedia = new WeakMap();
 // Rewriting style text would let the browser re-parse sender strings as new
 // rules. A media rule's condition parses only as a media query list.
-function applyEmailMediaTheme(rules, dark) {
+// MediaRule is the frame realm's constructor: instanceof fails across realms.
+function applyEmailMediaTheme(rules, dark, MediaRule) {
     for (var i = 0; i < rules.length; i++) {
         var rule = rules[i];
-        if (rule instanceof CSSMediaRule) {
+        if (rule instanceof MediaRule) {
             if (!originalEmailMedia.has(rule)) originalEmailMedia.set(rule, rule.media.mediaText);
             var original = originalEmailMedia.get(rule);
             // Width is never negative, so these conditions are constant and
@@ -46,7 +47,7 @@ function applyEmailMediaTheme(rules, dark) {
                 dark ? '(width >= 0px)' : '(width < 0px)');
             if (rule.media.mediaText !== updated) rule.media.mediaText = updated;
         }
-        if (rule.cssRules) applyEmailMediaTheme(rule.cssRules, dark);
+        if (rule.cssRules) applyEmailMediaTheme(rule.cssRules, dark, MediaRule);
     }
 }
 function applyEmailTheme(siteIsDark) {
@@ -55,28 +56,40 @@ function applyEmailTheme(siteIsDark) {
     var dark = siteIsDark && area.getAttribute('data-supports-dark') === 'true';
     area.classList.toggle('ownmail-email-dark', dark);
 
-    // Sender dark-mode rules follow the reader canvas, not the OS preference.
-    var content = document.getElementById('ownmail-email-content');
+    var frame = document.getElementById('ownmail-email-frame');
+    var content = frame && frame.contentDocument.getElementById('ownmail-email-content');
     if (!content) return;
+    // The frame root's color scheme must match the iframe element's, or the
+    // browser paints an opaque backdrop behind the message.
+    var root = content.ownerDocument.documentElement;
+    root.classList.toggle('ownmail-dark', document.documentElement.classList.contains('ownmail-dark'));
+    root.classList.toggle('ownmail-email-dark', dark);
+    // Sender dark-mode rules follow the reader canvas, not the OS preference.
     var styles = content.querySelectorAll('style');
     for (var i = 0; i < styles.length; i++) {
-        if (styles[i].sheet) applyEmailMediaTheme(styles[i].sheet.cssRules, dark);
+        if (styles[i].sheet) applyEmailMediaTheme(styles[i].sheet.cssRules, dark, frame.contentWindow.CSSMediaRule);
     }
+    window.ownmailMessageFrame.layout();
 }
-var emailContrast = window.ownmailEmailContrast && window.ownmailEmailContrast(
-    document.getElementById('ownmail-email-content'), applyEmailTheme
-);
+var emailContrast = null;
 // Called by base.html whenever the app theme changes.
 function updateEmailDarkMode(siteIsDark) {
     if (emailContrast) emailContrast.update(siteIsDark);
     else applyEmailTheme(siteIsDark);
 }
-// Apply on load
-(function() {
+function startEmailTheme(content) {
+    emailContrast = window.ownmailEmailContrast && window.ownmailEmailContrast(content, applyEmailTheme);
     var pref = localStorage.getItem('ownmail-theme') || 'auto';
     var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     updateEmailDarkMode(dark);
-})();
+}
+if (window.ownmailMessageFrame) {
+    window.ownmailMessageFrame.ready(function() {
+        startEmailTheme(document.getElementById('ownmail-email-frame').contentDocument.getElementById('ownmail-email-content'));
+    });
+} else {
+    startEmailTheme(document.getElementById('ownmail-email-content'));
+}
 
 function trashEmail(emailId) {
     if (!confirm('Move this email to trash?')) return;
