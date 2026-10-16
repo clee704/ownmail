@@ -4,7 +4,7 @@ title: Render reader messages in a sandboxed frame
 status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
-updated_date: '2026-10-16 05:13'
+updated_date: '2026-10-16 05:40'
 labels:
   - security
 dependencies:
@@ -54,3 +54,15 @@ Work on branch feat/reader-message-frame, review base be0f1c4. The branch lands 
 5. Reader print decision (maintainer) and PDF path check.
 6. Review and the full pre-push gate.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-15 maintainer decisions:
+- The frame document carries today's container-scoped sanitizer output inside #ownmail-email-content, so the reader and PDF export share one sanitizer output and DOM. Unscoped frame CSS would need a second sanitizer mode and a rework of padding detection, and the common html,body{height:100%} with body padding would grow the frame on every sizing pass. TASK-141 therefore still applies to the reader as well as PDF.
+- Printing (AC8): a Print action opens a separate page built from the PDF presentation and prints it there; Cmd+P in the reader prints a note pointing to that action. Cloning the message into the application page at print time was rejected: it puts message CSS back into the application document, and leaves it there if afterprint does not fire.
+
+2026-10-15 Space and Shift+Space (Chromium 145, WebKit 26 through Playwright; synthetic pages): neither engine passes Space from a frame to its parent. Chromium's DefaultSpaceEventHandler (third_party/blink/renderer/core/input/keyboard_event_manager.cc) calls LogicalScroll only, while the arrow handler calls BubblingScroll; WebKit's EventHandler::defaultSpaceEventHandler does not reach the parent frame. Sandbox flags and frame CSS (overflow, overscroll-behavior, scrolling=no) make no difference. Working fix in both engines: once focus has entered the frame, the parent waits until the button is up, the frame selection is collapsed and no frame link has focus-visible, then focuses a parent tabindex=-1 wrapper with preventScroll. Limit: after a drag selection, or while a link has keyboard focus, Space does nothing until the next plain click; PageDown, the arrows and the wheel still scroll. Chromium keeps the frame selection when focus returns to the parent but paints it inactive, and Cmd+C then copies nothing, so focus stays in the frame while text is selected (this corrects TASK-138's note that the selection is dropped). Not checked: a click into the message that activates an inactive browser window (manual, desktop Chrome and Safari), context-menu Copy, VoiceOver, Firefox.
+
+2026-10-15 phase 1 (3536155): the sanitizer rewrites viewport units in message CSS to calc(N * var(--ownmail-vX, 1<unit>)), so the reader can resolve them against its own viewport; the fallback keeps PDF output unchanged.
+<!-- SECTION:NOTES:END -->
