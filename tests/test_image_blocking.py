@@ -321,11 +321,13 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         __MESSAGE_HELPERS__
         const errors = [];
         let remote = [];
+        const remoteFrames = new Set();
         page.on('pageerror', error => errors.push(error.message));
         await page.route('**/*', route => {
             const url = new URL(route.request().url());
             if (url.origin === input.base) return route.continue();
             remote.push(url.pathname);
+            remoteFrames.add(route.request().frame().url());
             if (url.pathname.endsWith('.svg')) {
                 return route.fulfill({contentType: 'image/svg+xml',
                     body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"></svg>'});
@@ -512,6 +514,7 @@ def test_blocked_images_stay_unrequested_until_loaded(image_app, browser_node):
         assert.equal(url.searchParams.get('images'), 'load');
         assert.equal(url.searchParams.get('return_to'), '/search?q=sale');
         assertRequested(loaded);
+        assert.deepEqual([...remoteFrames], ['about:srcdoc'], 'Remote content loads in the message frame');
         assert.equal(await page.locator('#ownmail-image-banner').count(), 0);
         assert.deepEqual(await imageWidths(), [40, 40, 40, 40]);
         assert.equal(await page.locator('#ownmail-back-to-results').getAttribute('href'), '/search?q=sale');
@@ -561,7 +564,7 @@ def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, bro
     # of sanitizer correctness. The browser must receive the actual Flask headers.
     handler = "window.__retainedHandlerRan = true"
     markup = (
-        f'<button id="retained-handler" onclick="{handler}">Synthetic handler</button>'
+        f'<input type="checkbox" id="retained-handler" onclick="{handler}" aria-label="Synthetic handler">'
         '<button id="spoofed-control" data-reader-action="trash" data-show-loading '
         'data-images-url="/email/message?images=load">Untrusted control</button>' + REMOTE_IMAGE
     )
@@ -577,13 +580,13 @@ def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, bro
         assert.equal(policy.split('script-src ')[1].split(';')[0], "'self'");
         const retained = message().locator('#retained-handler');
         assert.equal(await retained.getAttribute('onclick'), 'window.__retainedHandlerRan = true');
-        await page.evaluate(() => {
-            window.__retainedClicks = 0;
-            messageDocument().getElementById('retained-handler').addEventListener('click', () => window.__retainedClicks++);
-        });
+        // The checked state proves the click landed; a parent listener on a
+        // frame node would not fire in WebKit.
         await retained.click();
-        assert.equal(await page.evaluate(() => window.__retainedClicks), 1);
-        assert.equal(await page.evaluate(() => window.__retainedHandlerRan), undefined);
+        assert.equal(await retained.isChecked(), true);
+        assert.deepEqual(await page.evaluate(() => [
+            window.__retainedHandlerRan, messageDocument().defaultView.__retainedHandlerRan,
+        ]), [undefined, undefined]);
         const dialogs = [];
         page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
         const start = page.url();
