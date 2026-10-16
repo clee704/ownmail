@@ -11,7 +11,7 @@
     probe.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; visibility: hidden; pointer-events: none;';
     document.body.appendChild(probe);
     var doc = null, content = null, callbacks = [], pending = false;
-    var sizes = new WeakMap();
+    var sizes = new WeakMap(), faces = new WeakSet();
 
     function sync() {
         var root = doc.documentElement, style = getComputedStyle(frame);
@@ -91,6 +91,18 @@
         });
     });
 
+    // WebKit resolves the frame's fonts.ready while a face is still loading,
+    // and its frame load event does not wait for fonts; each face's own
+    // promise settles when its font arrives.
+    function watchFonts() {
+        if (!doc || !doc.fonts) return;
+        doc.fonts.forEach(function(face) {
+            if (faces.has(face)) return;
+            faces.add(face);
+            face.loaded.then(schedule, function() {});
+        });
+    }
+
     function start(frameDocument) {
         doc = frameDocument;
         content = doc.getElementById('ownmail-email-content');
@@ -100,7 +112,7 @@
             observer.observe(content);
             Array.from(doc.images).forEach(function(image) { observer.observe(image); });
         }
-        if (doc.fonts) doc.fonts.ready.then(layout);
+        watchFonts();
         var waiting = callbacks;
         callbacks = null;
         waiting.forEach(function(callback) { callback(); });
@@ -123,6 +135,7 @@
     // Load fires after the frame's images and stylesheet.
     frame.addEventListener('load', function() {
         poll();
+        watchFonts();
         layout();
     });
     window.addEventListener('resize', layout);

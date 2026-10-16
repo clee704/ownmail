@@ -88,25 +88,31 @@ CASES = {
         await check('after the theme change');
         """,
     ),
-    # The swapped glyph is ten times larger; a positioned box does not resize the container. The reload
-    # requests the font again with a delayed response, so it swaps after the first layout.
+    # The swapped glyph is ten times larger; a positioned box does not resize the container. The glyph
+    # takes the face only after the frame's load event, and the font response waits for the test, so the
+    # font arrives after every other trigger has run.
     "font-swap": (
         '<p id="end">End</p>'
-        '<div id="icon" style="position:absolute;top:150px;left:0;font-family:Swap;line-height:normal">&#xea60;</div>',
+        '<div id="icon" style="position:absolute;top:150px;left:0;line-height:normal">&#xea60;</div>',
         "@font-face { font-family: Swap; src: url(https://fixture.test/swap.ttf); size-adjust: 1000% }",
         ["end", "icon"],
         """
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
         await page.route('https://fixture.test/swap.ttf', async route => {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await held;
             await route.fulfill({contentType: 'font/ttf', body: fs.readFileSync(FONT)});
         });
-        await page.reload({waitUntil: 'commit'});
-        await page.waitForFunction(() => document.getElementById('ownmail-email-frame')?.hasAttribute('data-ready'));
-        assert((await message().locator('#icon').boundingBox()).height < 100, 'The font must swap after the first layout');
-        await page.waitForFunction(() => window.messageDocument().getElementById('icon') &&
-            [...messageDocument().fonts].every(face => face.status === 'loaded'), null, {timeout: 5000});
+        const requested = page.waitForRequest('https://fixture.test/swap.ttf');
+        await message().locator('#icon').evaluate(el => { el.style.fontFamily = 'Swap'; });
+        await requested;
         await settle();
-        assert((await message().locator('#icon').boundingBox()).height > 100, 'The font must have swapped');
+        assert((await message().locator('#icon').boundingBox()).height < 100, 'The font must not have swapped yet');
+        await check('while the font loads');
+        release();
+        await page.waitForFunction(() => [...messageDocument().fonts].every(face => face.status === 'loaded') &&
+            messageDocument().getElementById('icon').getBoundingClientRect().height > 100, null, {timeout: 5000});
+        await settle();
         await check('after the font swap');
         """,
     ),
