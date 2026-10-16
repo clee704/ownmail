@@ -40,7 +40,7 @@
         var wide = sw > cw && cw > 0;
         fitButton.hidden = !(wide && sw > cw + 1);
         fitButton.textContent = fitToWidth ? 'Show actual size' : 'Fit to width';
-        // The loop below shrinks the zoom further if rounding leaves overflow.
+        // The loop below corrects any overflow left after the zoom.
         if (wide && fitToWidth) content.style.zoom = cw / sw;
         // scrollWidth and scrollHeight round to the nearest pixel, hence the + 1.
         else if (wide) frame.style.width = (sw + 1) + 'px';
@@ -52,10 +52,13 @@
         if (scroller.scrollHeight > height) height = scroller.scrollHeight + 1;
         frame.style.height = height + 'px';
         for (var pass = 0; pass < 4; pass++) {
-            var overWidth = scroller.scrollWidth > scroller.clientWidth;
+            var overflow = scroller.scrollWidth - scroller.clientWidth;
+            var overWidth = overflow > 0;
             var overHeight = scroller.scrollHeight > scroller.clientHeight;
             if (!overWidth && !overHeight) break;
-            if (overWidth && fitToWidth) {
+            // WebKit keeps zoomed text at a minimum font size, so a smaller zoom
+            // cannot fit a long word; only rounding overflow shrinks the zoom.
+            if (overWidth && fitToWidth && overflow <= 2) {
                 content.style.zoom = (Number(content.style.zoom) || 1) * scroller.clientWidth / (scroller.scrollWidth + 1);
             } else if (overWidth) {
                 frame.style.width = (frame.offsetWidth + scroller.scrollWidth - scroller.clientWidth + 1) + 'px';
