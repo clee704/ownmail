@@ -102,6 +102,12 @@ def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, browser_node, bo
             assert.equal(await wide.getAttribute('style'), authoredStyle);
             const maximum = await viewport.evaluate(el => el.scrollWidth - el.clientWidth);
             assert(maximum > 800);
+            assert.deepEqual(await page.evaluate(() => {
+                const scroller = messageDocument().scrollingElement;
+                scroller.scrollLeft = 1e6;
+                scroller.scrollTop = 1e6;
+                return [scroller.scrollLeft, scroller.scrollTop];
+            }), [0, 0], 'At actual size the reader viewport scrolls, the frame does not');
             const rootBox = await viewport.boundingBox();
             await page.mouse.move(rootBox.x + rootBox.width / 2, rootBox.y + 100);
             await page.mouse.wheel(1800, 0);
