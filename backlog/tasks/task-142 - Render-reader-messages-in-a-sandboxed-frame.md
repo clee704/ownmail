@@ -4,7 +4,7 @@ title: Render reader messages in a sandboxed frame
 status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
-updated_date: '2026-10-16 06:28'
+updated_date: '2026-10-16 07:36'
 labels:
   - security
 dependencies:
@@ -72,4 +72,20 @@ Work on branch feat/reader-message-frame, review base be0f1c4. The branch lands 
 - c0ff78c, e03e116: tests/test_message_frame_sizing.py covers AC2 (backstop off) and AC3 (backstop on) in Chromium 145 and WebKit 26. In WebKit, zoomed text keeps a minimum size, so the fit zoom shrinks only for overflow of 2px or less; larger remaining overflow widens the frame and the reader viewport scrolls sideways.
 - 793aea8: in WebKit the frame's FontFaceSet reports loaded and fonts.ready resolves while a face is still loading, so layout re-runs from each FontFace.loaded promise instead.
 - WebKit failures that predate the branch: label editor tests (TASK-144) and test_message_forms::test_message_links_open_a_new_tab_without_a_referrer.
+
+2026-10-16 progress: 3ebfc0b/9f60717/815e326 (Space focus return in email-reader.js, keyboard and copy tests, sandbox navigation and form tests), e6d0fb9/858e756/2aeca0d (AC6 contrast, backdrop and CSP tests; AC7 isolation tests in tests/test_message_frame_isolation.py, which fail against be0f1c4 in Chromium 6/6 and WebKit 5/6, the WebKit font case passing there because WebKit treats -apple-system as the system-font keyword), 9e0e097 (Print page /print/<email_id> from the PDF presentation; Cmd+P in the reader prints a note for HTML messages; plain text prints as before).
+
+2026-10-16 review (Opus 5.5 and gpt-6-astra, then a separate refutation pass with Chromium and WebKit probes). Findings and proposed dispositions; none fixed yet:
+- Fix: img name=fonts or name=scrollingElement survives the sanitizer and clobbers the frame document's fonts/scrollingElement; with fonts the message stays hidden. Drop name on IMG in the sanitizer.
+- Fix: Tab into a message without Tab stops (always in WebKit) is trapped by the focus return. Return focus only after pointer interaction, or handle Tab in the parent; keep the Space and Tab-to-link tests passing.
+- Fix: widening the frame (actual size, and the widen path when fitting cannot shrink text) also widens percentage-width content, so width:100% plus padding stays clipped. Keep the container at the column width while the frame widens.
+- Fix: an absolutely positioned details element that the reader opens is not observed, so its content is clipped. Also observe details elements.
+- Fix: the viewport-unit rewrite inside @property initial-value invalidates the registration, in the reader, PDF and Print. Skip the rewrite inside @property.
+- Fix: the message()/messageDocument() test helpers fall back to the page; drop the fallback for HTML messages.
+- Fix: /print can start the shared sanitizer without its lock after a restart failure; return 503 when the sanitizer is unavailable, as the reader does.
+- Record as limits: height and orientation media queries evaluate against the frame, so measuring at height 0 can leave blank space below the message; markup whose height grows through chained height queries needs more than the pass cap and clips.
+- Decide: svh/dvh variants collapse onto the vh measurement (not reproducible in Playwright).
+Follow-ups to ask the maintainer about before filing: test_pdf_export_cli::test_actual_ctrl_c_stops_renderer_child failed once in a full gate run and passed alone.
+
+Next action: fix the items marked Fix with tests that fail first, re-review the fixes, run the browser suites in Chromium and WebKit and the full pre-push gate, tick AC1-AC8 and AC10 against that evidence, then the maintainer's AC9 check and the desktop check of clicking into the message to activate an inactive window.
 <!-- SECTION:NOTES:END -->
