@@ -241,8 +241,9 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 9n | TASK-137 | high | The POST guard accepts header-less, prefix-matched and conflicting requests; depends on TASK-136; confirm deployment before landing |
 | 9o | TASK-139 | high | Message markup can submit forms to the application's own routes, such as /empty-trash; sanitizer-only fix |
 | 9p | TASK-138 | medium | Message CSS and markup keep escaping container scoping; decide whether a sandboxed frame should replace it. Evaluation only, after the point fixes |
-| 9q | TASK-140 | medium | Follow-up to TASK-131 and TASK-139: global at-rules, fixed positioning and popovers in a message still affect application UI |
-| 9r | TASK-141 | low | Found in TASK-131 review: rules inside a message @scope never match after scoping; same worker CSS path as TASK-140 |
+| 9q | TASK-142 | medium | TASK-138's recommendation: render reader messages in a sandboxed frame, which contains the reader-side TASK-140 effects without per-feature rules |
+| 9r | TASK-140 | medium | Follow-up to TASK-131 and TASK-139: global at-rules, fixed positioning and popovers in a message still affect application UI |
+| 9s | TASK-141 | low | Found in TASK-131 review: rules inside a message @scope never match after scoping; same worker CSS path as TASK-140 |
 | 10 | TASK-40 | high | Wrong charset recovery corrupts displayed and indexed text |
 | 10a | TASK-116 | medium | A documented OR example returns mail its description excludes; same parser as TASK-21 |
 | 11 | TASK-16 | medium | IMAP folders with a NIL delimiter are never archived; rare servers |
@@ -301,6 +302,12 @@ TASK-140 and TASK-141 (filed 2026-10-10) follow TASK-138 because its
 recommendation decides how much of TASK-140 stays a point fix. TASK-140 covers
 the effects that TASK-131 and TASK-139 left open; TASK-141 is a rendering bug
 in the same scoping code and comes after it.
+
+TASK-142 (filed 2026-10-11) was scheduled ahead of TASK-140 by the maintainer
+on 2026-10-15. The frame contains every reader-side TASK-140 effect, so
+building per-feature reader rules first would leave code the frame makes
+redundant. Before TASK-140 starts, narrow it and TASK-141 to the PDF path,
+which keeps direct embedding.
 
 ## Keeping this current
 

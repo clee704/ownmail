@@ -4,7 +4,7 @@ title: Contain remaining message CSS and markup effects on app UI
 status: To Do
 assignee: []
 created_date: '2026-10-10 08:12'
-updated_date: '2026-10-10 08:12'
+updated_date: '2026-10-16 05:05'
 labels:
   - security
 dependencies: []
@@ -44,3 +44,9 @@ TASK-138 evaluates a sandboxed frame that would contain all of these together. I
 - [ ] #7 Browser tests run in Chromium and, where installed, WebKit; the engines tested are recorded in the notes.
 - [ ] #8 The full pre-push gate passes with browser tests required.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-15: the maintainer scheduled TASK-142 ahead of this task. Before starting, narrow it to the items the frame leaves open, which is the PDF path (the @page decision and fixed-position content over the PDF header).
+<!-- SECTION:NOTES:END -->
