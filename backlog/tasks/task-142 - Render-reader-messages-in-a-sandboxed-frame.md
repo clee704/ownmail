@@ -1,9 +1,10 @@
 ---
 id: TASK-142
 title: Render reader messages in a sandboxed frame
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
+updated_date: '2026-10-16 05:13'
 labels:
   - security
 dependencies:
@@ -40,3 +41,16 @@ The frame must behave like a normal element: no internal scroll and no clipped i
 - [ ] #9 Before landing, the maintainer confirms native find in page, swipe, fling and pinch over a long and a wide message in iOS Safari and the Home Screen web app, and no internal scroll or clipping on archive messages that scrolled inside the earlier iframe; the result is recorded in the notes
 - [ ] #10 The full pre-push gate passes with browser tests required
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Work on branch feat/reader-message-frame, review base be0f1c4. The branch lands on master only after the maintainer's AC9 check.
+
+1. Design from the current code, and a spike for Space and Shift+Space after clicking in the frame (open risk from TASK-138).
+2. Sanitizer output for the frame: unscoped message CSS, viewport units rewritten to a parent-set property, body attributes in the frame document. PDF keeps container scoping.
+3. Reader: srcdoc frame in email.html, frame stylesheet, auto-height, fitting, contrast repair, theme and image loading on the frame document without in-frame listeners.
+4. Chromium and WebKit tests for AC2 to AC7.
+5. Reader print decision (maintainer) and PDF path check.
+6. Review and the full pre-push gate.
+<!-- SECTION:PLAN:END -->
