@@ -59,7 +59,8 @@ def test_message_submit_controls_send_no_request(shell_app, browser_node, spacin
         const popups = [];
         page.context().on('request', request => sent.push(request.method() + ' ' + request.url()));
         page.context().on('page', popup => popups.push(popup));
-        await page.context().route('**/*', route => route.abort());
+        // A popup's route callback can still be running when the browser closes.
+        await page.context().route('**/*', route => route.abort().catch(() => {}));
         const start = page.url();
         const actions = [
             ['#post-control', 'click'], ['#get-control', 'click'], ['#attribute-control', 'click'],
@@ -96,7 +97,8 @@ def test_message_links_open_a_new_tab_without_a_referrer(shell_app, browser_node
         page.context().on('request', request => {
             if (new URL(request.url()).host === 'x.invalid') opened.push([request.url(), request.headers().referer]);
         });
-        await page.context().route('**/*', route => route.abort());
+        // A popup's route callback can still be running when the browser closes.
+        await page.context().route('**/*', route => route.abort().catch(() => {}));
         const start = page.url();
         // The image map's only area covers the whole image.
         for (const control of ['#map-image', '#anchor-link']) {
