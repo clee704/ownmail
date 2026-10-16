@@ -4,7 +4,7 @@ title: Render reader messages in a sandboxed frame
 status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
-updated_date: '2026-10-16 05:40'
+updated_date: '2026-10-16 06:28'
 labels:
   - security
 dependencies:
@@ -65,4 +65,11 @@ Work on branch feat/reader-message-frame, review base be0f1c4. The branch lands 
 2026-10-15 Space and Shift+Space (Chromium 145, WebKit 26 through Playwright; synthetic pages): neither engine passes Space from a frame to its parent. Chromium's DefaultSpaceEventHandler (third_party/blink/renderer/core/input/keyboard_event_manager.cc) calls LogicalScroll only, while the arrow handler calls BubblingScroll; WebKit's EventHandler::defaultSpaceEventHandler does not reach the parent frame. Sandbox flags and frame CSS (overflow, overscroll-behavior, scrolling=no) make no difference. Working fix in both engines: once focus has entered the frame, the parent waits until the button is up, the frame selection is collapsed and no frame link has focus-visible, then focuses a parent tabindex=-1 wrapper with preventScroll. Limit: after a drag selection, or while a link has keyboard focus, Space does nothing until the next plain click; PageDown, the arrows and the wheel still scroll. Chromium keeps the frame selection when focus returns to the parent but paints it inactive, and Cmd+C then copies nothing, so focus stays in the frame while text is selected (this corrects TASK-138's note that the selection is dropped). Not checked: a click into the message that activates an inactive browser window (manual, desktop Chrome and Safari), context-menu Copy, VoiceOver, Firefox.
 
 2026-10-15 phase 1 (3536155): the sanitizer rewrites viewport units in message CSS to calc(N * var(--ownmail-vX, 1<unit>)), so the reader can resolve them against its own viewport; the fallback keeps PDF output unchanged.
+
+2026-10-15 progress on the branch:
+- fdaa7d5: tests locate message content through frame-aware helpers (message()/messageDocument() in tests/test_email_contrast.py, message_content() in tests/conftest.py, run_contrast_browser(backstop=False)).
+- f76a1a8: the reader renders HTML messages in the sandboxed srcdoc frame; plain-text messages stay embedded. The srcdoc attribute is escaped with forceescape (a {% set %} block is Markup and would otherwise be emitted raw; tests/test_message_frame.py fails without it). email-fit.js owns frame layout; email-frame.css holds the frame-side rules and the overflow backstop. Message media queries now evaluate against the frame width, which is at most the reader column. Message form controls no longer pick up application control styles.
+- c0ff78c, e03e116: tests/test_message_frame_sizing.py covers AC2 (backstop off) and AC3 (backstop on) in Chromium 145 and WebKit 26. In WebKit, zoomed text keeps a minimum size, so the fit zoom shrinks only for overflow of 2px or less; larger remaining overflow widens the frame and the reader viewport scrolls sideways.
+- 793aea8: in WebKit the frame's FontFaceSet reports loaded and fonts.ready resolves while a face is still loading, so layout re-runs from each FontFace.loaded promise instead.
+- WebKit failures that predate the branch: label editor tests (TASK-144) and test_message_forms::test_message_links_open_a_new_tab_without_a_referrer.
 <!-- SECTION:NOTES:END -->
