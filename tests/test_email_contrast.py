@@ -443,26 +443,50 @@ def test_resizing_reassesses_repairs_without_refetching_resources(shell_app, bro
     )
 
 
-def test_image_load_reassesses_changed_background(shell_app, browser_node):
+def test_late_image_load_reassesses_contrast(shell_app, browser_node):
+    # Repair reads styles and boxes only, so a load matters when it moves text.
+    # The image starts loading after the frame's load event, as a lazy image does.
     app, _ = shell_app
     run_contrast_browser(
         app,
         browser_node,
-        '<img id="image" width="40" height="20" alt="Synthetic logo"><p id="text">Synthetic text</p>',
+        '<div id="surface"><img id="image" alt=""><p id="text">Synthetic text</p></div>',
         """
-        #ownmail-email-content #text {padding:12px;background:white;color:#111111}
+        #ownmail-email-content #surface {height:30px;background:white}
+        #ownmail-email-content #image {display:block}
+        #ownmail-email-content #text {margin:0;color:#111111}
         @media (prefers-color-scheme:dark) {#ownmail-email-content #text {color:white !important}}
         """,
         """
         assert.equal(await color('text'), 'rgb(17, 17, 17)');
-        await page.evaluate(() => {
-            messageDocument().getElementById('text').style.backgroundColor = '#222222';
-            messageDocument().getElementById('image').src = 'https://fixture.test/late.svg';
-        });
+        await page.evaluate(() => { messageDocument().getElementById('image').src = 'https://fixture.test/late.svg'; });
         await page.waitForFunction(() => messageDocument().getElementById('image').complete);
         await settle();
+        // The text now overflows the white surface onto the dark reader canvas.
         assert.equal(await color('text'), 'rgb(255, 255, 255)');
         assert.equal(requests.get('https://fixture.test/late.svg'), 1);
+        """,
+    )
+
+
+def test_dark_frame_matches_the_reader_color_scheme_without_a_backdrop(shell_app, browser_node):
+    app, _ = shell_app
+    run_contrast_browser(
+        app,
+        browser_node,
+        '<p id="text">Synthetic text</p>',
+        "@media (prefers-color-scheme:dark) {#ownmail-email-content #text {color:white}}",
+        """
+        assert.deepEqual(await page.evaluate(() => {
+            const frame = document.getElementById('ownmail-email-frame');
+            return [getComputedStyle(frame).colorScheme, getComputedStyle(messageDocument().documentElement).colorScheme];
+        }), ['dark', 'dark']);
+        const box = await page.locator('#ownmail-email-frame').boundingBox();
+        const clip = {x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height - 8), width: 1, height: 1};
+        const shown = (await page.screenshot({clip})).toString('base64');
+        await page.locator('#ownmail-email-frame').evaluate(frame => { frame.style.visibility = 'hidden'; });
+        const hidden = (await page.screenshot({clip})).toString('base64');
+        assert.equal(shown, hidden, 'The frame must not paint a backdrop over the reader canvas');
         """,
     )
 
