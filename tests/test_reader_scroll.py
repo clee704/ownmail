@@ -34,10 +34,177 @@ def test_tiny_message_overflow_does_not_capture_vertical_scrolling(shell_app, br
             await page.waitForFunction(y => window.scrollY > y + 100, previous);
             assert.equal(await viewport.evaluate(el => el.scrollTop), 0);
         }
+        // A plain click moves focus into the frame; the wheel must still scroll the page.
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.mouse.click(box.x + box.width / 2, 100);
+        await settle();
+        await page.mouse.wheel(0, 180);
+        await page.waitForFunction(() => window.scrollY > 100);
+        assert.equal(await page.evaluate(() => messageDocument().scrollingElement.scrollTop), 0);
         """,
         theme="light",
         auto_scale=True,
         viewport=(390, 740),
+    )
+
+
+LONG_MESSAGE = "".join(
+    f'<p id="p{i}" style="margin:0;padding:8px 0;line-height:24px">Synthetic paragraph {i} with enough words to select.</p>'
+    + ('<p><a id="link" href="https://x.invalid/link" target="_blank">First link</a></p>' if i == 3 else "")
+    for i in range(150)
+)
+
+
+def test_keys_scroll_the_page_after_clicking_in_the_message(shell_app, browser_node):
+    app, _ = shell_app
+    run_message_browser(
+        app,
+        browser_node,
+        LONG_MESSAGE,
+        "",
+        """
+        const engine = process.env.OWNMAIL_BROWSER_ENGINE || 'chromium';
+        // Playwright's Chromium mouse helpers hang while a button is held over a
+        // script-less frame, so Chromium input goes through CDP.
+        const cdp = engine === 'chromium' ? await page.context().newCDPSession(page) : null;
+        const mouse = async (type, x, y, buttons) => {
+            if (!cdp) {
+                await page.mouse.move(x, y);
+                if (type === 'down') await page.mouse.down();
+                if (type === 'up') await page.mouse.up();
+                return;
+            }
+            await cdp.send('Input.dispatchMouseEvent', {
+                type: {move: 'mouseMoved', down: 'mousePressed', up: 'mouseReleased'}[type], x, y,
+                button: type === 'move' && !buttons ? 'none' : 'left',
+                buttons: buttons ?? (type === 'down' ? 1 : 0), clickCount: 1});
+        };
+        // Viewport coordinates of a frame element (frame locator boxes hang in Chromium).
+        const rect = selector => page.evaluate(selector => {
+            const frame = document.getElementById('ownmail-email-frame');
+            const box = frame.contentDocument.querySelector(selector).getBoundingClientRect();
+            const origin = frame.getBoundingClientRect();
+            return {x: origin.x + box.x, y: origin.y + box.y, width: box.width, height: box.height};
+        }, selector);
+        const click = async selector => {
+            const box = await rect(selector);
+            await mouse('move', box.x + 30, box.y + 10);
+            await mouse('down', box.x + 30, box.y + 10);
+            await mouse('up', box.x + 30, box.y + 10);
+            await settle();
+        };
+        const state = () => page.evaluate(() => ({
+            y: window.scrollY,
+            frameScroll: messageDocument().scrollingElement.scrollTop,
+            selection: messageDocument().getSelection().toString(),
+            active: document.activeElement.id,
+        }));
+        // Keyboard scrolling is animated; wait until the position holds still.
+        const stable = async () => {
+            let y = await page.evaluate(() => window.scrollY);
+            for (let i = 0; i < 40; i++) {
+                await page.waitForTimeout(80);
+                const next = await page.evaluate(() => window.scrollY);
+                if (next === y) return;
+                y = next;
+            }
+        };
+        const scrollTo = async y => {
+            await page.evaluate(y => window.scrollTo(0, y), y);
+            await stable();
+            assert.equal(await page.evaluate(() => window.scrollY), y);
+        };
+        const scrolls = async (key, direction) => {
+            const before = await state();
+            await page.keyboard.press(key);
+            await stable();
+            const after = await state();
+            assert.ok((after.y - before.y) * direction >= 20, `${key}: ${before.y} to ${after.y}`);
+            assert.equal(after.frameScroll, 0, key);
+        };
+        const keys = async () => {
+            await scrollTo(0);
+            await scrolls('Space', 1);
+            await scrolls('Space', 1);
+            await scrolls('Shift+Space', -1);
+            await scrolls('PageDown', 1);
+            await scrolls('ArrowDown', 1);
+        };
+
+        await page.mouse.move(400, 400);
+        await keys();
+        await scrollTo(0);
+        await click('#p5');
+        assert.equal((await state()).active, 'ownmail-email-viewport');
+        await keys();
+
+        // A click deep in the message leaves the page where it is.
+        await scrollTo(2000);
+        const deep = await page.evaluate(() => {
+            const frame = document.getElementById('ownmail-email-frame');
+            const top = -frame.getBoundingClientRect().y + 200;
+            return '#' + [...frame.contentDocument.querySelectorAll('p[id]')].find(p => p.offsetTop > top).id;
+        });
+        await click(deep);
+        assert.equal((await state()).y, 2000);
+        await scrolls('Space', 1);
+
+        // Click-drag selects text; focus stays in the frame so native copy works.
+        await scrollTo(0);
+        const start = await rect('#p6');
+        await mouse('move', start.x + 5, start.y + 10);
+        await mouse('down', start.x + 5, start.y + 10);
+        for (let i = 1; i <= 5; i++) await mouse('move', start.x + 5 + 40 * i, start.y + 10 + 12 * i, 1);
+        await mouse('up', start.x + 205, start.y + 70);
+        await settle();
+        await page.waitForTimeout(300);
+        const selected = await state();
+        assert.ok(selected.selection.includes('paragraph 6 with'), selected.selection);
+        assert.equal(selected.active, 'ownmail-email-frame');
+        await page.keyboard.press('ControlOrMeta+c');
+        if (engine === 'chromium') {
+            // The reader origin is not a secure context, so read the clipboard from one that is.
+            const reader = await browser.newContext();
+            await reader.grantPermissions(['clipboard-read'], {origin: 'https://clipboard.test'});
+            const clipboardPage = await reader.newPage();
+            await clipboardPage.route('**/*', route => route.fulfill({contentType: 'text/html', body: '<p>clipboard</p>'}));
+            await clipboardPage.goto('https://clipboard.test/');
+            assert.equal(await clipboardPage.evaluate(() => navigator.clipboard.readText()), selected.selection);
+            await reader.close();
+        }
+        await page.evaluate(() => {
+            const field = document.createElement('textarea');
+            field.id = 'paste-target';
+            document.body.prepend(field);
+            field.focus({preventScroll: true});
+        });
+        await page.keyboard.press('ControlOrMeta+v');
+        assert.equal(await page.locator('#paste-target').inputValue(), selected.selection);
+        await page.locator('#paste-target').evaluate(el => el.remove());
+
+        // A plain click that collapses the selection returns focus within a fraction of a second.
+        await scrollTo(0);
+        await click('#p6');
+        await page.waitForTimeout(250);
+        assert.equal((await state()).active, 'ownmail-email-viewport');
+        await scrolls('Space', 1);
+
+        // Tab reaches a message link (WebKit on macOS skips links on plain Tab), and Enter opens it.
+        await page.context().route('https://x.invalid/**', route => route.abort().catch(() => {}));
+        await scrollTo(0);
+        await click('#p1');
+        await page.keyboard.press(engine === 'webkit' ? 'Alt+Tab' : 'Tab');
+        await settle();
+        assert.equal(await page.evaluate(() => messageDocument().activeElement.id), 'link');
+        assert.equal((await state()).active, 'ownmail-email-frame');
+        const popup = page.context().waitForEvent('page', {timeout: 2000});
+        const opened = page.context().waitForEvent('request',
+            {predicate: request => request.url() === 'https://x.invalid/link', timeout: 2000});
+        await page.keyboard.press('Enter');
+        await Promise.all([popup, opened]);
+        """,
+        theme="light",
+        viewport=(800, 600),
     )
 
 

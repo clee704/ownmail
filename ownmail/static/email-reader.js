@@ -91,6 +91,40 @@ if (window.ownmailMessageFrame) {
     startEmailTheme(document.getElementById('ownmail-email-content'));
 }
 
+// Neither Chromium nor WebKit passes Space or Shift+Space from a frame to its
+// parent, and WebKit never runs parent listeners on nodes in the script-less
+// frame, so the key cannot be forwarded. After a plain click in the message,
+// focus returns to the viewport once the button is up. Focus stays in the frame
+// while it holds a text selection (native copy) or a keyboard-focused link.
+(function() {
+    var frame = document.getElementById('ownmail-email-frame');
+    if (!frame) return;
+    var viewport = document.getElementById('ownmail-email-viewport');
+    var pending = false;
+    function check() {
+        pending = false;
+        if (document.activeElement !== frame) return;
+        var doc = frame.contentDocument;
+        // During a press, check every frame so Space works right after mouseup.
+        if (frame.matches(':active')) return schedule(true);
+        var focused = doc && doc.activeElement;
+        var held = !doc || !doc.getSelection().isCollapsed
+            || (focused && focused !== doc.body && focused.matches(':focus-visible'));
+        // A selection can stay for minutes; a slow poll still notices the
+        // plain click that collapses it, which fires no parent event.
+        if (held) schedule(false);
+        else viewport.focus({preventScroll: true});
+    }
+    function schedule(soon) {
+        if (pending) return;
+        pending = true;
+        if (soon) requestAnimationFrame(check);
+        else setTimeout(check, 150);
+    }
+    // The parent window blurs whenever focus moves into the frame.
+    window.addEventListener('blur', function() { schedule(true); });
+})();
+
 function trashEmail(emailId) {
     if (!confirm('Move this email to trash?')) return;
     ownmailMessageAction({

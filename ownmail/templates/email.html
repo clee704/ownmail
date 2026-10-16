@@ -128,7 +128,7 @@
         {% if body_html %}
             {#- A set block is Markup, so srcdoc needs forceescape. #}
             {% set message_document %}<!doctype html><html><head><link rel="stylesheet" href="{{ url_for('static', filename='email-frame.css') }}"></head><body><div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}"{{ body_attributes | default({}) | xmlattr }}>{{ body_html | safe }}</div></body></html>{% endset %}
-            <div id="ownmail-email-viewport" data-auto-scale="{{ 'true' if auto_scale else 'false' }}">
+            <div id="ownmail-email-viewport" tabindex="-1" data-auto-scale="{{ 'true' if auto_scale else 'false' }}">
                 <iframe id="ownmail-email-frame" title="Message" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ message_document | forceescape }}"></iframe>
             </div>
             <script src="/static/email-fit.js"></script>
