@@ -124,7 +124,7 @@ def test_static_body_predicates_keep_original_browser_matching(
                 const selector = '.predicate-' + index;
                 const expected = matches ? '37px' : '17px';
                 const original = await reference.locator(selector).evaluate(readWidth);
-                const rendered = await page.locator('#ownmail-email-content ' + selector).evaluate(readWidth);
+                const rendered = await message().locator('#ownmail-email-content ' + selector).evaluate(readWidth);
                 assert.equal(original, expected, qualifier + ' must have the intended source match');
                 assert.equal(rendered, expected, qualifier + ' must retain its intended match after extraction');
                 assert.equal(rendered, original, qualifier + ' must agree with the original browser document');
@@ -133,14 +133,14 @@ def test_static_body_predicates_keep_original_browser_matching(
             await reference.close();
         }
         await page.evaluate(body => {
-            const outside = document.createElement('div');
+            const outside = messageDocument().createElement('div');
             outside.id = 'outside-static-predicates';
             outside.style.width = '123px';
             outside.innerHTML = body;
-            document.getElementById('ownmail-email-content').after(outside);
+            messageDocument().getElementById('ownmail-email-content').after(outside);
         }, __BODY__);
         await settle();
-        const outsideWidths = await page.locator('#outside-static-predicates .probe')
+        const outsideWidths = await message().locator('#outside-static-predicates .probe')
             .evaluateAll(elements => elements.map(el => getComputedStyle(el).width));
         assert.deepEqual(outsideWidths, predicates.map(() => '123px'), 'Sender rules must remain scoped');
         """.replace("__PREDICATES__", json.dumps(predicates))
@@ -195,7 +195,7 @@ def test_malformed_body_qualifiers_do_not_activate_rules(shell_app, browser_node
             const read = el => ({width:getComputedStyle(el).width, border:getComputedStyle(el).borderTopWidth});
             const expected = await reference.locator('.probe').evaluate(read);
             assert.deepEqual(expected, {width:'17px', border:'5px'});
-            assert.deepEqual(await page.locator('#ownmail-email-content .probe').evaluate(read), expected,
+            assert.deepEqual(await message().locator('#ownmail-email-content .probe').evaluate(read), expected,
                 'Invalid source selectors must remain invalid instead of activating a rule');
         } finally {
             await reference.close();
@@ -271,28 +271,28 @@ def test_qualified_body_rules_keep_matching_cascade_and_message_scope(
             for (const [name, width] of Object.entries(expected)) {
                 const selector = '.' + name + '-probe';
                 assert.equal(await reference.locator(selector).evaluate(el => getComputedStyle(el).width), width);
-                assert.equal(await page.locator('#ownmail-email-content ' + selector)
+                assert.equal(await message().locator('#ownmail-email-content ' + selector)
                     .evaluate(el => getComputedStyle(el).width), width, name + ' must retain original matching/cascade');
             }
             const before = el => getComputedStyle(el, '::before').content;
-            assert.equal(await page.locator('#ownmail-email-content .class-probe').evaluate(before),
+            assert.equal(await message().locator('#ownmail-email-content .class-probe').evaluate(before),
                 await reference.locator('.class-probe').evaluate(before));
         } finally {
             await reference.close();
         }
         await page.evaluate(() => {
-            const outside = document.createElement('div');
+            const outside = messageDocument().createElement('div');
             outside.className = 'outside';
             outside.id = 'outside-qualified-control';
             outside.innerHTML = '<div class="probe class-probe" style="width:123px">App shell</div>';
-            document.getElementById('ownmail-email-content').after(outside);
+            messageDocument().getElementById('ownmail-email-content').after(outside);
         });
         await settle();
-        const outside = page.locator('#outside-qualified-control');
+        const outside = message().locator('#outside-qualified-control');
         assert.equal(await outside.evaluate(el => getComputedStyle(el).opacity), '1', 'Root siblings must stay outside sender scope');
         assert.equal(await outside.locator('.probe').evaluate(el => getComputedStyle(el, '::before').content), 'none');
-        assert.equal(await page.locator('#ownmail-email-content').evaluate(el => el.classList.contains('main')), false);
-        assert.equal(await page.locator('#ownmail-email-content').getAttribute('data-layout'), null);
+        assert.equal(await message().locator('#ownmail-email-content').evaluate(el => el.classList.contains('main')), false);
+        assert.equal(await message().locator('#ownmail-email-content').getAttribute('data-layout'), null);
         """.replace("__EXPECTED__", json.dumps(expected)).replace("__SOURCE__", json.dumps(source)),
         theme="light",
         rendered_page=response.get_data(as_text=True),
@@ -354,20 +354,20 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
         r"""
         const authoredCSS = __CSS__;
         await page.evaluate(css => {
-            const outside = document.createElement('div');
+            const outside = messageDocument().createElement('div');
             outside.id = 'outside-probe';
             outside.className = 'probe';
             outside.textContent = 'App shell control';
-            document.body.append(outside);
+            messageDocument().body.append(outside);
             // textContent gives the browser the original CSS without HTML parsing.
             // A shadow root isolates this benign reference from sender/app styles.
-            const host = document.createElement('div');
+            const host = messageDocument().createElement('div');
             host.id = 'css-reference';
-            document.body.append(host);
+            messageDocument().body.append(host);
             const shadow = host.attachShadow({mode: 'open'});
-            const style = document.createElement('style');
+            const style = messageDocument().createElement('style');
             style.textContent = css;
-            const probe = document.createElement('div');
+            const probe = messageDocument().createElement('div');
             probe.className = 'probe';
             probe.textContent = 'Reference';
             shadow.append(style, probe);
@@ -382,9 +382,9 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
                     content: getComputedStyle(el, '::before').content
                 });
                 return {
-                    actual: read(document.querySelector('#ownmail-email-content .probe')),
-                    reference: read(document.querySelector('#css-reference').shadowRoot.querySelector('.probe')),
-                    outside: read(document.querySelector('#outside-probe'))
+                    actual: read(messageDocument().querySelector('#ownmail-email-content .probe')),
+                    reference: read(messageDocument().querySelector('#css-reference').shadowRoot.querySelector('.probe')),
+                    outside: read(messageDocument().querySelector('#outside-probe'))
                 };
             });
             assert.equal(result.reference.width, width === 600 ? '73px' : '47px');
@@ -394,7 +394,7 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
             assert.equal(result.outside.border, '0px', 'Sender selectors must remain scoped');
             assert.equal(result.outside.content, 'none');
         }
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         assert.equal(await content.locator('.probe').count(), 1);
         assert.equal(await content.locator('.probe').textContent(), 'Message copy');
         assert.equal(await content.locator('#after-style').textContent(), 'After style');
@@ -454,7 +454,7 @@ def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, browser_node, s
         r"""
         const toolbar = page.locator('#ownmail-reader-actions');
         assert.equal(await toolbar.evaluate(el => getComputedStyle(el).display), 'flex', 'The trusted toolbar must stay displayed');
-        const width = await page.locator('#ownmail-email-content .probe').evaluate(el => getComputedStyle(el).width);
+        const width = await message().locator('#ownmail-email-content .probe').evaluate(el => getComputedStyle(el).width);
         // Scoped stylesheets keep working; ones a browser reads differently are discarded.
         assert.equal(width === '37px', __KEPT__);
         """.replace("__KEPT__", json.dumps(kept)),
@@ -572,7 +572,7 @@ def test_body_background_covers_trailing_content_and_keeps_images_blocked(
         "",
         "",
         """
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         const shellBackground = await page.locator('body').evaluate(el => getComputedStyle(el).backgroundColor);
         for (const width of [390, 1440]) {
             await page.setViewportSize({width, height:900});
@@ -627,10 +627,10 @@ def test_theme_switches_toggle_parsed_dark_rules_without_unscoping_strings(shell
         "",
         "",
         r"""
-        const style = page.locator('#ownmail-email-content style');
+        const style = message().locator('#ownmail-email-content style');
         const original = await style.evaluate(el => el.textContent);
         const read = () => page.evaluate(() => {
-            const probe = getComputedStyle(document.querySelector('#ownmail-email-content .probe'));
+            const probe = getComputedStyle(messageDocument().querySelector('#ownmail-email-content .probe'));
             return {
                 toolbar: getComputedStyle(document.getElementById('ownmail-reader-actions')).display,
                 probe: [probe.width, probe.height, probe.marginLeft],

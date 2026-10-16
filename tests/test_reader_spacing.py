@@ -6,6 +6,7 @@ import pytest
 
 from ownmail.sanitizer import HtmlSanitizer
 from tests import test_email_contrast
+from tests.conftest import message_content
 
 shell_app = test_email_contrast.shell_app
 
@@ -167,7 +168,7 @@ def test_message_spacing_preserves_sender_layout_and_reader_insets(
     )
     response = app.test_client().get("/email/synthetic")
     assert response.status_code == 200
-    assert (b"ownmail-email-content-padded" in response.data) is needs_padding
+    assert ("ownmail-email-content-padded" in message_content(response.data).classes) is needs_padding
     test_email_contrast.run_contrast_browser(
         app,
         browser_node,
@@ -193,7 +194,7 @@ def test_message_spacing_preserves_sender_layout_and_reader_insets(
                     near(element.x + element.width, article.x + article.width - inset,
                         `${selector} right inset`);
                 }
-                const copy = await box(plain ? '.ownmail-email-body' : '#copy');
+                const copy = await (plain ? page : message()).locator(plain ? '.ownmail-email-body' : '#copy').boundingBox();
                 const expectedInset = plain ? inset :
                     (authoredInset === null ? (width <= 600 ? 24 : 40) : authoredInset);
                 near(copy.x, article.x + expectedInset, 'Message copy left inset');
@@ -203,7 +204,7 @@ def test_message_spacing_preserves_sender_layout_and_reader_insets(
                     const viewport = await box('#ownmail-email-viewport');
                     near(viewport.x, article.x, 'HTML viewport left edge');
                     near(viewport.width, article.width, 'HTML viewport fills the reader');
-                    const panel = page.locator('#panel');
+                    const panel = message().locator('#panel');
                     if (await panel.count()) {
                         const bounds = await panel.boundingBox();
                         const margin = authoredInset === 32 ? 12 : 0;

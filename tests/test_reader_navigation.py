@@ -10,7 +10,7 @@ import pytest
 from lxml import html
 
 from tests import test_ui_shell
-from tests.conftest import create_test_app, mock_archive_db
+from tests.conftest import create_test_app, message_content, mock_archive_db
 
 shell_browser = test_ui_shell.shell_browser
 
@@ -104,7 +104,8 @@ def test_referer_fallback_only_accepts_local_result_lists(reader, referer, desti
 
 def test_secondary_metadata_disclosure_keeps_headers_and_actions_accessible(reader):
     client, _ = reader
-    document = html.fromstring(client.get("/email/message").data)
+    response = client.get("/email/message")
+    document = html.fromstring(response.data)
     details = document.get_element_by_id("ownmail-message-metadata")
     assert "hidden" in details.attrib
     toggle = document.get_element_by_id("ownmail-message-details-toggle")
@@ -116,7 +117,7 @@ def test_secondary_metadata_disclosure_keeps_headers_and_actions_accessible(read
     for address in ["alex@example.com", "pat@example.com", "lee@example.com"]:
         assert address in details.text_content()
     assert "Project planning" in details.text_content()
-    assert "The message body remains visible." in document.get_element_by_id("ownmail-email-content").text_content()
+    assert "The message body remains visible." in message_content(response.data).text_content()
     back = document.get_element_by_id("ownmail-back-to-results")
     assert back.get("title") == "Back to results"
     assert back.text_content().strip() == "Back to results"

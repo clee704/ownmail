@@ -12,6 +12,33 @@ from tests import test_ui_shell
 
 shell_app = test_ui_shell.shell_app
 SANITIZER_DIR = Path(__file__).parents[1] / "ownmail" / "sanitizer"
+FRAME_STYLESHEET = "/static/email-frame.css"
+# Browser-script helpers for message content. Insert after `page` exists and before navigation. Until the
+# reader embeds messages in #ownmail-email-frame (TASK-142), both fall back to the page itself.
+MESSAGE_HELPERS = r"""
+        const message = () => page.frames().some(frame => frame.url() === 'about:srcdoc')
+            ? page.frameLocator('#ownmail-email-frame') : page;
+        await page.addInitScript(() => {
+            window.messageDocument = () => document.getElementById('ownmail-email-frame')?.contentDocument || document;
+        });
+"""
+
+
+def served_files(app, page):
+    """Fetch the local scripts and stylesheets a reader page and its message frame load."""
+    tree = html.fromstring(page)
+    paths = tree.xpath('//script[@src]/@src | //link[@rel="stylesheet"]/@href')
+    for srcdoc in tree.xpath("//iframe/@srcdoc"):
+        paths += html.fromstring(srcdoc).xpath('//link[@rel="stylesheet"]/@href')
+    client = app.test_client()
+    files = {}
+    for path in paths:
+        if path.startswith(("https://", "http://", "//")):
+            continue
+        response = client.get(path)
+        assert response.status_code == 200, path
+        files[path] = {"body": response.data.decode(), "contentType": response.mimetype}
+    return files
 
 
 def run_contrast_browser(
@@ -30,7 +57,9 @@ def run_contrast_browser(
     rendered_page=None,
     page_headers=None,
     external_stylesheets=None,
+    backstop=True,
 ):
+    """Render a synthetic reader page in a browser; backstop=False lets message frame overflow show."""
     page = rendered_page
     if page is None:
         with app.test_request_context("/email/synthetic"):
@@ -44,16 +73,9 @@ def run_contrast_browser(
                 auto_scale=auto_scale,
                 attachments=attachments,
             )
-    tree = html.fromstring(page)
-    paths = tree.xpath('//script[@src]/@src | //link[@rel="stylesheet"]/@href')
-    client = app.test_client()
-    files = {}
-    for path in paths:
-        if path.startswith(("https://", "http://", "//")):
-            continue
-        response = client.get(path)
-        assert response.status_code == 200, path
-        files[path] = {"body": response.data.decode(), "contentType": response.mimetype}
+    files = served_files(app, page)
+    if not backstop and FRAME_STYLESHEET in files:
+        files[FRAME_STYLESHEET]["body"] += "\nhtml { overflow: visible !important; }"
     payload = {
         "page": page,
         "pageHeaders": page_headers or {},
@@ -103,7 +125,8 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
             await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
             await page.waitForTimeout(100);
         };
-        const color = id => page.locator('#' + id).evaluate(element => {
+        __MESSAGE_HELPERS__
+        const color = id => message().locator('#' + id).evaluate(element => {
             const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
             let node;
             while ((node = walker.nextNode())) {
@@ -111,7 +134,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
             }
             throw new Error('No text found in ' + element.id);
         });
-        const background = id => page.locator('#' + id).evaluate(element => getComputedStyle(element).backgroundColor);
+        const background = id => message().locator('#' + id).evaluate(element => getComputedStyle(element).backgroundColor);
         const setTheme = async theme => {
             await page.evaluate(value => {
                 localStorage.setItem('ownmail-theme', value);
@@ -129,7 +152,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     result = subprocess.run(
-        [node, "-e", script.replace("__ASSERTIONS__", assertions)],
+        [node, "-e", script.replace("__MESSAGE_HELPERS__", MESSAGE_HELPERS).replace("__ASSERTIONS__", assertions)],
         input=json.dumps(payload),
         cwd=SANITIZER_DIR,
         capture_output=True,
@@ -200,9 +223,9 @@ def test_repair_preserves_descendant_colors_and_currentcolor_decoration(shell_ap
         assert.equal(await color('parent'), 'rgb(17, 17, 17)');
         assert.equal(await color('inherited'), 'rgb(17, 17, 17)');
         assert.equal(await color('button'), 'rgb(255, 255, 255)');
-        assert.equal(await page.locator('#parent').evaluate(el => getComputedStyle(el).borderTopColor),
+        assert.equal(await message().locator('#parent').evaluate(el => getComputedStyle(el).borderTopColor),
             'rgb(255, 255, 255)');
-        assert.equal(await page.locator('#button').evaluate(el => getComputedStyle(el).borderTopColor),
+        assert.equal(await message().locator('#button').evaluate(el => getComputedStyle(el).borderTopColor),
             'rgb(255, 255, 255)');
         """,
     )
@@ -358,7 +381,7 @@ def test_theme_toggles_restore_pristine_inline_declarations(shell_app, browser_n
         for (let i = 0; i < 3; i++) {
             assert.equal(await color('text'), 'rgb(17, 17, 17)');
             await setTheme('light');
-            assert.deepEqual(await page.locator('#text').evaluate(el => [
+            assert.deepEqual(await message().locator('#text').evaluate(el => [
                 el.style.getPropertyValue('color'), el.style.getPropertyPriority('color')
             ]), ['rgb(17, 17, 17)', '']);
             await setTheme('dark');
@@ -433,10 +456,10 @@ def test_image_load_reassesses_changed_background(shell_app, browser_node):
         """
         assert.equal(await color('text'), 'rgb(17, 17, 17)');
         await page.evaluate(() => {
-            document.getElementById('text').style.backgroundColor = '#222222';
-            document.getElementById('image').src = 'https://fixture.test/late.svg';
+            messageDocument().getElementById('text').style.backgroundColor = '#222222';
+            messageDocument().getElementById('image').src = 'https://fixture.test/late.svg';
         });
-        await page.waitForFunction(() => document.getElementById('image').complete);
+        await page.waitForFunction(() => messageDocument().getElementById('image').complete);
         await settle();
         assert.equal(await color('text'), 'rgb(255, 255, 255)');
         assert.equal(requests.get('https://fixture.test/late.svg'), 1);
@@ -459,7 +482,7 @@ def test_sender_span_selectors_cannot_change_layout_during_repair(shell_app, bro
         """
         assert.equal(await color('text'), 'rgb(255, 255, 255)');
         assert.equal(await color('link'), 'rgb(0, 102, 153)');
-        assert.equal(await page.locator('#text').evaluate(el => getComputedStyle(el).paddingLeft), '12px');
+        assert.equal(await message().locator('#text').evaluate(el => getComputedStyle(el).paddingLeft), '12px');
         """,
     )
 
@@ -480,7 +503,7 @@ def test_sender_span_selectors_cannot_hide_images_during_repair(shell_app, brows
         """,
         """
         assert.equal(await color('text'), 'rgb(255, 255, 255)');
-        assert.equal(await page.locator('#image').evaluate(el => getComputedStyle(el).opacity), '1');
+        assert.equal(await message().locator('#image').evaluate(el => getComputedStyle(el).opacity), '1');
         """,
     )
 
@@ -499,7 +522,7 @@ def test_resource_and_resize_event_bursts_eventually_stop_mutating_content(shell
         await page.evaluate(() => {
             window.contentMutations = 0;
             new MutationObserver(records => {window.contentMutations += records.length;}).observe(
-                document.getElementById('ownmail-email-content'),
+                messageDocument().getElementById('ownmail-email-content'),
                 {subtree:true, childList:true, attributes:true, characterData:true}
             );
             for (let i = 0; i < 25; i++) window.dispatchEvent(new Event('resize'));
@@ -526,9 +549,9 @@ def test_oversized_messages_keep_native_colors_without_partial_repairs(shell_app
         """,
         """
         assert.equal(await color('large'), 'rgb(255, 255, 255)');
-        assert.equal(await page.locator('#large').evaluate(el => getComputedStyle(el.lastElementChild).color),
+        assert.equal(await message().locator('#large').evaluate(el => getComputedStyle(el.lastElementChild).color),
             'rgb(255, 255, 255)');
-        assert.equal(await page.locator('#large span').count(), 0);
+        assert.equal(await message().locator('#large span').count(), 0);
         """,
     )
 

@@ -66,7 +66,7 @@ def test_message_submit_controls_send_no_request(shell_app, browser_node, spacin
             ['#get-field', 'Enter'],
         ];
         for (const [control, action] of actions) {
-            const target = page.locator(control);
+            const target = message().locator(control);
             await (action === 'click' ? target.click({timeout: 2000}) : target.press(action, {timeout: 2000}));
             // Longer than the delay before the loading overlay appears.
             await page.waitForTimeout(400);
@@ -101,7 +101,7 @@ def test_message_links_open_a_new_tab_without_a_referrer(shell_app, browser_node
         // The image map's only area covers the whole image.
         for (const control of ['#map-image', '#anchor-link']) {
             const popup = page.context().waitForEvent('page', {timeout: 2000});
-            await page.locator(control).click({timeout: 2000});
+            await message().locator(control).click({timeout: 2000});
             await popup;
             assert.equal(page.url(), start, control);
         }

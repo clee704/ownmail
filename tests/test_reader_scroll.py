@@ -20,7 +20,7 @@ def test_tiny_message_overflow_does_not_capture_vertical_scrolling(shell_app, br
         '<table style="width:100%;height:1600px"><tr><td>Long synthetic message</td></tr></table>' + TINY_FOOTER,
         "",
         """
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         const viewport = page.locator('#ownmail-email-viewport, #ownmail-email-content').first();
         assert.equal(await viewport.evaluate(el => {el.scrollTop = 100; return el.scrollTop;}), 0,
             'The message must not independently scroll its tiny vertical overflow');
@@ -59,10 +59,10 @@ def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, browser_node, bo
         body + TINY_FOOTER,
         "",
         """
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         const viewport = page.locator('#ownmail-email-viewport, #ownmail-email-content').first();
         const button = page.locator('#ownmail-fit-message');
-        const wide = page.locator('#wide');
+        const wide = message().locator('#wide');
         const authoredStyle = await wide.getAttribute('style');
         const toggle = async () => {
             await page.locator('.ownmail-email-menu > summary').click();
@@ -110,11 +110,11 @@ def test_wide_messages_fit_and_scroll_at_actual_size(shell_app, browser_node, bo
             });
             assert((await wide.boundingBox()).x + 1200 <= rootBox.x + rootBox.width + 1);
             const horizontal = await viewport.evaluate(el => el.scrollLeft);
-            await page.locator('img').last().evaluate(el => {
+            await message().locator('img').last().evaluate(el => {
                 el.src = 'data:image/svg+xml,' + encodeURIComponent(
                     '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>');
             });
-            await page.waitForFunction(() => [...document.querySelectorAll('#ownmail-email-content img')]
+            await page.waitForFunction(() => [...messageDocument().querySelectorAll('#ownmail-email-content img')]
                 .every(el => el.complete));
             await settle();
             assert.equal(await viewport.evaluate(el => el.scrollLeft), horizontal,
@@ -147,28 +147,28 @@ def test_late_image_load_and_resize_recalculate_fit(shell_app, browser_node):
         '<p>Message with a delayed image</p><img id="late" alt="">',
         "",
         """
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         const viewport = page.locator('#ownmail-email-viewport, #ownmail-email-content').first();
         const button = page.locator('#ownmail-fit-message');
         assert.equal(await button.evaluate(el => el.hidden), true);
-        await page.locator('#late').evaluate(el => {
+        await message().locator('#late').evaluate(el => {
             el.src = 'data:image/svg+xml,' + encodeURIComponent(
                 '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="1200"></svg>');
         });
-        await page.waitForFunction(() => document.getElementById('late').naturalWidth === 640);
+        await page.waitForFunction(() => messageDocument().getElementById('late').naturalWidth === 640);
         await settle();
         assert.equal(await button.evaluate(el => el.hidden), false);
-        assert(Math.abs((await page.locator('#late').boundingBox()).width -
+        assert(Math.abs((await message().locator('#late').boundingBox()).width -
             (await viewport.boundingBox()).width) <= 1);
         assert.equal(await viewport.evaluate(el => {el.scrollLeft = 100; return el.scrollLeft;}), 0);
         await page.setViewportSize({width:1000, height:740});
         await settle();
         assert.equal(await button.evaluate(el => el.hidden), true);
-        assert.equal((await page.locator('#late').boundingBox()).width, 640);
+        assert.equal((await message().locator('#late').boundingBox()).width, 640);
         await page.setViewportSize({width:430, height:740});
         await settle();
         assert.equal(await button.evaluate(el => el.hidden), false);
-        assert(Math.abs((await page.locator('#late').boundingBox()).width -
+        assert(Math.abs((await message().locator('#late').boundingBox()).width -
             (await viewport.boundingBox()).width) <= 1);
         assert.equal(await viewport.evaluate(el => {el.scrollTop = 100; return el.scrollTop;}), 0);
         assert.equal(await content.evaluate(el => {el.scrollTop = 100; return el.scrollTop;}), 0);
@@ -194,13 +194,13 @@ def test_constrained_message_preserves_content_and_attachment_position(shell_app
         """,
         f"#ownmail-email-content {{{constraint}}}",
         """
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         const viewport = page.locator('#ownmail-email-viewport, #ownmail-email-content').first();
         const box = await content.boundingBox();
         const outer = await viewport.boundingBox();
-        const start = await page.locator('#start').boundingBox();
-        const floated = await page.locator('#float').boundingBox();
-        const end = await page.locator('#end').boundingBox();
+        const start = await message().locator('#start').boundingBox();
+        const floated = await message().locator('#float').boundingBox();
+        const end = await message().locator('#end').boundingBox();
         const attachments = await page.locator('.ownmail-attachments').boundingBox();
         assert.equal(start.y - box.y, 32, 'The first sender margin remains inside the message');
         assert.equal(floated.y - start.y - start.height, 24);
@@ -209,8 +209,8 @@ def test_constrained_message_preserves_content_and_attachment_position(shell_app
         assert(attachments.y >= end.y + end.height, 'Attachments must follow all message content');
         assert.equal(await content.evaluate(el => {el.scrollTop = 100; return el.scrollTop;}), 0);
         assert.equal(await viewport.evaluate(el => {el.scrollTop = 100; return el.scrollTop;}), 0);
-        await page.locator('#end').scrollIntoViewIfNeeded();
-        assert(await page.locator('#end').evaluate(el => {
+        await message().locator('#end').scrollIntoViewIfNeeded();
+        assert(await message().locator('#end').evaluate(el => {
             const rect = el.getBoundingClientRect();
             return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
         }), 'The end of the authored content is visible');
@@ -235,12 +235,12 @@ def test_percentage_height_content_does_not_grow_when_exposing_footer(shell_app,
         """,
         "#ownmail-email-content {height:240px}",
         """
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         const viewport = page.locator('#ownmail-email-viewport, #ownmail-email-content').first();
-        const child = page.locator('#percentage');
+        const child = message().locator('#percentage');
         const checkLayout = async () => {
             const childBox = await child.boundingBox();
-            const footer = await page.locator('#footer').boundingBox();
+            const footer = await message().locator('#footer').boundingBox();
             const outer = await viewport.boundingBox();
             const attachments = await page.locator('.ownmail-attachments').boundingBox();
             const scale = childBox.width / 1200;
@@ -282,16 +282,16 @@ def test_sender_flex_layout_survives_fitting_and_actual_size(shell_app, browser_
         '<div id="right" style="width:600px;flex:none">Right</div>',
         "#ownmail-email-content {display:flex}",
         """
-        const content = page.locator('#ownmail-email-content');
+        const content = message().locator('#ownmail-email-content');
         const viewport = page.locator('#ownmail-email-viewport, #ownmail-email-content').first();
         const checkLayout = async fitted => {
             assert.equal(await content.evaluate(el => getComputedStyle(el).display), 'flex');
             assert.equal(await content.locator('style').textContent(), '#ownmail-email-content {display:flex}');
             for (const id of ['left', 'right']) {
-                assert.equal(await page.locator('#' + id).getAttribute('style'), 'width:600px;flex:none');
+                assert.equal(await message().locator('#' + id).getAttribute('style'), 'width:600px;flex:none');
             }
-            const left = await page.locator('#left').boundingBox();
-            const right = await page.locator('#right').boundingBox();
+            const left = await message().locator('#left').boundingBox();
+            const right = await message().locator('#right').boundingBox();
             const outer = await viewport.boundingBox();
             assert.equal(left.y, right.y, 'The sender columns must stay side by side');
             assert(Math.abs(right.x - left.x - left.width) <= 1);
@@ -305,7 +305,7 @@ def test_sender_flex_layout_survives_fitting_and_actual_size(shell_app, browser_
                     el.scrollLeft = el.scrollWidth;
                     return el.scrollLeft > 800;
                 }));
-                const reached = await page.locator('#right').boundingBox();
+                const reached = await message().locator('#right').boundingBox();
                 assert(Math.abs(reached.x + reached.width - outer.x - outer.width) <= 1,
                     'The right column edge must remain reachable at actual size');
             }
