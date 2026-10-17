@@ -4,7 +4,7 @@ title: Render reader messages in a sandboxed frame
 status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
-updated_date: '2026-10-16 07:36'
+updated_date: '2026-10-17 05:24'
 labels:
   - security
 dependencies:
@@ -30,16 +30,16 @@ The frame must behave like a normal element: no internal scroll and no clipped i
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The reader renders sanitized message HTML in an srcdoc frame with sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" and no allow-scripts; message forms and top-level navigation are blocked and links open in a new tab
-- [ ] #2 The frame never scrolls internally, vertically or horizontally. The frame document hides its overflow as a backstop. The frame height comes from the content's fractional extent rounded up, is re-checked after it is set, and grows until nothing overflows; sizing re-runs after late image loads, font swaps, viewport width changes, fitting, contrast repair and theme changes. Chromium and WebKit tests with the backstop off find no scrollable overflow for fractional line heights, a fitted (zoomed) wide message, absolutely positioned and transformed content extending below the body, and content that changes after the first measurement
-- [ ] #3 No message image or text is clipped: Chromium and WebKit tests with the backstop on compare the last element, wide tables, long URLs, late images, viewport-unit content and the AC2 cases with the frame's visible box
-- [ ] #4 Wheel, PageDown, ArrowDown, Space and Shift+Space over or after clicking in the message scroll the page in Chromium and WebKit, and selecting and copying message text still work
-- [ ] #5 Wide messages fit as they do today, through email-fit.js applied to the frame document, and viewport units in message CSS resolve against the reader viewport
-- [ ] #6 Dark mode, contrast repair, image loading and CSP blocking of remote content behave as today, without parent event listeners on nodes inside the frame, which WebKit does not fire
-- [ ] #7 Message @property, @keyframes, @font-face, fixed positioning, popovers and dialogs cannot affect or cover application UI; Chromium and WebKit tests fail before the change and pass after it
-- [ ] #8 PDF export keeps direct embedding and container scoping, and the behavior of printing from the reader is decided and recorded
+- [x] #1 The reader renders sanitized message HTML in an srcdoc frame with sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" and no allow-scripts; message forms and top-level navigation are blocked and links open in a new tab
+- [x] #2 The frame never scrolls internally, vertically or horizontally. The frame document hides its overflow as a backstop. The frame height comes from the content's fractional extent rounded up, is re-checked after it is set, and grows until nothing overflows; sizing re-runs after late image loads, font swaps, viewport width changes, fitting, contrast repair and theme changes. Chromium and WebKit tests with the backstop off find no scrollable overflow for fractional line heights, a fitted (zoomed) wide message, absolutely positioned and transformed content extending below the body, and content that changes after the first measurement
+- [x] #3 No message image or text is clipped: Chromium and WebKit tests with the backstop on compare the last element, wide tables, long URLs, late images, viewport-unit content and the AC2 cases with the frame's visible box
+- [x] #4 Wheel, PageDown, ArrowDown, Space and Shift+Space over or after clicking in the message scroll the page in Chromium and WebKit, and selecting and copying message text still work
+- [x] #5 Wide messages fit as they do today, through email-fit.js applied to the frame document, and viewport units in message CSS resolve against the reader viewport
+- [x] #6 Dark mode, contrast repair, image loading and CSP blocking of remote content behave as today, without parent event listeners on nodes inside the frame, which WebKit does not fire
+- [x] #7 Message @property, @keyframes, @font-face, fixed positioning, popovers and dialogs cannot affect or cover application UI; Chromium and WebKit tests fail before the change and pass after it
+- [x] #8 PDF export keeps direct embedding and container scoping, and the behavior of printing from the reader is decided and recorded
 - [ ] #9 Before landing, the maintainer confirms native find in page, swipe, fling and pinch over a long and a wide message in iOS Safari and the Home Screen web app, and no internal scroll or clipping on archive messages that scrolled inside the earlier iframe; the result is recorded in the notes
-- [ ] #10 The full pre-push gate passes with browser tests required
+- [x] #10 The full pre-push gate passes with browser tests required
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -75,17 +75,25 @@ Work on branch feat/reader-message-frame, review base be0f1c4. The branch lands 
 
 2026-10-16 progress: 3ebfc0b/9f60717/815e326 (Space focus return in email-reader.js, keyboard and copy tests, sandbox navigation and form tests), e6d0fb9/858e756/2aeca0d (AC6 contrast, backdrop and CSP tests; AC7 isolation tests in tests/test_message_frame_isolation.py, which fail against be0f1c4 in Chromium 6/6 and WebKit 5/6, the WebKit font case passing there because WebKit treats -apple-system as the system-font keyword), 9e0e097 (Print page /print/<email_id> from the PDF presentation; Cmd+P in the reader prints a note for HTML messages; plain text prints as before).
 
-2026-10-16 review (Opus 5.5 and gpt-6-astra, then a separate refutation pass with Chromium and WebKit probes). Findings and proposed dispositions; none fixed yet:
-- Fix: img name=fonts or name=scrollingElement survives the sanitizer and clobbers the frame document's fonts/scrollingElement; with fonts the message stays hidden. Drop name on IMG in the sanitizer.
-- Fix: Tab into a message without Tab stops (always in WebKit) is trapped by the focus return. Return focus only after pointer interaction, or handle Tab in the parent; keep the Space and Tab-to-link tests passing.
-- Fix: widening the frame (actual size, and the widen path when fitting cannot shrink text) also widens percentage-width content, so width:100% plus padding stays clipped. Keep the container at the column width while the frame widens.
-- Fix: an absolutely positioned details element that the reader opens is not observed, so its content is clipped. Also observe details elements.
-- Fix: the viewport-unit rewrite inside @property initial-value invalidates the registration, in the reader, PDF and Print. Skip the rewrite inside @property.
-- Fix: the message()/messageDocument() test helpers fall back to the page; drop the fallback for HTML messages.
-- Fix: /print can start the shared sanitizer without its lock after a restart failure; return 503 when the sanitizer is unavailable, as the reader does.
-- Record as limits: height and orientation media queries evaluate against the frame, so measuring at height 0 can leave blank space below the message; markup whose height grows through chained height queries needs more than the pass cap and clips.
-- Decide: svh/dvh variants collapse onto the vh measurement (not reproducible in Playwright).
-Follow-ups to ask the maintainer about before filing: test_pdf_export_cli::test_actual_ctrl_c_stops_renderer_child failed once in a full gate run and passed alone.
+2026-10-16 review (Opus 5.5 and gpt-6-astra, then a separate refutation pass with Chromium and WebKit probes), and two reviews of the fixes (Opus 5.5). Each fix has a test that failed first in the engines where the finding applies:
+- b3548b8: /print never starts the shared sanitizer and returns 503 when it is unavailable or returns only the escaped input, so it never serves unsanitized HTML.
+- 5efda17: the sanitizer drops name on IMG, so images cannot shadow the frame document's fonts or scrollingElement. The other Document named-property elements (embed, form, iframe, object) are already forbidden tags.
+- ee9b7e0: the frame test helpers no longer fall back to the page; message_content(page, plain=True) selects plain-text messages. With HTML embedded in the page, 76 tests fail; no test was passing only through the fallback.
+- 1a945b3, 409ae4c: layout pins the frame body to the frame's fractional width, so a widened frame does not widen percentage content. clientWidth rounds, so it is not used.
+- ade6188, 647357b: a widened frame copies an opaque content background color onto the frame root, and contrast repair treats overflow text as lying on it.
+- 96eddc0: a MutationObserver on open re-runs sizing when a details element toggles; it fires in WebKit.
+- e578a38, 1005a1a: after Tab or Shift+Tab focuses the frame document with no focused link, focus moves to #ownmail-email-end or the viewport on the far side, so Space scrolls and the next Tab leaves the message. Links in the frame stay reachable by Tab in Chromium. Anchor tracking (e578a38) was replaced because a click at the same spot defeated it.
+- 5efda17, d11da2d: skipping the viewport-unit rewrite inside @property was reverted. The unrewritten unit resolved against the content-sized frame, so initial-value: 100vh clipped. The rewritten rule is invalid and the browser drops the registration, which leaves the box at its natural height.
 
-Next action: fix the items marked Fix with tests that fail first, re-review the fixes, run the browser suites in Chromium and WebKit and the full pre-push gate, tick AC1-AC8 and AC10 against that evidence, then the maintainer's AC9 check and the desktop check of clicking into the message to activate an inactive window.
+Limits:
+- Height and orientation media queries evaluate against the frame, so measuring at height 0 can leave blank space below the message; markup whose height grows through chained height queries needs more than the pass cap and clips.
+- svh and dvh collapse onto the vh measurement. Accepted as a limit: they differ only by the iOS toolbar height, Playwright cannot reproduce it, and the AC9 check covers iOS.
+- A property registered with a viewport unit in an @property descriptor stays unregistered.
+- In a widened frame only an opaque background color continues past the column; background images and semi-transparent or non-sRGB colors stop at the column edge.
+- With a column fraction under 0.5 the frame viewport rounds down, and 100%-width content can end about 0.2px past it, inside the frame's visible box (not shown to be visible).
+- #ownmail-email-end is an empty tabindex=-1 element; what a screen reader announces there is unchecked, with VoiceOver in general.
+
+Gate evidence at 647357b: the pre-push gate with OWNMAIL_REQUIRE_BROWSER_TESTS=1 passes in Chromium. The full suite in WebKit fails only the four label editor tests (TASK-144); test_message_forms::test_message_links_open_a_new_tab_without_a_referrer now passes in WebKit. Under heavy load from parallel browser probes, the test_pdf_export Ctrl-C tests and test_download_progress::test_interrupt_flushes_current_counts_without_message_errors[downloading] timed out or miscounted in both engines and passed alone. With the earlier test_pdf_export_cli Ctrl-C failure, ask the maintainer whether to file it.
+
+Next action: the maintainer's AC9 check on iOS Safari and the Home Screen web app, and the desktop check of clicking into the message to activate an inactive Chrome or Safari window; then land the branch on master.
 <!-- SECTION:NOTES:END -->
