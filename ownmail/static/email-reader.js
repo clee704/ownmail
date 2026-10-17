@@ -93,34 +93,36 @@ if (window.ownmailMessageFrame) {
 
 // Neither Chromium nor WebKit passes Space or Shift+Space from a frame to its
 // parent, and WebKit never runs parent listeners on nodes in the script-less
-// frame, so the key cannot be forwarded. After a plain click in the message,
-// focus returns to the viewport once the button is up. Focus stays in the frame
-// while it holds a text selection (native copy) or a keyboard-focused link, and
-// after Tab moves it there: returning it would make the next Tab enter the frame
-// again, so a message without Tab stops would trap keyboard users.
+// frame, so the key cannot be forwarded. Once focus enters the frame and the
+// button is up, it moves to a parent wrapper: the viewport, or after Tab the
+// element past the frame, so the next Tab leaves the message instead of entering
+// it again; the parent cannot observe presses in the frame, so focus cannot
+// wait there for a click. It stays in the frame while it holds a text
+// selection (native copy) or a keyboard-focused link.
 (function() {
     var frame = document.getElementById('ownmail-email-frame');
     if (!frame) return;
     var viewport = document.getElementById('ownmail-email-viewport');
+    var end = document.getElementById('ownmail-email-end');
     var pending = false;
-    var tabbing = false;
-    // Where the frame selection was when Tab moved focus in; a click moves it.
-    var tabbed = null;
+    // The wrapper on the far side of the frame while a Tab key press is handled.
+    var tabbing = null;
+    var next = viewport;
     function check() {
         pending = false;
+        var target = next;
+        next = viewport;
         if (document.activeElement !== frame) return;
         var doc = frame.contentDocument;
         // During a press, check every frame so Space works right after mouseup.
         if (frame.matches(':active')) return schedule(true);
         var focused = doc && doc.activeElement;
-        var selection = doc && doc.getSelection();
-        var held = !doc || !selection.isCollapsed
-            || (focused && focused !== doc.body && focused.matches(':focus-visible'))
-            || (tabbed && tabbed.node === selection.anchorNode && tabbed.offset === selection.anchorOffset);
+        var held = !doc || !doc.getSelection().isCollapsed
+            || (focused && focused !== doc.body && focused.matches(':focus-visible'));
         // A selection can stay for minutes; a slow poll still notices the
         // plain click that collapses it, which fires no parent event.
         if (held) schedule(false);
-        else viewport.focus({preventScroll: true});
+        else target.focus({preventScroll: true});
     }
     function schedule(soon) {
         if (pending) return;
@@ -131,13 +133,12 @@ if (window.ownmailMessageFrame) {
     // Tab moves focus during its keydown, so the blur below fires before the timeout.
     document.addEventListener('keydown', function(event) {
         if (event.key !== 'Tab') return;
-        tabbing = true;
-        setTimeout(function() { tabbing = false; });
+        tabbing = event.shiftKey ? viewport : end;
+        setTimeout(function() { tabbing = null; });
     }, true);
     // The parent window blurs whenever focus moves into the frame.
     window.addEventListener('blur', function() {
-        var selection = tabbing && frame.contentDocument && frame.contentDocument.getSelection();
-        tabbed = selection ? {node: selection.anchorNode, offset: selection.anchorOffset} : null;
+        next = tabbing || viewport;
         schedule(true);
     });
 })();

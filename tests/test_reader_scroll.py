@@ -189,13 +189,23 @@ def test_keys_scroll_the_page_after_clicking_in_the_message(shell_app, browser_n
         assert.equal((await state()).active, 'ownmail-email-viewport');
         await scrolls('Space', 1);
 
-        // A click after Tab moved focus into the message returns focus too.
+        // Tab into the message reaches its link in Chromium; in WebKit it leaves focus
+        // past the frame, where Space scrolls. A later click returns focus too, also
+        // at the spot clicked before the Tab, where the frame caret stays.
         await scrollTo(0);
+        await click('#p5');
         await page.focus('#ownmail-message-details-toggle');
         await page.keyboard.press('Tab');
-        await settle();
-        assert.equal((await state()).active, 'ownmail-email-frame');
+        await page.waitForTimeout(250);
+        if (engine === 'webkit') {
+            assert.equal((await state()).active, 'ownmail-email-end');
+            await scrolls('Space', 1);
+            await scrollTo(0);
+        } else {
+            assert.equal(await page.evaluate(() => messageDocument().activeElement.id), 'link');
+        }
         await click('#p5');
+        await page.waitForTimeout(250);
         assert.equal((await state()).active, 'ownmail-email-viewport');
         await scrolls('Space', 1);
 
@@ -231,7 +241,7 @@ def test_tab_moves_through_a_message_without_tab_stops(shell_app, browser_node):
             viewport.insertAdjacentHTML('beforebegin', '<button id="before">Before</button>');
             viewport.insertAdjacentHTML('afterend', '<button id="after">After</button>');
         });
-        // The frame itself is a Tab stop; wait past the reader's focus check each time.
+        // The message is a Tab stop, left on its far side; wait past the reader's focus check each time.
         // WebKit on macOS skips buttons on plain Tab.
         const engine = process.env.OWNMAIL_BROWSER_ENGINE || 'chromium';
         const press = async (key, ...expected) => {
@@ -244,8 +254,8 @@ def test_tab_moves_through_a_message_without_tab_stops(shell_app, browser_node):
             assert.deepEqual(seen, expected, key);
         };
         await page.focus('#before');
-        await press('Tab', 'ownmail-email-frame', 'after');
-        await press('Shift+Tab', 'ownmail-email-frame', 'before');
+        await press('Tab', 'ownmail-email-end', 'after');
+        await press('Shift+Tab', 'ownmail-email-viewport', 'before');
         """,
         theme="light",
         viewport=(800, 600),

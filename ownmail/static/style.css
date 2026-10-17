@@ -302,8 +302,8 @@ span.ownmail-email-sender { pointer-events: none; }
 .ownmail-email-content-area { background: var(--ownmail-bg); display: flow-root; min-width: 0; }
 /* Let sender backgrounds reach the reader edges while app controls keep their inset. */
 #ownmail-email-viewport { display: flow-root; overflow: clip visible; margin-inline: calc(-1 * var(--ownmail-reader-inset)); }
-/* email-reader.js focuses the viewport after a click in the message; it is not a control. */
-#ownmail-email-viewport:focus { outline: none; }
+/* email-reader.js focuses these after a click or Tab into the message; they are not controls. */
+#ownmail-email-viewport:focus, #ownmail-email-end:focus { outline: none; }
 #ownmail-email-content { min-height: 200px; overflow: auto; overflow-wrap: break-word; font-family: var(--ownmail-font); font-size: 16px; }
 #ownmail-email-frame { display: block; width: 100%; height: 200px; border: 0; --ownmail-message-padding: var(--ownmail-space-4) calc(var(--ownmail-reader-inset) + var(--ownmail-space-4)); }
 /* Hidden until the first theme sync, so dark mode has no light flash. */

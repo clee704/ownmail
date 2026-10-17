@@ -131,6 +131,7 @@
             {% set message_document %}<!doctype html><html><head><link rel="stylesheet" href="{{ url_for('static', filename='email-frame.css') }}"></head><body><div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}"{{ body_attributes | default({}) | xmlattr }}>{{ body_html | safe }}</div></body></html>{% endset %}
             <div id="ownmail-email-viewport" tabindex="-1" data-auto-scale="{{ 'true' if auto_scale else 'false' }}">
                 <iframe id="ownmail-email-frame" title="Message" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc="{{ message_document | forceescape }}"></iframe>
+                <div id="ownmail-email-end" tabindex="-1"></div>
             </div>
             <script src="/static/email-fit.js"></script>
             <p class="ownmail-print-note">To print this message, choose Print from the message actions menu.</p>
