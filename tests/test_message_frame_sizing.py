@@ -30,6 +30,22 @@ WIDENED = (
     f'<table><tr><td id="cell">{LONG_URL}</td></tr></table>'
     '<div id="padded" style="width:100%;padding:0 30px">Padded</div><p id="end">End</p>'
 )
+# Waits until the frame has grown past the bottom of the element, which the periodic overflow check does
+# within a fraction of a second; a frame that never grows times the wait out.
+GROWN = """
+        await page.waitForFunction(id => {
+            const rect = messageDocument().getElementById(id).getBoundingClientRect();
+            return CONDITION && document.getElementById('ownmail-email-frame').getBoundingClientRect().height > rect.bottom;
+        }, ID, {timeout: 3000});
+        await settle();
+        await check('LABEL');
+"""
+
+
+def grown(element_id, condition, label):
+    return GROWN.replace("CONDITION", condition).replace("ID", repr(element_id)).replace("LABEL", label)
+
+
 # Each case: body, CSS, element ids that must stay visible, steps after the first check, and
 # CSS None for a message that goes through the sanitizer (needed for the viewport-unit rewrite).
 CASES = {
@@ -160,6 +176,30 @@ CASES = {
         await check('after opening the details element');
         """,
     ),
+    # A delayed animation of an in-flow box resizes the observed content box.
+    "in-flow-animation": (
+        '<div id="grow" style="height:10px;animation:grow 0.2s 0.4s forwards"></div><p id="end">End</p>',
+        "@keyframes grow { to { height: 600px } }",
+        ["grow", "end"],
+        grown("end", "rect.top >= 600", "after the animation"),
+    ),
+    # A positioned box grows without resizing any observed box, so only the overflow check sees it.
+    "positioned-animation": (
+        '<p id="end">End</p><div id="abs" style="position:absolute;top:0;left:0;width:10px;height:10px;'
+        'animation:grow 0.2s 0.4s forwards"></div>',
+        "@keyframes grow { to { height: 600px } }",
+        ["end", "abs"],
+        grown("abs", "rect.height >= 600", "after the animation"),
+    ),
+    # A transform moves the box without resizing any observed box, so only the overflow check sees it.
+    "checked-transition": (
+        '<input type="checkbox" id="t" style="display:none"><label id="toggle" for="t">Toggle</label>'
+        '<p id="end">End</p><div id="moved">Moved</div>',
+        "#moved { transition: transform 0.1s } #t:checked ~ #moved { transform: translateY(700px) }",
+        ["end", "moved"],
+        "await message().locator('#toggle').click();"
+        + grown("moved", "rect.top >= 700", "after the checked transition"),
+    ),
 }
 ACTUAL_SIZE = {"widened-percentage-width-actual-size"}
 
@@ -238,6 +278,36 @@ def test_message_viewport_units_resolve_against_reader_viewport(shell_app, brows
             assert(Math.abs(box.width - width / 2) <= 0.5, detail);
             assert(Math.abs(box.height - height / 2) <= 0.5, detail);
         }
+        """,
+        theme="light",
+        auto_scale=True,
+        viewport=(390, 740),
+    )
+
+
+def test_residual_overflow_does_not_rerun_layout(shell_app, browser_node):
+    """Each height media query grows the next box, so overflow outlasts the layout passes; it must not loop."""
+    app, _ = shell_app
+    run_message_browser(
+        app,
+        browser_node,
+        '<div style="height:400px"></div>' + "".join(f'<div id="g{i}"></div>' for i in range(8)),
+        " ".join(f"@media (min-height: {400 + 100 * i}px) {{ #g{i} {{ height: 100px }} }}" for i in range(8)),
+        """
+        await settle();
+        const sizes = await page.evaluate(() => {
+            const scroller = messageDocument().scrollingElement;
+            return [scroller.scrollHeight, scroller.clientHeight];
+        });
+        assert(sizes[0] > sizes[1], 'Layout must leave overflow: ' + JSON.stringify(sizes));
+        // Every layout run sets the frame height.
+        const mutations = await page.evaluate(() => new Promise(resolve => {
+            let count = 0;
+            const observer = new MutationObserver(records => { count += records.length; });
+            observer.observe(document.getElementById('ownmail-email-frame'), {attributeFilter: ['style']});
+            setTimeout(() => { observer.disconnect(); resolve(count); }, 1000);
+        }));
+        assert.equal(mutations, 0, 'Layout must not rerun');
         """,
         theme="light",
         auto_scale=True,

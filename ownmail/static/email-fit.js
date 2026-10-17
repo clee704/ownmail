@@ -10,7 +10,7 @@
     probe.setAttribute('aria-hidden', 'true');
     probe.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; visibility: hidden; pointer-events: none;';
     document.body.appendChild(probe);
-    var doc = null, content = null, callbacks = [], pending = false;
+    var doc = null, content = null, callbacks = [], pending = false, settled = '';
     var sizes = new WeakMap(), faces = new WeakSet();
 
     function sync() {
@@ -82,6 +82,8 @@
             viewport.scrollLeft = scrollLeft;
         }
         viewport.style.minHeight = '';
+        // Overflow the passes above could not remove must not rerun them forever.
+        settled = scroller.scrollWidth + 'x' + scroller.scrollHeight;
     }
 
     function schedule() {
@@ -115,6 +117,15 @@
         });
     }
 
+    // Animations, transitions and :checked toggles can move positioned or
+    // transformed content without resizing any observed box.
+    function check() {
+        if (document.hidden) return;
+        var scroller = doc.scrollingElement || doc.documentElement;
+        var over = scroller.scrollHeight > scroller.clientHeight || scroller.scrollWidth > scroller.clientWidth;
+        if (over && scroller.scrollWidth + 'x' + scroller.scrollHeight !== settled) schedule();
+    }
+
     function start(frameDocument) {
         doc = frameDocument;
         content = doc.getElementById('ownmail-email-content');
@@ -128,6 +139,7 @@
         // the reader's toggle sets its open attribute.
         new MutationObserver(schedule).observe(content, {subtree: true, attributeFilter: ['open']});
         watchFonts();
+        setInterval(check, 250);
         var waiting = callbacks;
         callbacks = null;
         waiting.forEach(function(callback) { callback(); });
