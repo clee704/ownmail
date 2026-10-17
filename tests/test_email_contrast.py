@@ -501,19 +501,28 @@ WIDE_ROW = (
 )
 
 
-# Each case: site theme, whether the message supports dark mode, and message CSS.
+# Each case: site theme, whether the message supports dark mode, message CSS, and
+# whether the message background continues past the column.
 @pytest.mark.parametrize(
-    ("theme", "supports_dark", "css"),
+    ("theme", "supports_dark", "css", "continues"),
     [
-        ("dark", False, ""),
-        ("light", True, "#ownmail-email-content {background:#102030;color:#ffffff}"),
+        ("dark", False, "", True),
+        ("light", True, "#ownmail-email-content {background:#102030;color:#ffffff}", True),
         # Text without a color inherits the dark reader's light text, so both spans need repair.
-        ("dark", True, "#ownmail-email-content {background:#ffffff}"),
+        ("dark", True, "#ownmail-email-content {background:#ffffff}", True),
+        ("light", True, "#ownmail-email-content {background:rgba(200,0,0,0.5)}", False),
     ],
-    ids=["dark-reader-light-box", "message-body-background", "repair-on-message-background"],
+    ids=[
+        "dark-reader-light-box",
+        "message-body-background",
+        "repair-on-message-background",
+        "semi-transparent-background",
+    ],
 )
-def test_widened_frame_paints_message_background_under_overflow(shell_app, browser_node, theme, supports_dark, css):
-    """The message background spans the widened frame, and contrast repair treats overflow text as on it."""
+def test_widened_frame_paints_message_background_under_overflow(
+    shell_app, browser_node, theme, supports_dark, css, continues
+):
+    """The message background spans the widened frame once, and contrast repair treats overflow text as on it."""
     app, _ = shell_app
     with app.test_request_context("/email/synthetic"):
         page = render_template(
@@ -541,9 +550,13 @@ def test_widened_frame_paints_message_background_under_overflow(shell_app, brows
         const box = await frame.boundingBox();
         const pixel = async x => (await page.screenshot({clip: {x: box.x + x, y: box.y + 150, width: 1, height: 1}}))
             .toString('base64');
-        assert.equal(await pixel(500), await pixel(300), 'The message background must continue past the column');
+        const column = await pixel(300);
+        if (CONTINUES) assert.equal(await pixel(500), column, 'The message background must continue past the column');
+        await message().locator('html').evaluate(root => { root.style.backgroundColor = ''; });
+        await settle();
+        assert.equal(await pixel(300), column, 'The column must paint the message background once');
         assert.equal(await color('far'), await color('near'));
-        """,
+        """.replace("CONTINUES", "true" if continues else "false"),
         theme,
         auto_scale=False,
         viewport=(390, 740),

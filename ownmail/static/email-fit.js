@@ -74,7 +74,10 @@
         if (frame.style.width) {
             // Overflow past the column lies on the root, which continues the
             // message background as a browser canvas continues a body's.
-            root.style.backgroundColor = getComputedStyle(content).backgroundColor;
+            // The content paints over the root inside the column, so only an
+            // opaque color, serialized as rgb(), avoids painting it twice there.
+            var background = getComputedStyle(content).backgroundColor;
+            if (/^rgb\(/.test(background)) root.style.backgroundColor = background;
             viewport.style.overflow = 'auto hidden';
             viewport.scrollLeft = scrollLeft;
         }
