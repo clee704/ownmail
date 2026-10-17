@@ -4,7 +4,7 @@ title: Render reader messages in a sandboxed frame
 status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
-updated_date: '2026-10-17 05:52'
+updated_date: '2026-10-17 05:59'
 labels:
   - security
 dependencies:
@@ -102,4 +102,6 @@ Next action: the maintainer's AC9 check on iOS Safari and the Home Screen web ap
 2026-10-16 AC9: the maintainer confirmed check 9 of docs/home-screen-validation.md on an iPhone: swipe, fling, pinch and Find on Page over fixtures 046 (long) and 047 (wide) in Safari and the Home Screen app, both fully visible, and no internal scroll or clipping on archive messages that scrolled inside the earlier iframe. The fixtures have no images and block remote content, so they do not exercise late images on a device; whether the archive messages loaded remote content is not recorded.
 
 2026-10-16 gap found after AC9 (probe, not committed): sizing re-runs only on the frame load event, a size change of the content box, of an image present at start or of the frame width, a font load, a details toggle, a theme or contrast change, and a window resize. A change that moves or grows positioned or transformed content without any of these is missed. In Chromium and WebKit, a delayed @keyframes growing an absolutely positioned box below the message, and a transform transition triggered by a label toggling a hidden checkbox (:checked), both leave scrollable overflow with the backstop off and clip with it on. The same animation on an in-flow box passes. Message scripts cannot run (sanitizer and sandbox), so script-driven resizing is not a cause.
+
+2026-10-16: Closed the late-overflow gap in commit e03cbee. email-fit.js now checks every 250 ms (skipped while the document is hidden) whether the frame document's scrolling element overflows, and reruns layout if so. Guard: layout records the scroller's scroll sizes when it finishes, and the check schedules only when the overflowing sizes differ, so overflow that layout cannot remove (its 4-pass cap, e.g. chained height media queries) does not rerun layout endlessly. New sizing cases: in-flow-animation, positioned-animation, checked-transition, plus test_residual_overflow_does_not_rerun_layout. With the previous email-fit.js the positioned-animation and checked-transition cases failed in Chromium and WebKit with the backstop on and off; the in-flow case passed before and after, since it covers the existing content observer path. The residual-overflow test failed in both engines with the guard removed. Gate: pre-commit pre-push passed (Chromium, browser tests required); tests/test_message_frame*.py passed in WebKit. New limits: moved or grown content can show scrolled or clipped for up to 250 ms before the check catches it; shrinking content is not detected and leaves blank space below the message until another trigger reruns layout.
 <!-- SECTION:NOTES:END -->
