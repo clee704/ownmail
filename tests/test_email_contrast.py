@@ -495,6 +495,62 @@ def test_dark_frame_matches_the_reader_color_scheme_without_a_backdrop(shell_app
     )
 
 
+WIDE_ROW = (
+    '<table style="width:900px"><tr><td><span id="near">Near</span></td>'
+    '<td style="text-align:right"><span id="far">Far</span></td></tr></table>'
+)
+
+
+# Each case: site theme, whether the message supports dark mode, and message CSS.
+@pytest.mark.parametrize(
+    ("theme", "supports_dark", "css"),
+    [
+        ("dark", False, ""),
+        ("light", True, "#ownmail-email-content {background:#102030;color:#ffffff}"),
+        # Text without a color inherits the dark reader's light text, so both spans need repair.
+        ("dark", True, "#ownmail-email-content {background:#ffffff}"),
+    ],
+    ids=["dark-reader-light-box", "message-body-background", "repair-on-message-background"],
+)
+def test_widened_frame_paints_message_background_under_overflow(shell_app, browser_node, theme, supports_dark, css):
+    """The message background spans the widened frame, and contrast repair treats overflow text as on it."""
+    app, _ = shell_app
+    with app.test_request_context("/email/synthetic"):
+        page = render_template(
+            "email.html",
+            email_id="synthetic",
+            subject="Synthetic message",
+            sender="sender@example.com",
+            body_html=f"<style>{css}</style>{WIDE_ROW}",
+            supports_dark=supports_dark,
+            auto_scale=False,
+            attachments=(),
+        )
+    run_contrast_browser(
+        app,
+        browser_node,
+        WIDE_ROW,
+        css,
+        """
+        await settle();
+        const frame = page.locator('#ownmail-email-frame');
+        assert((await frame.boundingBox()).width > 800, 'The frame must widen at actual size');
+        // Blank points below the table, inside and past the reader column.
+        await page.locator('#ownmail-email-viewport').evaluate(viewport => { viewport.scrollLeft = 200; });
+        await settle();
+        const box = await frame.boundingBox();
+        const pixel = async x => (await page.screenshot({clip: {x: box.x + x, y: box.y + 150, width: 1, height: 1}}))
+            .toString('base64');
+        assert.equal(await pixel(500), await pixel(300), 'The message background must continue past the column');
+        assert.equal(await color('far'), await color('near'));
+        """,
+        theme,
+        auto_scale=False,
+        viewport=(390, 740),
+        rendered_page=page,
+    )
+
+
 def test_sender_span_selectors_cannot_change_layout_during_repair(shell_app, browser_node):
     app, _ = shell_app
     run_contrast_browser(

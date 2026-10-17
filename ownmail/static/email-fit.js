@@ -32,6 +32,7 @@
         sync();
         content.style.zoom = '';
         doc.body.style.width = '';
+        root.style.backgroundColor = '';
         frame.style.width = '';
         viewport.style.overflow = '';
 
@@ -71,6 +72,9 @@
             if (overHeight) frame.style.height = (scroller.scrollHeight + 1) + 'px';
         }
         if (frame.style.width) {
+            // Overflow past the column lies on the root, which continues the
+            // message background as a browser canvas continues a body's.
+            root.style.backgroundColor = getComputedStyle(content).backgroundColor;
             viewport.style.overflow = 'auto hidden';
             viewport.scrollLeft = scrollLeft;
         }

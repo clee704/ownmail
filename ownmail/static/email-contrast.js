@@ -143,7 +143,11 @@
                     }
                     ancestor = ancestor.parentElement;
                 }
-                if (!background || !contains(info(surface).rect, rect)) return;
+                if (!background) return;
+                // A widened frame paints the content background across its root (email-fit.js).
+                var root = doc.documentElement;
+                var area = surface === content && info(root).style.backgroundColor === info(content).style.backgroundColor ? root : surface;
+                if (!contains(info(area).rect, rect)) return;
                 if (obstacles.some(function (other) {
                     return !other.contains(el) && overlaps(info(other).rect, rect);
                 })) return;
