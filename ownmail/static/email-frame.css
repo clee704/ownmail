@@ -1,0 +1,14 @@
+/* Message frame document. The reader copies --ownmail-* values onto the root. */
+/* Backstop: the reader sizes the frame to its content, so nothing scrolls inside. */
+html { overflow: hidden; color-scheme: light; }
+/* A scheme different from the iframe element's paints an opaque backdrop. */
+html.ownmail-dark { color-scheme: dark; }
+body { margin: 0; color: var(--ownmail-text); line-height: 1.5; font-family: var(--ownmail-font); -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+a { color: var(--ownmail-accent-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+/* Message descendants keep the browser's content-box default. */
+#ownmail-email-content { box-sizing: border-box; min-height: 200px; display: flow-root; overflow-wrap: break-word; font-family: var(--ownmail-font); font-size: 16px; }
+.ownmail-email-content-padded { padding: var(--ownmail-message-padding); }
+/* Most HTML email assumes a light canvas; preserve the existing opt-in dark behavior. */
+html.ownmail-dark:not(.ownmail-email-dark) #ownmail-email-content { background: #fff; color: #333; color-scheme: light; --ownmail-accent-ink: #7a5900; }
+html.ownmail-dark.ownmail-email-dark #ownmail-email-content { color-scheme: dark; }

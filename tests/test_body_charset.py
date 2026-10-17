@@ -123,6 +123,6 @@ def test_recovered_html_renders_in_browser(tmp_path, browser_node, text, encodin
         browser_node,
         "",
         "",
-        f"assert.equal(await page.locator('#ownmail-email-content').innerText(), {json.dumps(text)});",
+        f"assert.equal(await message().locator('#ownmail-email-content').innerText(), {json.dumps(text)});",
         rendered_page=response.data.decode(),
     )

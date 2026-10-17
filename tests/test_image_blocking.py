@@ -20,7 +20,7 @@ from ownmail.web import (
 )
 from ownmail.web_hosts import resolve_allowed_hosts
 from tests import test_email_contrast, test_reader_spacing
-from tests.conftest import create_test_app, mock_archive_db
+from tests.conftest import create_test_app, message_content, mock_archive_db
 
 spacing_sanitizer = test_reader_spacing.spacing_sanitizer
 
@@ -175,10 +175,10 @@ def test_sanitized_attribute_markup_preserves_dom_and_real_image_rewrites(messag
     # A complete image-looking attribute is a control, not itself a failing rewrite.
     markup = '<p title="<img src=a.png>">Control</p>' + markup + REMOTE_IMAGE
     app = message_app(markup, block_images=True, sanitizer=spacing_sanitizer)
-    _, loaded = open_message(app, "?images=load")
-    _, blocked = open_message(app)
-    original = list(loaded.get_element_by_id("ownmail-email-content").iterdescendants())
-    rewritten = list(blocked.get_element_by_id("ownmail-email-content").iterdescendants())
+    loaded, _ = open_message(app, "?images=load")
+    blocked, _ = open_message(app)
+    original = list(message_content(loaded.data).iterdescendants())
+    rewritten = list(message_content(blocked.data).iterdescendants())
     assert len(rewritten) == len(original)
     for before, after in zip(original, rewritten):
         assert (after.tag, after.text, after.tail) == (before.tag, before.text, before.tail)
@@ -201,7 +201,7 @@ def test_blocked_message_sends_csp_and_offers_to_load_content(message_app, marku
     response, page = open_message(app, "?return_to=%2Fsearch%3Fq%3Dsale")
     assert response.headers["Content-Security-Policy"] == IMAGE_BLOCKING_CSP
     assert "'unsafe-inline'" not in IMAGE_BLOCKING_CSP.split("script-src ")[1].split(";")[0]
-    assert page.xpath("//*[@id='ownmail-email-content']//img/@src") == images
+    assert message_content(response.data).xpath(".//img/@src") == images
     load = "/email/message?images=load&return_to=/search?q%3Dsale"
     assert page.xpath("//*[@id='load-images-btn']/@data-images-url") == [load]
     assert page.xpath("//*[@id='menu-load-images']/@data-images-url") == [load]
@@ -224,7 +224,7 @@ def test_blocked_message_sends_csp_and_offers_to_load_content(message_app, marku
 def test_loaded_images_restrict_scripts_and_offer_to_block_them(message_app, options, query):
     response, page = open_message(message_app(REMOTE_IMAGE, **options), query)
     assert response.headers["Content-Security-Policy"] == "script-src 'self'"
-    assert page.xpath("//*[@id='ownmail-email-content']//img/@src") == ["https://t.test/x.png"]
+    assert message_content(response.data).xpath(".//img/@src") == ["https://t.test/x.png"]
     assert page.xpath("//*[@id='ownmail-image-banner']") == []
     assert page.xpath("//*[@id='menu-block-images']/@data-images-url") == ["/email/message?images=block"]
 
@@ -318,13 +318,16 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
     const browser = await playwright[process.env.OWNMAIL_BROWSER_ENGINE || 'chromium'].connect(process.env.OWNMAIL_BROWSER_WS_ENDPOINT);
     try {
         const page = await browser.newPage({viewport: {width: 900, height: 1400}});
+        __MESSAGE_HELPERS__
         const errors = [];
         let remote = [];
+        const remoteFrames = new Set();
         page.on('pageerror', error => errors.push(error.message));
         await page.route('**/*', route => {
             const url = new URL(route.request().url());
             if (url.origin === input.base) return route.continue();
             remote.push(url.pathname);
+            remoteFrames.add(route.request().frame().url());
             if (url.pathname.endsWith('.svg')) {
                 return route.fulfill({contentType: 'image/svg+xml',
                     body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"></svg>'});
@@ -349,7 +352,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
             await Promise.all([page.waitForNavigation(), action()]);
             await settle();
         };
-        const imageWidths = () => page.locator('#ownmail-email-content img').evaluateAll(
+        const imageWidths = () => message().locator('#ownmail-email-content img').evaluateAll(
             images => images.map(image => image.naturalWidth));
         const response = await page.goto(input.base + input.path);
         await settle();
@@ -398,9 +401,9 @@ def test_attribute_markup_handler_stays_inert_when_blocked_and_loaded(browser_me
         """
         const assertInert = async () => {
             assert.equal(await page.evaluate(() => window.__ownmail_pwned === true), false);
-            assert.equal(await page.locator('#ownmail-email-content link').count(), 0);
-            assert.equal(await page.locator('#host').textContent(), 'Hi');
-            const title = await page.locator('#host').getAttribute('title');
+            assert.equal(await message().locator('#ownmail-email-content link').count(), 0);
+            assert.equal(await message().locator('#host').textContent(), 'Hi');
+            const title = await message().locator('#host').getAttribute('title');
             assert.equal(Boolean(title && title.includes('pwn.css')), __RETAINED__);
             assertRequested([]);
         };
@@ -449,7 +452,13 @@ def serve(app):
 def run_image_browser(app, node, path, assertions):
     with serve(app) as base:
         result = subprocess.run(
-            [node, "-e", BROWSER_SCRIPT.replace("__ASSERTIONS__", assertions)],
+            [
+                node,
+                "-e",
+                BROWSER_SCRIPT.replace("__MESSAGE_HELPERS__", test_email_contrast.MESSAGE_HELPERS).replace(
+                    "__ASSERTIONS__", assertions
+                ),
+            ],
             input=json.dumps({"base": base, "path": path}),
             cwd=test_email_contrast.SANITIZER_DIR,
             capture_output=True,
@@ -474,15 +483,15 @@ def test_attribute_markup_cannot_hide_real_image_sources(message_app, spacing_sa
         "/email/message",
         """
         assertRequested([]);
-        assert.equal(await page.locator('#host').getAttribute('title'), '<img src=a.png>');
-        assert.equal(await page.locator('#host').textContent(), 'Control');
-        assert.equal(await page.locator('#ownmail-email-content img').count(), 1);
-        assert.equal(await page.locator('#real').getAttribute('src'), __PLACEHOLDER__);
+        assert.equal(await message().locator('#host').getAttribute('title'), '<img src=a.png>');
+        assert.equal(await message().locator('#host').textContent(), 'Control');
+        assert.equal(await message().locator('#ownmail-email-content img').count(), 1);
+        assert.equal(await message().locator('#real').getAttribute('src'), __PLACEHOLDER__);
         if (__SOURCE__) {
-            assert.equal(await page.locator('#source').getAttribute('title'), '<source srcset=');
-            assert.equal(await page.locator('#source').getAttribute('srcset'), null);
+            assert.equal(await message().locator('#source').getAttribute('title'), '<source srcset=');
+            assert.equal(await message().locator('#source').getAttribute('srcset'), null);
         } else {
-            assert.equal(await page.locator('#real').getAttribute('alt'), '<img src=');
+            assert.equal(await message().locator('#real').getAttribute('alt'), '<img src=');
         }
         """.replace("__PLACEHOLDER__", json.dumps(BLOCKED_IMAGE_PLACEHOLDER)).replace("__SOURCE__", json.dumps(source)),
     )
@@ -505,6 +514,7 @@ def test_blocked_images_stay_unrequested_until_loaded(image_app, browser_node):
         assert.equal(url.searchParams.get('images'), 'load');
         assert.equal(url.searchParams.get('return_to'), '/search?q=sale');
         assertRequested(loaded);
+        assert.deepEqual([...remoteFrames], ['about:srcdoc'], 'Remote content loads in the message frame');
         assert.equal(await page.locator('#ownmail-image-banner').count(), 0);
         assert.deepEqual(await imageWidths(), [40, 40, 40, 40]);
         assert.equal(await page.locator('#ownmail-back-to-results').getAttribute('href'), '/search?q=sale');
@@ -554,7 +564,7 @@ def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, bro
     # of sanitizer correctness. The browser must receive the actual Flask headers.
     handler = "window.__retainedHandlerRan = true"
     markup = (
-        f'<button id="retained-handler" onclick="{handler}">Synthetic handler</button>'
+        f'<input type="checkbox" id="retained-handler" onclick="{handler}" aria-label="Synthetic handler">'
         '<button id="spoofed-control" data-reader-action="trash" data-show-loading '
         'data-images-url="/email/message?images=load">Untrusted control</button>' + REMOTE_IMAGE
     )
@@ -568,19 +578,19 @@ def test_csp_blocks_retained_handler_while_reader_controls_work(message_app, bro
         """
         const policy = response.headers()['content-security-policy'];
         assert.equal(policy.split('script-src ')[1].split(';')[0], "'self'");
-        const retained = page.locator('#retained-handler');
+        const retained = message().locator('#retained-handler');
         assert.equal(await retained.getAttribute('onclick'), 'window.__retainedHandlerRan = true');
-        await page.evaluate(() => {
-            window.__retainedClicks = 0;
-            document.getElementById('retained-handler').addEventListener('click', () => window.__retainedClicks++);
-        });
+        // The checked state proves the click landed; a parent listener on a
+        // frame node would not fire in WebKit.
         await retained.click();
-        assert.equal(await page.evaluate(() => window.__retainedClicks), 1);
-        assert.equal(await page.evaluate(() => window.__retainedHandlerRan), undefined);
+        assert.equal(await retained.isChecked(), true);
+        assert.deepEqual(await page.evaluate(() => [
+            window.__retainedHandlerRan, messageDocument().defaultView.__retainedHandlerRan,
+        ]), [undefined, undefined]);
         const dialogs = [];
         page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
         const start = page.url();
-        await page.locator('#spoofed-control').click();
+        await message().locator('#spoofed-control').click();
         await page.waitForTimeout(250);
         assert.equal(page.url(), start);
         assert.deepEqual(dialogs, []);

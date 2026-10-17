@@ -715,6 +715,56 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert "@media" in result
         assert "#ownmail-email-content .col" in result
 
+    def test_viewport_units_read_reader_properties(self):
+        """Viewport units fall back to the authored unit when the reader sets no property."""
+        for value, expected in (
+            ("100vh", "calc(100 * var(--ownmail-vh, 1vh))"),
+            ("2SVB", "calc(2 * var(--ownmail-vh, 1SVB))"),
+            ("-1.5dvw", "calc(-1.5 * var(--ownmail-vw, 1dvw))"),
+            (".5e1vi", "calc(.5e1 * var(--ownmail-vw, 1vi))"),
+            ("3Lvmin", "calc(3 * var(--ownmail-vmin, 1Lvmin))"),
+            ("4vmax", "calc(4 * var(--ownmail-vmax, 1vmax))"),
+            ("5v\\68 ", "calc(5 * var(--ownmail-vh, 1v\\68 ))"),
+            ("1px 2em 3% 4cqh 5vmaxx 6vhs", "1px 2em 3% 4cqh 5vmaxx 6vhs"),
+        ):
+            with self.subTest(value=value):
+                assert self._stylesheet(f".a{{margin:{value}}}") == f"#ownmail-email-content .a{{margin:{expected}}}"
+
+        assert self._stylesheet("@media (min-height: 50vh) { .a { --h: 10vh } }") == (
+            "@media (min-height: 50vh) { #ownmail-email-content .a { --h: calc(10 * var(--ownmail-vh, 1vh)) } }"
+        )
+        # var() voids the registration, leaving the property's users at their natural size; as authored,
+        # the unit would resolve against the frame, whose height comes from the content.
+        assert self._stylesheet("@PROPERTY --h { syntax: '<length>'; inherits: false; initial-value: 10vh }") == (
+            "@PROPERTY --h { syntax: '\\3c length>'; inherits: false; initial-value: calc(10 * var(--ownmail-vh, 1vh)) }"
+        )
+        result, *_ = self.sanitizer.sanitize('<div style="width:calc(100vw - 2em)">Text</div>')
+        assert lxml_html.fromstring(result).xpath("//div")[0].get("style") == (
+            "width:calc(calc(100 * var(--ownmail-vw, 1vw)) - 2em)"
+        )
+        for html in (
+            '<div style="background:#eef1f4;padding:24px;min-height:100vh"><p>Copy</p></div>',
+            '<style>.c{background:#eef1f4;min-height:100vh}</style><div class="c"><p>Copy</p></div>',
+        ):
+            with self.subTest(html=html):
+                _, needs_padding, _ = self.sanitizer.sanitize(html)
+                assert needs_padding is False
+
+    def test_images_cannot_shadow_document_properties(self):
+        """An image name, or an image id beside it, would name a property on the reader frame's document."""
+        for html in (
+            '<img name="fonts" src="cid:a">',
+            '<img name="scrollingElement">',
+            '<img id="fonts" name="image">',
+        ):
+            with self.subTest(html=html):
+                result, *_ = self.sanitizer.sanitize(html)
+                image = lxml_html.fromstring(result).xpath("//img")[0]
+                assert image.get("name") is None
+        # Other kept elements that carry a name are not document named properties.
+        result, *_ = self.sanitizer.sanitize('<map name="fonts"></map><a name="fonts">Link</a>')
+        assert len(lxml_html.fromstring(result).xpath('//*[@name="fonts"]')) == 2
+
     def _stylesheet(self, css):
         """Return the sanitized text of one synthetic stylesheet."""
         result, *_ = self.sanitizer.sanitize(f"<style>{css}</style><p>Text</p>")

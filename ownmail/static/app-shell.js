@@ -173,11 +173,8 @@ document.addEventListener('click', function(event) {
             destination.search === location.search && destination.hash) return;
     hideLoading();
 });
-// Show loading on form submit (skip if onsubmit handler cancelled it). This
-// runs after message HTML is parsed, so skip forms inside the message.
-var messageContent = document.getElementById('ownmail-email-content');
+// Show loading on form submit (skip if onsubmit handler cancelled it).
 document.querySelectorAll('form').forEach(function(form) {
-    if (messageContent && messageContent.contains(form)) return;
     form.addEventListener('submit', function(e) {
         if (!e.defaultPrevented) showLoading(e);
     });

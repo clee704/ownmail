@@ -55,18 +55,18 @@ def test_sender_stylesheet_and_embedded_fonts_load_in_reader(shell_app, browser_
         """
         const loaded = await page.evaluate(async () => {
             const glyph = String.fromCodePoint(0xea60);
-            const sender = await document.fonts.load('24px "Sender Fixture"', glyph);
-            const embedded = await document.fonts.load('16px "Embedded Fixture"', glyph);
+            const sender = await messageDocument().fonts.load('24px "Sender Fixture"', glyph);
+            const embedded = await messageDocument().fonts.load('16px "Embedded Fixture"', glyph);
             return [sender, embedded].map(faces => faces.map(face => face.status));
         });
         assert.deepEqual(loaded, [['loaded'], ['loaded']], 'Both sender font sources load');
         assert.equal(requests.get('https://fonts.googleapis.com/css?family=SenderFixture'), 1);
-        assert.equal(await page.locator('#sender-link').evaluate(el => getComputedStyle(el).fontFamily),
-            await page.locator('#sender-copy').evaluate(el => getComputedStyle(el).fontFamily),
+        assert.equal(await message().locator('#sender-link').evaluate(el => getComputedStyle(el).fontFamily),
+            await message().locator('#sender-copy').evaluate(el => getComputedStyle(el).fontFamily),
             'Linked copy inherits the sender font');
         await settle();
         const viewport = await page.locator('#ownmail-email-viewport').boundingBox();
-        const copy = await page.locator('#sender-copy').boundingBox();
+        const copy = await message().locator('#sender-copy').boundingBox();
         assert(copy.width <= viewport.width + 1, 'Loaded font fits the reader');
         assert.equal(await page.locator('#ownmail-fit-message').evaluate(el => el.hidden), false);
         """,

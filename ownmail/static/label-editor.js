@@ -1,10 +1,9 @@
 (function() {
-    // Message HTML can reuse these IDs. Bind only the editor outside the
-    // message, and send requests only to this message's labels route.
+    // Send requests only to this message's labels route.
     var actions = document.getElementById('ownmail-reader-actions');
     var trigger = actions.querySelector('#ownmail-edit-labels');
     var editor = document.getElementById('ownmail-label-editor');
-    if (!trigger || !editor || document.getElementById('ownmail-email-content').contains(editor)) return;
+    if (!trigger || !editor) return;
     var url = '/labels/' + encodeURIComponent(actions.dataset.emailId);
     var list = editor.querySelector('#ownmail-label-items');
     var status = editor.querySelector('#ownmail-label-status');

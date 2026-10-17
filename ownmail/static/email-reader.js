@@ -34,10 +34,11 @@ document.getElementById('ownmail-message-details-toggle').addEventListener('clic
 var originalEmailMedia = new WeakMap();
 // Rewriting style text would let the browser re-parse sender strings as new
 // rules. A media rule's condition parses only as a media query list.
-function applyEmailMediaTheme(rules, dark) {
+// MediaRule is the frame realm's constructor: instanceof fails across realms.
+function applyEmailMediaTheme(rules, dark, MediaRule) {
     for (var i = 0; i < rules.length; i++) {
         var rule = rules[i];
-        if (rule instanceof CSSMediaRule) {
+        if (rule instanceof MediaRule) {
             if (!originalEmailMedia.has(rule)) originalEmailMedia.set(rule, rule.media.mediaText);
             var original = originalEmailMedia.get(rule);
             // Width is never negative, so these conditions are constant and
@@ -46,7 +47,7 @@ function applyEmailMediaTheme(rules, dark) {
                 dark ? '(width >= 0px)' : '(width < 0px)');
             if (rule.media.mediaText !== updated) rule.media.mediaText = updated;
         }
-        if (rule.cssRules) applyEmailMediaTheme(rule.cssRules, dark);
+        if (rule.cssRules) applyEmailMediaTheme(rule.cssRules, dark, MediaRule);
     }
 }
 function applyEmailTheme(siteIsDark) {
@@ -55,27 +56,91 @@ function applyEmailTheme(siteIsDark) {
     var dark = siteIsDark && area.getAttribute('data-supports-dark') === 'true';
     area.classList.toggle('ownmail-email-dark', dark);
 
-    // Sender dark-mode rules follow the reader canvas, not the OS preference.
-    var content = document.getElementById('ownmail-email-content');
+    var frame = document.getElementById('ownmail-email-frame');
+    var content = frame && frame.contentDocument.getElementById('ownmail-email-content');
     if (!content) return;
+    // The frame root's color scheme must match the iframe element's, or the
+    // browser paints an opaque backdrop behind the message.
+    var root = content.ownerDocument.documentElement;
+    root.classList.toggle('ownmail-dark', document.documentElement.classList.contains('ownmail-dark'));
+    root.classList.toggle('ownmail-email-dark', dark);
+    // Sender dark-mode rules follow the reader canvas, not the OS preference.
     var styles = content.querySelectorAll('style');
     for (var i = 0; i < styles.length; i++) {
-        if (styles[i].sheet) applyEmailMediaTheme(styles[i].sheet.cssRules, dark);
+        if (styles[i].sheet) applyEmailMediaTheme(styles[i].sheet.cssRules, dark, frame.contentWindow.CSSMediaRule);
     }
+    window.ownmailMessageFrame.layout();
 }
-var emailContrast = window.ownmailEmailContrast && window.ownmailEmailContrast(
-    document.getElementById('ownmail-email-content'), applyEmailTheme
-);
+var emailContrast = null;
 // Called by base.html whenever the app theme changes.
 function updateEmailDarkMode(siteIsDark) {
     if (emailContrast) emailContrast.update(siteIsDark);
     else applyEmailTheme(siteIsDark);
 }
-// Apply on load
-(function() {
+function startEmailTheme(content) {
+    emailContrast = window.ownmailEmailContrast && window.ownmailEmailContrast(content, applyEmailTheme);
     var pref = localStorage.getItem('ownmail-theme') || 'auto';
     var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     updateEmailDarkMode(dark);
+}
+if (window.ownmailMessageFrame) {
+    window.ownmailMessageFrame.ready(function() {
+        startEmailTheme(document.getElementById('ownmail-email-frame').contentDocument.getElementById('ownmail-email-content'));
+    });
+} else {
+    startEmailTheme(document.getElementById('ownmail-email-content'));
+}
+
+// Neither Chromium nor WebKit passes Space or Shift+Space from a frame to its
+// parent, and WebKit never runs parent listeners on nodes in the script-less
+// frame, so the key cannot be forwarded. Once focus enters the frame and the
+// button is up, it moves to a parent wrapper: the viewport, or after Tab the
+// element past the frame, so the next Tab leaves the message instead of entering
+// it again; the parent cannot observe presses in the frame, so focus cannot
+// wait there for a click. It stays in the frame while it holds a text
+// selection (native copy) or a keyboard-focused link.
+(function() {
+    var frame = document.getElementById('ownmail-email-frame');
+    if (!frame) return;
+    var viewport = document.getElementById('ownmail-email-viewport');
+    var end = document.getElementById('ownmail-email-end');
+    var pending = false;
+    // The wrapper on the far side of the frame while a Tab key press is handled.
+    var tabbing = null;
+    var next = viewport;
+    function check() {
+        pending = false;
+        var target = next;
+        next = viewport;
+        if (document.activeElement !== frame) return;
+        var doc = frame.contentDocument;
+        // During a press, check every frame so Space works right after mouseup.
+        if (frame.matches(':active')) return schedule(true);
+        var focused = doc && doc.activeElement;
+        var held = !doc || !doc.getSelection().isCollapsed
+            || (focused && focused !== doc.body && focused.matches(':focus-visible'));
+        // A selection can stay for minutes; a slow poll still notices the
+        // plain click that collapses it, which fires no parent event.
+        if (held) schedule(false);
+        else target.focus({preventScroll: true});
+    }
+    function schedule(soon) {
+        if (pending) return;
+        pending = true;
+        if (soon) requestAnimationFrame(check);
+        else setTimeout(check, 150);
+    }
+    // Tab moves focus during its keydown, so the blur below fires before the timeout.
+    document.addEventListener('keydown', function(event) {
+        if (event.key !== 'Tab') return;
+        tabbing = event.shiftKey ? viewport : end;
+        setTimeout(function() { tabbing = null; });
+    }, true);
+    // The parent window blurs whenever focus moves into the frame.
+    window.addEventListener('blur', function() {
+        next = tabbing || viewport;
+        schedule(true);
+    });
 })();
 
 function trashEmail(emailId) {

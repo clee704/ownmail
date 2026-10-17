@@ -1485,6 +1485,19 @@ def create_app(
             "email_unavailable.html", stats=get_stats(), back_url=get_back_to_search_url() or "/search"
         ), 404
 
+    def remote_content_state(sender_email):
+        """Return whether the sender is trusted and whether remote content is blocked.
+
+        Remote content loads by default when blocking is off or the sender is
+        trusted; the reader's Load and Block actions override that.
+        """
+        trusted_senders = app.config.get("trusted_senders", set())
+        sender_is_trusted = bool(sender_email) and sender_email.lower() in trusted_senders
+        images = request.args.get("images")
+        if images in ("load", "block"):
+            return sender_is_trusted, images == "block"
+        return sender_is_trusted, app.config["block_images"] and not sender_is_trusted
+
     @app.route("/email/<email_id>")
     def view_email(email_id: str):
         stats = get_stats()
@@ -1570,15 +1583,7 @@ def create_app(
         sender_name, sender_email = parse_email_address(email_data["sender"])
         recipients_parsed = parse_recipients(email_data["recipients"])
 
-        # Remote content loads by default when blocking is off or the sender is
-        # trusted; the reader's Load and Block actions override that.
-        trusted_senders = app.config.get("trusted_senders", set())
-        sender_is_trusted = bool(sender_email) and sender_email.lower() in trusted_senders
-        images = request.args.get("images")
-        if images in ("load", "block"):
-            images_blocked = images == "block"
-        else:
-            images_blocked = app.config["block_images"] and not sender_is_trusted
+        sender_is_trusted, images_blocked = remote_content_state(sender_email)
 
         # Always detect remote content so the menu can offer to load or block it
         has_remote_content = bool(body_html) and _has_remote_content(body_html)
@@ -1660,6 +1665,33 @@ def create_app(
             return {"indexed": archive.set_local_labels(email_id, data["labels"])}
 
         return label_response(save)
+
+    @app.route("/print/<email_id>")
+    def print_email(email_id: str):
+        """Show the message as PDF export presents it and open the print dialog.
+
+        Browsers do not paginate a frame, so the reader prints from this page,
+        where the message is embedded directly and only it shares the page.
+        """
+        # pdf_export imports this module
+        from ownmail.pdf_export import _document
+
+        _, filepath = readable_email(email_id)
+        sender = EmailParser.parse_file(filepath=filepath).get("sender", "")
+        _, images_blocked = remote_content_state(parse_email_address(decode_header(sender))[1])
+        try:
+            document = _document(
+                filepath.read_bytes(),
+                app.config["sanitizer"],
+                app.jinja_env.get_template("pdf.html"),
+                images_blocked=images_blocked,
+                print_page=True,
+            )
+        except OSError:
+            return "This message could not be prepared for printing. Reload to retry.", 503
+        response = make_response(document)
+        response.headers["Content-Security-Policy"] = IMAGE_BLOCKING_CSP if images_blocked else MESSAGE_CSP
+        return response
 
     @app.route("/raw/<email_id>")
     def view_raw(email_id: str):

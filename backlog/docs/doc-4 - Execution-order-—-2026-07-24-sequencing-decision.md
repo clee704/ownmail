@@ -268,6 +268,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 26c | TASK-122 | low | Found in TASK-118: serve exits 0 when it refuses to start, and the --debug refusal still follows startup side effects |
 | 26d | TASK-123 | low | Found in TASK-118: duplicate sanitize, kill and stop tests; deletion only |
 | 26e | TASK-126 | medium | Follow-up to TASK-40: correctly declared Cyrillic bodies fail readability validation |
+| 26f | TASK-147 | low | Found in TASK-142: Ctrl-C and interrupt tests fail under heavy load and pass alone, so a gate run can fail spuriously |
 | 27 | TASK-8 | low | Only a download-header test remains |
 | 28 | TASK-50 | low | iPhone Home Screen polish |
 | 29 | TASK-19 | low | Decision on excluding recurring labels at capture |

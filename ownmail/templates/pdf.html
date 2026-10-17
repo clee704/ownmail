@@ -17,6 +17,8 @@
         .ownmail-email-content-padded { padding: 4mm; }
         #ownmail-email-content { box-sizing: border-box; }
         .ownmail-pdf-attachments { border-top: 1px solid #ccc; margin-top: 6mm; overflow-wrap: anywhere; }
+        /* The reader's Print page shows this document on screen before printing. */
+        @media screen { body { width: auto; max-width: 182mm; margin: 0 auto; padding: 4mm; } }
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     </style>
 </head>
@@ -29,7 +31,9 @@
             <dt>Date</dt><dd>{{ date or '(No date)' }}</dd>
         </dl>
     </header>
+    {% if images_blocked %}
     <p class="ownmail-pdf-note">Local archived message. Remote images, fonts and other external content are blocked.</p>
+    {% endif %}
     {% if body_html %}
     <div id="ownmail-pdf-body">
         <div id="ownmail-email-content" class="ownmail-email-content-html{% if needs_padding %} ownmail-email-content-padded{% endif %}"{{ body_attributes | xmlattr }}>{{ body_html | safe }}</div>
@@ -45,6 +49,9 @@
             <li>{{ attachment.filename }} ({{ attachment.kind }}, {{ attachment.size }})</li>
         {% endfor %}</ul>
     </section>
+    {% endif %}
+    {% if print_page %}
+    <script src="/static/message-print.js"></script>
     {% endif %}
 </body>
 </html>

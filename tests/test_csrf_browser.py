@@ -40,6 +40,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
         await context.route('**/*', route =>
             new URL(route.request().url()).origin === input.base ? route.continue() : route.abort());
         const page = await context.newPage();
+        __MESSAGE_HELPERS__
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         page.on('dialog', dialog => dialog.accept());
@@ -151,7 +152,13 @@ def run_browser(node, archive, config, sanitizer, assertions):
 
     with serve(build) as base:
         result = subprocess.run(
-            [node, "-e", BROWSER_SCRIPT.replace("__ASSERTIONS__", assertions)],
+            [
+                node,
+                "-e",
+                BROWSER_SCRIPT.replace("__MESSAGE_HELPERS__", test_email_contrast.MESSAGE_HELPERS).replace(
+                    "__ASSERTIONS__", assertions
+                ),
+            ],
             input=json.dumps({"base": base, "expired": EXPIRED}),
             cwd=test_email_contrast.SANITIZER_DIR,
             capture_output=True,
@@ -215,8 +222,8 @@ def test_reader_actions_work_and_recover_after_restart(browser_node, spacing_san
     assert load_yaml(config)["web"]["trusted_senders"] == []
 
 
-def test_noreferrer_message_form_cannot_post_a_mutation(browser_node, archive, config):
-    """A message form with rel=noreferrer posts with Origin: null and is rejected before the route runs."""
+def test_noreferrer_message_form_sends_no_request(browser_node, archive, config):
+    """A retained rel=noreferrer message form posts nothing: the frame sandbox omits allow-forms."""
     sanitizer = MagicMock()
     sanitizer.sanitize.side_effect = lambda body: (
         body.replace("<form ", '<form target="_blank" rel="noopener noreferrer" '),
@@ -230,22 +237,19 @@ def test_noreferrer_message_form_cannot_post_a_mutation(browser_node, archive, c
         sanitizer,
         """
         await page.goto(input.base + '/email/msg1');
-        assert.equal(await page.locator('#ownmail-email-content form[action="/empty-trash"][rel~="noreferrer"]').count(), 1,
+        assert.equal(await message().locator('#ownmail-email-content form[action="/empty-trash"][rel~="noreferrer"]').count(), 1,
             'The form renders, so the request checks must stop it');
-        const [popup] = await Promise.all([context.waitForEvent('page'), page.locator('#retained-submit').click()]);
-        await popup.waitForLoadState();
-        const logged = await requests();
-        assert.equal(logged.length, 1);
-        const [method, path, status, reason] = logged[0];
-        assert.deepEqual([method, path, status], ['POST', '/empty-trash', 403]);
-        assert(['origin', 'token'].includes(reason));
+        await message().locator('#retained-submit').click();
+        await page.waitForTimeout(500);
+        assert.equal(context.pages().length, 1);
+        assert.deepEqual(await requests(), []);
         """,
     )
     archive.empty_trash.assert_not_called()
 
 
-def test_same_origin_message_form_is_stopped_by_the_token(browser_node, archive, config):
-    """Without noreferrer the browser sends the reader's own Origin, and only the token stops the form."""
+def test_same_origin_message_form_sends_no_request(browser_node, archive, config):
+    """A retained same-origin message form posts nothing: the frame sandbox omits allow-forms."""
     sanitizer = MagicMock()
     sanitizer.sanitize.side_effect = lambda body: (body, True, False)
     run_browser(
@@ -255,9 +259,10 @@ def test_same_origin_message_form_is_stopped_by_the_token(browser_node, archive,
         sanitizer,
         """
         await page.goto(input.base + '/email/msg1');
-        await navigate(() => page.locator('#retained-submit').click());
-        assert.equal((await page.locator('body').innerText()).trim(), input.expired);
-        assert.deepEqual(await requests(), [['POST', '/empty-trash', 403, 'token']]);
+        await message().locator('#retained-submit').click();
+        await page.waitForTimeout(500);
+        assert.equal(new URL(page.url()).pathname, '/email/msg1');
+        assert.deepEqual(await requests(), []);
         """,
     )
     archive.empty_trash.assert_not_called()

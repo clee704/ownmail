@@ -153,7 +153,7 @@ function preprocessCSS(css) {
 
 /**
  * Tokenize preprocessed CSS. Comments are dropped. Names, strings and URLs
- * carry their decoded values.
+ * carry their decoded values, numbers their decoded unit.
  */
 function cssTokens(css) {
   const tokens = [];
@@ -235,8 +235,9 @@ function cssTokens(css) {
           (isDigit(css[i + 1]) || ((css[i + 1] === "+" || css[i + 1] === "-") && isDigit(css[i + 2])))) {
         for (i += 2; isDigit(css[i]); i++);
       }
-      if (startsIdent(i)) identSequence();
-      else if (css[i] === "%") i++;
+      value = "";
+      if (startsIdent(i)) value = identSequence();
+      else if (css[i] === "%") value = css[i++];
       type = "number";
     } else if (css.startsWith("-->", i) || css.startsWith("<!--", i)) {
       i += char === "-" ? 3 : 4;
@@ -578,6 +579,31 @@ function hasOnlyTrustedImports(css, tokens) {
   return Array.from(css.matchAll(/@import/gi)).every((match) => imports.has(match.index));
 }
 
+// Viewport units in a message resolve against the reader's frame, so they read
+// the reader's viewport from custom properties and fall back to today's unit.
+const VIEWPORT_UNITS = /^[sld]?v(?:(h|b)|(w|i)|(min)|(max))$/;
+
+function rewriteViewportUnits(value) {
+  const text = preprocessCSS(value);
+  let result = "";
+  let last = 0;
+  for (const token of cssTokens(text)) {
+    const unit = token.type === "number" && asciiLower(token.value).match(VIEWPORT_UNITS);
+    if (!unit) continue;
+    const source = text.slice(token.start, token.end);
+    const number = source.match(/^[+-]?\d*\.?\d+(?:[eE][+-]?\d+)?/)[0];
+    const property = unit[1] ? "vh" : unit[2] ? "vw" : unit[3] ? "vmin" : "vmax";
+    result += `${text.slice(last, token.start)}calc(${number} * var(--ownmail-${property}, 1${source.slice(number.length)}))`;
+    last = token.end;
+  }
+  return last ? result + text.slice(last) : value;
+}
+
+/** Undo rewriteViewportUnits so padding detection sees the authored size. */
+function restoreViewportUnits(value) {
+  return value.replace(/calc\(([^ ]+) \* var\(--ownmail-v(?:h|w|min|max), 1([^)]+)\)\)/g, "$1$2");
+}
+
 /**
  * Scope and sanitize a CSS stylesheet using postcss AST.
  * - Removes @charset and escaped at-rule names; allows @import only from
@@ -647,6 +673,7 @@ function scopeAndSanitizeCSS(css, body = null) {
     if (!fontFace && (prop === "font-family" || prop === "font")) {
       decl.value = ensureFontFallback(decl.value);
     }
+    decl.value = rewriteViewportUnits(decl.value);
   });
 
   // Scope selectors under #ownmail-email-content
@@ -708,7 +735,7 @@ function sanitizeInlineStyle(css) {
     (match, value) => "font-family: " + ensureFontFallback(value.trim())
   );
 
-  return css;
+  return rewriteViewportUnits(css);
 }
 
 // Head styles arrive before BODY attributes are sanitized. Keep their source
@@ -755,6 +782,11 @@ purify.addHook("afterSanitizeAttributes", (node) => {
       pendingBodyStyles.delete(style);
     }
   }
+
+  // An image name, and with it the image id, names a property on the frame
+  // document, so <img name="fonts"> would shadow the document.fonts that reader
+  // scripts use. Other elements exposed that way are forbidden tags.
+  if (node.tagName === "IMG") node.removeAttribute("name");
 
   // Links, including image-map areas, open in a new tab without a referrer
   if (node.tagName === "A" || node.tagName === "AREA") {
@@ -946,7 +978,7 @@ function paddingStyles(doc, container) {
       const property = decl.prop.toLowerCase();
       if (!relevant.test(property)) continue;
       probe.cssText = "";
-      probe.setProperty(property, decl.value);
+      probe.setProperty(property, restoreViewportUnits(decl.value));
       const value = asciiLower(probe.getPropertyValue(property));
       if (!value || /\b(?:var|env)\s*\(|\b(?:inherit|initial|unset|revert|revert-layer|currentcolor)\b/i.test(value)) return false;
       for (const element of targets) {

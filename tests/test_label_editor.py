@@ -27,18 +27,13 @@ def render_reader(app, **context):
 
 def run_label_browser(app, node, assertions, *, labels=("Work",), viewport=(1100, 900), page=None):
     page = page or render_reader(app)
-    client = app.test_client()
-    files = {}
-    for path in html.fromstring(page).xpath('//script[@src]/@src | //link[@rel="stylesheet"]/@href'):
-        response = client.get(path)
-        assert response.status_code == 200, path
-        files[path] = {"body": response.data.decode(), "contentType": response.mimetype}
+    files = test_email_contrast.served_files(app, page)
     payload = {
         "page": page,
         "files": files,
         "labels": labels,
         "viewport": {"width": viewport[0], "height": viewport[1]},
-        "editorScript": client.get("/static/label-editor.js").data.decode(),
+        "editorScript": app.test_client().get("/static/label-editor.js").data.decode(),
     }
     script = r"""
 const assert = require('node:assert/strict');
@@ -93,6 +88,7 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
             }
             return route.abort();
         });
+        __MESSAGE_HELPERS__
         await page.addInitScript(() => {
             localStorage.setItem('ownmail-theme', 'light');
             localStorage.setItem('ownmail-sidebar', 'collapsed');
@@ -128,7 +124,13 @@ const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     result = subprocess.run(
-        [node, "-e", script.replace("__ASSERTIONS__", assertions)],
+        [
+            node,
+            "-e",
+            script.replace("__MESSAGE_HELPERS__", test_email_contrast.MESSAGE_HELPERS).replace(
+                "__ASSERTIONS__", assertions
+            ),
+        ],
         input=json.dumps(payload),
         cwd=test_email_contrast.SANITIZER_DIR,
         capture_output=True,
@@ -401,7 +403,7 @@ FORGED_EDITOR = (
 )
 # The native new-tab submission must not raise the reader's loading overlay.
 CLICK_FORGED_SAVE = """
-        await page.locator('#ownmail-email-content #ownmail-label-save').click();
+        await message().locator('#ownmail-email-content #ownmail-label-save').click();
         await page.waitForTimeout(300);
         assert.equal(await page.locator('#ownmail-loading-overlay').getAttribute('class'), 'ownmail-loading-overlay');
 """
@@ -466,7 +468,7 @@ def test_message_pagination_markup_cannot_raise_the_loading_overlay(shell_app, b
         app,
         browser_node,
         """
-        await page.locator('#ownmail-email-content .ownmail-pagination a').click();
+        await message().locator('#ownmail-email-content .ownmail-pagination a').click();
         await page.waitForTimeout(300);
         assert.equal(await page.locator('#ownmail-loading-overlay').getAttribute('class'), 'ownmail-loading-overlay');
         """,

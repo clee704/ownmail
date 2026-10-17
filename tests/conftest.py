@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from lxml import html
 from werkzeug.datastructures import Headers
 
 
@@ -130,6 +131,21 @@ def temp_dir():
     """Create a temporary directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
+
+def message_content(page, plain=False):
+    """Return #ownmail-email-content from reader HTML.
+
+    HTML messages render inside the message frame's srcdoc and plain text in the
+    page. The caller says which, so a missing frame fails instead of passing
+    against page content.
+    """
+    tree = html.fromstring(page)
+    frames = tree.xpath('//iframe[@id="ownmail-email-frame"]/@srcdoc')
+    assert len(frames) == (0 if plain else 1), f"expected {'no' if plain else 'one'} message frame"
+    if frames:
+        tree = html.fromstring(frames[0])
+    return tree.get_element_by_id("ownmail-email-content")
 
 
 def mock_archive_db(**overrides):
