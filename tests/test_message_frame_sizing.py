@@ -26,6 +26,10 @@ LATE_IMAGE = """
         await settle();
         await check('after the late image');
 """
+WIDENED = (
+    f'<table><tr><td id="cell">{LONG_URL}</td></tr></table>'
+    '<div id="padded" style="width:100%;padding:0 30px">Padded</div><p id="end">End</p>'
+)
 # Each case: body, CSS, element ids that must stay visible, steps after the first check, and
 # CSS None for a message that goes through the sanitizer (needed for the viewport-unit rewrite).
 CASES = {
@@ -128,7 +132,12 @@ CASES = {
         ["tall", "end"],
         "",
     ),
+    # The frame widens at actual size, and when fitting leaves more than rounding overflow, here the
+    # zoomed padding. The padded box must still resolve 100% against the reader column.
+    "widened-percentage-width": (WIDENED, "", ["cell", "padded", "end"], ""),
+    "widened-percentage-width-actual-size": (WIDENED, "", ["cell", "padded", "end"], ""),
 }
+ACTUAL_SIZE = {"widened-percentage-width-actual-size"}
 
 
 @pytest.mark.parametrize("backstop", [False, True], ids=["no-scroll", "no-clip"])
@@ -178,7 +187,7 @@ def test_message_frame_never_scrolls_or_clips(shell_app, browser_node, message_s
         .replace("BACKSTOP", "true" if backstop else "false")
         .replace("STEPS", steps),
         theme="light",
-        auto_scale=True,
+        auto_scale=case not in ACTUAL_SIZE,
         viewport=(390, 740),
         backstop=backstop,
     )

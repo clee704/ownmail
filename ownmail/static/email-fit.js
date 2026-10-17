@@ -31,11 +31,15 @@
         viewport.style.minHeight = frame.offsetHeight + 'px';
         sync();
         content.style.zoom = '';
+        doc.body.style.width = '';
         frame.style.width = '';
         viewport.style.overflow = '';
 
         // Fit first: the height read below includes the zoom.
         var cw = scroller.clientWidth, sw = scroller.scrollWidth;
+        // Message percentages resolve against the reader column, so a widened
+        // frame shows their overflow instead of widening the message with it.
+        doc.body.style.width = cw + 'px';
         // Any overflow would scroll inside the frame; the button needs a visible amount.
         var wide = sw > cw && cw > 0;
         fitButton.hidden = !(wide && sw > cw + 1);
