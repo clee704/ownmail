@@ -37,10 +37,11 @@ source settings or credentials into it.
 ## Prepare an isolated archive
 
 From the checkout, activate its existing Python environment and run this block.
-It uses the standard library to create 45 numbered messages and one long HTML
-message, then imports them through the existing CLI. Both the explicit config
-and archive argument point to newly created temporary data. No source or
-credential setup is needed; import copies the generated inputs.
+It uses the standard library to create 45 numbered messages, one long HTML
+message and one wide HTML message, then imports them through the existing CLI.
+Both the explicit config and archive argument point to newly created temporary
+data. No source or credential setup is needed; import copies the generated
+inputs.
 
 ```sh
 python - <<'PY'
@@ -70,7 +71,7 @@ config.write_text(json.dumps({
     },
 }, indent=2) + "\n", encoding="utf-8")
 
-for number in range(1, 47):
+for number in range(1, 48):
     message = EmailMessage()
     message["From"] = "Fixture Sender <sender@example.test>"
     message["To"] = "Fixture Reader <reader@example.test>"
@@ -92,6 +93,21 @@ for number in range(1, 47):
             + paragraphs + "<p>END OF MESSAGE</p></body></html>",
             subtype="html",
         )
+    if number == 47:
+        message.replace_header("Subject", "Home Screen fixture 047 wide HTML")
+        cells = "".join(
+            f"<td style=\"padding:8px\">Column {column:02d} of a wide table</td>"
+            for column in range(1, 13)
+        )
+        message.add_alternative(
+            "<!doctype html><html><body><h1>Wide synthetic message</h1>"
+            "<p>The table below is 1200 pixels wide.</p>"
+            "<table width=\"1200\" border=\"1\" style=\"border-collapse:collapse\">"
+            + "".join(f"<tr>{cells}</tr>" for _ in range(40))
+            + "<tr><td colspan=\"12\" align=\"right\">RIGHT EDGE MARKER</td></tr>"
+            "</table><p>END OF WIDE MESSAGE</p></body></html>",
+            subtype="html",
+        )
     (inputs / f"message-{number:03d}.eml").write_bytes(
         message.as_bytes(policy=SMTP)
     )
@@ -101,11 +117,11 @@ subprocess.run([
     "--archive-root", str(archive), "import", str(inputs),
 ], check=True)
 with sqlite3.connect(archive / "ownmail.db") as database:
-    assert database.execute("SELECT COUNT(*) FROM emails").fetchone()[0] == 46
-assert len(list(inputs.glob("*.eml"))) == 46
+    assert database.execute("SELECT COUNT(*) FROM emails").fetchone()[0] == 47
+assert len(list(inputs.glob("*.eml"))) == 47
 print(f"Fixture directory: {root}")
 print(f"Explicit config: {config}")
-print("Expected: 46 messages; page size 20; no configured sources.")
+print("Expected: 47 messages; page size 20; no configured sources.")
 PY
 ```
 
@@ -187,12 +203,32 @@ in public task notes.
    reconnection fallback requires trusted HTTPS for phone/LAN access; the
    localhost exception does not cover a LAN address. Private messages, search
    results and attachments are outside that proposed cache scope.
+9. **Message frame.** Since
+   [TASK-142](../backlog/tasks/task-142%20-%20Render-reader-messages-in-a-sandboxed-frame.md)
+   the reader renders HTML messages in a sandboxed frame; plain-text messages
+   stay embedded. The frame document hides its overflow, so a sizing failure
+   shows as content cut off rather than as a scroll bar. Run these in Safari
+   and in the Home Screen app, on fixture 046 (long) and fixture 047 (wide):
+   - Swipe slowly, then fling, starting with the finger on message text. The
+     whole page, header included, moves, and a fling keeps scrolling after the
+     finger lifts. The message never scrolls on its own inside a still page.
+   - Pinch to zoom in and out over the message. The page zooms as a whole.
+   - Use Find on Page (Safari share or page menu; in the Home Screen app,
+     long-press a word and use Find Selection) for `Paragraph 280` in 046 and
+     `RIGHT EDGE MARKER` in 047. The match is highlighted and scrolled into view.
+   - Scroll to `END OF MESSAGE` in 046 and to `END OF WIDE MESSAGE` and
+     `RIGHT EDGE MARKER` in 047. Each is fully visible, with nothing cut off at
+     the bottom or right of the message. 047 either fits the column or makes
+     the page scroll sideways; a sideways swipe never scrolls the table alone.
 
-The current reader directly embeds sanitized HTML.
-[TASK-142](../backlog/tasks/task-142%20-%20Render-reader-messages-in-a-sandboxed-frame.md)
-has not landed: do not claim frame isolation or frame-specific device checks
-from this run. If the tested revision changes the reader, update this procedure
-before relying on its results.
+   Then open messages from the real archive that scrolled inside the earlier
+   iframe, in normal use of the operator's deployment, and check that none
+   scrolls internally or cuts off content. Record only pass or fail and the kind
+   of message (for example a newsletter with late images), never its sender,
+   subject or identifiers.
+
+If a later revision changes the reader, update this procedure before relying on
+its results.
 
 ## Supplemental simulator checks
 
@@ -255,6 +291,10 @@ Interrupted navigation and deadline
 Unconfirmed action and Retry without replay
 Label-loading interruption
 Unavailable cold launch and recovery
+Frame swipe, fling, pinch (046, 047; Safari, app)
+Frame Find on Page (046, 047; Safari, app)
+Frame end and right edge visible (046, 047)
+Archive messages that scrolled in the earlier iframe
 
 Supporting simulator/browser evidence (separate from physical checks):
 Failures, blocked portions and next action:

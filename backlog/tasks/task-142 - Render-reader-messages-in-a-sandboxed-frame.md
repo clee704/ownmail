@@ -4,7 +4,7 @@ title: Render reader messages in a sandboxed frame
 status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
-updated_date: '2026-10-17 05:24'
+updated_date: '2026-10-17 05:39'
 labels:
   - security
 dependencies:
@@ -96,4 +96,6 @@ Limits:
 Gate evidence at 647357b: the pre-push gate with OWNMAIL_REQUIRE_BROWSER_TESTS=1 passes in Chromium. The full suite in WebKit fails only the four label editor tests (TASK-144); test_message_forms::test_message_links_open_a_new_tab_without_a_referrer now passes in WebKit. Under heavy load from parallel browser probes, the test_pdf_export Ctrl-C tests and test_download_progress::test_interrupt_flushes_current_counts_without_message_errors[downloading] timed out or miscounted in both engines and passed alone. Filed with the earlier test_pdf_export_cli Ctrl-C failure as TASK-147.
 
 Next action: the maintainer's AC9 check on iOS Safari and the Home Screen web app, and the desktop check of clicking into the message to activate an inactive Chrome or Safari window; then land the branch on master.
+
+2026-10-16 AC9 preparation: check 9 in docs/home-screen-validation.md lists the frame checks (swipe, fling, pinch, Find on Page, end and right edge visible, and archive messages that scrolled inside the earlier iframe). The fixture recipe adds 047, a message with a 1200px-wide table; it imports 47 messages, and 047 renders in the sandboxed frame through the real sanitizer on this branch. No simulator pre-check of this branch was run. Next action unchanged: the maintainer runs check 9 on an iPhone in Safari and the Home Screen app, and the results are recorded here.
 <!-- SECTION:NOTES:END -->
