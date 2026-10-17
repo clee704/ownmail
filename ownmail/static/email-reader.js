@@ -95,12 +95,17 @@ if (window.ownmailMessageFrame) {
 // parent, and WebKit never runs parent listeners on nodes in the script-less
 // frame, so the key cannot be forwarded. After a plain click in the message,
 // focus returns to the viewport once the button is up. Focus stays in the frame
-// while it holds a text selection (native copy) or a keyboard-focused link.
+// while it holds a text selection (native copy) or a keyboard-focused link, and
+// after Tab moves it there: returning it would make the next Tab enter the frame
+// again, so a message without Tab stops would trap keyboard users.
 (function() {
     var frame = document.getElementById('ownmail-email-frame');
     if (!frame) return;
     var viewport = document.getElementById('ownmail-email-viewport');
     var pending = false;
+    var tabbing = false;
+    // Where the frame selection was when Tab moved focus in; a click moves it.
+    var tabbed = null;
     function check() {
         pending = false;
         if (document.activeElement !== frame) return;
@@ -108,8 +113,10 @@ if (window.ownmailMessageFrame) {
         // During a press, check every frame so Space works right after mouseup.
         if (frame.matches(':active')) return schedule(true);
         var focused = doc && doc.activeElement;
-        var held = !doc || !doc.getSelection().isCollapsed
-            || (focused && focused !== doc.body && focused.matches(':focus-visible'));
+        var selection = doc && doc.getSelection();
+        var held = !doc || !selection.isCollapsed
+            || (focused && focused !== doc.body && focused.matches(':focus-visible'))
+            || (tabbed && tabbed.node === selection.anchorNode && tabbed.offset === selection.anchorOffset);
         // A selection can stay for minutes; a slow poll still notices the
         // plain click that collapses it, which fires no parent event.
         if (held) schedule(false);
@@ -121,8 +128,18 @@ if (window.ownmailMessageFrame) {
         if (soon) requestAnimationFrame(check);
         else setTimeout(check, 150);
     }
+    // Tab moves focus during its keydown, so the blur below fires before the timeout.
+    document.addEventListener('keydown', function(event) {
+        if (event.key !== 'Tab') return;
+        tabbing = true;
+        setTimeout(function() { tabbing = false; });
+    }, true);
     // The parent window blurs whenever focus moves into the frame.
-    window.addEventListener('blur', function() { schedule(true); });
+    window.addEventListener('blur', function() {
+        var selection = tabbing && frame.contentDocument && frame.contentDocument.getSelection();
+        tabbed = selection ? {node: selection.anchorNode, offset: selection.anchorOffset} : null;
+        schedule(true);
+    });
 })();
 
 function trashEmail(emailId) {

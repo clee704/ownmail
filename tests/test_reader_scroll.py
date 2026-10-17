@@ -189,6 +189,16 @@ def test_keys_scroll_the_page_after_clicking_in_the_message(shell_app, browser_n
         assert.equal((await state()).active, 'ownmail-email-viewport');
         await scrolls('Space', 1);
 
+        // A click after Tab moved focus into the message returns focus too.
+        await scrollTo(0);
+        await page.focus('#ownmail-message-details-toggle');
+        await page.keyboard.press('Tab');
+        await settle();
+        assert.equal((await state()).active, 'ownmail-email-frame');
+        await click('#p5');
+        assert.equal((await state()).active, 'ownmail-email-viewport');
+        await scrolls('Space', 1);
+
         // Tab reaches a message link (WebKit on macOS skips links on plain Tab), and Enter opens it.
         await page.context().route('https://x.invalid/**', route => route.abort().catch(() => {}));
         await scrollTo(0);
@@ -202,6 +212,40 @@ def test_keys_scroll_the_page_after_clicking_in_the_message(shell_app, browser_n
             {predicate: request => request.url() === 'https://x.invalid/link', timeout: 2000});
         await page.keyboard.press('Enter');
         await Promise.all([popup, opened]);
+        """,
+        theme="light",
+        viewport=(800, 600),
+    )
+
+
+def test_tab_moves_through_a_message_without_tab_stops(shell_app, browser_node):
+    app, _ = shell_app
+    run_message_browser(
+        app,
+        browser_node,
+        "".join(f"<p>Synthetic paragraph {i}.</p>" for i in range(60)),
+        "",
+        """
+        await page.evaluate(() => {
+            const viewport = document.getElementById('ownmail-email-viewport');
+            viewport.insertAdjacentHTML('beforebegin', '<button id="before">Before</button>');
+            viewport.insertAdjacentHTML('afterend', '<button id="after">After</button>');
+        });
+        // The frame itself is a Tab stop; wait past the reader's focus check each time.
+        // WebKit on macOS skips buttons on plain Tab.
+        const engine = process.env.OWNMAIL_BROWSER_ENGINE || 'chromium';
+        const press = async (key, ...expected) => {
+            const seen = [];
+            for (const id of expected) {
+                await page.keyboard.press(engine === 'webkit' ? 'Alt+' + key : key);
+                await page.waitForTimeout(300);
+                seen.push(await page.evaluate(() => document.activeElement.id));
+            }
+            assert.deepEqual(seen, expected, key);
+        };
+        await page.focus('#before');
+        await press('Tab', 'ownmail-email-frame', 'after');
+        await press('Shift+Tab', 'ownmail-email-frame', 'before');
         """,
         theme="light",
         viewport=(800, 600),
