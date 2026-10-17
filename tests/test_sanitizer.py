@@ -733,9 +733,10 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert self._stylesheet("@media (min-height: 50vh) { .a { --h: 10vh } }") == (
             "@media (min-height: 50vh) { #ownmail-email-content .a { --h: calc(10 * var(--ownmail-vh, 1vh)) } }"
         )
-        # Registration descriptors cannot use var(), so a rewrite would void the registration.
+        # var() voids the registration, leaving the property's users at their natural size; as authored,
+        # the unit would resolve against the frame, whose height comes from the content.
         assert self._stylesheet("@PROPERTY --h { syntax: '<length>'; inherits: false; initial-value: 10vh }") == (
-            "@PROPERTY --h { syntax: '\\3c length>'; inherits: false; initial-value: 10vh }"
+            "@PROPERTY --h { syntax: '\\3c length>'; inherits: false; initial-value: calc(10 * var(--ownmail-vh, 1vh)) }"
         )
         result, *_ = self.sanitizer.sanitize('<div style="width:calc(100vw - 2em)">Text</div>')
         assert lxml_html.fromstring(result).xpath("//div")[0].get("style") == (

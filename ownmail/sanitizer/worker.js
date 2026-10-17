@@ -673,10 +673,7 @@ function scopeAndSanitizeCSS(css, body = null) {
     if (!fontFace && (prop === "font-family" || prop === "font")) {
       decl.value = ensureFontFallback(decl.value);
     }
-    // Registration descriptors cannot use var(), which would void the whole
-    // @property rule, so its viewport units stay as authored.
-    const registration = decl.parent.type === "atrule" && decl.parent.name.toLowerCase() === "property";
-    if (!registration) decl.value = rewriteViewportUnits(decl.value);
+    decl.value = rewriteViewportUnits(decl.value);
   });
 
   // Scope selectors under #ownmail-email-content

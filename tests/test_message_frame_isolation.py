@@ -181,19 +181,21 @@ def test_message_images_cannot_shadow_frame_document_properties(shell_app, brows
     )
 
 
-def test_message_property_registration_keeps_viewport_initial_values(shell_app, browser_node, spacing_sanitizer):
+def test_message_property_viewport_initial_value_keeps_natural_height(shell_app, browser_node, spacing_sanitizer):
+    # The frame's height comes from its content, so a frame-relative 100vh would outgrow it and clip the message.
     run_probe(
         shell_app,
         browser_node,
         spacing_sanitizer,
-        "<style>@property --probe {syntax:'<length>'; inherits:false; initial-value:10vh}</style>"
-        '<div id="probe" style="height:var(--probe)"></div><p>Message copy</p>',
+        "<style>@property --probe {syntax:'<length>'; inherits:false; initial-value:100vh}</style>"
+        '<div id="reference">Line</div><div id="probe" style="height:var(--probe)">Line</div><p id="end">End</p>',
         """
-        const [height, viewport] = await page.evaluate(() => {
-            const frame = document.getElementById('ownmail-email-frame');
-            return [frame.contentDocument.getElementById('probe').getBoundingClientRect().height,
-                frame.contentDocument.documentElement.clientHeight];
+        await page.waitForSelector('#ownmail-email-frame[data-ready]', {state: 'attached', timeout: 3000});
+        const r = await page.evaluate(() => {
+            const doc = document.getElementById('ownmail-email-frame').contentDocument, s = doc.scrollingElement;
+            return {probe: doc.getElementById('probe').offsetHeight, reference: doc.getElementById('reference').offsetHeight,
+                end: doc.getElementById('end').getBoundingClientRect().bottom, scroll: s.scrollHeight, client: s.clientHeight};
         });
-        assert(height > 0 && Math.abs(height - viewport / 10) <= 0.5, JSON.stringify([height, viewport]));
+        assert(r.probe === r.reference && r.end <= r.client && r.scroll <= r.client, JSON.stringify(r));
         """,
     )
