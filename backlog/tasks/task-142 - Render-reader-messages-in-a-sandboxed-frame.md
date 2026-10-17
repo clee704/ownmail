@@ -93,7 +93,7 @@ Limits:
 - With a column fraction under 0.5 the frame viewport rounds down, and 100%-width content can end about 0.2px past it, inside the frame's visible box (not shown to be visible).
 - #ownmail-email-end is an empty tabindex=-1 element; what a screen reader announces there is unchecked, with VoiceOver in general.
 
-Gate evidence at 647357b: the pre-push gate with OWNMAIL_REQUIRE_BROWSER_TESTS=1 passes in Chromium. The full suite in WebKit fails only the four label editor tests (TASK-144); test_message_forms::test_message_links_open_a_new_tab_without_a_referrer now passes in WebKit. Under heavy load from parallel browser probes, the test_pdf_export Ctrl-C tests and test_download_progress::test_interrupt_flushes_current_counts_without_message_errors[downloading] timed out or miscounted in both engines and passed alone. With the earlier test_pdf_export_cli Ctrl-C failure, ask the maintainer whether to file it.
+Gate evidence at 647357b: the pre-push gate with OWNMAIL_REQUIRE_BROWSER_TESTS=1 passes in Chromium. The full suite in WebKit fails only the four label editor tests (TASK-144); test_message_forms::test_message_links_open_a_new_tab_without_a_referrer now passes in WebKit. Under heavy load from parallel browser probes, the test_pdf_export Ctrl-C tests and test_download_progress::test_interrupt_flushes_current_counts_without_message_errors[downloading] timed out or miscounted in both engines and passed alone. Filed with the earlier test_pdf_export_cli Ctrl-C failure as TASK-147.
 
 Next action: the maintainer's AC9 check on iOS Safari and the Home Screen web app, and the desktop check of clicking into the message to activate an inactive Chrome or Safari window; then land the branch on master.
 <!-- SECTION:NOTES:END -->
