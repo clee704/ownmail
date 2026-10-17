@@ -673,7 +673,10 @@ function scopeAndSanitizeCSS(css, body = null) {
     if (!fontFace && (prop === "font-family" || prop === "font")) {
       decl.value = ensureFontFallback(decl.value);
     }
-    decl.value = rewriteViewportUnits(decl.value);
+    // Registration descriptors cannot use var(), which would void the whole
+    // @property rule, so its viewport units stay as authored.
+    const registration = decl.parent.type === "atrule" && decl.parent.name.toLowerCase() === "property";
+    if (!registration) decl.value = rewriteViewportUnits(decl.value);
   });
 
   // Scope selectors under #ownmail-email-content
@@ -782,6 +785,11 @@ purify.addHook("afterSanitizeAttributes", (node) => {
       pendingBodyStyles.delete(style);
     }
   }
+
+  // An image name, and with it the image id, names a property on the frame
+  // document, so <img name="fonts"> would shadow the document.fonts that reader
+  // scripts use. Other elements exposed that way are forbidden tags.
+  if (node.tagName === "IMG") node.removeAttribute("name");
 
   // Links, including image-map areas, open in a new tab without a referrer
   if (node.tagName === "A" || node.tagName === "AREA") {

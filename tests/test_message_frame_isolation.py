@@ -161,3 +161,39 @@ def test_message_modal_dialog_cannot_cover_reader_controls(shell_app, browser_no
         """
         + CONTROL_WORKS,
     )
+
+
+def test_message_images_cannot_shadow_frame_document_properties(shell_app, browser_node, spacing_sanitizer):
+    # Reader scripts read fonts and scrollingElement from the frame document;
+    # a shadowed fonts kept the message hidden.
+    run_probe(
+        shell_app,
+        browser_node,
+        spacing_sanitizer,
+        '<img name="fonts" alt=""><img name="scrollingElement" alt=""><p>Message copy</p>',
+        """
+        await page.waitForSelector('#ownmail-email-frame[data-ready]', {state: 'attached', timeout: 3000});
+        assert.equal(await page.evaluate(() => {
+            const doc = document.getElementById('ownmail-email-frame').contentDocument;
+            return [typeof doc.fonts.ready?.then, doc.scrollingElement === doc.documentElement].join();
+        }), 'function,true');
+        """,
+    )
+
+
+def test_message_property_registration_keeps_viewport_initial_values(shell_app, browser_node, spacing_sanitizer):
+    run_probe(
+        shell_app,
+        browser_node,
+        spacing_sanitizer,
+        "<style>@property --probe {syntax:'<length>'; inherits:false; initial-value:10vh}</style>"
+        '<div id="probe" style="height:var(--probe)"></div><p>Message copy</p>',
+        """
+        const [height, viewport] = await page.evaluate(() => {
+            const frame = document.getElementById('ownmail-email-frame');
+            return [frame.contentDocument.getElementById('probe').getBoundingClientRect().height,
+                frame.contentDocument.documentElement.clientHeight];
+        });
+        assert(height > 0 && Math.abs(height - viewport / 10) <= 0.5, JSON.stringify([height, viewport]));
+        """,
+    )

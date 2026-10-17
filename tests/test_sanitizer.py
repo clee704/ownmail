@@ -733,6 +733,10 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         assert self._stylesheet("@media (min-height: 50vh) { .a { --h: 10vh } }") == (
             "@media (min-height: 50vh) { #ownmail-email-content .a { --h: calc(10 * var(--ownmail-vh, 1vh)) } }"
         )
+        # Registration descriptors cannot use var(), so a rewrite would void the registration.
+        assert self._stylesheet("@PROPERTY --h { syntax: '<length>'; inherits: false; initial-value: 10vh }") == (
+            "@PROPERTY --h { syntax: '\\3c length>'; inherits: false; initial-value: 10vh }"
+        )
         result, *_ = self.sanitizer.sanitize('<div style="width:calc(100vw - 2em)">Text</div>')
         assert lxml_html.fromstring(result).xpath("//div")[0].get("style") == (
             "width:calc(calc(100 * var(--ownmail-vw, 1vw)) - 2em)"
@@ -744,6 +748,21 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
             with self.subTest(html=html):
                 _, needs_padding, _ = self.sanitizer.sanitize(html)
                 assert needs_padding is False
+
+    def test_images_cannot_shadow_document_properties(self):
+        """An image name, or an image id beside it, would name a property on the reader frame's document."""
+        for html in (
+            '<img name="fonts" src="cid:a">',
+            '<img name="scrollingElement">',
+            '<img id="fonts" name="image">',
+        ):
+            with self.subTest(html=html):
+                result, *_ = self.sanitizer.sanitize(html)
+                image = lxml_html.fromstring(result).xpath("//img")[0]
+                assert image.get("name") is None
+        # Other kept elements that carry a name are not document named properties.
+        result, *_ = self.sanitizer.sanitize('<map name="fonts"></map><a name="fonts">Link</a>')
+        assert len(lxml_html.fromstring(result).xpath('//*[@name="fonts"]')) == 2
 
     def _stylesheet(self, css):
         """Return the sanitized text of one synthetic stylesheet."""
