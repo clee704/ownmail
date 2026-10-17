@@ -117,7 +117,7 @@ def test_secondary_metadata_disclosure_keeps_headers_and_actions_accessible(read
     for address in ["alex@example.com", "pat@example.com", "lee@example.com"]:
         assert address in details.text_content()
     assert "Project planning" in details.text_content()
-    assert "The message body remains visible." in message_content(response.data).text_content()
+    assert "The message body remains visible." in message_content(response.data, plain=True).text_content()
     back = document.get_element_by_id("ownmail-back-to-results")
     assert back.get("title") == "Back to results"
     assert back.text_content().strip() == "Back to results"

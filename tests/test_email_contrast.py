@@ -13,13 +13,17 @@ from tests import test_ui_shell
 shell_app = test_ui_shell.shell_app
 SANITIZER_DIR = Path(__file__).parents[1] / "ownmail" / "sanitizer"
 FRAME_STYLESHEET = "/static/email-frame.css"
-# Browser-script helpers for message content. Insert after `page` exists and before navigation. Until the
-# reader embeds messages in #ownmail-email-frame (TASK-142), both fall back to the page itself.
+# Browser-script helpers for HTML message content, which the reader renders in #ownmail-email-frame. Insert
+# after `page` exists and before navigation. Neither falls back to the page, so a test cannot pass against
+# page content; plain-text messages are embedded in the page and are queried there directly.
 MESSAGE_HELPERS = r"""
-        const message = () => page.frames().some(frame => frame.url() === 'about:srcdoc')
-            ? page.frameLocator('#ownmail-email-frame') : page;
+        const message = () => page.frameLocator('#ownmail-email-frame');
         await page.addInitScript(() => {
-            window.messageDocument = () => document.getElementById('ownmail-email-frame')?.contentDocument || document;
+            window.messageDocument = () => {
+                const frame = document.getElementById('ownmail-email-frame');
+                if (!frame?.contentDocument) throw new Error('no message frame');
+                return frame.contentDocument;
+            };
         });
 """
 

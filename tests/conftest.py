@@ -133,10 +133,16 @@ def temp_dir():
         yield Path(tmpdir)
 
 
-def message_content(page):
-    """Return #ownmail-email-content from reader HTML, inside the message frame's srcdoc when there is one."""
+def message_content(page, plain=False):
+    """Return #ownmail-email-content from reader HTML.
+
+    HTML messages render inside the message frame's srcdoc and plain text in the
+    page. The caller says which, so a missing frame fails instead of passing
+    against page content.
+    """
     tree = html.fromstring(page)
     frames = tree.xpath('//iframe[@id="ownmail-email-frame"]/@srcdoc')
+    assert len(frames) == (0 if plain else 1), f"expected {'no' if plain else 'one'} message frame"
     if frames:
         tree = html.fromstring(frames[0])
     return tree.get_element_by_id("ownmail-email-content")

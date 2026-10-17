@@ -168,7 +168,9 @@ def test_message_spacing_preserves_sender_layout_and_reader_insets(
     )
     response = app.test_client().get("/email/synthetic")
     assert response.status_code == 200
-    assert ("ownmail-email-content-padded" in message_content(response.data).classes) is needs_padding
+    assert (
+        "ownmail-email-content-padded" in message_content(response.data, plain=body is None).classes
+    ) is needs_padding
     test_email_contrast.run_contrast_browser(
         app,
         browser_node,

@@ -2276,7 +2276,7 @@ class TestViewEmailRendering:
         assert b"Hello" in response.data
         assert b"alice@example.com" in response.data
         assert b"This is the body text." in response.data
-        body = message_content(response.data)
+        body = message_content(response.data, plain=True)
         url = "https://example.test/unsubscribe?email=alice@example.com&confirm=yes"
         assert [(link.get("href"), link.text_content()) for link in body.xpath(".//a")] == [
             (url, url),
@@ -2469,7 +2469,9 @@ class TestViewEmailRendering:
         with create_test_app(archive).test_client() as client:
             response = client.get("/email/id1")
         assert response.status_code == 200
-        assert message_content(response.data).text_content().strip() == "Visible body"
+        assert (
+            message_content(response.data, plain=content_type == b"text/plain").text_content().strip() == "Visible body"
+        )
 
     def test_embedded_digest_message_is_rendered(self, archive):
         """A message/rfc822 part should be surfaced as a digest entry."""
