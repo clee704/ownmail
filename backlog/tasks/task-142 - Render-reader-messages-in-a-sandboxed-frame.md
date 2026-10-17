@@ -4,7 +4,7 @@ title: Render reader messages in a sandboxed frame
 status: In Progress
 assignee: []
 created_date: '2026-10-11 02:17'
-updated_date: '2026-10-17 05:39'
+updated_date: '2026-10-17 05:52'
 labels:
   - security
 dependencies:
@@ -38,7 +38,7 @@ The frame must behave like a normal element: no internal scroll and no clipped i
 - [x] #6 Dark mode, contrast repair, image loading and CSP blocking of remote content behave as today, without parent event listeners on nodes inside the frame, which WebKit does not fire
 - [x] #7 Message @property, @keyframes, @font-face, fixed positioning, popovers and dialogs cannot affect or cover application UI; Chromium and WebKit tests fail before the change and pass after it
 - [x] #8 PDF export keeps direct embedding and container scoping, and the behavior of printing from the reader is decided and recorded
-- [ ] #9 Before landing, the maintainer confirms native find in page, swipe, fling and pinch over a long and a wide message in iOS Safari and the Home Screen web app, and no internal scroll or clipping on archive messages that scrolled inside the earlier iframe; the result is recorded in the notes
+- [x] #9 Before landing, the maintainer confirms native find in page, swipe, fling and pinch over a long and a wide message in iOS Safari and the Home Screen web app, and no internal scroll or clipping on archive messages that scrolled inside the earlier iframe; the result is recorded in the notes
 - [x] #10 The full pre-push gate passes with browser tests required
 <!-- AC:END -->
 
@@ -98,4 +98,8 @@ Gate evidence at 647357b: the pre-push gate with OWNMAIL_REQUIRE_BROWSER_TESTS=1
 Next action: the maintainer's AC9 check on iOS Safari and the Home Screen web app, and the desktop check of clicking into the message to activate an inactive Chrome or Safari window; then land the branch on master.
 
 2026-10-16 AC9 preparation: check 9 in docs/home-screen-validation.md lists the frame checks (swipe, fling, pinch, Find on Page, end and right edge visible, and archive messages that scrolled inside the earlier iframe). The fixture recipe adds 047, a message with a 1200px-wide table; it imports 47 messages, and 047 renders in the sandboxed frame through the real sanitizer on this branch. No simulator pre-check of this branch was run. Next action unchanged: the maintainer runs check 9 on an iPhone in Safari and the Home Screen app, and the results are recorded here.
+
+2026-10-16 AC9: the maintainer confirmed check 9 of docs/home-screen-validation.md on an iPhone: swipe, fling, pinch and Find on Page over fixtures 046 (long) and 047 (wide) in Safari and the Home Screen app, both fully visible, and no internal scroll or clipping on archive messages that scrolled inside the earlier iframe. The fixtures have no images and block remote content, so they do not exercise late images on a device; whether the archive messages loaded remote content is not recorded.
+
+2026-10-16 gap found after AC9 (probe, not committed): sizing re-runs only on the frame load event, a size change of the content box, of an image present at start or of the frame width, a font load, a details toggle, a theme or contrast change, and a window resize. A change that moves or grows positioned or transformed content without any of these is missed. In Chromium and WebKit, a delayed @keyframes growing an absolutely positioned box below the message, and a transform transition triggered by a label toggling a hidden checkbox (:checked), both leave scrollable overflow with the backstop off and clip with it on. The same animation on an in-flow box passes. Message scripts cannot run (sanitizer and sandbox), so script-driven resizing is not a cause.
 <!-- SECTION:NOTES:END -->
