@@ -116,6 +116,9 @@
             observer.observe(content);
             Array.from(doc.images).forEach(function(image) { observer.observe(image); });
         }
+        // A positioned details element opens without resizing any observed box;
+        // the reader's toggle sets its open attribute.
+        new MutationObserver(schedule).observe(content, {subtree: true, attributeFilter: ['open']});
         watchFonts();
         var waiting = callbacks;
         callbacks = null;

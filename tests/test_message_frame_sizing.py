@@ -136,6 +136,19 @@ CASES = {
     # zoomed padding. The padded box must still resolve 100% against the reader column.
     "widened-percentage-width": (WIDENED, "", ["cell", "padded", "end"], ""),
     "widened-percentage-width-actual-size": (WIDENED, "", ["cell", "padded", "end"], ""),
+    # A positioned element does not resize the container, so opening it changes no observed size.
+    "opened-details": (
+        '<p id="end">End</p><details id="more" style="position:absolute;top:0;left:0">'
+        '<summary id="summary">More</summary><div id="revealed" style="height:600px">Revealed</div></details>',
+        "",
+        ["end", "summary", "more"],
+        """
+        await message().locator('#summary').click();
+        await settle();
+        assert(await message().locator('#more').evaluate(el => el.open), 'The details element must open');
+        await check('after opening the details element');
+        """,
+    ),
 }
 ACTUAL_SIZE = {"widened-percentage-width-actual-size"}
 
