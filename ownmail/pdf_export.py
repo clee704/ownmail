@@ -104,10 +104,12 @@ def _document(
     body_attributes = {}
     needs_padding = True
     if body_html:
-        if not sanitizer.available:
+        # Export owns its sanitizer and starts it on first use. The Print page
+        # shares the reader's, whose start() would run outside its lock.
+        if not sanitizer.available and not print_page:
             sanitizer.start(install=False)
-            if not sanitizer.available:
-                raise OSError("PDF HTML sanitizer unavailable; existing dependencies are required")
+        if not sanitizer.available:
+            raise OSError("HTML sanitizer unavailable; existing dependencies are required")
         for cid, uri in content["cid_images"].items():
             if uri.partition(";")[0].removeprefix("data:") in INLINE_SAFE_TYPES:
                 body_html = body_html.replace(f"cid:{cid}", uri)

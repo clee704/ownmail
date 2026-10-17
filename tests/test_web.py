@@ -2734,6 +2734,34 @@ class TestRawAndDownloadRoutes:
         assert response.status_code == 503
         assert b"Printable body" not in response.data
 
+    def test_print_does_not_start_an_unavailable_sanitizer(self, archive):
+        """After a failed restart, Print answers 503 as the reader serves escaped markup.
+
+        start() runs outside the sanitizer's lock, so a request must never call it.
+        """
+
+        class StoppedSanitizer:
+            available = True
+            started = False
+
+            def start(self, install=False):
+                self.started = self.available = True
+
+            def sanitize(self, body):
+                return html_escape(body), True, False
+
+            def stop(self):
+                pass
+
+        sanitizer = StoppedSanitizer()
+        self._store(archive, self.HTML_EML)
+        app = create_test_app(archive, sanitizer=sanitizer)
+        sanitizer.available = False
+        with app.test_client() as client:
+            response = client.get("/print/id1")
+        assert response.status_code == 503
+        assert not sanitizer.started
+
     def test_download_returns_eml(self, archive):
         """The download route should return the .eml as an attachment."""
         self._store(archive, b"From: a@example.com\r\nSubject: D\r\n\r\nbody\r\n")
