@@ -136,6 +136,17 @@ CASES = {
     # zoomed padding. The padded box must still resolve 100% against the reader column.
     "widened-percentage-width": (WIDENED, "", ["cell", "padded", "end"], ""),
     "widened-percentage-width-actual-size": (WIDENED, "", ["cell", "padded", "end"], ""),
+    # A rounded column width would pin the message wider than the frame.
+    "fractional-column-width": (
+        '<div id="full" style="width:100%;text-align:right">Full width</div><p id="end">End</p>',
+        "",
+        ["full", "end"],
+        """
+        await page.locator('#ownmail-email-viewport').evaluate(viewport => { viewport.style.width = '300.6px'; });
+        await settle();
+        await check('in a fractional column');
+        """,
+    ),
     # A positioned element does not resize the container, so opening it changes no observed size.
     "opened-details": (
         '<p id="end">End</p><details id="more" style="position:absolute;top:0;left:0">'
@@ -180,9 +191,11 @@ def test_message_frame_never_scrolls_or_clips(shell_app, browser_node, message_s
                         height: [scroller.scrollHeight, scroller.clientHeight],
                         width: [scroller.scrollWidth, scroller.clientWidth]};
                 }
+                // The frame box is fractional; clientWidth and clientHeight round.
+                const frame = document.getElementById('ownmail-email-frame').getBoundingClientRect();
                 return ids.map(id => {
                     const rect = doc.getElementById(id).getBoundingClientRect();
-                    return [id, rect.left, rect.top, rect.right, rect.bottom, scroller.clientWidth, scroller.clientHeight];
+                    return [id, rect.left, rect.top, rect.right, rect.bottom, frame.width, frame.height];
                 }).filter(([, left, top, right, bottom, width, height]) =>
                     left < 0 || top < 0 || right > width || bottom > height);
             }, [IDS, BACKSTOP]);
