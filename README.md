@@ -298,9 +298,12 @@ added as headers.
 
 PDF exports create a new directory containing `000001.pdf`, `000002.pdf`, and so
 on, in date-ascending message order. Each document prints the subject, sender,
-recipients, date, plain-text or sanitized HTML body, and an attachment inventory.
-Attachment payloads are not embedded in the PDF; safe inline CID images remain visible. Remote content
-and local-file loads are blocked. An empty selection creates an empty directory.
+recipients, date, plain-text or sanitized HTML body, and an attachment inventory
+on A4 pages; wide HTML is scaled to fit the page width. A message's own page
+setup, such as a page size or running header, is ignored. Attachment payloads
+are not embedded in the PDF; safe inline CID images remain visible. Remote
+content and local-file loads are blocked. An empty selection creates an empty
+directory.
 
 PDF is optional and requires available Node.js, the already-declared Playwright
 package, and Chromium. These are checked only when PDF is selected. If unavailable,
@@ -363,10 +366,10 @@ request to the servers that host it.
 
 To print a message, choose Print from the reader's message actions menu. It
 opens the message alone in a new tab, laid out like a PDF export with the
-reader's remote-content setting, and opens the print dialog. The browser's own
-print command in the reader prints plain-text messages directly; for HTML
-messages it prints a note that points to the Print action, because browsers do
-not split the reader's message frame across pages.
+reader's remote-content setting, and opens the print dialog, which sets the
+paper size. The browser's own print command in the reader prints plain-text
+messages directly; for HTML messages it prints a note that points to the Print
+action, because browsers do not split the reader's message frame across pages.
 
 The server listens on localhost by default and has no built-in login. If you
 make it reachable from other devices, control access through a trusted network

@@ -1,4 +1,4 @@
-"""Message CSS and markup that act through global names or the top layer stay in the frame."""
+"""Message CSS and markup that act through global names or fixed positioning stay in the frame."""
 
 from email.message import EmailMessage
 
@@ -128,38 +128,6 @@ def test_fixed_message_content_cannot_cover_reader_controls(shell_app, browser_n
         '<div style="position:fixed;inset:0;z-index:2147483647;background:rgb(255, 0, 0)">Cover</div>'
         "<p>Message copy</p>",
         CONTROL_WORKS,
-    )
-
-
-def test_message_popover_cannot_cover_reader_controls(shell_app, browser_node, spacing_sanitizer):
-    run_probe(
-        shell_app,
-        browser_node,
-        spacing_sanitizer,
-        '<button id="show-cover" popovertarget="cover">Open</button>'
-        '<div id="cover" popover style="position:fixed;inset:0;width:auto;height:auto;margin:0;'
-        'background:rgb(255, 0, 0)">Cover</div>',
-        """
-        await message().locator('#show-cover').click();
-        assert(await message().locator('#cover').evaluate(el => el.matches(':popover-open')));
-        """
-        + CONTROL_WORKS,
-    )
-
-
-def test_message_modal_dialog_cannot_cover_reader_controls(shell_app, browser_node, spacing_sanitizer):
-    run_probe(
-        shell_app,
-        browser_node,
-        spacing_sanitizer,
-        '<button id="show-cover" commandfor="cover" command="show-modal">Open</button>'
-        '<dialog id="cover" style="position:fixed;inset:0;width:auto;height:auto;max-width:none;max-height:none;'
-        'margin:0;background:rgb(255, 0, 0)">Cover</dialog>',
-        """
-        await message().locator('#show-cover').click();
-        assert(await message().locator('#cover').evaluate(el => el.open && el.matches(':modal')));
-        """
-        + CONTROL_WORKS,
     )
 
 

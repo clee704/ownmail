@@ -42,6 +42,9 @@ const PURIFY_CONFIG = {
     // A control could otherwise join an application form by its id and
     // choose where and how that form submits
     "form", "formaction", "formenctype", "formmethod", "formnovalidate", "formtarget",
+    // A click could otherwise open a popover or modal dialog in the top layer,
+    // above the trusted header on the Print page
+    "popovertarget", "popovertargetaction", "commandfor", "command",
   ],
 
   // Allow data: URIs for inline images (CID replacements)
@@ -520,6 +523,7 @@ function isScopedStylesheet(tokens) {
       if (head && head.type === "at-keyword") {
         const name = asciiLower(head.value);
         if (/^(-webkit-)?keyframes$/.test(name)) entry.keyframes = true;
+        if (name === "page") return false;
         if (name === "scope") {
           const range = scopeRoot(prelude, 1);
           if (!range || !isScopedSelectorList(prelude.slice(range[0] + 1, range[1]))) return false;
@@ -631,7 +635,9 @@ function scopeAndSanitizeCSS(css, body = null) {
     // postcss ends a name at a backslash, but browsers decode the escape and
     // read on, so "@imp\6f rt" is an @import. Drop it rather than guess.
     const escapedName = !atRule.raws.afterName && atRule.params.startsWith("\\");
-    if (escapedName || name === "charset") {
+    // @page would change the page size and margins of the Print page and PDF
+    // export, and its margin boxes could print text outside the message.
+    if (escapedName || name === "charset" || name === "page") {
       atRule.remove();
     } else if (name === "import") {
       // Read the prelude as printed; postcss drops some comments from params.
@@ -649,8 +655,9 @@ function scopeAndSanitizeCSS(css, body = null) {
     const prop = decl.prop.toLowerCase();
     const val = decl.value;
 
-    // Remove dangerous properties
-    if (prop === "behavior" || prop === "-moz-binding") {
+    // Remove dangerous properties. A named page would also force a page break
+    // before the message, away from the header.
+    if (prop === "behavior" || prop === "-moz-binding" || prop === "page") {
       decl.remove();
       return;
     }
@@ -727,6 +734,7 @@ function sanitizeInlineStyle(css) {
   css = css.replace(/expression\s*\([^)]*\)/gi, "");
   css = css.replace(/behavior\s*:\s*[^;]*/gi, "");
   css = css.replace(/-moz-binding\s*:\s*[^;]*/gi, "");
+  css = css.replace(/(^|[;\s])page\s*:[^;]*;?\s*/gi, "$1");
   css = css.replace(/javascript\s*:/gi, "");
 
   // Ensure font-family in inline styles ends with a generic fallback

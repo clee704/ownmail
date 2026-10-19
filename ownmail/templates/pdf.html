@@ -4,9 +4,10 @@
     <meta charset="utf-8">
     <title>{{ subject }}</title>
     <style>
-        @page { size: A4; margin: 14mm; }
+        /* No size: the Print page uses the print dialog's paper; PDF export sets its own. */
+        @page { margin: 14mm; }
         html { color: #171717; background: white; font: 11pt sans-serif; }
-        body { margin: 0; width: 182mm; }
+        body { margin: 0; }
         .ownmail-pdf-header { margin-bottom: 6mm; overflow-wrap: anywhere; }
         .ownmail-pdf-header h1 { font-size: 16pt; }
         .ownmail-pdf-header dl { margin: 0; }
@@ -16,9 +17,14 @@
         .ownmail-email-content-plain { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
         .ownmail-email-content-padded { padding: 4mm; }
         #ownmail-email-content { box-sizing: border-box; }
+        /* The containing block for fixed and absolutely positioned message
+           content, clipped above and below, so the message cannot cover the
+           header or attachment list, or repeat on every printed page. Wide
+           content still overflows sideways on screen. */
+        #ownmail-pdf-body { contain: layout; overflow-y: clip; }
         .ownmail-pdf-attachments { border-top: 1px solid #ccc; margin-top: 6mm; overflow-wrap: anywhere; }
         /* The reader's Print page shows this document on screen before printing. */
-        @media screen { body { width: auto; max-width: 182mm; margin: 0 auto; padding: 4mm; } }
+        @media screen { body { max-width: 182mm; margin: 0 auto; padding: 4mm; } }
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     </style>
 </head>

@@ -353,9 +353,13 @@ def test_actual_pdfs_are_readable_and_block_untrusted_resources(archive, store, 
         f"p{{background-image:url({origin}/background);font-family:Tracker,sans-serif}}</style>"
         f'<img src="{origin}/image" onerror="location.href=\'{origin}/event\'">'
         f'<img src="{secret.as_uri()}"><img src="cid:logo" width="32" height="32">'
+        # Word's page setup, a margin box and fixed content would otherwise change or repeat on printed pages.
+        "<style>@page WordSection1 {size:8.5in 11in; margin:1in} div.WordSection1 {page:WordSection1}"
+        '@page {@top-center {content:"MARGIN CANARY"}}</style>'
+        '<div class="WordSection1"><div style="position:fixed;top:0;right:0">FIXED CANARY</div>'
         '<table style="width:1100px"><tr><td>LEFT EDGE</td><td style="text-align:right">RIGHT EDGE</td></tr></table>'
         + "".join(f"<p>Readable HTML München 영수증 paragraph {index}</p>" for index in range(100))
-        + "<p>LAST HTML PARAGRAPH</p>",
+        + "<p>LAST HTML PARAGRAPH</p></div>",
         subtype="html",
     )
     rich.get_payload()[-1].add_related(image, maintype="image", subtype="png", cid="<logo>")
@@ -378,6 +382,9 @@ def test_actual_pdfs_are_readable_and_block_untrusted_resources(archive, store, 
         assert data.startswith(b"%PDF-") and data.rstrip().endswith(b"%%EOF")
         assert b"/Type /Page" in data and b"/Font" in data
     assert b"/Subtype /Image" in pdfs[1].read_bytes()
+    # Every page of both documents has export's one page size.
+    boxes = [re.findall(rb"/MediaBox \[[^]]*\]", path.read_bytes()) for path in pdfs]
+    assert len(boxes[1]) > 1 and len(set(boxes[0] + boxes[1])) == 1
     # Optional independent local observer; no PDF package/product dependency.
     extractor = shutil.which("pdftotext")
     if extractor:
@@ -402,8 +409,20 @@ def test_actual_pdfs_are_readable_and_block_untrusted_resources(archive, store, 
             "not embedded",
         ]:
             assert value in texts[1]
-        for value in ["SCRIPT RAN", "REMOTE CANARY", "LOCAL FILE CANARY", "ATTACHMENT PRIVATE CONTENT"]:
+        for value in [
+            "SCRIPT RAN",
+            "REMOTE CANARY",
+            "LOCAL FILE CANARY",
+            "ATTACHMENT PRIVATE CONTENT",
+            "MARGIN CANARY",
+        ]:
             assert value not in texts[1]
+        assert texts[1].count("FIXED CANARY") == 1
+        first_page = subprocess.run(
+            [extractor, "-f", "1", "-l", "1", str(pdfs[1]), "-"], capture_output=True, text=True, check=True, timeout=15
+        ).stdout
+        first_page = " ".join(first_page.split())
+        assert "HTML 영수증 café" in first_page and "paragraph 0" in first_page
         assert [int(value) for value in re.findall(r"Readable HTML München 영수증 paragraph (\d+)", texts[1])] == list(
             range(100)
         )

@@ -172,6 +172,17 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 assert len(tree.xpath('//*[@id="control"]')) == 1
                 assert [p.text for p in tree.xpath("//p")] == ["Before", "After"]
 
+    def test_drops_top_layer_triggers(self):
+        """Message controls cannot open a popover or modal dialog in the top layer."""
+        result, *_ = self.sanitizer.sanitize(
+            '<button id="a" popovertarget="cover" popovertargetaction="show">Open</button>'
+            '<button id="b" commandfor="dialog" command="show-modal">Open</button>'
+            '<div id="cover" popover>Cover</div><dialog id="dialog">Dialog</dialog>'
+        )
+        tree = lxml_html.document_fromstring(result)
+        assert [button.attrib for button in tree.xpath("//button")] == [{"id": "a"}, {"id": "b"}]
+        assert tree.xpath('//*[@id="cover"]/@popover') == [""]
+
     def test_strips_meta_refresh(self):
         """Test that <meta http-equiv=refresh> is removed."""
         html = (
@@ -885,6 +896,33 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
                 assert self._stylesheet(css) == "/* CSS parse error */"
         kept = '.probe { background: URL(https://example.invalid/a.png), url( "b.png" ); content: "a;b{c}"; }'
         assert self._stylesheet(kept) == "#ownmail-email-content " + kept
+
+    def test_drops_page_rules_and_named_pages(self):
+        """Message CSS cannot change printed pages or print text in their margins."""
+        for css, expected in (
+            ("@page { size: A5; margin: 0; } p { color: red; }", "#ownmail-email-content p { color: red; }"),
+            (
+                '@PAGE WordSection1 { size: 8.5in 11in; @top-center { content: "Canary"; } }'
+                " div.WordSection1 { page: WordSection1; color: red; }",
+                "#ownmail-email-content div.WordSection1 { color: red; }",
+            ),
+            (
+                "@media print { @page :first { margin: 0; } p { color: red; } }",
+                "@media print { #ownmail-email-content p { color: red; } }",
+            ),
+            (
+                "div { PAGE: x; page-break-before: always; }",
+                "#ownmail-email-content div { page-break-before: always; }",
+            ),
+        ):
+            with self.subTest(css=css):
+                assert " ".join(self._stylesheet(css).split()) == expected
+        # postcss reads this @page as comment text; browsers read a rule, so the stylesheet is discarded.
+        assert self._stylesheet(".probe { background: URL(/*) } @page { margin: 0; size: A5 /**/ ) }") == (
+            "/* CSS parse error */"
+        )
+        result, *_ = self.sanitizer.sanitize('<div style="page: x; page-break-after: always; color: red">Text</div>')
+        assert lxml_html.fromstring(result).xpath("//div/@style") == ["page-break-after: always; color: red"]
 
     def test_preserves_font_face(self):
         """Font face descriptors retain the single family required by CSS."""

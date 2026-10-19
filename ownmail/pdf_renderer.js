@@ -7,6 +7,9 @@ const { createRequire } = require("node:module");
 const requireSanitizer = createRequire(path.join(__dirname, "sanitizer", "package.json"));
 const DOCUMENT_URL = "https://ownmail-pdf.invalid/message";
 const CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; sandbox";
+// Export prints on A4. Wide messages are fitted to the width between
+// pdf.html's 14mm page margins, so they are measured at that width.
+const CONTENT_VIEWPORT = {width: Math.round((210 - 2 * 14) * 96 / 25.4), height: 1123};
 
 async function deadline(promise, milliseconds) {
   let timer;
@@ -44,7 +47,7 @@ async function main() {
       const html = fs.readFileSync(path.join(directory, name + ".html"), "utf8");
       const context = await browser.newContext({
         javaScriptEnabled: false, serviceWorkers: "block", acceptDownloads: false,
-        offline: true, colorScheme: "light", viewport: {width: 794, height: 1123},
+        offline: true, colorScheme: "light", viewport: CONTENT_VIEWPORT,
       });
       try {
         const page = await context.newPage();
