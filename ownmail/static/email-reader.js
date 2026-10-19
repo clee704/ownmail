@@ -143,6 +143,30 @@ if (window.ownmailMessageFrame) {
     });
 })();
 
+// Cmd+P (Ctrl+P elsewhere) opens the Print page, as the menu's Print action
+// does, because browsers do not split the message frame across pages. Paths
+// that send no key, such as File > Print, print the reader and its note.
+(function() {
+    var link = document.getElementById('ownmail-print-message');
+    var command = /^(Mac|iP)/.test(navigator.platform) ? 'metaKey' : 'ctrlKey';
+    var other = command === 'metaKey' ? 'ctrlKey' : 'metaKey';
+    function openPrintPage(event) {
+        if (!event[command] || event[other] || event.altKey || event.shiftKey || event.defaultPrevented) return;
+        // Non-Latin layouts, such as Korean, report the typed character.
+        if (event.key.toLowerCase() !== 'p' && (/^[a-z]$/i.test(event.key) || event.code !== 'KeyP')) return;
+        event.preventDefault();
+        if (!event.repeat) link.click();
+    }
+    document.addEventListener('keydown', openPrintPage);
+    // WebKit runs no parent listener in the script-less frame, so there the
+    // shortcut prints the reader while focus is in the message.
+    if (window.ownmailMessageFrame) {
+        window.ownmailMessageFrame.ready(function() {
+            document.getElementById('ownmail-email-frame').contentDocument.addEventListener('keydown', openPrintPage);
+        });
+    }
+})();
+
 function trashEmail(emailId) {
     if (!confirm('Move this email to trash?')) return;
     ownmailMessageAction({

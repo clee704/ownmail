@@ -367,9 +367,11 @@ request to the servers that host it.
 To print a message, choose Print from the reader's message actions menu. It
 opens the message alone in a new tab, laid out like a PDF export with the
 reader's remote-content setting, and opens the print dialog, which sets the
-paper size. The browser's own print command in the reader prints plain-text
-messages directly; for HTML messages it prints a note that points to the Print
-action, because browsers do not split the reader's message frame across pages.
+paper size. Cmd+P (Ctrl+P on Windows and Linux) in the reader does the same.
+Printing the reader through the browser's menu prints the message details and,
+for plain-text messages, the body; for HTML messages it prints a note that
+points to the Print action, because browsers do not split the reader's message
+frame across pages.
 
 The server listens on localhost by default and has no built-in login. If you
 make it reachable from other devices, control access through a trusted network

@@ -13,7 +13,7 @@
             <div class="ownmail-email-menu-dropdown" id="ownmail-email-menu-dropdown">
                 <a href="/raw/{{ email_id }}" title="Show original message">{{ icon('file') }}<span>Original</span></a>
                 <a href="/download/{{ email_id }}" title="Download message">{{ icon('download') }}<span>Download</span></a>
-                <a href="{{ url_for('print_email', email_id=email_id, images='block' if images_blocked else 'load') }}" target="_blank" rel="noopener" title="Print message">{{ icon('print') }}<span>Print</span></a>
+                <a href="{{ url_for('print_email', email_id=email_id, images='block' if images_blocked else 'load') }}" id="ownmail-print-message" target="_blank" rel="noopener" title="Print message">{{ icon('print') }}<span>Print</span></a>
                 {% if not cached_view %}<button type="button" id="ownmail-edit-labels" data-message-action aria-expanded="false" aria-controls="ownmail-label-editor">{{ icon('label') }}<span>Edit labels</span></button>{% endif %}
                 {% if active %}<button type="button" id="ownmail-active-status-toggle" aria-expanded="false" aria-controls="ownmail-active-status">{{ icon('refresh') }}<span>Message status</span></button>{% endif %}
                 {% if body_html %}
@@ -63,7 +63,7 @@
                 <dt>Date</dt>
                 <dd>{{ date }}</dd>
                 {% if labels %}
-                <dt>Labels</dt>
+                <dt class="ownmail-labels-term">Labels</dt>
                 <dd class="ownmail-labels">
                     {% for label in labels %}
                     <a href="{{ label.url }}" class="ownmail-label ownmail-clickable-label" title="{{ label.raw | join(', ') }}" data-show-loading>{{ label.name }}</a>

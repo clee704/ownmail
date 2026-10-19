@@ -500,7 +500,11 @@ html.ownmail-dark #ownmail-email-content.ownmail-email-content-plain { backgroun
     .ownmail-reader-page .ownmail-email-detail { --ownmail-reader-inset: 0px; padding: 0; max-width: none; }
     #ownmail-email-content, html.ownmail-dark #ownmail-email-content { background: none !important; color: #222 !important; }
     .ownmail-email-content-area { background: none; }
-    .ownmail-labels, .ownmail-label-editor { display: none; }
+    .ownmail-labels-term, .ownmail-labels, .ownmail-label-editor { display: none; }
+    /* Print the full details, as the Print page does, in place of the byline. */
+    .ownmail-reader-byline { display: none; }
+    .ownmail-app-shell .ownmail-message-metadata[hidden] { display: grid !important; }
+    .ownmail-message-metadata { margin: 0; padding: 0; background: none; }
     .ownmail-attachments { break-inside: avoid; }
     /* Browsers do not paginate a frame, so HTML messages print from the Print page. */
     #ownmail-email-viewport { display: none !important; }

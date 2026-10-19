@@ -166,6 +166,7 @@ def test_message_spacing_preserves_sender_layout_and_reader_insets(
         "sender@example.com",
         None,
     )
+    archive.db.get_labels_for_email.return_value = ["Review"]
     response = app.test_client().get("/email/synthetic")
     assert response.status_code == 200
     assert (
@@ -225,6 +226,15 @@ def test_message_spacing_preserves_sender_layout_and_reader_insets(
         await settle();
         const printedArticle = await box('.ownmail-email-detail');
         const note = page.locator('.ownmail-print-note');
+        const details = page.locator('#ownmail-message-metadata');
+        assert.equal(await details.isVisible(), true, 'The full message details print');
+        const printedDetails = await details.innerText();
+        for (const value of ['sender@example.com', 'reader@example.com', 'Date']) {
+            assert(printedDetails.includes(value), `Printed details include ${value}`);
+        }
+        assert(!/Labels|Review/.test(printedDetails), 'Labels do not print');
+        assert.equal(await page.locator('.ownmail-reader-byline').isVisible(), false,
+            'The details replace the byline in print');
         if (plain) {
             const printedBody = await box('#ownmail-email-content');
             near(printedBody.x, printedArticle.x, 'Printed body left edge');
@@ -289,4 +299,58 @@ def test_print_page_embeds_the_message_and_paginates(shell_app, browser_node, sp
         viewport=(600, 900),
         rendered_page=response.get_data(as_text=True),
         page_headers={"Content-Security-Policy": response.headers["Content-Security-Policy"]},
+    )
+
+
+def test_print_shortcut_opens_the_print_page(shell_app, browser_node, spacing_sanitizer):
+    app, archive = shell_app
+    app.config.update(sanitizer=spacing_sanitizer, block_images=True)
+    message = EmailMessage()
+    message["Subject"] = "Synthetic message"
+    message["From"] = "Sender <sender@example.com>"
+    message.set_content("Plain alternative")
+    message.add_alternative('<p id="copy">Synthetic message copy</p>', subtype="html")
+    (archive.archive_dir / "synthetic.eml").write_bytes(message.as_bytes())
+    archive.db.get_email_by_id.return_value = ("synthetic", "synthetic.eml", "2024-01-01", "hash", "s", None)
+    response = app.test_client().get("/email/synthetic")
+    assert response.status_code == 200
+    test_email_contrast.run_contrast_browser(
+        app,
+        browser_node,
+        "",
+        "",
+        r"""
+        await page.context().route('**/print/**', route => route.fulfill({contentType: 'text/html', body: 'Print page'}));
+        const popups = [];
+        page.on('popup', popup => popups.push(popup));
+        await page.evaluate(() => window.addEventListener('keydown', event => { window.ownmailPrevented = event.defaultPrevented; }));
+        const mac = await page.evaluate(() => /^(Mac|iP)/.test(navigator.platform));
+        for (const keys of [mac ? 'Control+p' : 'Meta+p', 'ControlOrMeta+Shift+p', 'ControlOrMeta+Alt+p']) {
+            await page.keyboard.press(keys);
+            await settle();
+            assert.equal(popups.length, 0, `${keys} keeps its browser behavior`);
+            assert.equal(await page.evaluate(() => window.ownmailPrevented), false, `${keys} is not canceled`);
+        }
+        const opens = async where => {
+            const opened = page.waitForEvent('popup', {timeout: 5000});
+            await page.keyboard.press('ControlOrMeta+p');
+            const popup = await opened;
+            await popup.waitForLoadState();
+            assert.equal(new URL(popup.url()).pathname + new URL(popup.url()).search, '/print/synthetic?images=block',
+                `The shortcut opens the Print page ${where}`);
+            await popup.close();
+        };
+        await opens('from the reader');
+        assert.equal(await page.evaluate(() => window.ownmailPrevented), true, 'The browser print dialog does not open');
+        await message().locator('#copy').dblclick();
+        await settle();
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'ownmail-email-frame',
+            'A selection keeps focus in the message');
+        if ((process.env.OWNMAIL_BROWSER_ENGINE || 'chromium') === 'chromium') {
+            await opens('from the message');
+        }
+        """,
+        theme="light",
+        viewport=(900, 900),
+        rendered_page=response.get_data(as_text=True),
     )
