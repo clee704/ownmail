@@ -73,6 +73,13 @@ jobs:
           npm install --include=dev
           npx playwright install --with-deps chromium
 
+      # The PDF renderer launches Chromium with its sandbox on, which Ubuntu
+      # 24.04 blocks by restricting unprivileged user namespaces through
+      # AppArmor. Lift the restriction on the runner; ownmail keeps the sandbox.
+      - name: Allow the Chromium sandbox
+        if: matrix.python-version == '3.12'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: pytest
         env:
           OWNMAIL_REQUIRE_BROWSER_TESTS: ${{ matrix.python-version == '3.12' && '1' || '0' }}

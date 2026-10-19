@@ -261,6 +261,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 22 | TASK-111 | medium | JSON search output for scripts and assistants |
 | 23 | TASK-112 | medium | Read a message by ID as JSON; depends on TASK-111 |
 | 24 | TASK-9 | medium | mbox export; PDF needs a new dependency |
+| 24a | TASK-149 | medium | PDF export likely aborts on Ubuntu 23.10 and later, where AppArmor blocks the Chromium sandbox; CI lifts the restriction, so the suite no longer shows it |
 | 25 | TASK-64 | low | CLI Trash listing crashes when Trash is not empty; web Trash works |
 | 26 | TASK-12 | low | --verbose before the subcommand is ignored |
 | 26a | TASK-115 | low | Unused query helpers in ArchiveDatabase; deletion only |
