@@ -15,7 +15,7 @@ ordinal: 24500
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-pdf_renderer.js launches Chromium with chromiumSandbox: true. Ubuntu 23.10 and later restrict unprivileged user namespaces through AppArmor by default, so Chromium cannot start its sandbox and aborts. On ubuntu-24.04 CI the real-renderer tests in tests/test_pdf_export.py aborted with SIGABRT, most likely for this reason, since the log omits the error line; CI now lifts the restriction with sysctl, which hides the failure from the suite. A user on such a system gets 'PDF renderer unavailable or failed' followed by the last 1000 characters of Chromium's stderr, which is a register dump and omits Chromium's own error line. Running without the sandbox is not an option to take silently, because the renderer loads untrusted message HTML.
+pdf_renderer.js launches Chromium with chromiumSandbox: true. Ubuntu 23.10 and later restrict unprivileged user namespaces through AppArmor by default, so Chromium cannot start its sandbox and aborts. On ubuntu-24.04 CI the real-renderer tests in tests/test_pdf_export.py aborted with SIGABRT and passed once CI lifted the restriction with sysctl (117b826), which confirms the cause and hides the failure from the suite. A user on such a system gets 'PDF renderer unavailable or failed' followed by the last 1000 characters of Chromium's stderr, which is a register dump and omits Chromium's own error line. Running without the sandbox is not an option to take silently, because the renderer loads untrusted message HTML.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
