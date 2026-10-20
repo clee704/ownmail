@@ -1,11 +1,11 @@
 ---
 id: TASK-95
 title: Avoid reading the entire Active cache repeatedly for each page
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-15 03:27'
-updated_date: '2026-10-20 04:56'
+updated_date: '2026-10-20 04:58'
 labels: []
 dependencies: []
 references:
@@ -62,4 +62,12 @@ Primary break-to-fail checks rejected three in-memory mutations: omitting ctime 
 Independent review of the full task diff, including the read-only constructor correction, found no actionable introduced findings. It checked signature/hash coupling, file safety, invalidation, concurrent changes, metadata freshness, put/remove/rebuild behavior, owned/live consolidation and fresh-byte hashing in JSON reads. Final full gate remains the only pending closure check.
 
 Final code verification: full required-browser suite passed all 5119 tests with 96.70% branch-inclusive coverage. Pre-commit reported files modified because the task notes were updated during that run; no source or test change occurred. Commit this tested implementation checkpoint, then repeat the exact pre-push gate with all tracked files stable before closure.
+
+Final closure: implementation committed as 40440cf. With tracked files stable, OWNMAIL_REQUIRE_BROWSER_TESTS=1 pre-commit run -a --hook-stage pre-push passed every hook, including the full suite and 96.70% branch-inclusive coverage. All acceptance criteria are verified, independent review has no outstanding findings, and no runtime, schema, provider or real archive changes were required. Closure changes only this task record.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Reuse verified Active payload file signatures while checking current metadata and hashing every explicit content read. Synthetic search/reader requests make no unrelated payload reads; corruption, missing/unsafe files, ownership, counts, pagination and freshness remain covered. Include the read-only CLI cache constructor. Expanded focused suite: 330 passed; complete suite: 5119 passed; required-browser pre-push gate passed with 96.70% coverage. Independent review found no remaining issue. Implementation: 40440cf. Cold startup/rebuild retains full payload verification.
+<!-- SECTION:FINAL_SUMMARY:END -->
