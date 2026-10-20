@@ -1,5 +1,6 @@
-"""Message CSS and markup on the Print page, which embeds the message directly, cannot cover trusted text."""
+"""Message styles work within the Print page's container and preserve the surrounding trusted UI."""
 
+import json
 from email.message import EmailMessage
 
 import pytest
@@ -134,4 +135,72 @@ def test_message_font_face_cannot_replace_the_print_font(shell_app, browser_node
         assert.equal(widths.loaded, 1);
         assert(Math.abs(widths.sender - widths.reference) > 1, JSON.stringify(widths));
         """.replace("__FACES__", repr(faces)),
+    )
+
+
+@pytest.mark.parametrize(
+    "css",
+    [
+        "@scope (.card) { img { width:37px; } }",
+        "@scope (.card) { @media (min-width:1px) { img { width:37px; } } }",
+        "@media (min-width:1px) { @scope (.card) { @supports (display:block) { "
+        "@scope (.inner) { img { width:37px; } } } } }",
+    ],
+    ids=["scope", "grouped-rule", "nested-scope"],
+)
+def test_scoped_message_rules_apply_on_print_page(shell_app, browser_node, spacing_sanitizer, css):
+    image = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    run_print_probe(
+        shell_app,
+        browser_node,
+        spacing_sanitizer,
+        f"<style>{css}</style>"
+        f'<div class="card"><div class="inner"><img id="scope-image" src="{image}" width="7" height="5"></div></div>'
+        f'<img id="outside-card" src="{image}" width="7" height="5">',
+        """
+        for (const media of ['screen', 'print']) {
+            await page.emulateMedia({media});
+            assert.equal(await page.locator('#scope-image').evaluate(el => getComputedStyle(el).width), '37px', media);
+            assert.equal(await page.locator('#outside-card').evaluate(el => getComputedStyle(el).width), '7px', media);
+        }
+        """,
+    )
+
+
+@pytest.mark.parametrize(
+    "selector", [":scope + .scope-sibling", ":scope ~ .scope-sibling", "& + .scope-sibling", "& ~ .scope-sibling"]
+)
+def test_scoped_sibling_selectors_preserve_print_ui(shell_app, browser_node, spacing_sanitizer, selector):
+    run_print_probe(
+        shell_app,
+        browser_node,
+        spacing_sanitizer,
+        "<style>@scope (body, .ownmail-pdf-header, .ownmail-pdf-attachments) {"
+        ":scope { --scope-root: active; } #inside-scope { width:37px; } "
+        f"{selector} {{ opacity:0.2 !important; }}"
+        '}</style><div id="inside-scope">Message copy</div>',
+        """
+        const selector = __SELECTOR__;
+        const stylesheet = await page.locator('#ownmail-email-content style').textContent();
+        assert(stylesheet.includes(`${selector} { opacity:0.2 !important; }`), stylesheet);
+        await page.evaluate(() => {
+            const container = document.getElementById('ownmail-email-content');
+            for (let i = 0; i < 2; i++) {
+                const sibling = document.createElement('div');
+                sibling.className = 'scope-sibling';
+                sibling.textContent = 'Trusted sibling ' + i;
+                container.parentElement.append(sibling);
+            }
+        });
+        for (const media of ['screen', 'print']) {
+            await page.emulateMedia({media});
+            assert.equal(await page.locator('#inside-scope').evaluate(el => getComputedStyle(el).width), '37px', media);
+            assert.equal(await page.locator('#ownmail-email-content').evaluate(el =>
+                getComputedStyle(el).getPropertyValue('--scope-root').trim()), 'active', media);
+            const outside = await page.locator('.scope-sibling, .ownmail-pdf-header, .ownmail-pdf-attachments')
+                .evaluateAll(elements => elements.map(el => ({opacity: getComputedStyle(el).opacity,
+                    scope: getComputedStyle(el).getPropertyValue('--scope-root').trim()})));
+            assert.deepEqual(outside, Array.from({length: 4}, () => ({opacity: '1', scope: ''})), media);
+        }
+        """.replace("__SELECTOR__", json.dumps(selector)),
     )

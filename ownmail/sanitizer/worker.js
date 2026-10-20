@@ -519,19 +519,20 @@ function isScopedStylesheet(tokens) {
       const prelude = tokens.slice(first, k);
       const head = prelude[0];
       const next = prelude.find((token, index) => index && token.type !== "whitespace");
-      let entry = { end: "}", statements: true, keyframes: block && block.keyframes };
+      let entry = { end: "}", statements: true, keyframes: block && block.keyframes, scoped: block && block.scoped };
       if (head && head.type === "at-keyword") {
         const name = asciiLower(head.value);
         if (/^(-webkit-)?keyframes$/.test(name)) entry.keyframes = true;
         if (name === "page") return false;
         if (name === "scope") {
           const range = scopeRoot(prelude, 1);
-          if (!range || !isScopedSelectorList(prelude.slice(range[0] + 1, range[1]))) return false;
+          if (!entry.scoped && (!range || !isScopedSelectorList(prelude.slice(range[0] + 1, range[1])))) return false;
+          entry.scoped = true;
         }
       } else if (head && head.type === "ident" && head.value.startsWith("--") && next && next.type === ":") {
         // A custom property value, not a rule.
         entry = { end: "}", statements: false };
-      } else if (!entry.keyframes && !isScopedSelectorList(prelude)) {
+      } else if (!entry.keyframes && !entry.scoped && !isScopedSelectorList(prelude)) {
         return false;
       }
       blocks.push(entry);
@@ -615,7 +616,7 @@ function restoreViewportUnits(value) {
  * - Removes dangerous CSS (expression(), behavior, -moz-binding, javascript:)
  * - Keeps remote url() values, including @font-face sources from any host; the
  *   reader's content security policy blocks them until remote content is loaded
- * - Scopes every selector and @scope root under #ownmail-email-content, and
+ * - Scopes selectors and outer @scope roots under #ownmail-email-content, and
  *   discards the stylesheet if a browser would read a rule outside that scope
  *   or an @import from another host, or could preload one
  * - Leaves @font-face, @keyframes and other global at-rules unscoped
@@ -685,6 +686,8 @@ function scopeAndSanitizeCSS(css, body = null) {
 
   // Scope selectors under #ownmail-email-content
   root.walkRules((rule) => {
+    // A confined @scope bounds its rules, whose selectors stay relative to it.
+    if (hasScopeAncestor(rule)) return;
     // Don't scope rules inside @keyframes
     if (
       rule.parent &&
@@ -702,6 +705,7 @@ function scopeAndSanitizeCSS(css, body = null) {
   // Declarations directly inside @scope style its root, so the root is scoped
   // like any selector. A missing root becomes the reader container explicitly.
   root.walkAtRules(/^scope$/i, (atRule) => {
+    if (hasScopeAncestor(atRule)) return;
     const params = preprocessCSS(atRule.params);
     const tokens = cssTokens(params);
     const first = tokens.find((token) => token.type !== "whitespace");
@@ -721,6 +725,13 @@ function scopeAndSanitizeCSS(css, body = null) {
   const text = preprocessCSS(scoped);
   const tokens = cssTokens(text);
   return isScopedStylesheet(tokens) && hasOnlyTrustedImports(text, tokens) ? scoped : "/* CSS parse error */";
+}
+
+function hasScopeAncestor(node) {
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (parent.type === "atrule" && /^scope$/i.test(parent.name)) return true;
+  }
+  return false;
 }
 
 /**

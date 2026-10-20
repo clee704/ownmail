@@ -867,13 +867,33 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
         for css, expected in (
             (
                 "@scope (.shell) { color: red; .probe { color: blue; } }",
-                "@scope (#ownmail-email-content .shell) { color: red; #ownmail-email-content .probe { color: blue; } }",
+                "@scope (#ownmail-email-content .shell) { color: red; .probe { color: blue; } }",
             ),
             ("@scope { color: red; }", "@scope (#ownmail-email-content) { color: red; }"),
             ("@scope to (.limit) { color: red; }", "@scope (#ownmail-email-content) to (.limit) { color: red; }"),
             (
                 "@scope (body, .shell) to (.limit) { color: red; }",
                 "@scope (#ownmail-email-content, #ownmail-email-content .shell) to (.limit) { color: red; }",
+            ),
+            (
+                "@scope (.shell, .ownmail-pdf-header) { .probe { color: blue; } }",
+                "@scope (#ownmail-email-content .shell, #ownmail-email-content .ownmail-pdf-header) "
+                "{ .probe { color: blue; } }",
+            ),
+            (
+                "@scope (.shell) { @media screen { .probe { color: blue; } } } .probe { color: red; }",
+                "@scope (#ownmail-email-content .shell) { @media screen { .probe { color: blue; } } } "
+                "#ownmail-email-content .probe { color: red; }",
+            ),
+            (
+                "@media screen { @scope (.shell) { @supports (display: block) { "
+                "@scope (.card) { .probe { color: blue; } } } } }",
+                "@media screen { @scope (#ownmail-email-content .shell) { @supports (display: block) { "
+                "@scope (.card) { .probe { color: blue; } } } } }",
+            ),
+            (
+                "@scope (.shell) { @scope to (.limit) { :scope { color: red; } } }",
+                "@scope (#ownmail-email-content .shell) { @scope to (.limit) { :scope { color: red; } } }",
             ),
             ("p { color: blue; } @scope (~ .shell) { color: red; }", "#ownmail-email-content p { color: blue; }"),
         ):
@@ -891,6 +911,12 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
             f".probe {{ background: x.url(/*) }} {shell} .probe {{ color: red /**/ ) }}",
             f".probe {{ background: url( /*) }} {shell} .probe {{ color: red /**/ ) }}",
             f".probe {{ background: u\\rl(/*) }} {shell} .probe {{ color: red /**/ ) }}",
+            # Postcss keeps these rules inside @scope; browsers read its closing brace first.
+            f'@scope (.card) {{ .probe {{ content: "x\n}} }} {shell} .probe {{ content: "; }} }}',
+            f"@scope (.card) {{ .probe {{ background: URL(/*) }} }} {shell} .probe {{ color: red /**/ ) }} }}",
+            # A browser sees this unconfined scope where postcss sees comment text.
+            ".probe { background: URL(/*) } @scope (#ownmail-email-content, .shell) "
+            "{ .probe { color: red; } } .probe { color: red /**/ ) }",
         ):
             with self.subTest(css=css):
                 assert self._stylesheet(css) == "/* CSS parse error */"

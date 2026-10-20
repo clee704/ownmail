@@ -1,9 +1,11 @@
 ---
 id: TASK-141
 title: Keep @scope rules in message CSS working after scoping
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-10-10 08:12'
+updated_date: '2026-10-20 04:17'
 labels: []
 dependencies: []
 references:
@@ -25,9 +27,35 @@ Likely fix: once the @scope root is confined to the container, leave the rules i
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Rules inside a message @scope whose root is confined to the reader container are emitted without the container prefix.
-- [ ] #2 The output check accepts those rules and still discards a stylesheet whose @scope rules could match elements outside the container.
-- [ ] #3 A synthetic browser test shows a rule inside @scope (.card) applying to the message element, and fails before the fix.
-- [ ] #4 Synthetic browser tests show that :scope and & sibling selectors inside @scope cannot style the container's siblings or other application UI, in Chromium and, where installed, WebKit.
-- [ ] #5 The full pre-push gate passes with browser tests required.
+- [x] #1 Rules inside a message @scope whose root is confined to the reader container are emitted without the container prefix.
+- [x] #2 The output check accepts those rules and still discards a stylesheet whose @scope rules could match elements outside the container.
+- [x] #3 A synthetic browser test shows a rule inside @scope (.card) applying to the message element, and fails before the fix.
+- [x] #4 Synthetic browser tests show that :scope and & sibling selectors inside @scope cannot style the container's siblings or other application UI, in Chromium and, where installed, WebKit.
+- [x] #5 The full pre-push gate passes with browser tests required.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Review base: 18d014a. Direct commit to master under the maintainer workflow.
+1. Reproduce the scoped @scope mismatch on the Print/PDF path using synthetic messages.
+2. Keep descendants of a confined @scope relative to its root, and retain the browser-token output check for containment, including nested scopes.
+3. Extend sanitizer checks and Print page browser probes for matching rules and :scope / & sibling containment; verify Chromium and installed WebKit.
+4. Review the full task diff, prove regression tests fail with the protected behavior removed, run the full pre-push gate with browser tests required, commit, then close the task.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-19 scope: TASK-142 moved reader HTML into a sandboxed frame; this task changes the container-scoped sanitizer path used by Print pages and PDF export. Scope is @scope matching and its containment check. Other CSS features, renderer sandbox startup, and reader architecture are out of scope.
+
+2026-10-19 implementation and focused verification:
+- Prefix only outer @scope roots; leave their style rules and nested scope roots relative. The browser-token output check tracks confinement through grouping blocks and releases it when the scope closes. Existing rules outside @scope keep their prefixes. Nested-scope behavior follows CSS Cascade 6 sections 2.5.3-2.5.5 (https://www.w3.org/TR/css-cascade-6/#scoped-rules).
+- Extend the existing sanitizer cases for root lists, nested/grouped scopes, and string/URL parser mismatches that expose unscoped rules or a scope with an unconfined root.
+- Print-page browser probes verify matching inside .card, grouped and nested rules, unchanged elements outside .card, :scope and & adjacent/general sibling selectors, two actual container siblings, and trusted header/attachments. A working inner canary and preserved selector text prevent vacuous containment results.
+- Chromium 145.0.7632.6: sanitizer plus Print isolation, 148 passed. WebKit 26.0: all 14 Print isolation cases passed. Both screen and print media are checked. Ruff and diff whitespace checks pass.
+- Break-to-fail: original worker fails the new .card matching test (7px instead of 37px). Keeping confinement active after a scope closes fails the new string/URL escape cases. The corrected worker was restored and all 148 focused cases passed again.
+- Full diff reviewed against 18d014a; no outstanding findings. Full pre-push gate remains pending.
+
+2026-10-19 final gate: OWNMAIL_REQUIRE_BROWSER_TESTS=1 pre-commit run -a --hook-stage pre-push passed, including the full test suite and coverage gate. All acceptance criteria are verified; implementation commit and task closure follow.
+<!-- SECTION:NOTES:END -->
