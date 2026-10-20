@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-15 03:27'
-updated_date: '2026-10-20 04:58'
+updated_date: '2026-10-20 04:59'
 labels: []
 dependencies: []
 references:
@@ -63,7 +63,7 @@ Independent review of the full task diff, including the read-only constructor co
 
 Final code verification: full required-browser suite passed all 5119 tests with 96.70% branch-inclusive coverage. Pre-commit reported files modified because the task notes were updated during that run; no source or test change occurred. Commit this tested implementation checkpoint, then repeat the exact pre-push gate with all tracked files stable before closure.
 
-Final closure: implementation committed as 40440cf. With tracked files stable, OWNMAIL_REQUIRE_BROWSER_TESTS=1 pre-commit run -a --hook-stage pre-push passed every hook, including the full suite and 96.70% branch-inclusive coverage. All acceptance criteria are verified, independent review has no outstanding findings, and no runtime, schema, provider or real archive changes were required. Closure changes only this task record.
+Final closure: implementation committed as 40440cf. With tracked files stable, OWNMAIL_REQUIRE_BROWSER_TESTS=1 pre-commit run -a --hook-stage pre-push passed every hook, including the full suite and 96.70% branch-inclusive coverage. All acceptance criteria are verified, independent review has no outstanding findings, and no dependency, schema, provider or real archive changes were required. Closure changes only this task record.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
