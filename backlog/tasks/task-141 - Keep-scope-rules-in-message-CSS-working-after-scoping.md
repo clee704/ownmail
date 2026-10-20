@@ -1,7 +1,7 @@
 ---
 id: TASK-141
 title: Keep @scope rules in message CSS working after scoping
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-10-10 08:12'
@@ -58,4 +58,12 @@ Review base: 18d014a. Direct commit to master under the maintainer workflow.
 - Full diff reviewed against 18d014a; no outstanding findings. Full pre-push gate remains pending.
 
 2026-10-19 final gate: OWNMAIL_REQUIRE_BROWSER_TESTS=1 pre-commit run -a --hook-stage pre-push passed, including the full test suite and coverage gate. All acceptance criteria are verified; implementation commit and task closure follow.
+
+Implementation committed as a486eee on master. Task closure follows after the verified implementation commit; no outstanding findings or acceptance criteria remain.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Restore native @scope matching on Print pages and PDF exports by confining outer roots and preserving relative inner selectors. Browser-token validation retains containment, including parser-mismatch rejection. Verified with 148 focused tests, all 14 Print-isolation probes in Chromium and WebKit, break-to-fail checks, and the full pre-push gate with browser tests required. Implementation: a486eee.
+<!-- SECTION:FINAL_SUMMARY:END -->
