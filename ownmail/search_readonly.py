@@ -60,6 +60,7 @@ class _SearchCache(ActiveCache):
             self._check_directory(self.cache_dir / name)
         self._check_database_paths()
         self._db = _SearchDatabase(self.cache_dir / "ownmail.db", accounts, stack)
+        self._verified_payloads = {}
         self._entries = super().list_entries()
         sources = {(entry["source_name"], entry["account"]) for entry in self._entries}
         self._statuses = {key: super(_SearchCache, self).source_status(*key) for key in sources}

@@ -229,14 +229,23 @@ def test_search_account_filter_applies_to_both_indexes(mixed):
     assert archive.search("", account="other@example.test") == []
 
 
-def test_invalid_or_corrupt_cache_reads_do_not_hide_owned_results(mixed):
+@pytest.mark.parametrize("target", ["live", "dual"])
+@pytest.mark.parametrize("damage", ["corrupt", "missing"])
+def test_invalid_or_corrupt_cache_reads_do_not_hide_owned_results(mixed, target, damage):
     archive, ids = mixed
     cache = archive.active_cache()
-    path = cache.path(ids["live"])
-    path.write_bytes(b"corrupted disposable content")
-    assert archive.get_readable_email(ids["live"]) is None
+    entry = next(entry for entry in cache.list_entries() if entry["provider_id"] == target)
+    path = cache.path(entry["id"])
+    if damage == "corrupt":
+        path.write_bytes(b"corrupted disposable content")
+    else:
+        path.unlink()
+    assert archive.get_readable_email(entry["id"]) is None
     assert archive.get_readable_email("active-malformed") is None
-    assert {row[0] for row in archive.search("")} == {ids["owned"], ids["dual"]}
+    expected = {ids["owned"], ids["dual"]} | ({ids["live"]} if target == "dual" else set())
+    assert {row[0] for row in archive.search("")} == expected
+    assert archive.active_count() == 1
+    assert archive.consolidated_count() == len(expected)
 
 
 def test_corrupt_freshness_metadata_is_reported_as_unknown(mixed):

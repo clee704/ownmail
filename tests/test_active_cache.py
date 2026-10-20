@@ -360,3 +360,62 @@ def test_scope_update_rejects_invalid_names_without_changing_entry(cache, scope)
     with pytest.raises(ValueError, match="tracking scope"):
         cache.update_scope(old["id"], scope)
     assert cache.get(old["id"]) == old
+
+
+@pytest.mark.parametrize("damage", ["same_size", "replacement", "missing", "symlink", "hardlink"])
+def test_reused_payload_validation_detects_file_changes(cache, tmp_path, damage):
+    entry = put(cache)
+    path = cache.path(entry["id"])
+    before = path.stat()
+    changed = RAW.replace(b"First", b"Other")
+    if damage == "same_size":
+        path.write_bytes(changed)
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    elif damage == "replacement":
+        replacement = tmp_path / "replacement.eml"
+        replacement.write_bytes(changed)
+        os.utime(replacement, ns=(before.st_atime_ns, before.st_mtime_ns))
+        replacement.replace(path)
+    else:
+        path.unlink()
+        if damage != "missing":
+            other = tmp_path / "other.eml"
+            other.write_bytes(RAW)
+            path.symlink_to(other) if damage == "symlink" else os.link(other, path)
+    with pytest.raises((OSError, ValueError)):
+        cache.path(entry["id"])
+    assert cache.list_entries() == []
+
+
+def test_reused_validation_keeps_metadata_current_and_read_hashes_fresh(cache, monkeypatch):
+    entry = put(cache)
+    path = cache.path(entry["id"])
+    updated = {**entry, "checked_at": SECOND, "state": "unknown", "labels": ["Current"]}
+    metadata_path(cache, entry).write_text(json.dumps(updated))
+    assert cache.list_entries() == [updated]
+    original_read = cache._read_file
+
+    def corrupt_read(target):
+        return b"changed while reading" if target == path else original_read(target)
+
+    monkeypatch.setattr(cache, "_read_file", corrupt_read)
+    with pytest.raises(ValueError, match="hash does not match"):
+        cache.read(entry["id"])
+
+
+def test_payload_changed_during_verification_is_not_reused(cache, monkeypatch):
+    entry = put(cache)
+    path = cache.path(entry["id"])
+    original_read = cache._read_file
+
+    def change_after_read(target):
+        raw = original_read(target)
+        if target == path:
+            path.write_bytes(RAW.replace(b"First", b"Other"))
+        return raw
+
+    monkeypatch.setattr(cache, "_read_file", change_after_read)
+    assert cache.read(entry["id"]) == RAW
+    monkeypatch.setattr(cache, "_read_file", original_read)
+    with pytest.raises(ValueError, match="hash does not match"):
+        cache.path(entry["id"])

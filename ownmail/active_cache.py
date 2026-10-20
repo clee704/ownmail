@@ -66,6 +66,7 @@ class ActiveCache:
             path.mkdir(exist_ok=True, mode=0o700)
             self._check_directory(path)
         self._db = None
+        self._verified_payloads = {}
         self.rebuild_index()
 
     def _check_root(self) -> None:
@@ -188,7 +189,7 @@ class ActiveCache:
                     or (account is not None and entry["account"] != account)
                 ):
                     continue
-                self.read(entry["id"])
+                self.path(entry["id"])
                 entries.append(entry)
             except (OSError, ValueError):
                 _LOG.warning("Skipping unreadable Active cache entry: %s", path.name)
@@ -200,19 +201,33 @@ class ActiveCache:
         if entry is None:
             raise FileNotFoundError("Active message is no longer cached")
         path = self._payload_path(entry)
-        if hashlib.sha256(self._read_file(path)).hexdigest() != entry["content_hash"]:
-            raise ValueError("Active message content hash does not match")
+        signature = self._payload_signature(path)
+        if self._verified_payloads.get(active_id) != (entry["filename"], signature):
+            self._read_payload(entry, path)
         return path
+
+    @staticmethod
+    def _payload_signature(path: Path) -> tuple:
+        info = path.stat(follow_symlinks=False)
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+    def _read_payload(self, entry: dict, path: Path) -> bytes:
+        before = self._payload_signature(path)
+        raw = self._read_file(path)
+        if hashlib.sha256(raw).hexdigest() != entry["content_hash"]:
+            raise ValueError("Active message content hash does not match")
+        # Reuse verification only while the same file remains unchanged, including
+        # same-size edits that restore mtime. Metadata is still read on every call.
+        if self._payload_signature(path) == before:
+            self._verified_payloads[entry["id"]] = (entry["filename"], before)
+        return raw
 
     def read(self, active_id: str) -> bytes:
         """Read verified cached message contents."""
         entry = self.get(active_id)
         if entry is None:
             raise FileNotFoundError("Active message is no longer cached")
-        raw = self._read_file(self._payload_path(entry))
-        if hashlib.sha256(raw).hexdigest() != entry["content_hash"]:
-            raise ValueError("Active message content hash does not match")
-        return raw
+        return self._read_payload(entry, self._payload_path(entry))
 
     def put(
         self,
@@ -276,6 +291,7 @@ class ActiveCache:
             self._atomic_write(payload, raw)
         self._atomic_write(self._entry_path(active_id), json.dumps(entry, ensure_ascii=True).encode())
         self._index_entry(entry, raw)
+        self.path(active_id)
         if old and old["filename"] != entry["filename"]:
             self._unlink(self._payload_path(old))
         return entry
@@ -304,6 +320,7 @@ class ActiveCache:
         with closing(sqlite3.connect(self.db.db_path)) as conn, conn:
             self._delete_index_entry(conn, active_id)
         self._unlink(payload)
+        self._verified_payloads.pop(active_id, None)
         return True
 
     def set_source_status(

@@ -257,3 +257,37 @@ assert(await summary.evaluate(e => document.activeElement === e));
 """,
         rendered_page=app.test_client().get("/email/active-message").data.decode(),
     )
+
+
+@pytest.mark.parametrize("unrelated_count", [0, 8])
+@pytest.mark.parametrize("view", ["search", "reader"])
+def test_page_payload_reads_do_not_grow_with_unrelated_cached_bodies(tmp_path, monkeypatch, unrelated_count, view):
+    archive = EmailArchive(tmp_path / "archive")
+    server = MailServer()
+    target = message("target", raw=message("target").raw + b"x" * (64 * 1024))
+    entry = cache_message(archive, server, target)
+    for index in range(unrelated_count):
+        other = message(f"unrelated{index}")
+        cache_message(archive, server, replace(other, raw=other.raw + b"y" * (64 * 1024)))
+    cache = archive.active_cache()
+    client = create_test_app(archive, page_size=1).test_client()
+    original_read = cache._read_file
+    payload_reads = []
+
+    def record_read(path):
+        raw = original_read(path)
+        if path.suffix == ".eml":
+            payload_reads.append((path, len(raw)))
+        return raw
+
+    monkeypatch.setattr(cache, "_read_file", record_read)
+    route = "/search?q=subject%3Atarget" if view == "search" else f"/email/{entry['id']}"
+    response = client.get(route)
+    assert response.status_code == 200
+    assert b"Message target" in response.data
+    if view == "search":
+        tree = html.fromstring(response.data)
+        assert len(tree.xpath('//ul[@id="ownmail-email-list"]/li')) == 1
+    assert len(payload_reads) <= 2
+    assert sum(size for _, size in payload_reads) <= 2 * len(target.raw)
+    assert all(path == cache.cache_dir / entry["filename"] for path, _ in payload_reads)
