@@ -29,9 +29,9 @@ MESSAGE_HELPERS = r"""
 
 
 def served_files(app, page):
-    """Fetch the local scripts and stylesheets a reader page and its message frame load."""
+    """Fetch the local scripts, stylesheets and manifest a reader page and its message frame load."""
     tree = html.fromstring(page)
-    paths = tree.xpath('//script[@src]/@src | //link[@rel="stylesheet"]/@href')
+    paths = tree.xpath('//script[@src]/@src | //link[@rel="stylesheet" or @rel="manifest"]/@href')
     for srcdoc in tree.xpath("//iframe/@srcdoc"):
         paths += html.fromstring(srcdoc).xpath('//link[@rel="stylesheet"]/@href')
     client = app.test_client()

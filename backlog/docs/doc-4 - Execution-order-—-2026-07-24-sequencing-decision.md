@@ -271,6 +271,7 @@ keep their Phase 4 milestone for history, but do not jump ahead of the table.
 | 26e | TASK-126 | medium | Follow-up to TASK-40: correctly declared Cyrillic bodies fail readability validation |
 | 26f | TASK-147 | low | Found in TASK-142: Ctrl-C and interrupt tests fail under heavy load and pass alone, so a gate run can fail spuriously |
 | 26g | TASK-150 | low | Found in TASK-147: Ctrl-C after renderer launch but before its protected wait can leave the detached renderer running |
+| 26h | TASK-144 | low | Four label-editor browser tests fail under WebKit; repair the tests before starting conversation grouping |
 | 27 | TASK-8 | low | Only a download-header test remains |
 | 28 | TASK-50 | low | iPhone Home Screen polish |
 | 29 | TASK-19 | low | Decision on excluding recurring labels at capture |
