@@ -535,6 +535,33 @@ def test_missing_browser_fails_without_installation_or_output(archive, store, tm
     test_export.assert_no_temporary_exports(output)
 
 
+def renderer_caller(tmp_path, renderer, child_pid, *, timeout, grace=pdf_export._TERM_GRACE_SECONDS):
+    """Acknowledge the protected wait after the synthetic process tree starts."""
+    caller = tmp_path / "caller.py"
+    caller.write_text(
+        "import sys,time\nfrom pathlib import Path\nfrom ownmail import pdf_export\n"
+        f"pdf_export._RENDERER=Path(__file__).with_name({renderer!r})\n"
+        f"pdf_export._TERM_GRACE_SECONDS={grace!r}\n"
+        "original_wait=pdf_export.subprocess.Popen.wait\n"
+        "ready=Path(__file__).with_name('waiting')\n"
+        "def wait(process, *args, **kwargs):\n"
+        "    if not ready.exists():\n"
+        "        deadline=time.monotonic()+30\n"
+        f"        marker=Path(__file__).with_name({child_pid!r})\n"
+        "        while not marker.exists() or not marker.read_text():\n"
+        "            if process.poll() is not None or time.monotonic() >= deadline:\n"
+        "                raise RuntimeError('Synthetic renderer did not start')\n"
+        "            time.sleep(0.02)\n"
+        "        ready.touch()\n"
+        "    return original_wait(process, *args, **kwargs)\n"
+        "pdf_export.subprocess.Popen.wait=wait\n"
+        f"try:\n    pdf_export._run_renderer(sys.executable, timeout={timeout})\n"
+        "except KeyboardInterrupt:\n    sys.exit(42)\n"
+        "except OSError as error:\n    print(error)\n"
+    )
+    return caller
+
+
 @pytest.mark.skipif(os.name != "posix", reason="Synthetic POSIX Ctrl-C process regression")
 def test_actual_ctrl_c_stops_renderer_child(tmp_path):
     import signal
@@ -545,32 +572,34 @@ def test_actual_ctrl_c_stops_renderer_child(tmp_path):
     child.write_text(
         "import os,time\nfrom pathlib import Path\nPath(__file__).with_name('child.pid').write_text(str(os.getpid()))\ntime.sleep(30)\n"
     )
-    caller = tmp_path / "caller.py"
-    caller.write_text(
-        "import sys\nfrom pathlib import Path\nfrom ownmail import pdf_export\n"
-        "pdf_export._RENDERER=Path(__file__).with_name('child.py')\n"
-        "try:\n    pdf_export._run_renderer(sys.executable, timeout=20)\n"
-        "except KeyboardInterrupt:\n    sys.exit(42)\n"
-    )
+    caller = renderer_caller(tmp_path, "child.py", "child.pid", timeout=20)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(Path(__file__).parents[1])
     with subprocess.Popen(
         [sys.executable, str(caller)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     ) as process:
         try:
-            deadline = time.monotonic() + 5
-            while not (tmp_path / "child.pid").exists() and process.poll() is None and time.monotonic() < deadline:
+            # Launch/import time is separate from the cancellation cleanup bound.
+            # The caller acknowledges its protected wait after its child starts.
+            deadline = time.monotonic() + 30
+            while not (tmp_path / "waiting").exists() and process.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.02)
-            assert (tmp_path / "child.pid").exists()
+            assert (tmp_path / "waiting").exists()
             process.send_signal(signal.SIGINT)
             stdout, stderr = process.communicate(timeout=8)
             assert process.returncode == 42, (stdout, stderr)
+            with pytest.raises(ProcessLookupError):
+                os.kill(int((tmp_path / "child.pid").read_text()), 0)
         finally:
+            marker = tmp_path / "child.pid"
+            if marker.exists() and marker.read_text():
+                try:
+                    os.killpg(int(marker.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             if process.poll() is None:
                 process.kill()
                 process.wait(timeout=5)
-    with pytest.raises(ProcessLookupError):
-        os.kill(int((tmp_path / "child.pid").read_text()), 0)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Owned POSIX process-group regression")
@@ -608,23 +637,17 @@ def test_stubborn_renderer_descendant_is_stopped_with_bounded_cleanup(
         f"subprocess.Popen([sys.executable,str(Path(__file__).with_name('stubborn.py'))]{redirect})\n"
         "time.sleep(40)\n"
     )
-    caller = tmp_path / "caller.py"
-    caller.write_text(
-        "import sys\nfrom pathlib import Path\nfrom ownmail import pdf_export\n"
-        "pdf_export._RENDERER=Path(__file__).with_name('renderer.py')\n"
-        "pdf_export._TERM_GRACE_SECONDS=(0.3, 0.1)\n"
-        f"try:\n    pdf_export._run_renderer(sys.executable, timeout={20 if interrupt else 1})\n"
-        "except KeyboardInterrupt:\n    sys.exit(42)\n"
-        "except OSError as error:\n    print(error)\n"
+    caller = renderer_caller(
+        tmp_path, "renderer.py", "descendant.pid", timeout=20 if interrupt else 1, grace=(0.3, 0.1)
     )
     env = dict(os.environ, PYTHONPATH=str(Path(__file__).parents[1]), PYTHONDONTWRITEBYTECODE="1")
     process = subprocess.Popen([sys.executable, str(caller)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
+        deadline = time.monotonic() + 30
+        while not (tmp_path / "waiting").exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert (tmp_path / "waiting").exists()
         if interrupt:
-            deadline = time.monotonic() + 5
-            while not (tmp_path / "descendant.pid").exists() and process.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.02)
-            assert (tmp_path / "descendant.pid").exists()
             process.send_signal(signal.SIGINT)
         stdout, stderr = process.communicate(timeout=6)
         assert process.returncode == (42 if interrupt else 0), (stdout, stderr)

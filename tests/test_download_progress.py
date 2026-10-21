@@ -2,10 +2,9 @@
 
 import errno
 import json
-import signal
 import sqlite3
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from keyring.errors import KeyringError, KeyringLocked
@@ -388,7 +387,7 @@ def test_interrupt_flushes_current_counts_without_message_errors(cli_download, s
 
         def download(message_id):
             if message_id == "interrupt":
-                signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
+                raise KeyboardInterrupt
             return raw
 
         mock_provider.download_message.side_effect = download
@@ -399,6 +398,8 @@ def test_interrupt_flushes_current_counts_without_message_errors(cli_download, s
         with pytest.raises(SystemExit) as exc:
             main()
     assert exc.value.code == 1
+    expected_reads = [call("saved"), call("interrupt")] if stage == "downloading" else []
+    assert mock_provider.download_message.call_args_list == expected_reads, snapshot(path)
     provider_cls.assert_called_once()
     mock_provider.authenticate.assert_called_once()
     mock_provider.close.assert_called_once()

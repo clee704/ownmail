@@ -1,9 +1,11 @@
 ---
 id: TASK-147
 title: Make Ctrl-C and interrupt tests pass under heavy load
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - codex
 created_date: '2026-10-17 05:31'
+updated_date: '2026-10-21 04:34'
 labels:
   - testing
 dependencies: []
@@ -34,5 +36,30 @@ The PDF tests wait on fixed wall-clock timeouts. The second ImapProvider call su
 <!-- AC:BEGIN -->
 - [ ] #1 The cause of each listed failure under load is identified and recorded in this task
 - [ ] #2 The listed tests pass in repeated full parallel runs while a second browser suite runs concurrently, and still fail when the Ctrl-C or interrupt handling they cover is broken
-- [ ] #3 Any product deadline change is decided by the maintainer before it lands
+- [x] #3 Any product deadline change is decided by the maintainer before it lands
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Review base: aee1c8efc36ea92c24288fc7c71bc43081f644ea.
+1. Trace and reproduce each listed signal-test failure; distinguish harness races from product defects.
+2. Make bounded test-harness fixes, preserving signal and cleanup assertions. Product deadline changes require a separate maintainer decision.
+3. Verify regression tests with deliberate handler breakage, then run repeated full parallel suites with a concurrent browser suite.
+4. Review the full task diff, run the required pre-push gate, record evidence, and commit on master.
+Scope excludes product deadline changes, unrelated signal behavior, and WebKit label-editor repairs (TASK-144).
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Started from a clean master checkout. No other task is In Progress. Selected as the first unfinished eligible task in doc-4.
+
+Verified harness behavior:
+- PDF tests previously waited only for a PID file written by the renderer or descendant. That does not prove the Python caller has returned from Popen or entered its protected wait. A controlled SIGSTOP after launch and before that wait reproduces the original 8-second communicate TimeoutExpired. The revised caller acknowledges its protected wait after the synthetic child is ready; all three Ctrl-C cases pass with the caller held for 9 seconds before that acknowledgement.
+- Timeout cases previously charged interpreter/descendant startup to their 6-second watchdog and could expire the 1-second renderer timeout before the synthetic descendant existed. All three now pass with an injected 2-second renderer startup delay. Readiness allows 30 seconds; the post-readiness 8-second/6-second watchdogs and renderer termination grace periods are unchanged.
+- The download test called the inherited SIGINT handler synchronously. Active sync installs no handler, so the test depended on ambient process state. It now raises KeyboardInterrupt at the provider read boundary, as the checking case already does, and asserts that the intended reads occurred with final-snapshot diagnostics on failure. A no-op inherited handler no longer affects either case.
+- Mutation checks: removing renderer-group signals fails all six PDF cases on surviving-process assertions; clearing the live-sync interrupted result fails both progress cases because the later source runs. Product files and deadlines are unchanged.
+Evidence limits: the controlled PDF scheduling probe demonstrates the original timeout mechanism, but there is no trace proving it caused the historical run. The historical download failure is still unexplained: 536 relevant tests passed twice with no SIGINT handler leak at test boundaries, and an earlier sync_live exception could also explain a second provider construction. Do not mark AC #1 complete without resolving or explicitly revising that requirement.
+Baseline validation: 5,123 tests passed under full -n auto coverage with a concurrent 129-case Chromium browser suite at -n 4; coverage 96.70%. Three browser runs passed. Two patched full parallel runs under the same browser load are in progress.
+<!-- SECTION:NOTES:END -->
