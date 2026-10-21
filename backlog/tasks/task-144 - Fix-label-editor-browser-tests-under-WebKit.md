@@ -1,11 +1,11 @@
 ---
 id: TASK-144
 title: Fix label editor browser tests under WebKit
-status: In Progress
+status: Done
 assignee:
   - codex
 created_date: '2026-10-11 22:46'
-updated_date: '2026-10-21 06:41'
+updated_date: '2026-10-21 06:44'
 labels:
   - testing
 dependencies: []
@@ -42,4 +42,12 @@ Selected because doc-4 omits TASK-144. Place it with the test-reliability fixes 
 Reproduced all four failures against the review base. Each failure comes from WebKit fetching GET /manifest.webmanifest, which the shared served_files helper omitted from the declared page assets. No page-error failure was observed in this reproduction. Include the manifest through that helper and preserve the existing request and page-error assertions.
 
 Focused validation: OWNMAIL_REQUIRE_BROWSER_TESTS=1 with OWNMAIL_BROWSER_ENGINE=webkit passed all 17 label-editor tests and all 37 email-contrast tests; Chromium passed the same 54 tests. Three temporary in-memory test mutations injected a label request, a visible loading overlay, and an unexpected page error; each failed its existing assertion. Self-review against the recorded base found no further issue; no production behavior or request expectations changed.
+
+Committed the test-fixture correction in 6cef297. The full pre-push gate passed with browser tests required in Chromium: OWNMAIL_REQUIRE_BROWSER_TESTS=1 OWNMAIL_BROWSER_ENGINE=chromium pre-commit run -a --hook-stage pre-push. Final review against a702211 found no unresolved findings. Delivery is local commits on master; no push was requested.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The shared browser fixture now serves the manifest declared by the reader page, so WebKit no longer counts its normal manifest fetch as an unexpected request. All 54 label-editor and contrast tests pass in Chromium and WebKit; injected label-request, overlay, and page-error faults still fail the existing assertions. The full pre-push gate passes.
+<!-- SECTION:FINAL_SUMMARY:END -->
