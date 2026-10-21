@@ -1,13 +1,16 @@
 ---
 id: TASK-6.1
 title: 'Derive thread grouping: Gmail threadId + IMAP Message-ID/References chain'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - codex
 created_date: '2026-07-24 04:59'
-updated_date: '2026-09-26 02:24'
+updated_date: '2026-10-21 06:59'
 labels: []
 milestone: m-3
 dependencies: []
+documentation:
+  - doc-11
 parent_task_id: TASK-6
 priority: low
 ordinal: 31000
@@ -27,3 +30,26 @@ Storage must respect invariant #1. A Gmail threadId is not in the .eml, so it be
 - [ ] #2 IMAP-sourced emails are grouped into threads via References/In-Reply-To chain with a documented subject-based fallback
 - [ ] #3 Thread membership is queryable without recomputing the full reference graph on each request
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Review base: 0c6bd26.
+1. Verify current capture, sidecar, Active cache and rebuild paths; prepare a concrete storage/grouping proposal.
+2. Obtain maintainer sign-off for the schema and sidecar changes before implementing behavior.
+3. After approval, implement durable thread metadata and rebuildable indexed membership, with reference-chain and subject-fallback tests.
+4. Self-review the full diff from the review base, run the required pre-push gate, and deliver through a PR.
+Scope: storage and membership lookup for archived and Active mail. Threaded list rendering, thread-level bulk actions and server cleanup policy are out of scope.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Selected as the first eligible unfinished task in doc-4; the working tree was clean and no task was In Progress. Preparing the schema/sidecar proposal only until explicit sign-off. All acceptance criteria remain unverified.
+
+Proposal: backlog/docs/doc-11 - Thread-grouping-storage-proposal.md. It specifies optional top-level native thread metadata, one derived thread_members table spanning owned and Active IDs, an offline resumable backfill, exact reference links and conservative subject fallback.
+Read-only survey confirmed the premise. Live providers already expose native IDs; capture and Active storage discard them. Existing owned messages are skipped during refresh, so historical native-ID enrichment is explicitly excluded. Existing label-only writers replace whole sidecars; retaining other metadata is required within this implementation.
+Approval remains required before schema, sidecar or behavior edits. Next action: obtain maintainer approval of doc-11, then implement on a branch and open a PR. No acceptance criterion has been met.
+
+Proposal self-review completed against 0c6bd26, including provider ID normalization, sidecar retention, offline backfill, Active transitions and read-only compatibility. The required pre-commit run -a --hook-stage pre-push passed with the unchanged production code. This checkpoint changes documentation only; implementation and all acceptance criteria remain pending approval.
+<!-- SECTION:NOTES:END -->
