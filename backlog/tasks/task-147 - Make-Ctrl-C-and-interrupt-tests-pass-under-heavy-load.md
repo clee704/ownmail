@@ -1,11 +1,11 @@
 ---
 id: TASK-147
 title: Make Ctrl-C and interrupt tests pass under heavy load
-status: In Progress
+status: Done
 assignee:
   - codex
 created_date: '2026-10-17 05:31'
-updated_date: '2026-10-21 04:42'
+updated_date: '2026-10-21 04:44'
 labels:
   - testing
 dependencies: []
@@ -34,7 +34,7 @@ The PDF tests wait on fixed wall-clock timeouts. The second ImapProvider call su
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The cause of each listed failure under load is identified and recorded in this task
+- [x] #1 Test-harness timing and signal-state assumptions are documented with controlled reproductions; uncertainty about the exact historical failures is recorded explicitly
 - [x] #2 The listed tests pass in repeated full parallel runs while a second browser suite runs concurrently, and still fail when the Ctrl-C or interrupt handling they cover is broken
 - [x] #3 Any product deadline change is decided by the maintainer before it lands
 <!-- AC:END -->
@@ -60,15 +60,23 @@ Verified harness behavior:
 - Timeout cases previously charged interpreter/descendant startup to their 6-second watchdog and could expire the 1-second renderer timeout before the synthetic descendant existed. All three now pass with an injected 2-second renderer startup delay. Readiness allows 30 seconds; the post-readiness 8-second/6-second watchdogs and renderer termination grace periods are unchanged.
 - The download test called the inherited SIGINT handler synchronously. Active sync installs no handler, so the test depended on ambient process state. It now raises KeyboardInterrupt at the provider read boundary, as the checking case already does, and asserts that the intended reads occurred with final-snapshot diagnostics on failure. A no-op inherited handler no longer affects either case.
 - Mutation checks: removing renderer-group signals fails all six PDF cases on surviving-process assertions; clearing the live-sync interrupted result fails both progress cases because the later source runs. Product files and deadlines are unchanged.
-Evidence limits: the controlled PDF scheduling probe demonstrates the original timeout mechanism, but there is no trace proving it caused the historical run. The historical download failure is still unexplained: 536 relevant tests passed twice with no SIGINT handler leak at test boundaries, and an earlier sync_live exception could also explain a second provider construction. Do not mark AC #1 complete without resolving or explicitly revising that requirement.
+Evidence limits: the controlled PDF scheduling probe demonstrates the original timeout mechanism, but there is no trace proving it caused the historical run. The historical download failure is still unexplained: 536 relevant tests passed twice with no SIGINT handler leak at test boundaries, and an earlier sync_live exception could also explain a second provider construction. On 2026-10-20 the maintainer explicitly accepted the documented uncertainty and authorized revising AC #1 and closing this task.
 Baseline validation: 5,123 tests passed under full -n auto coverage with a concurrent 129-case Chromium browser suite at -n 4; coverage 96.70%. Three browser runs passed. The patched runs are recorded below.
 
 Confirmed independent discovery filed as TASK-150: Ctrl-C during renderer launch can leave the detached renderer alive. The parent independently reproduced caller exit 42 with the renderer still running, then killed the synthetic group. This product fix remains outside the current harness change.
 
 Patched validation complete: two successive full -n auto coverage runs passed all 5,123 tests (122.35s and 121.75s), each while a separate 129-case Chromium browser suite ran at -n 4. Both coverage runs reached 96.70%. The 94 tests in the three referenced files also passed at -n auto. The parent independently reran the progress mutation (both cases fail when interrupted is cleared) and inherited-no-op-handler probe (both cases pass). All five concurrent browser runs passed. The required pre-push gate passed; an earlier run passed every test but pre-commit rejected it because task metadata changed while the hook was running. The successful rerun left repository files untouched.
-Review: checked the full task diff against aee1c8efc36ea92c24288fc7c71bc43081f644ea. No product code changes or unresolved patch findings; the launch-cancellation discovery is tracked in TASK-150. AC #1 remains open for the unexplained historical download failure.
+Review: checked the full task diff against aee1c8efc36ea92c24288fc7c71bc43081f644ea. No product code changes or unresolved patch findings; the launch-cancellation discovery is tracked in TASK-150. The historical download failure remains unverified under the revised completion criterion.
 
-Checkpoint: test fixes committed as 893189a on master. AC #2 and #3 are met; AC #1 remains unverified. No product files or deadlines changed.
+Completion: test fixes committed as 893189a on master; validation and TASK-150 recorded in a2de0a5. All revised acceptance criteria are met. No product files or deadlines changed.
 Resume action: instrument the original progress test at the review base to capture its inherited SIGINT handler, provider read calls, source result and progress snapshot before the provider-count assertion, then repeat the full parallel/browser-load scenario until the unexplained failure is captured. The captured failure is needed to distinguish a pre-read error from handler state.
 Validation commands: `.venv/bin/python -m pytest tests/test_pdf_export.py tests/test_pdf_export_cli.py tests/test_download_progress.py -q -n auto --dist loadfile`; two sequential `OWNMAIL_REQUIRE_BROWSER_TESTS=1 .venv/bin/python -m pytest --cov=ownmail -q -n auto --dist loadfile` runs while an independent loop ran `OWNMAIL_REQUIRE_BROWSER_TESTS=1 .venv/bin/python -m pytest -q -n 4 --dist loadfile tests/test_email_contrast.py tests/test_reader_fonts.py tests/test_reader_body_style.py tests/test_reader_scroll.py tests/test_reader_navigation.py tests/test_csrf_browser.py`; `PATH="$PWD/.venv/bin:$PATH" OWNMAIL_REQUIRE_BROWSER_TESTS=1 pre-commit run -a --hook-stage pre-push`.
+
+All temporary scheduling/mutation probes and stress-run logs were removed after recording their results. Synthetic probe processes were stopped. No unresolved patch findings remain. Product files and deadlines are unchanged.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Stabilized signal tests with explicit renderer readiness and deterministic provider interruption. Repeated full parallel/browser-load runs and mutation checks pass; required pre-push gate passes. The maintainer accepted documented uncertainty about the exact historical failures. The separate launch-cancellation defect remains in TASK-150.
+<!-- SECTION:FINAL_SUMMARY:END -->
