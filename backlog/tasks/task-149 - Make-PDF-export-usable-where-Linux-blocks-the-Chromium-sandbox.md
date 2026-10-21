@@ -1,11 +1,11 @@
 ---
 id: TASK-149
 title: Make PDF export usable where Linux blocks the Chromium sandbox
-status: In Progress
+status: Done
 assignee:
   - Codex
 created_date: '2026-10-19 05:23'
-updated_date: '2026-10-21 04:06'
+updated_date: '2026-10-21 04:07'
 labels:
   - bug
 dependencies: []
@@ -48,4 +48,12 @@ Validation: 52 PDF/CLI tests passed with browser tests required, including real 
 Self-review against 9478a00 found no actionable issue; scope remains diagnostics and documentation. Full pre-push gate pending.
 
 Full validation passed: pre-commit run -a --hook-stage pre-push with browser tests required and four xdist workers. Lint, formatting, dependency checks, the complete test suite, and the 95% branch-coverage gate passed.
+
+Implementation committed as 404034d. All acceptance criteria verified. The AppArmor profile remains an administrator-operated setup step; loading it on Linux was outside this macOS validation environment.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+PDF export now recognizes sandbox startup failures even when a long crash log follows and reports the cause with setup guidance. README documents a per-executable AppArmor profile. Chromium sandboxing stays enabled. PDF/CLI tests, mutation verification, self-review, and the full pre-push gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->
