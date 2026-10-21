@@ -6,6 +6,7 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
 from email.policy import default as email_policy
 from pathlib import Path
 from tempfile import TemporaryDirectory, TemporaryFile
@@ -28,15 +29,38 @@ def _run_renderer(node: str, *args: str, timeout: float) -> None:
     # A descendant may inherit diagnostics after its leader exits. A regular
     # temporary file never makes completion depend on those descriptors closing.
     with TemporaryFile() as diagnostics:
-        process = subprocess.Popen(
-            [node, str(_RENDERER), *args],
-            stdout=subprocess.DEVNULL,
-            stderr=diagnostics,
-            start_new_session=os.name == "posix",
+        interrupted = False
+
+        def defer_interrupt(signum, frame):
+            nonlocal interrupted
+            interrupted = True
+
+        # Keep ownership until Popen returns, including signals delivered inside
+        # its constructor. Workers cannot install handlers and do not receive SIGINT.
+        defer = (
+            threading.current_thread() is threading.main_thread()
+            and signal.getsignal(signal.SIGINT) == signal.default_int_handler
         )
+        process = None
         try:
+            try:
+                if defer:
+                    signal.signal(signal.SIGINT, defer_interrupt)
+                process = subprocess.Popen(
+                    [node, str(_RENDERER), *args],
+                    stdout=subprocess.DEVNULL,
+                    stderr=diagnostics,
+                    start_new_session=os.name == "posix",
+                )
+            finally:
+                if defer:
+                    signal.signal(signal.SIGINT, signal.default_int_handler)
+            if interrupted:
+                raise KeyboardInterrupt
             process.wait(timeout=timeout)
         except BaseException as error:
+            if process is None:
+                raise
             if os.name == "posix":
 
                 def signal_group(sig):

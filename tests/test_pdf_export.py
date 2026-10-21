@@ -535,11 +535,33 @@ def test_missing_browser_fails_without_installation_or_output(archive, store, tm
     test_export.assert_no_temporary_exports(output)
 
 
-def renderer_caller(tmp_path, renderer, child_pid, *, timeout, grace=pdf_export._TERM_GRACE_SECONDS):
-    """Acknowledge the protected wait after the synthetic process tree starts."""
+@pytest.mark.parametrize("missing_executable", [False, True], ids=["success", "launch-failure"])
+def test_renderer_launch_restores_interrupt_handler(tmp_path, monkeypatch, missing_executable):
+    import signal
+
+    runner = tmp_path / "renderer.py"
+    runner.write_text("")
+    monkeypatch.setattr(pdf_export, "_RENDERER", runner)
+    original_handler = signal.getsignal(signal.SIGINT)
+    try:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        if missing_executable:
+            with pytest.raises(FileNotFoundError):
+                pdf_export._run_renderer(str(tmp_path / "missing-python"), timeout=5)
+        else:
+            pdf_export._run_renderer(sys.executable, timeout=5)
+        assert signal.getsignal(signal.SIGINT) == signal.default_int_handler
+    finally:
+        signal.signal(signal.SIGINT, original_handler)
+
+
+def renderer_caller(
+    tmp_path, renderer, child_pid, *, timeout, grace=pdf_export._TERM_GRACE_SECONDS, stop_on_launch=False
+):
+    """Synchronize cancellation at launch or after the synthetic process tree starts."""
     caller = tmp_path / "caller.py"
     caller.write_text(
-        "import sys,time\nfrom pathlib import Path\nfrom ownmail import pdf_export\n"
+        "import os,signal,sys,time\nfrom pathlib import Path\nfrom ownmail import pdf_export\n"
         f"pdf_export._RENDERER=Path(__file__).with_name({renderer!r})\n"
         f"pdf_export._TERM_GRACE_SECONDS={grace!r}\n"
         "original_wait=pdf_export.subprocess.Popen.wait\n"
@@ -555,6 +577,13 @@ def renderer_caller(tmp_path, renderer, child_pid, *, timeout, grace=pdf_export.
         "        ready.touch()\n"
         "    return original_wait(process, *args, **kwargs)\n"
         "pdf_export.subprocess.Popen.wait=wait\n"
+        f"if {stop_on_launch!r}:\n"
+        "    original_popen=pdf_export.subprocess.Popen\n"
+        "    def launch(*args, **kwargs):\n"
+        "        process=original_popen(*args, **kwargs)\n"
+        "        os.kill(os.getpid(), signal.SIGSTOP)\n"
+        "        return process\n"
+        "    pdf_export.subprocess.Popen=launch\n"
         f"try:\n    pdf_export._run_renderer(sys.executable, timeout={timeout})\n"
         "except KeyboardInterrupt:\n    sys.exit(42)\n"
         "except OSError as error:\n    print(error)\n"
@@ -563,7 +592,8 @@ def renderer_caller(tmp_path, renderer, child_pid, *, timeout, grace=pdf_export.
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Synthetic POSIX Ctrl-C process regression")
-def test_actual_ctrl_c_stops_renderer_child(tmp_path):
+@pytest.mark.parametrize("stop_on_launch", [False, True], ids=["protected-wait", "launch"])
+def test_actual_ctrl_c_stops_renderer_child(tmp_path, stop_on_launch):
     import signal
     import subprocess
     import time
@@ -572,7 +602,7 @@ def test_actual_ctrl_c_stops_renderer_child(tmp_path):
     child.write_text(
         "import os,time\nfrom pathlib import Path\nPath(__file__).with_name('child.pid').write_text(str(os.getpid()))\ntime.sleep(30)\n"
     )
-    caller = renderer_caller(tmp_path, "child.py", "child.pid", timeout=20)
+    caller = renderer_caller(tmp_path, "child.py", "child.pid", timeout=20, stop_on_launch=stop_on_launch)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(Path(__file__).parents[1])
     with subprocess.Popen(
@@ -580,12 +610,27 @@ def test_actual_ctrl_c_stops_renderer_child(tmp_path):
     ) as process:
         try:
             # Launch/import time is separate from the cancellation cleanup bound.
-            # The caller acknowledges its protected wait after its child starts.
             deadline = time.monotonic() + 30
-            while not (tmp_path / "waiting").exists() and process.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.02)
-            assert (tmp_path / "waiting").exists()
+            if stop_on_launch:
+                stopped = False
+                while process.poll() is None and time.monotonic() < deadline:
+                    _, status = os.waitpid(process.pid, os.WNOHANG | os.WUNTRACED)
+                    if os.WIFSTOPPED(status):
+                        stopped = True
+                        break
+                    time.sleep(0.02)
+                assert stopped, "Caller did not pause after launching the renderer"
+                marker = tmp_path / "child.pid"
+                while (not marker.exists() or not marker.read_text()) and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                assert marker.exists() and marker.read_text()
+            else:
+                while not (tmp_path / "waiting").exists() and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                assert (tmp_path / "waiting").exists()
             process.send_signal(signal.SIGINT)
+            if stop_on_launch:
+                process.send_signal(signal.SIGCONT)
             stdout, stderr = process.communicate(timeout=8)
             assert process.returncode == 42, (stdout, stderr)
             with pytest.raises(ProcessLookupError):
