@@ -1,11 +1,11 @@
 ---
 id: TASK-150
 title: Stop the PDF renderer when Ctrl-C arrives during launch
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-10-21 04:36'
-updated_date: '2026-10-21 06:14'
+updated_date: '2026-10-21 06:15'
 labels:
   - pdf
 dependencies: []
@@ -55,4 +55,12 @@ Focused validation: 42 tests passed in tests/test_pdf_export.py, including exist
 
 Required validation passed: PATH="$PWD/.venv/bin:$PATH" OWNMAIL_REQUIRE_BROWSER_TESTS=1 pre-commit run -a --hook-stage pre-push. This includes the full coverage suite, browser tests, CLI interruption result, incomplete-export cleanup and existing renderer process-group cleanup checks.
 Reviewed the complete production/test diff against 22d3bc375c7e3ad2abb3038cefa4270dbdd2de77. Launch ownership is protected before the deferred interrupt is re-raised; a launch failure without a process re-raises its original exception; existing handlers are restored. No unresolved review findings. All acceptance criteria are verified; implementation commit and task closure are next.
+
+Completed implementation in 7e40d23 on master after the required pre-push gate passed. All acceptance criteria are verified. The existing interrupted CLI status and incomplete-export cleanup remain covered and passing. Final diff review found no unresolved findings. The deterministic launch regression uses only synthetic processes and cleans them up; no task scratch files or processes remain.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Fixed launch-time Ctrl-C cleanup by deferring the default SIGINT handler until the renderer handle is owned, then reusing existing process-group cleanup. The real-signal regression failed before the fix and passes afterward. Focused PDF tests and the required full pre-push gate pass. Implementation committed as 7e40d23 on master.
+<!-- SECTION:FINAL_SUMMARY:END -->
