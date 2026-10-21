@@ -317,6 +317,46 @@ export. Handled renderer/write errors or Ctrl-C remove the new incomplete export
 so the same command can be rerun. Output can be visible while being published;
 abrupt process termination can leave partial output. Source mail is never changed.
 
+### PDF export on Linux
+
+PDF export runs Chromium with its sandbox enabled and requires a non-root user
+with permission to create unprivileged user namespaces. Ubuntu 23.10 and later
+can restrict these through AppArmor, causing Chromium to report `No usable
+sandbox!`. Ownmail reports the sandbox failure and stops the export.
+
+An administrator can allow user namespaces for the specific Chromium executable
+using an [AppArmor profile as described by Chromium](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
+Find the executable path by running this in ownmail's installed `sanitizer`
+directory (in a source checkout, `ownmail/sanitizer/`):
+
+```bash
+node -p 'require("playwright").chromium.executablePath()'
+```
+
+If `OWNMAIL_BROWSER_EXECUTABLE` is set, use that executable's absolute path
+instead. Create `/etc/apparmor.d/ownmail-chromium` as root with the following
+contents, replacing `/absolute/path/to/chrome` with that path:
+
+```text
+abi <abi/4.0>,
+include <tunables/global>
+
+profile ownmail-chromium "/absolute/path/to/chrome" flags=(unconfined) {
+  userns,
+}
+```
+
+Load the profile, then rerun the export as your normal user:
+
+```bash
+sudo apparmor_parser -r /etc/apparmor.d/ownmail-chromium
+```
+
+Update and reload the profile if a Playwright upgrade changes the executable
+path. Anyone who can replace that executable can use its user-namespace
+permission. This profile leaves the system-wide AppArmor restriction in place;
+ownmail keeps the Chromium sandbox enabled.
+
 ## Commands
 
 | Command | Purpose |

@@ -81,6 +81,21 @@ def _run_renderer(node: str, *args: str, timeout: float) -> None:
                 raise OSError("PDF renderer timed out") from error
             raise
         if process.returncode:
+            # Chromium's fatal line can precede a long register dump.
+            diagnostics.seek(0)
+            sandbox_errors = (
+                b"No usable sandbox!",
+                b"Chromium sandboxing failed!",
+                b"Failed to move to new namespace:",
+                b"Running as root without --no-sandbox is not supported",
+            )
+            if any(marker in line for line in diagnostics for marker in sandbox_errors):
+                raise OSError(
+                    "PDF renderer could not start the Chromium sandbox. "
+                    "Run as a non-root user and allow Chromium to create unprivileged user namespaces. "
+                    "On Ubuntu, configure an AppArmor profile for the Chromium executable; "
+                    "see README: PDF export on Linux. The sandbox remains enabled."
+                )
             diagnostics.seek(0, os.SEEK_END)
             diagnostics.seek(max(0, diagnostics.tell() - 4000))
             reason = (

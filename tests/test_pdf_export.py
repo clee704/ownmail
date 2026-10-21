@@ -276,6 +276,33 @@ def test_renderer_nonzero_error_is_clear(tmp_path, monkeypatch):
         pdf_export._run_renderer(sys.executable, "--check", timeout=5)
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "[pid=123][err] FATAL:zygote_host_impl_linux.cc: No usable sandbox!",
+        "browserType.launch: Chromium sandboxing failed!",
+        "Failed to move to new namespace: PID namespaces supported, Network namespace supported, but failed: errno = Operation not permitted",
+        "Running as root without --no-sandbox is not supported. See https://crbug.com/638180.",
+    ],
+)
+def test_renderer_sandbox_failure_survives_long_crash_log(tmp_path, monkeypatch, failure):
+    runner = tmp_path / "fail.py"
+    diagnostics = failure + "\n" + "[err] register dump\n" * 1000
+    runner.write_text(f"import sys\nsys.stderr.write({diagnostics!r})\nsys.exit(1)\n")
+    monkeypatch.setattr(pdf_export, "_RENDERER", runner)
+
+    with pytest.raises(OSError, match="could not start the Chromium sandbox") as error:
+        pdf_export._run_renderer(sys.executable, timeout=5)
+
+    message = str(error.value)
+    assert "non-root user" in message
+    assert "unprivileged user namespaces" in message
+    assert "AppArmor profile for the Chromium executable" in message
+    assert "README: PDF export on Linux" in message
+    assert "sandbox remains enabled" in message
+    assert "register dump" not in message
+
+
 def test_renderer_timeout_terminates_its_process(tmp_path, monkeypatch):
     runner = tmp_path / "hang.py"
     marker = tmp_path / "pid"
