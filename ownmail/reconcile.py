@@ -27,6 +27,7 @@ left where it is.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -164,7 +165,7 @@ def build_plan(db_path: Path, config: dict) -> Plan:
     plan = Plan(filters=source_filters(config))
     by_account = {f.account: f for f in plan.filters}
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         plan.unconfigured = _unconfigured_accounts(conn, by_account)
         if not by_account:
             return plan

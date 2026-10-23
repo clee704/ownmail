@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Iterable
+from contextlib import closing
 from datetime import datetime, timezone
 from email.utils import parseaddr
 from email.utils import parsedate_to_datetime as _parsedate_to_datetime
@@ -92,7 +93,7 @@ class EmailArchive:
         """Count ordinary reading results with verified live/archive matches merged."""
         from ownmail.active_search import archive_links
 
-        with sqlite3.connect(self.db.db_path) as conn:
+        with closing(sqlite3.connect(self.db.db_path)) as conn, conn:
             count = conn.execute("SELECT COUNT(*) FROM emails WHERE trashed_at IS NULL").fetchone()[0]
         return count + self.active_count() - len(archive_links(self))
 

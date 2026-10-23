@@ -3,6 +3,7 @@
 import hashlib
 import re
 import sqlite3
+from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -55,9 +56,11 @@ class ArchiveDatabase:
 
         self._init_db()
 
+    @contextmanager
     def _connect(self):
         """Open a query connection; existing-data views supply a pinned read handle."""
-        return sqlite3.connect(self.db_path)
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            yield conn
 
     @staticmethod
     def make_email_id(account: str, provider_id: str) -> str:
@@ -77,7 +80,7 @@ class ArchiveDatabase:
 
     def _init_db(self) -> None:
         """Initialize the database schema."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             # Migrate from old message_id schema if needed
             self._migrate_message_id_to_email_id(conn)
 
@@ -364,7 +367,7 @@ class ArchiveDatabase:
             State value, or None if not set
         """
         state_key = f"{account}/{key}"
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             result = conn.execute("SELECT value FROM sync_state WHERE key = ?", (state_key,)).fetchone()
             return result[0] if result else None
 
@@ -377,7 +380,7 @@ class ArchiveDatabase:
             value: State value
         """
         state_key = f"{account}/{key}"
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("INSERT OR REPLACE INTO sync_state (key, value) VALUES (?, ?)", (state_key, value))
             conn.commit()
 
@@ -389,7 +392,7 @@ class ArchiveDatabase:
             key: State key
         """
         state_key = f"{account}/{key}"
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("DELETE FROM sync_state WHERE key = ?", (state_key,))
             conn.commit()
 
@@ -402,7 +405,7 @@ class ArchiveDatabase:
             account: Email address
         """
         prefix = f"{account}/"
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("DELETE FROM sync_state WHERE key LIKE ?", (prefix + "%",))
             conn.commit()
 
@@ -412,7 +415,7 @@ class ArchiveDatabase:
         if account:
             return self.get_sync_state(account, "history_id")
         # Legacy: check for non-account-scoped key
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             result = conn.execute("SELECT value FROM sync_state WHERE key = 'history_id'").fetchone()
             return result[0] if result else None
 
@@ -422,7 +425,7 @@ class ArchiveDatabase:
             self.set_sync_state(account, "history_id", history_id)
         else:
             # Legacy: non-account-scoped
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn, conn:
                 conn.execute("INSERT OR REPLACE INTO sync_state (key, value) VALUES ('history_id', ?)", (history_id,))
                 conn.commit()
 
@@ -437,7 +440,7 @@ class ArchiveDatabase:
             provider_id: Provider-specific message ID (e.g., Gmail API hex ID)
             account: Email address for scoped lookup
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             if account:
                 result = conn.execute(
                     "SELECT 1 FROM emails WHERE provider_id = ? AND account = ?", (provider_id, account)
@@ -452,7 +455,7 @@ class ArchiveDatabase:
         Returns:
             Set of provider_id values (for comparison with provider's ID list)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             if account:
                 results = conn.execute("SELECT provider_id FROM emails WHERE account = ?", (account,)).fetchall()
             else:
@@ -471,7 +474,7 @@ class ArchiveDatabase:
         Returns:
             Set of filename values (relative paths, as stored in the emails table)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             if account:
                 results = conn.execute("SELECT filename FROM emails WHERE account = ?", (account,)).fetchall()
             else:
@@ -487,7 +490,7 @@ class ArchiveDatabase:
         Returns:
             Set of content_hash values
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             results = conn.execute(
                 "SELECT content_hash FROM emails WHERE account = ? AND content_hash IS NOT NULL", (account,)
             ).fetchall()
@@ -519,7 +522,7 @@ class ArchiveDatabase:
         Returns:
             List of label strings, or empty list if none found
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             rows = conn.execute(
                 "SELECT el.label FROM email_labels el JOIN emails e ON e.rowid = el.email_rowid WHERE e.email_id = ?",
                 (email_id,),
@@ -528,7 +531,7 @@ class ArchiveDatabase:
 
     def set_labels_for_email(self, email_id: str, labels: list[str]) -> None:
         """Update the label index after the authoritative sidecar is saved."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             row = conn.execute("SELECT rowid, email_date FROM emails WHERE email_id = ?", (email_id,)).fetchone()
             if row is None:
                 raise sqlite3.IntegrityError("Archived message is no longer indexed.")
@@ -551,7 +554,7 @@ class ArchiveDatabase:
         Returns:
             Mapping of label to count, excluding labels with no searchable email
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             counts = dict(
                 conn.execute(
                     """SELECT label, COUNT(*) FROM email_labels
@@ -649,7 +652,7 @@ class ArchiveDatabase:
         Returns:
             Raw label strings that belong only in the system section
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             role_map = self._label_role_map(conn)
             shared = sorted(label for label, (_, non_gmail_only) in role_map.items() if non_gmail_only)
             held_by_gmail = set()
@@ -690,7 +693,7 @@ class ArchiveDatabase:
         Returns:
             Mapping of role slug to count, omitting roles with no searchable email
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             role_map = {
                 label: resolved
                 for label, resolved in self._label_role_map(conn).items()
@@ -738,7 +741,7 @@ class ArchiveDatabase:
         Returns:
             Original filename (for file move), or None if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             row = conn.execute(
                 "SELECT filename FROM emails WHERE email_id = ? AND trashed_at IS NULL", (email_id,)
             ).fetchone()
@@ -764,7 +767,7 @@ class ArchiveDatabase:
             Tuple of (current_filename, original_filename) for file move,
             or None if not found/not trashed
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             row = conn.execute(
                 "SELECT filename, original_filename FROM emails WHERE email_id = ? AND trashed_at IS NOT NULL",
                 (email_id,),
@@ -794,7 +797,7 @@ class ArchiveDatabase:
         """
         if not email_ids:
             return 0
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             placeholders = ",".join("?" for _ in email_ids)
             cursor = conn.execute(
                 f"DELETE FROM emails WHERE email_id IN ({placeholders})",
@@ -810,7 +813,7 @@ class ArchiveDatabase:
             List of (email_id, filename, subject, sender, date_str, snippet,
             trashed_at, original_filename, has_attachments)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             return conn.execute(
                 """SELECT email_id, filename, subject, sender, date_str, snippet,
                           trashed_at, original_filename, has_attachments
@@ -823,7 +826,7 @@ class ArchiveDatabase:
 
     def get_trash_count(self) -> int:
         """Get number of trashed emails."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             return conn.execute("SELECT COUNT(*) FROM emails WHERE trashed_at IS NOT NULL").fetchone()[0]
 
     def get_expired_trash(self, days: int = 30) -> list[tuple]:
@@ -832,7 +835,7 @@ class ArchiveDatabase:
         Returns:
             List of (email_id, filename)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             return conn.execute(
                 """SELECT email_id, filename FROM emails
                    WHERE trashed_at IS NOT NULL
@@ -1002,7 +1005,7 @@ class ArchiveDatabase:
 
     def is_indexed(self, email_id: str) -> bool:
         """Check if a message is in the search index (has metadata populated)."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             result = conn.execute(
                 "SELECT 1 FROM emails WHERE email_id = ? AND subject IS NOT NULL", (email_id,)
             ).fetchone()
@@ -1268,7 +1271,7 @@ class ArchiveDatabase:
         Returns:
             Number of emails
         """
-        with sqlite3.connect(self.db_path, timeout=5.0) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn, conn:
             if account:
                 return conn.execute("SELECT COUNT(*) FROM emails WHERE account = ?", (account,)).fetchone()[0]
             else:
@@ -1284,7 +1287,7 @@ class ArchiveDatabase:
             Dictionary with total_emails, indexed_emails, oldest_backup,
             newest_backup, trash_count
         """
-        with sqlite3.connect(self.db_path, timeout=5.0) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn, conn:
             if account:
                 row = conn.execute(
                     """SELECT COUNT(*), MIN(downloaded_at), MAX(downloaded_at)
@@ -1319,7 +1322,7 @@ class ArchiveDatabase:
         For contentless FTS5, we drop and recreate the table.
         We also clear the indexed metadata in the emails table.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             # Drop and recreate FTS table (can't DELETE from contentless FTS)
             conn.execute("DROP TABLE IF EXISTS emails_fts")
             conn.execute("""
@@ -1345,7 +1348,7 @@ class ArchiveDatabase:
 
     def get_accounts(self) -> list[str]:
         """Get list of unique accounts in the database."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             results = conn.execute("SELECT DISTINCT account FROM emails WHERE account IS NOT NULL").fetchall()
             return [row[0] for row in results]
 
@@ -1355,7 +1358,7 @@ class ArchiveDatabase:
         Returns:
             Dictionary mapping account to email count
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             results = conn.execute(
                 """
                 SELECT COALESCE(account, '(legacy)') as acct, COUNT(*)

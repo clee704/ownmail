@@ -14,6 +14,7 @@ import signal
 import sqlite3
 import sys
 import time
+from contextlib import closing
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -78,7 +79,7 @@ def cmd_rebuild(
             pass
 
         if rel_path:
-            with sqlite3.connect(db_path) as conn:
+            with closing(sqlite3.connect(db_path)) as conn, conn:
                 result = conn.execute("SELECT email_id FROM emails WHERE filename = ?", (str(rel_path),)).fetchone()
                 if result:
                     email_id = result[0]
@@ -105,7 +106,7 @@ def cmd_rebuild(
     # Get emails to index
     t0 = time.time()
     print("Finding emails to index...", end="", flush=True)
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         if like_pattern:
             if force:
                 # Force mode: select ALL matching emails regardless of indexed state
@@ -156,7 +157,7 @@ def cmd_rebuild(
     # This is necessary because contentless FTS5 can't delete without original content
     if force and not pattern and not file_path:
         print("Rebuilding FTS index...", end="", flush=True)
-        with sqlite3.connect(db_path) as conn:
+        with closing(sqlite3.connect(db_path)) as conn, conn:
             conn.execute("DROP TABLE IF EXISTS emails_fts")
             conn.execute("""
                 CREATE VIRTUAL TABLE emails_fts USING fts5(
@@ -295,7 +296,7 @@ def _populate_dates_only(
 
     t0 = time.time()
     print("Finding emails...", end="", flush=True)
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         if like_pattern:
             if force:
                 emails = conn.execute(
@@ -440,7 +441,7 @@ def _reconcile_label_sidecars(
 
     t0 = time.time()
     print("Finding emails...", end="", flush=True)
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         if like_pattern:
             emails = conn.execute(
                 "SELECT rowid, email_id, filename, email_date FROM emails WHERE filename LIKE ?", (like_pattern,)
@@ -732,7 +733,7 @@ def _find_trash_labelled(db_path: Path, gmail_accounts: frozenset[str]) -> list[
     Returns:
         List of (label, account, count), largest first
     """
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         rows = conn.execute(
             """
             SELECT el.label, e.account, COUNT(*)
@@ -781,7 +782,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
 
     # ── Phase 1: File integrity ──────────────────────────────────────────
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         emails = conn.execute("SELECT email_id, filename, content_hash FROM emails").fetchall()
 
     total = len(emails)
@@ -878,7 +879,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
             moved_labels = [f"{old} → {new}" for old, new, _ in moved_files]
             _print_file_list(moved_labels, "⟳ Moved/renamed", verbose)
             if fix:
-                with sqlite3.connect(db_path) as conn:
+                with closing(sqlite3.connect(db_path)) as conn, conn:
                     for _old_path, new_path, eid in moved_files:
                         conn.execute(
                             "UPDATE emails SET filename = ? WHERE email_id = ?",
@@ -891,7 +892,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
             issues_found += 1
             _print_file_list(missing_files, "✗ Missing from disk", verbose)
             if fix:
-                with sqlite3.connect(db_path) as conn:
+                with closing(sqlite3.connect(db_path)) as conn, conn:
                     # Collect affected accounts before deleting
                     affected_accounts = set()
                     for eid in missing_email_ids:
@@ -910,7 +911,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
                 print(f"    → Removed {missing_count} stale DB entries")
                 if affected_accounts:
                     # Verify sync state was actually cleared
-                    with sqlite3.connect(db_path) as verify_conn:
+                    with closing(sqlite3.connect(db_path)) as verify_conn, verify_conn:
                         for account in affected_accounts:
                             remaining = verify_conn.execute(
                                 "SELECT COUNT(*) FROM sync_state WHERE key LIKE ?",
@@ -937,7 +938,7 @@ def cmd_verify(archive: EmailArchive, fix: bool = False, verbose: bool = False) 
 
     print("\n2. Checking database...\n")
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         # Missing metadata
         missing_metadata = conn.execute("SELECT COUNT(*) FROM emails WHERE subject IS NULL").fetchone()[0]
 
@@ -1216,7 +1217,7 @@ def _sync_check_source(archive: EmailArchive, source: dict, verbose: bool) -> No
 
     if on_local_not_server:
         # Get filenames for these
-        with sqlite3.connect(archive.db.db_path) as conn:
+        with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
             local_only_files = []
             for msg_id in on_local_not_server:
                 result = conn.execute(
@@ -1292,7 +1293,7 @@ def _update_labels_source(archive: EmailArchive, source: dict, *, include_legacy
     print(f"Source: {source['name']} ({account})")
 
     # Get all downloaded emails for this account that don't have labels yet
-    with sqlite3.connect(archive.db.db_path) as conn:
+    with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
         emails = conn.execute(
             """SELECT e.email_id, e.provider_id, e.filename FROM emails e
                WHERE (e.account = ? OR (? AND e.account IS NULL))
@@ -1332,7 +1333,7 @@ def _update_labels_imap(archive: EmailArchive, account: str, emails: list) -> No
     restored_count = 0
     skip_count = 0
 
-    with sqlite3.connect(archive.db.db_path) as conn:
+    with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
         for email_id, provider_id, filename in emails:
             if ":" not in provider_id:
                 skip_count += 1
@@ -1410,7 +1411,7 @@ def _update_labels_gmail(archive: EmailArchive, account: str, emails: list) -> b
     original_handler = signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        with sqlite3.connect(archive.db.db_path) as conn:
+        with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
             for i, (email_id, provider_id, filename) in enumerate(emails, 1):
                 if interrupted:
                     break
@@ -1589,7 +1590,7 @@ def _relabel_source(
         )
         return
 
-    with sqlite3.connect(archive.db.db_path) as conn:
+    with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
         emails = conn.execute(
             "SELECT rowid, provider_id, filename, email_date FROM emails WHERE account = ?",
             (account,),
@@ -1838,7 +1839,7 @@ def cmd_list_unknown(
 
     db_path = archive.db.db_path
 
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         results = conn.execute(
             """
             SELECT email_id, filename, account

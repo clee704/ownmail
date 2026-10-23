@@ -7,6 +7,7 @@ import re
 import sqlite3
 import tempfile
 import time
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -111,7 +112,7 @@ def _capture(archive, provider, message, lookup) -> bool:
         }
         sidecar.write_metadata(path, metadata)
     _, _, captured_at = capture_provenance(archive, path, message.raw, metadata)
-    with sqlite3.connect(archive.db.db_path) as conn:
+    with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
         outcome = archive._register_and_index(
             path, message.raw, provider_id, provider.account, conn, fallback_date=captured_at
         )

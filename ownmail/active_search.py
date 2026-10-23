@@ -2,6 +2,7 @@
 
 import hashlib
 import sqlite3
+from contextlib import closing
 
 from ownmail import sidecar
 from ownmail.config import active_entry_status, active_scope_signature, get_source_by_name
@@ -18,7 +19,7 @@ class OwnedLookup:
         self._account = account
         self._by_hash = {}
         self._by_provider_id = {}
-        with sqlite3.connect(archive.db.db_path) as conn:
+        with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
             for row in conn.execute(f"SELECT {_OWNED_COLUMNS} FROM emails WHERE account = ?", (account,)):
                 self._remember(row)
 
@@ -28,7 +29,7 @@ class OwnedLookup:
 
     def add(self, email_id: str) -> None:
         """Add a newly captured message from its account-scoped index row."""
-        with sqlite3.connect(self._archive.db.db_path) as conn:
+        with closing(sqlite3.connect(self._archive.db.db_path)) as conn, conn:
             row = conn.execute(
                 f"SELECT {_OWNED_COLUMNS} FROM emails WHERE email_id = ? AND account = ?",
                 (email_id, self._account),

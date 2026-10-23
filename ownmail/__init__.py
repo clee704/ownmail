@@ -23,6 +23,7 @@ def _create_gmail_archive_compat():
     import hashlib
     import sqlite3
     import time
+    from contextlib import closing
     from pathlib import Path
     from typing import Any
 
@@ -91,7 +92,7 @@ def _create_gmail_archive_compat():
                     else:
                         import sqlite3 as sql
 
-                        with sql.connect(self.db.db_path) as c:
+                        with closing(sql.connect(self.db.db_path)) as c, c:
                             c.execute(
                                 "UPDATE emails SET content_hash = ?, indexed_hash = ? WHERE email_id = ?",
                                 (new_hash, new_hash, email_id),
