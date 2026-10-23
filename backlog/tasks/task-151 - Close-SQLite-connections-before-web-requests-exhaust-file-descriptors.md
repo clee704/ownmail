@@ -1,10 +1,10 @@
 ---
 id: TASK-151
 title: Close SQLite connections before web requests exhaust file descriptors
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-23 06:46'
-updated_date: '2026-10-23 06:53'
+updated_date: '2026-10-23 06:55'
 labels: []
 dependencies: []
 priority: high
@@ -23,7 +23,7 @@ Search requests can return HTTP 500 when SQLite connections accumulate until gar
 - [x] #1 Request-scoped SQLite connections close on success and exception without relying on garbage collection.
 - [x] #2 Existing commits, rollbacks, and pinned read-only search snapshots retain their behavior.
 - [x] #3 A synthetic regression with garbage collection disabled or a low descriptor limit detects the current failure and passes with deterministic closure.
-- [ ] #4 The full pre-push gate passes and the fix is committed.
+- [x] #4 The full pre-push gate passes and the fix is committed.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -34,4 +34,6 @@ Diagnosis only; no production files, database schema, archive contents, or servi
 Regression baseline: retained-handle assertions fail after successful and exceptional query contexts, and a synthetic subprocess running repeated real Flask search requests with garbage collection disabled exhausts a 128-descriptor limit in consolidated_count. Tests use temporary archive data only. Fix scope is package-owned connections; existing transaction semantics, explicit batch ownership, and pinned read-only snapshots are preserved.
 
 Implemented explicit closing around every package-owned raw SQLite transaction context and around ArchiveDatabase._connect. The pinned read-only subclass retains nullcontext and ExitStack ownership. All six new regressions pass, including 100 real search requests under a 128-descriptor limit with garbage collection disabled. Existing database and read-only snapshot tests pass. Explicitly managed batch cleanup and standalone script cleanup remain separate follow-up work.
+
+Completed in source commit cd80aaf. The full pre-push gate passed, including lint, dependency checks, and the complete coverage-gated suite. The focused lifetime/database/read-only run passed 163 tests. Follow-up cleanup gaps are tracked in TASK-152; an unrelated stale encoding-audit identifier is tracked in TASK-153.
 <!-- SECTION:NOTES:END -->
