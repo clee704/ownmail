@@ -321,7 +321,7 @@ class TestCreateApp:
             response = client.get("/search?q=test&sort=date_asc")
             assert response.status_code == 200
 
-            # Invalid sort should default to relevance
+            # Invalid sort should default to newest first
             response = client.get("/search?q=test&sort=invalid")
             assert response.status_code == 200
 
@@ -3018,15 +3018,17 @@ class TestSearchRoute:
         """A query with only filters has no relevance signal, so sort by date."""
         app = create_test_app(archive)
         with app.test_client() as client:
-            client.get("/search?q=label:Work")
+            client.get("/search?q=label:Work&sort=relevance")
         assert archive.search.call_args.kwargs["sort"] == "date_desc"
 
-    def test_text_query_keeps_relevance(self, archive):
-        """A query with real search terms should keep relevance ordering."""
+    def test_text_query_defaults_to_newest_first(self, archive):
+        """Text searches select newest first unless a sort is requested."""
         app = create_test_app(archive)
         with app.test_client() as client:
-            client.get("/search?q=invoice")
-        assert archive.search.call_args.kwargs["sort"] == "relevance"
+            response = client.get("/search?q=invoice")
+        assert archive.search.call_args.kwargs["sort"] == "date_desc"
+        tree = html.fromstring(response.data)
+        assert tree.xpath('//*[@id="ownmail-list-menu"]//input[@name="sort"][@checked]/@value') == ["date_desc"]
 
     def test_date_filter_alone_sorts_by_date(self, archive):
         """before:/after: filters alone should not use relevance."""
@@ -3036,16 +3038,24 @@ class TestSearchRoute:
         assert archive.search.call_args.kwargs["sort"] == "date_desc"
 
     def test_invalid_sort_falls_back(self, archive):
-        """An unrecognized sort value should fall back to relevance."""
+        """An unrecognized sort value should fall back to newest first."""
         app = create_test_app(archive)
         with app.test_client() as client:
             client.get("/search?q=invoice&sort=bogus")
-        assert archive.search.call_args.kwargs["sort"] == "relevance"
+        assert archive.search.call_args.kwargs["sort"] == "date_desc"
 
-    @pytest.mark.parametrize("query", ["", "invoice"])
-    @pytest.mark.parametrize("sort", ["date_asc", "date_desc"])
+    @pytest.mark.parametrize(
+        ("query", "sort"),
+        [
+            ("", "date_asc"),
+            ("", "date_desc"),
+            ("invoice", "date_asc"),
+            ("invoice", "date_desc"),
+            ("invoice", "relevance"),
+        ],
+    )
     def test_explicit_sort_is_honoured(self, archive, query, sort):
-        """The requested date order stays selected and survives pagination."""
+        """The requested order stays selected and survives pagination."""
         archive.search.return_value = [self._row(i) for i in range(2)]
         app = create_test_app(archive, page_size=1)
         with app.test_client() as client:

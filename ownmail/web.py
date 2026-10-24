@@ -1345,9 +1345,9 @@ def create_app(
         search_start = time.time()
         query = request.args.get("q", "").strip()
         page = request.args.get("page", 1, type=int)
-        sort = request.args.get("sort", "relevance")
+        sort = request.args.get("sort", "date_desc")
         if sort not in ("relevance", "date_desc", "date_asc"):
-            sort = "relevance"
+            sort = "date_desc"
         per_page = app.config["page_size"]
         stats = get_stats()
 
