@@ -285,19 +285,19 @@ class TestWebDecodeHelpers:
 
     def test_format_size_bytes(self):
         """Test _format_size with bytes."""
-        from ownmail.web import _format_size
+        from ownmail.message_content import _format_size
 
         assert _format_size(500) == "500 B"
 
     def test_format_size_kb(self):
         """Test _format_size with kilobytes."""
-        from ownmail.web import _format_size
+        from ownmail.message_content import _format_size
 
         assert "KB" in _format_size(2048)
 
     def test_format_size_mb(self):
         """Test _format_size with megabytes."""
-        from ownmail.web import _format_size
+        from ownmail.message_content import _format_size
 
         assert "MB" in _format_size(2 * 1024 * 1024)
 
@@ -333,7 +333,7 @@ class TestDecodeHtmlBody:
 
     def test_decode_html_body_utf8(self):
         """Test decoding HTML with UTF-8."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         payload = b"<html><body>Hello World</body></html>"
         result = _decode_html_body(payload, "utf-8")
@@ -341,7 +341,7 @@ class TestDecodeHtmlBody:
 
     def test_decode_html_body_meta_charset(self):
         """Test decoding HTML with charset in meta tag."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         payload = b'<html><head><meta charset="utf-8"></head><body>Test</body></html>'
         result = _decode_html_body(payload, None)
@@ -349,7 +349,7 @@ class TestDecodeHtmlBody:
 
     def test_decode_html_body_no_charset(self):
         """Test decoding HTML without charset."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         payload = b"<html><body>Simple</body></html>"
         result = _decode_html_body(payload, None)
@@ -551,19 +551,19 @@ class TestWebUtilityFunctions:
 
     def test_format_size_bytes(self):
         """Test _format_size with bytes."""
-        from ownmail.web import _format_size
+        from ownmail.message_content import _format_size
 
         assert _format_size(500) == "500 B"
 
     def test_format_size_kb(self):
         """Test _format_size with kilobytes."""
-        from ownmail.web import _format_size
+        from ownmail.message_content import _format_size
 
         assert "KB" in _format_size(2048)
 
     def test_format_size_mb(self):
         """Test _format_size with megabytes."""
-        from ownmail.web import _format_size
+        from ownmail.message_content import _format_size
 
         assert "MB" in _format_size(1024 * 1024 * 2)
 
@@ -1036,7 +1036,7 @@ class TestDecodeHtmlBodyFunction:
 
     def test_decode_html_body_utf8(self):
         """Test _decode_html_body with UTF-8."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = b"<html><body>Hello World</body></html>"
         result = _decode_html_body(html, "utf-8")
@@ -1044,7 +1044,7 @@ class TestDecodeHtmlBodyFunction:
 
     def test_decode_html_body_with_charset(self):
         """Test _decode_html_body with charset."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = b"<html><body>Hello</body></html>"
         result = _decode_html_body(html, "iso-8859-1")
@@ -1052,7 +1052,7 @@ class TestDecodeHtmlBodyFunction:
 
     def test_decode_html_body_no_charset(self):
         """Test _decode_html_body without charset."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = b"<html><body>Hello World</body></html>"
         result = _decode_html_body(html, None)
@@ -1060,7 +1060,7 @@ class TestDecodeHtmlBodyFunction:
 
     def test_decode_html_body_meta_charset(self):
         """Test _decode_html_body detects charset from meta tag."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = b'<html><head><meta charset="utf-8"></head><body>Hello</body></html>'
         result = _decode_html_body(html, None)
@@ -1068,7 +1068,7 @@ class TestDecodeHtmlBodyFunction:
 
     def test_decode_html_body_korean(self):
         """Test _decode_html_body with Korean content."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         korean = "<html><body>안녕하세요</body></html>".encode()
         result = _decode_html_body(korean, "utf-8")
@@ -1076,7 +1076,7 @@ class TestDecodeHtmlBodyFunction:
 
     def test_decode_html_body_fallback(self):
         """Test _decode_html_body fallback for invalid bytes."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         # Invalid bytes
         bad_html = bytes([0xFF, 0xFE, 0x3C, 0x68, 0x74, 0x6D, 0x6C, 0x3E])

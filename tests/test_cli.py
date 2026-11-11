@@ -951,6 +951,7 @@ class TestSetupWeb:
             patch("ownmail.sanitizer.subprocess.Popen", return_value=worker) as popen,
             patch("ownmail.cli.KeychainStorage") as keychain,
             patch("ownmail.cli.cmd_setup") as credentials,
+            patch("ownmail.cli.load_config") as config,
         ):
             self._main("--web")
         run.assert_called_once()
@@ -961,6 +962,7 @@ class TestSetupWeb:
         worker.terminate.assert_called_once()
         keychain.assert_not_called()
         credentials.assert_not_called()
+        config.assert_not_called()
         out = capsys.readouterr().out
         assert "Updating HTML sanitizer dependencies (dompurify) from npm" in out
         assert "✓ HTML sanitizer ready for ownmail serve" in out
@@ -983,6 +985,16 @@ class TestSetupWeb:
         assert "❌ The HTML sanitizer is not ready, so ownmail serve will refuse to start." in out
         assert "could not be installed: npm install failed with ENOTFOUND." in out
         assert "Check the internet connection, then run ownmail setup --web again, or install them with:" in out
+
+    def test_web_only_setup_handles_interruption(self, capsys):
+        with (
+            patch("ownmail.cli.cmd_setup_web", side_effect=KeyboardInterrupt),
+            pytest.raises(SystemExit) as error,
+        ):
+            self._main("--web")
+
+        assert error.value.code == 1
+        assert "Operation interrupted by user." in capsys.readouterr().out
 
     def test_setup_provisions_the_web_interface_after_credentials(self, temp_dir, monkeypatch):
         """Plain setup runs credential setup, then the web step."""

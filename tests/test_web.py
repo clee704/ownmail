@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from lxml import html
 
+from ownmail.message_content import _format_size
 from ownmail.web import (
     IMAGE_BLOCKING_CSP,
     MESSAGE_CSP,
@@ -15,7 +16,6 @@ from ownmail.web import (
     _extract_snippet,
     _format_date_long,
     _format_date_short,
-    _format_size,
     _get_server_timezone_name,
     _resolve_timezone,
     _to_local_datetime,
@@ -399,7 +399,7 @@ class TestDecodeHtmlBody:
     """Tests for _decode_html_body function."""
 
     def test_utf8_preview_padding_preserves_punctuation(self):
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         padding = "\u2007\u034f" * 400
         body = f'<div style="display:none">{padding}</div><p>• Café — update</p>'
@@ -408,7 +408,7 @@ class TestDecodeHtmlBody:
 
     def test_html_with_meta_charset(self):
         """HTML with meta charset should use it."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = b'<html><head><meta charset="utf-8"></head><body>Hello</body></html>'
         result = _decode_html_body(html, None)
@@ -416,7 +416,7 @@ class TestDecodeHtmlBody:
 
     def test_html_with_header_charset(self):
         """HTML with header charset should use it."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = "Hello 안녕".encode()
         result = _decode_html_body(html, "utf-8")
@@ -424,7 +424,7 @@ class TestDecodeHtmlBody:
 
     def test_html_no_charset_fallback(self):
         """HTML without charset should fallback."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = b"<html><body>Hello World</body></html>"
         result = _decode_html_body(html, None)
@@ -432,21 +432,21 @@ class TestDecodeHtmlBody:
 
     def test_wrong_declared_charset_falls_back_to_meta(self):
         """A bad header charset should not prevent meta-tag detection."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = '<html><head><meta charset="euc-kr"></head><body>안녕하세요 반갑습니다</body></html>'
         assert "안녕하세요" in _decode_html_body(html.encode("euc-kr"), "utf-8")
 
     def test_undeclared_cjk_is_detected(self):
         """CJK HTML with no charset anywhere should still decode."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         payload = ("<p>안녕하세요 반갑습니다</p>" * 5).encode("euc-kr")
         assert "안녕하세요" in _decode_html_body(payload, None)
 
     def test_unknown_charset_name_falls_back(self):
         """An unrecognized charset name should not raise."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         assert _decode_html_body(b"<p>Hello</p>", "not-a-real-charset") == "<p>Hello</p>"
 
@@ -3472,28 +3472,28 @@ class TestDecodeHtmlBodyCharsetEdges:
 
     def test_invalid_meta_charset_falls_through(self):
         """A meta charset naming an unknown codec should not stop decoding."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = '<html><head><meta charset="not-a-codec"></head><body>hello</body></html>'
         assert "hello" in _decode_html_body(html.encode(), None)
 
     def test_meta_charset_that_fails_validation_falls_through(self):
         """A meta charset producing garbage should be rejected in favour of detection."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = '<html><head><meta charset="ascii"></head><body>안녕하세요 반갑습니다</body></html>'
         assert "안녕하세요" in _decode_html_body(html.encode(), None)
 
     def test_meta_alias_is_mapped(self):
         """A ks_c_5601-1987 meta charset should be treated as cp949."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         html = '<html><head><meta charset="ks_c_5601-1987"></head><body>안녕하세요 반갑습니다</body></html>'
         assert "안녕하세요" in _decode_html_body(html.encode("cp949"), None)
 
     def test_undecodable_html_degrades(self):
         """HTML no codec handles cleanly should still return a string."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         assert isinstance(_decode_html_body(bytes(range(0x80, 0x100)) * 2, None), str)
 

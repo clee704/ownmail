@@ -1,10 +1,10 @@
 ---
 id: TASK-156
 title: Expose reusable HTML rendering for a standalone EML file
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-11 20:10'
-updated_date: '2026-11-11 21:37'
+updated_date: '2026-11-11 22:14'
 labels: []
 dependencies: []
 priority: medium
@@ -25,7 +25,7 @@ A caller needs to preview an original MIME message stored outside the ownmail ar
 - [x] #3 Synthetic tests verify the standalone entry point, plain and HTML messages, sanitization, and unchanged Print and PDF behavior.
 - [x] #4 Standalone rendering supports a per-document image opt-in and a query-only viewer control. Script, stylesheet, font, and media requests remain blocked.
 - [x] #5 The image control uses OwnMail's image-banner styling in both modes and has a 44-pixel tap target and visible keyboard focus.
-- [ ] #6 Python callers can render sanitized MIME content from bytes and supply their own document and image controls. The API works from the installed package without loading the archive web app.
+- [x] #6 Python callers can render sanitized MIME content from bytes and supply their own document and image controls. The API works from the installed package without loading the archive web app.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -49,7 +49,7 @@ The standalone image control inherited the browser's blue, underlined link style
 
 The CLI currently couples the consumer to the installed executable and the Print page. Extract a content API in the rendering module and share MIME and HTML helpers with the archive reader.
 
-Next action: move the shared content helpers out of the web app and reuse them in the installed rendering API.
+The renderer exposes render_eml_content for local MIME bytes. Print, PDF and the CLI use the same rendering logic. Sanitizer setup can run without reading archive configuration and retains its interruption handling. The full pre-push gate and independent review passed. An isolated wheel install rendered both embedding preview routes in mobile WebKit with the OwnMail executable absent from PATH.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -58,4 +58,6 @@ Next action: move the shared content helpers out of the web app and reuse them i
 Extracted the existing printable message renderer for Print, PDF export, and the new ownmail render command. The command reads an original EML file or stdin and returns sanitized offline HTML without starting an archive.
 
 Standalone EML previews now support a per-document remote image choice with the existing HTML sanitizer and a local toggle link.
+
+Python callers can render the sanitized message content for their own page through render_eml_content.
 <!-- SECTION:FINAL_SUMMARY:END -->

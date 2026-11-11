@@ -11,13 +11,8 @@ import pytest
 from lxml import html
 from werkzeug.serving import make_server
 
-from ownmail.web import (
-    BLOCKED_IMAGE_PLACEHOLDER,
-    IMAGE_BLOCKING_CSP,
-    _has_remote_content,
-    _hide_blocked_images,
-    create_app,
-)
+from ownmail.message_content import BLOCKED_IMAGE_PLACEHOLDER, _has_remote_content, _hide_blocked_images
+from ownmail.web import IMAGE_BLOCKING_CSP, create_app
 from ownmail.web_hosts import resolve_allowed_hosts
 from tests import test_email_contrast, test_reader_spacing
 from tests.conftest import create_test_app, message_content, mock_archive_db

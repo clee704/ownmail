@@ -95,6 +95,33 @@ def test_render_command_reports_sanitizer_failure(tmp_path, monkeypatch, capsysb
     sanitizer.stop.assert_called_once()
 
 
+def test_render_eml_content_returns_plain_message_without_document():
+    message = _message("Paid <USD> 9.99")
+    result = message_render.render_eml_content(message.as_bytes())
+    assert result["subject"] == "Purchase <Example>"
+    assert "Paid <USD> 9.99" in result["body"]
+    assert result["body_html"] is None
+    assert not result["has_remote_content"]
+
+
+@pytest.mark.parametrize("load_images", [False, True])
+def test_render_eml_content_returns_only_scoped_email_html(real_sanitizer, monkeypatch, load_images):
+    message = _message(
+        "<html><head><style>p { color: green }</style></head>"
+        '<body style="color: black"><p>Receipt</p><img src="https://example.invalid/remote.png">'
+        "<script>window.bad=1</script></body></html>",
+        "html",
+    )
+    monkeypatch.setattr(message_render, "HtmlSanitizer", lambda: real_sanitizer)
+    result = message_render.render_eml_content(message.as_bytes(), load_images=load_images)
+    assert result["has_remote_content"]
+    assert "color: black" in result["body_attributes"]["style"]
+    assert "#ownmail-email-content p" in result["body_html"]
+    assert ("https://example.invalid/remote.png" in result["body_html"]) is load_images
+    assert "window.bad" not in result["body_html"]
+    assert "<html" not in result["body_html"]
+
+
 def test_render_rejects_empty_message():
     with pytest.raises(ValueError, match="message is empty"):
         message_render.render_eml(b"\r\n")

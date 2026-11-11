@@ -858,14 +858,14 @@ class TestWebDecodeHtmlBody:
 
     def test_decode_html_body_utf8(self):
         """Test decoding UTF-8 HTML body."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         result = _decode_html_body(b"<html>Hello</html>", "utf-8")
         assert "Hello" in result
 
     def test_decode_html_body_no_charset(self):
         """Test decoding HTML body without charset."""
-        from ownmail.web import _decode_html_body
+        from ownmail.message_content import _decode_html_body
 
         result = _decode_html_body(b"<html>Hello</html>", None)
         assert "Hello" in result

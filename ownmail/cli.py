@@ -1446,6 +1446,12 @@ Examples:
     progress = DownloadProgress(args.progress_file) if args.command == "download" and args.progress_file else None
     operation = "config"
     try:
+        if args.command == "setup" and args.web:
+            operation = None
+            if not cmd_setup_web():
+                sys.exit(1)
+            return
+
         # Load config
         config = load_config(args.config, SCRIPT_DIR)
 
@@ -1478,9 +1484,8 @@ Examples:
 
         operation = None
         if args.command == "setup":
-            if not args.web:
-                keychain = KeychainStorage()
-                cmd_setup(keychain, config, config_path, method=getattr(args, "method", None))
+            keychain = KeychainStorage()
+            cmd_setup(keychain, config, config_path, method=getattr(args, "method", None))
             if not cmd_setup_web():
                 sys.exit(1)
 

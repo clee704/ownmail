@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ownmail.message_content import _decode_html_body, _decode_text_body
 from ownmail.parser import EmailParser, _try_decode
-from ownmail.web import _decode_html_body, _decode_text_body
 from tests import test_email_contrast
 from tests.conftest import create_test_app, mock_archive_db
 

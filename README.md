@@ -335,6 +335,20 @@ when the browser opens the HTML. An embedding viewer can pass
 Block images link. Attachment names appear in the document. Open the original
 EML for attachment files.
 
+Python applications can call `ownmail.message_render.render_eml_content`
+with the original MIME bytes. It returns decoded headers, attachment
+descriptions and sanitized message content for the application's template.
+It reads no archive configuration and needs no running OwnMail service.
+For HTML messages, provision the sanitizer once in the Python environment
+with `python -m ownmail setup --web` and Node.js with npm.
+
+Escape the returned metadata and plain text in HTML. Insert `body_html`
+inside `#ownmail-email-content` with the returned body style to preserve
+the sender's scoped styles. Serve the result with a sandboxed Content
+Security Policy. Permit inline styles and data images, and add HTTP(S)
+image sources only after an explicit opt-in. The application provides
+its own page layout and image control.
+
 ### PDF export on Linux
 
 PDF export runs Chromium with its sandbox enabled and requires a non-root user
