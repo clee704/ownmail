@@ -19,7 +19,25 @@
         .ownmail-pdf-header dt { font-weight: bold; margin-top: 2mm; }
         .ownmail-pdf-header dd { margin: 0; white-space: pre-wrap; }
         .ownmail-pdf-note { font-size: 9pt; color: #555; }
-        .ownmail-image-toggle { display: inline-block; padding: 0.65em 0.8em; border: 1px solid #888; border-radius: 0.35em; }
+        {% if image_toggle_url %}
+        /* Use the archive image banner palette in the self-contained preview. */
+        .ownmail-image-toggle {
+            display: inline-flex;
+            align-items: center;
+            box-sizing: border-box;
+            min-height: 44px;
+            padding: 8px 12px;
+            border: 1px solid #edb928;
+            border-radius: 5px;
+            background: #fff4d3;
+            color: #7a5900;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .ownmail-image-toggle:hover { background: #fff7df; }
+        .ownmail-image-toggle:active { background: #edb928; color: #24252a; }
+        .ownmail-image-toggle:focus-visible { outline: 2px solid #7a5900; outline-offset: 2px; }
+        {% endif %}
         .ownmail-email-content-plain { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
         .ownmail-email-content-padded { padding: 4mm; }
         #ownmail-email-content { box-sizing: border-box; }

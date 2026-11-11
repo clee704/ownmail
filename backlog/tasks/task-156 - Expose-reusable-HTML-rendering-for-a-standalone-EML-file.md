@@ -4,7 +4,7 @@ title: Expose reusable HTML rendering for a standalone EML file
 status: Done
 assignee: []
 created_date: '2026-11-11 20:10'
-updated_date: '2026-11-11 21:21'
+updated_date: '2026-11-11 21:37'
 labels: []
 dependencies: []
 priority: medium
@@ -24,6 +24,7 @@ A caller needs to preview an original MIME message stored outside the ownmail ar
 - [x] #2 The standalone command emits HTML for one EML without archive configuration or server access. It blocks remote resources, preserves safe inline content, and reports sanitizer failure.
 - [x] #3 Synthetic tests verify the standalone entry point, plain and HTML messages, sanitization, and unchanged Print and PDF behavior.
 - [x] #4 Standalone rendering supports a per-document image opt-in and a query-only viewer control. Script, stylesheet, font, and media requests remain blocked.
+- [x] #5 The image control uses OwnMail's image-banner styling in both modes and has a 44-pixel tap target and visible keyboard focus.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -42,6 +43,8 @@ Reviewed the complete diff against the Print and PDF paths. The 60 focused rende
 2026-11-11 follow-up. A receipt viewer needs to offer Load images from the original EML. Add an explicit image-only rendering mode and an optional local toggle link using the shared standalone document template. The original Print and PDF callers retain their existing options.
 
 The standalone preview offers a local Load images or Block images link when the message has remote content. The opt-in widens only img-src. Focused rendering, Print and PDF tests, the pre-push gate, a synthetic WebKit check, and independent review passed.
+
+The standalone image control inherited the browser's blue, underlined link style. Applied the archive image banner palette. A synthetic receipt passed the mobile WebKit checks for both modes and the desktop WebKit keyboard focus check. The full pre-push gate passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
