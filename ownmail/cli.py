@@ -1177,6 +1177,11 @@ Examples:
     )
     _add_global_opts(read_parser)
 
+    render_parser = subparsers.add_parser(
+        "render", help="Render a standalone EML as offline HTML without opening an archive"
+    )
+    render_parser.add_argument("file", type=Path, nargs="?", help="Original EML file (defaults to stdin)")
+
     # export command
     export_parser = subparsers.add_parser(
         "export",
@@ -1411,6 +1416,17 @@ Examples:
         status = cmd_read_json(args)
         if status:
             sys.exit(status)
+        return
+
+    if args.command == "render":
+        from ownmail.message_render import render_eml
+
+        try:
+            raw = args.file.read_bytes() if args.file else sys.stdin.buffer.read()
+            sys.stdout.buffer.write(render_eml(raw).encode("utf-8"))
+        except (OSError, ValueError) as error:
+            print(f"Could not render message: {error}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if args.command == "search":

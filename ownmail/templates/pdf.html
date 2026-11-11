@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    {% if standalone_csp %}
+    <meta http-equiv="Content-Security-Policy" content="{{ standalone_csp }}">
+    <meta name="referrer" content="no-referrer">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% endif %}
     <title>{{ subject }}</title>
     <style>
         /* No size: the Print page uses the print dialog's paper; PDF export sets its own. */
@@ -38,7 +43,7 @@
         </dl>
     </header>
     {% if images_blocked %}
-    <p class="ownmail-pdf-note">Local archived message. Remote images, fonts and other external content are blocked.</p>
+    <p class="ownmail-pdf-note">{% if not standalone_csp %}Local archived message. {% endif %}Remote images, fonts and other external content are blocked.</p>
     {% endif %}
     {% if body_html %}
     <div id="ownmail-pdf-body">
@@ -50,7 +55,7 @@
     {% if attachments %}
     <section class="ownmail-pdf-attachments">
         <h2>Attachments</h2>
-        <p>Listed only; attachment files are not embedded in this PDF.</p>
+        <p>{% if standalone_csp %}See the original message for attachment files.{% else %}Listed only; attachment files are not embedded in this PDF.{% endif %}</p>
         <ul>{% for attachment in attachments %}
             <li>{{ attachment.filename }} ({{ attachment.kind }}, {{ attachment.size }})</li>
         {% endfor %}</ul>

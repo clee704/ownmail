@@ -253,7 +253,7 @@ def test_printable_message_keeps_headers_html_cid_and_separates_attachments(real
     message.get_payload()[-1].add_related(b"synthetic image", maintype="image", subtype="png", cid="<logo>")
     message.add_attachment("ATTACHMENT BODY MUST NOT BECOME MESSAGE TEXT", subtype="plain", filename="첨부.txt")
     template = Flask(pdf_export.__name__).jinja_env.get_template("pdf.html")
-    document = pdf_export._document(message.as_bytes(), real_sanitizer, template)
+    document = pdf_export.render_message_document(message.as_bytes(), real_sanitizer, template)
     dom = lxml_html.fromstring(document)
     assert not dom.xpath("//script")
     assert "영수증 café <script>not executable</script>" in dom.text_content()

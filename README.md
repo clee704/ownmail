@@ -317,6 +317,21 @@ export. Handled renderer/write errors or Ctrl-C remove the new incomplete export
 so the same command can be rerun. Output can be visible while being published;
 abrupt process termination can leave partial output. Source mail is never changed.
 
+### Render one EML as HTML
+
+Render an original message using the same presentation as Print and PDF export.
+
+```bash
+ownmail render receipt.eml > receipt.html
+ownmail render < receipt.eml > receipt.html
+```
+
+The command reads the original bytes and emits UTF-8 HTML. It runs without an
+archive or mail connection, blocks remote resources, and includes supported
+inline images. HTML messages use the sanitizer installed by `ownmail setup
+--web`. Attachment names appear in the document. Open the original EML for
+attachment files.
+
 ### PDF export on Linux
 
 PDF export runs Chromium with its sandbox enabled and requires a non-root user

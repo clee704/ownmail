@@ -1673,14 +1673,13 @@ def create_app(
         Browsers do not paginate a frame, so the reader prints from this page,
         where the message is embedded directly and only it shares the page.
         """
-        # pdf_export imports this module
-        from ownmail.pdf_export import _document
+        from ownmail.message_render import render_message_document
 
         _, filepath = readable_email(email_id)
         sender = EmailParser.parse_file(filepath=filepath).get("sender", "")
         _, images_blocked = remote_content_state(parse_email_address(decode_header(sender))[1])
         try:
-            document = _document(
+            document = render_message_document(
                 filepath.read_bytes(),
                 app.config["sanitizer"],
                 app.jinja_env.get_template("pdf.html"),

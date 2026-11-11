@@ -1,22 +1,18 @@
 """Optional, offline PDF export using already installed Playwright/Chromium."""
 
-import email
-import html
 import os
 import shutil
 import signal
 import subprocess
 import threading
-from email.policy import default as email_policy
 from pathlib import Path
 from tempfile import TemporaryDirectory, TemporaryFile
 
 from flask import Flask
 
 from ownmail.export import _export_rows, _publish_file, _read_source
-from ownmail.parser import EmailParser
+from ownmail.message_render import render_message_document
 from ownmail.sanitizer import HtmlSanitizer
-from ownmail.web import INLINE_SAFE_TYPES, _extract_body_content, _hide_blocked_images, _message_body, decode_header
 
 _RENDERER = Path(__file__).with_name("pdf_renderer.js")
 _RENDER_SECONDS = 60
@@ -128,54 +124,6 @@ def _run_renderer(node: str, *args: str, timeout: float) -> None:
             raise OSError(f"PDF renderer unavailable or failed: {reason}")
 
 
-def _document(
-    raw: bytes, sanitizer: HtmlSanitizer, template, *, images_blocked: bool = True, print_page: bool = False
-) -> str:
-    """Build the printable reader presentation without app routes or controls.
-
-    The reader's Print page passes its remote-content decision and asks for the
-    script that opens the print dialog; PDF export uses the defaults.
-    """
-    headers = EmailParser.parse_file(content=raw)
-    message = email.message_from_bytes(raw, policy=email_policy)
-    content = _message_body(message)
-    body_html = content["body_html"]
-    body_attributes = {}
-    needs_padding = True
-    if body_html:
-        # Export owns its sanitizer and starts it on first use. The Print page
-        # shares the reader's, whose start() would run outside its lock.
-        if not sanitizer.available and not print_page:
-            sanitizer.start(install=False)
-        if not sanitizer.available:
-            raise OSError("HTML sanitizer unavailable; existing dependencies are required")
-        for cid, uri in content["cid_images"].items():
-            if uri.partition(";")[0].removeprefix("data:") in INLINE_SAFE_TYPES:
-                body_html = body_html.replace(f"cid:{cid}", uri)
-        original = body_html
-        body_html, needs_padding, _ = sanitizer.sanitize(body_html)
-        # The sidecar's documented failure result is escaped input, including
-        # a failed request followed by a successful worker restart.
-        if body_html == html.escape(original):
-            raise OSError("HTML sanitization failed; no PDF export was written")
-        if images_blocked:
-            body_html = _hide_blocked_images(body_html)
-        body_html, body_attributes = _extract_body_content(body_html)
-    return template.render(
-        subject=decode_header(headers["subject"]) or "(No subject)",
-        sender=decode_header(headers["sender"]),
-        recipients=headers["recipients"],
-        date=headers["date_str"],
-        body=content["body"],
-        body_html=body_html,
-        body_attributes=body_attributes,
-        needs_padding=needs_padding,
-        attachments=content["attachments"],
-        images_blocked=images_blocked,
-        print_page=print_page,
-    )
-
-
 def export_pdf(archive, output: Path, query: str = "") -> tuple[int, list[tuple[str, str]]]:
     """Export matching archived messages as numbered PDFs in a new directory.
 
@@ -202,7 +150,7 @@ def export_pdf(archive, output: Path, query: str = "") -> tuple[int, list[tuple[
                 except (OSError, RuntimeError) as error:
                     skipped.append((email_id, str(error)))
                     continue
-                document = _document(raw, sanitizer, template)
+                document = render_message_document(raw, sanitizer, template)
                 exported += 1
                 (temporary / f"{exported:06d}.html").write_text(document, encoding="utf-8")
             if exported:
