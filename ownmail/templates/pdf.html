@@ -19,6 +19,7 @@
         .ownmail-pdf-header dt { font-weight: bold; margin-top: 2mm; }
         .ownmail-pdf-header dd { margin: 0; white-space: pre-wrap; }
         .ownmail-pdf-note { font-size: 9pt; color: #555; }
+        .ownmail-image-toggle { display: inline-block; padding: 0.65em 0.8em; border: 1px solid #888; border-radius: 0.35em; }
         .ownmail-email-content-plain { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
         .ownmail-email-content-padded { padding: 4mm; }
         #ownmail-email-content { box-sizing: border-box; }
@@ -42,7 +43,9 @@
             <dt>Date</dt><dd>{{ date or '(No date)' }}</dd>
         </dl>
     </header>
-    {% if images_blocked %}
+    {% if image_toggle_url %}
+    <p><a class="ownmail-image-toggle" href="{{ image_toggle_url }}">{{ 'Load images' if images_blocked else 'Block images' }}</a></p>
+    {% elif images_blocked %}
     <p class="ownmail-pdf-note">{% if not standalone_csp %}Local archived message. {% endif %}Remote images, fonts and other external content are blocked.</p>
     {% endif %}
     {% if body_html %}

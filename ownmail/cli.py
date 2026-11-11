@@ -1177,10 +1177,10 @@ Examples:
     )
     _add_global_opts(read_parser)
 
-    render_parser = subparsers.add_parser(
-        "render", help="Render a standalone EML as offline HTML without opening an archive"
-    )
+    render_parser = subparsers.add_parser("render", help="Render a standalone EML as HTML without opening an archive")
     render_parser.add_argument("file", type=Path, nargs="?", help="Original EML file (defaults to stdin)")
+    render_parser.add_argument("--load-images", action="store_true", help="Allow the browser to load remote images")
+    render_parser.add_argument("--image-toggle-url", help="Query URL for the viewer's Load or Block images link")
 
     # export command
     export_parser = subparsers.add_parser(
@@ -1423,7 +1423,8 @@ Examples:
 
         try:
             raw = args.file.read_bytes() if args.file else sys.stdin.buffer.read()
-            sys.stdout.buffer.write(render_eml(raw).encode("utf-8"))
+            document = render_eml(raw, load_images=args.load_images, image_toggle_url=args.image_toggle_url)
+            sys.stdout.buffer.write(document.encode("utf-8"))
         except (OSError, ValueError) as error:
             print(f"Could not render message: {error}", file=sys.stderr)
             sys.exit(1)

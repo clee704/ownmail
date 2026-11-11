@@ -327,10 +327,13 @@ ownmail render < receipt.eml > receipt.html
 ```
 
 The command reads the original bytes and emits UTF-8 HTML. It runs without an
-archive or mail connection, blocks remote resources, and includes supported
-inline images. HTML messages use the sanitizer installed by `ownmail setup
---web`. Attachment names appear in the document. Open the original EML for
-attachment files.
+archive or mail connection and includes supported inline images. HTML messages
+use the sanitizer installed by `ownmail setup --web`. By default the browser
+blocks remote resources. Use `--load-images` to allow remote image requests
+when the browser opens the HTML. An embedding viewer can pass
+`--image-toggle-url` with a query on the current document to offer a Load or
+Block images link. Attachment names appear in the document. Open the original
+EML for attachment files.
 
 ### PDF export on Linux
 
