@@ -1,7 +1,7 @@
 ---
 id: TASK-156
 title: Expose reusable HTML rendering for a standalone EML file
-status: Done
+status: In Progress
 assignee: []
 created_date: '2026-11-11 20:10'
 updated_date: '2026-11-11 21:37'
@@ -25,6 +25,7 @@ A caller needs to preview an original MIME message stored outside the ownmail ar
 - [x] #3 Synthetic tests verify the standalone entry point, plain and HTML messages, sanitization, and unchanged Print and PDF behavior.
 - [x] #4 Standalone rendering supports a per-document image opt-in and a query-only viewer control. Script, stylesheet, font, and media requests remain blocked.
 - [x] #5 The image control uses OwnMail's image-banner styling in both modes and has a 44-pixel tap target and visible keyboard focus.
+- [ ] #6 Python callers can render sanitized MIME content from bytes and supply their own document and image controls. The API works from the installed package without loading the archive web app.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,6 +46,10 @@ Reviewed the complete diff against the Print and PDF paths. The 60 focused rende
 The standalone preview offers a local Load images or Block images link when the message has remote content. The opt-in widens only img-src. Focused rendering, Print and PDF tests, the pre-push gate, a synthetic WebKit check, and independent review passed.
 
 The standalone image control inherited the browser's blue, underlined link style. Applied the archive image banner palette. A synthetic receipt passed the mobile WebKit checks for both modes and the desktop WebKit keyboard focus check. The full pre-push gate passed.
+
+The CLI currently couples the consumer to the installed executable and the Print page. Extract a content API in the rendering module and share MIME and HTML helpers with the archive reader.
+
+Next action: move the shared content helpers out of the web app and reuse them in the installed rendering API.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
