@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - codex
 created_date: '2026-07-24 04:59'
-updated_date: '2026-10-21 06:59'
+updated_date: '2026-11-26 21:49'
 labels: []
 milestone: m-3
 dependencies: []
@@ -52,4 +52,12 @@ Read-only survey confirmed the premise. Live providers already expose native IDs
 Approval remains required before schema, sidecar or behavior edits. Next action: obtain maintainer approval of doc-11, then implement on a branch and open a PR. No acceptance criterion has been met.
 
 Proposal self-review completed against 0c6bd26, including provider ID normalization, sidecar retention, offline backfill, Active transitions and read-only compatibility. The required pre-commit run -a --hook-stage pre-push passed with the unchanged production code. This checkpoint changes documentation only; implementation and all acceptance criteria remain pending approval.
+
+2026-11-26 resume. Re-verified doc-11 against ddfa91b. Code changed since 0c6bd26 does not touch thread storage: ActiveCache.put, live_sync capture and legacy downloads still discard thread_id, and write_labels still replaces the whole sidecar. Its callers (relabel, update-labels, sidecar reconcile) do not select live-captured files under current queries, so the provenance loss doc-11 flags is untriggerable today and needs no separate task.
+
+Pending decision, blocking implementation:
+1. Recommended: header-only grouping. A derived thread_members table built from .eml Message-ID/References/In-Reply-To plus doc-11's subject fallback. Drops native thread ID capture (AC #1 would be rewritten). Existing mail has no stored native IDs and cannot get them offline, so headers are the only signal for the archive as captured. This avoids the sidecar, Active JSON and capture-path changes. It still adds a table, which needs sign-off.
+2. doc-11 as written: native Gmail IDs in sidecars and Active JSON plus header grouping. Groups new Gmail mail closer to Gmail's own threads, such as same-subject notifications without References. Only new captures benefit, and it touches both capture paths, the sidecar format and the Active cache.
+3. Close the TASK-6 tree and keep flat lists.
+Next action: record the maintainer's choice here, then implement on a branch and open a PR.
 <!-- SECTION:NOTES:END -->
