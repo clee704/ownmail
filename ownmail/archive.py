@@ -731,6 +731,7 @@ class EmailArchive:
             conn=conn,
             skip_delete=True,
             email_date=email_date,
+            thread_inputs=parsed["thread_inputs"],
         )
         conn.execute(
             "UPDATE emails SET indexed_hash = ? WHERE email_id = ?",
@@ -1120,6 +1121,7 @@ class EmailArchive:
                 labels=sidecar.read_labels(filepath),
                 conn=conn,
                 skip_delete=skip_delete,
+                thread_inputs=parsed["thread_inputs"],
             )
 
             return True

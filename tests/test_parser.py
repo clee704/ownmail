@@ -1218,7 +1218,7 @@ class TestParseFileBodyExtraction:
     def test_malformed_message_returns_empty_fields(self):
         """Garbage input should produce a result dict, not an exception."""
         result = EmailParser.parse_file(content=b"\xff\xfe not an email at all")
-        assert set(result) == {"subject", "sender", "recipients", "date_str", "body", "attachments"}
+        assert set(result) == {"subject", "sender", "recipients", "date_str", "body", "attachments", "thread_inputs"}
 
 
 class TestDecodeHeaderValue:

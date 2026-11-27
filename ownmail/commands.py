@@ -23,6 +23,7 @@ from ownmail import reconcile, roles, sidecar
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase, set_db_labels
 from ownmail.parser import EmailParser
+from ownmail.threads import set_thread_inputs
 
 
 def cmd_rebuild(
@@ -564,6 +565,7 @@ def _index_single_email(
             attachments=parsed["attachments"],
             labels=sidecar.read_labels(filepath),
             email_date=email_date_iso,
+            thread_inputs=parsed["thread_inputs"],
         )
         return True
     except Exception as e:
@@ -678,6 +680,7 @@ def _index_email_for_rebuild(
             email_date = email_date_row[0] if email_date_row else None
 
             set_db_labels(conn, rowid, labels_list, email_date)
+            set_thread_inputs(conn, email_id, parsed["thread_inputs"])
 
         return True
     except Exception as e:

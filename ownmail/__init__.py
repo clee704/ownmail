@@ -79,6 +79,7 @@ def _create_gmail_archive_compat():
                     labels=sidecar.read_labels(filepath),
                     conn=conn,
                     skip_delete=skip_delete,
+                    thread_inputs=parsed["thread_inputs"],
                 )
                 t_fts = time.time() - t0
 
