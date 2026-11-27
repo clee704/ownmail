@@ -89,6 +89,21 @@ def test_subject_key_strips_leading_reply_and_forward_prefixes(subject, key, is_
     assert rec("e", subject=subject)[5:] == (key, is_reply)
 
 
+def test_eight_bit_identifiers_are_ignored_and_indexing_succeeds(tmp_path):
+    raw = b"From: a@x\r\nSubject: Hi\r\nMessage-ID: <caf\xe9@x>\r\nReferences: <r\xff@x> <ok@x>\r\n\r\nBody\r\n"
+    inputs = EmailParser.parse_file(content=raw)["thread_inputs"]
+    assert (inputs["message_id"], inputs["references"]) == (None, ["<ok@x>"])
+    root = tmp_path / "archive"
+    root.mkdir()
+    archive = EmailArchive(root, {})
+    owned(archive, "a", raw)
+    assert archive.db.is_indexed("a")
+    entry = ActiveCache(root).put(
+        source_name="mail", account=ACCOUNT, provider_id="1", identity="epoch:1", roles=[], labels=[], raw=raw
+    )
+    assert stored(ActiveCache(root).db.db_path, entry["id"])[2] == json.dumps(["<ok@x>"])
+
+
 def test_unparseable_message_still_yields_empty_inputs(monkeypatch):
     monkeypatch.setattr(email, "message_from_bytes", lambda *a, **k: 1 / 0)
     inputs = EmailParser.parse_file(content=b"x")["thread_inputs"]
@@ -161,6 +176,17 @@ def test_reply_only_component_of_two_is_a_candidate():
         rec("r3", subject="Re: Plan"),
     ]
     assert group_threads(records) == {"r1": "r1", "r2": "r1", "r3": "r1"}
+
+
+def test_copies_of_one_message_count_once_when_choosing_a_candidate():
+    records = [
+        rec("o", "<o@x>", subject="Plan"),
+        rec("r", "<r@x>", subject="Re: Plan"),
+        rec("active-r", "<r@x>", subject="Re: Plan"),
+        rec("x", "<x@x>", subject="Re: Plan"),
+    ]
+    assert group_threads(records) == dict.fromkeys(("o", "r", "active-r", "x"), "active-r")
+    assert group_threads(records[:2] + records[3:]) == dict.fromkeys(("o", "r", "x"), "o")
 
 
 def test_reply_with_references_never_falls_back():
@@ -345,6 +371,28 @@ def test_refresh_joins_active_copy_to_its_owned_capture(tmp_path):
     assert archive.db.get_thread_member_ids("o1") == sorted(["o1", entry["id"]])
     assert archive.db.get_thread_member_ids(entry["id"]) == sorted(["o1", entry["id"]])
     assert archive.db.get_thread_member_ids("o2") == ["o2"]
+
+
+def test_refresh_reads_active_inputs_without_opening_the_cache(tmp_path, monkeypatch):
+    root = tmp_path / "archive"
+    root.mkdir()
+    entry = ActiveCache(root).put(
+        source_name="mail", account=ACCOUNT, provider_id="42", identity="epoch:42", roles=[], labels=[], raw=RAW
+    )
+    archive = EmailArchive(root, {})
+    owned(archive, "o1", RAW)
+
+    def refuse(*args, **kwargs):
+        raise ValueError("Active cache belongs to a different archive or version")
+
+    monkeypatch.setattr(ActiveCache, "__init__", refuse)
+    commands.cmd_rebuild(archive, file_path=root / "o1.eml")
+    assert archive.db.get_thread_member_ids("o1") == sorted(["o1", entry["id"]])
+
+    with closing(sqlite3.connect(tmp_path / ".archive-active" / "ownmail.db")) as conn, conn:
+        conn.execute("DROP TABLE thread_inputs")
+    archive.refresh_threads()
+    assert archive.db.get_thread_member_ids("o1") == ["o1"]
 
 
 def test_refresh_after_removal_splits_the_bridged_component(temp_dir):

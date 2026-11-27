@@ -10,8 +10,11 @@ import re
 import sqlite3
 from contextlib import closing
 from email.message import Message
+from pathlib import Path
 
-IDENTIFIER_RE = re.compile(r"<[^<>\s]+>")
+# Printable ASCII, as RFC 5322 msg-id requires. Raw 8-bit header bytes arrive
+# as surrogates, which SQLite cannot store, so such tokens count as malformed.
+IDENTIFIER_RE = re.compile(r"<[\x21-\x3b\x3d\x3f-\x7e]+>")
 REPLY_PREFIX_RE = re.compile(r"^(?:\s*(?:re|fwd?):)+", re.IGNORECASE)
 
 
@@ -94,9 +97,12 @@ def group_threads(records) -> dict[str, str]:
             union(node, ("id", identifier))
 
     roots = {email_id: find(("email", email_id)) for email_id, *_ in records}
-    sizes: dict = {}
-    for root in roots.values():
-        sizes[root] = sizes.get(root, 0) + 1
+    # Copies sharing a Message-ID (an Active copy and its capture) count once,
+    # so grouping does not change when a server copy appears or goes away.
+    messages: dict = {}
+    for email_id, _account, message_id, *_ in records:
+        messages.setdefault(roots[email_id], set()).add(message_id or ("email", email_id))
+    sizes = {root: len(keys) for root, keys in messages.items()}
 
     # Matching messages per (account, subject key) and the components that
     # qualify as fallback candidates for them.
@@ -123,8 +129,9 @@ def group_threads(records) -> dict[str, str]:
     return {email_id: min(group) for group in members.values() if len(group) >= 2 for email_id in group}
 
 
-def _read_inputs(db_path) -> list[tuple]:
-    with closing(sqlite3.connect(db_path)) as conn:
+def _read_inputs(db_path, *, read_only=False) -> list[tuple]:
+    target = Path(db_path).as_uri() + "?mode=ro" if read_only else db_path
+    with closing(sqlite3.connect(target, uri=read_only)) as conn:
         rows = conn.execute(
             """SELECT email_id, account, message_id, references_json, in_reply_to_json, subject_key, is_reply
                FROM thread_inputs"""
@@ -138,13 +145,16 @@ def _read_inputs(db_path) -> list[tuple]:
 def refresh_threads(db_path, active_db_path=None) -> None:
     """Recompute thread membership from every stored input.
 
-    Reads inputs from the archive database and, when given, the Active cache
-    database, then replaces the archive's membership in one transaction so an
+    Reads inputs from the archive database and, when given and readable, the
+    Active cache database, then replaces the archive's membership in one transaction so an
     interrupted refresh keeps the previous membership.
     """
     records = _read_inputs(db_path)
     if active_db_path is not None:
-        records += _read_inputs(active_db_path)
+        try:
+            records += _read_inputs(active_db_path, read_only=True)
+        except sqlite3.Error:
+            pass  # No Active index yet, or one built before thread inputs existed
     members = group_threads(records)
     with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("DELETE FROM thread_members")

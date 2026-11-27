@@ -59,8 +59,10 @@ A message without a row is a singleton.
 
 ## Refresh
 
-A refresh reads `thread_inputs` from the archive database and, when it exists,
-the Active cache database. It computes components with the grouping rules and
+A refresh reads `thread_inputs` from the archive database and, when it exists
+and is readable, the Active cache database. A command that has not opened the
+Active cache reads the inputs its last index rebuild stored, since opening it
+re-parses every Active message. It computes components with the grouping rules and
 replaces `thread_members` in one transaction. Refresh scans every input once,
 so callers run it at batch boundaries and never per message. An interrupted
 refresh leaves the previous membership intact.
@@ -87,8 +89,8 @@ recompute components.
 
 ## Grouping rules
 
-1. Identifiers are `<...>` tokens without whitespace in Message-ID, References
-   and In-Reply-To, compared exactly with case preserved. Malformed tokens are
+1. Identifiers are `<...>` tokens of printable ASCII in Message-ID, References
+   and In-Reply-To, as RFC 5322 requires, compared exactly with case preserved. Malformed tokens are
    ignored, and a message without a valid Message-ID still links through its
    own reference headers. Messages sharing any identifier, as their own
    Message-ID or as a referenced one, join one component. Referenced
@@ -101,8 +103,11 @@ recompute components.
    subject, collapses whitespace and case-folds. A reply or forward with a
    non-empty subject key and no valid References or In-Reply-To identifiers
    joins a candidate component other than its own, in the same account with the
-   same subject key, when exactly one exists. A candidate component has two or more members, or
-   contains a matching message without a reply prefix. Ambiguous replies stay
+   same subject key, when exactly one exists. A candidate component has two or
+   more distinct messages, or contains a matching message without a reply
+   prefix. Copies that share a Message-ID, such as an Active copy and its
+   capture, count once, so grouping does not change when a server copy appears
+   or disappears. Ambiguous replies stay
    where reference links put them. Equal subjects never join original messages
    to one another. Every fallback decision uses the reference components, so
    the result does not depend on processing order.
