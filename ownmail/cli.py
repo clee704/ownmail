@@ -1238,6 +1238,11 @@ Examples:
         action="store_true",
         help="Only reconcile label sidecar files with the DB (sidecar wins on divergence)",
     )
+    rebuild_parser.add_argument(
+        "--threads-only",
+        action="store_true",
+        help="Only backfill thread grouping inputs from email files and regroup",
+    )
     _add_global_opts(rebuild_parser)
 
     # verify command
@@ -1536,6 +1541,8 @@ Examples:
                     only = "index"
                 elif args.sidecars_only:
                     only = "sidecars"
+                elif args.threads_only:
+                    only = "threads"
                 cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug, only)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify

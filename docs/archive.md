@@ -470,6 +470,11 @@ those commands.
   account with that subject. With no such thread or several, it stays where it
   is. Original messages are never joined by subject alone.
 
+Messages indexed before thread grouping existed have no grouping inputs and
+appear as single messages. `ownmail rebuild --threads-only` reads their headers
+from the `.eml` files and regroups. It stops cleanly on Ctrl-C and resumes when
+run again; `--force` re-derives the inputs of every message.
+
 ## Integrity verification
 
 ```bash

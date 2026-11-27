@@ -410,7 +410,7 @@ def test_interrupted_backfill_resumes_where_it_stopped(temp_dir, monkeypatch, ca
 
     monkeypatch.setattr(commands.EmailParser, "parse_file", staticmethod(interrupt_on_second))
     commands.cmd_rebuild(archive, only="threads")
-    assert "rebuild --only threads' again to resume" in capsys.readouterr().out
+    assert "rebuild --threads-only' again to resume" in capsys.readouterr().out
     assert len(all_inputs(archive.db.db_path)) == 2
     commands.cmd_rebuild(archive, only="threads")
     assert len(calls) == 4

@@ -66,7 +66,7 @@ so callers run it at batch boundaries and never per message. An interrupted
 refresh leaves the previous membership intact.
 
 Commands that change indexed messages refresh once after their work: download
-and live sync, import, scan and rebuild. `rebuild --only threads` backfills
+and live sync, import, scan and rebuild. `rebuild --threads-only` backfills
 inputs for owned messages that lack them, by parsing their `.eml` files in
 committed batches, then refreshes. It is Ctrl-C safe and resumes where it
 stopped. With `--force` it re-derives inputs for every owned message.
