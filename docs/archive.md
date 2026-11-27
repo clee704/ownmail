@@ -453,6 +453,23 @@ Downloads preserve completed saves. Press Ctrl-C to stop, then run
 `ownmail download` again to retry unfinished work. An interrupted Active refresh
 retains prior copies and remains incomplete.
 
+## Thread grouping
+
+ownmail groups messages into threads from their headers alone. Download, import,
+scan and rebuild recompute the grouping once each run finishes or pauses, so a
+message indexed since then, or removed since then, is reflected at the next of
+those commands.
+
+- Messages that share any `<...>` identifier in Message-ID, References or
+  In-Reply-To join one thread, across accounts and including Active copies.
+  Identifiers compare exactly; malformed tokens are ignored. Replies group
+  through a referenced message even before that message is archived.
+- A reply or forward without valid References or In-Reply-To joins by subject
+  instead: after leading `Re:`, `Fw:` and `Fwd:` prefixes are stripped and
+  whitespace and case are normalized, it joins the one thread in the same
+  account with that subject. With no such thread or several, it stays where it
+  is. Original messages are never joined by subject alone.
+
 ## Integrity verification
 
 ```bash
