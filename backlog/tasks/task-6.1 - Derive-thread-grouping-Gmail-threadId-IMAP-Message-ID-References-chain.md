@@ -1,11 +1,11 @@
 ---
 id: TASK-6.1
 title: Derive thread grouping from Message-ID/References headers
-status: In Progress
+status: Done
 assignee:
   - codex
 created_date: '2026-07-24 04:59'
-updated_date: '2026-11-27 04:07'
+updated_date: '2026-11-27 17:44'
 labels: []
 milestone: m-3
 dependencies: []
@@ -26,9 +26,9 @@ Storage must respect invariant #1. A Gmail threadId is not in the .eml, so it be
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 IMAP-sourced emails are grouped into threads via References/In-Reply-To chain with a documented subject-based fallback
-- [ ] #2 Thread membership is queryable without recomputing the full reference graph on each request
-- [ ] #3 Gmail and IMAP messages group by the same header rules, and rebuilding from .eml files reproduces membership without contacting a provider
+- [x] #1 IMAP-sourced emails are grouped into threads via References/In-Reply-To chain with a documented subject-based fallback
+- [x] #2 Thread membership is queryable without recomputing the full reference graph on each request
+- [x] #3 Gmail and IMAP messages group by the same header rules, and rebuilding from .eml files reproduces membership without contacting a provider
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,9 +36,9 @@ Storage must respect invariant #1. A Gmail threadId is not in the .eml, so it be
 <!-- SECTION:PLAN:BEGIN -->
 Review base: 0c6bd26 (proposal); implementation branch feat/thread-membership from f2ed215.
 1. Done: proposal and maintainer sign-off on 2026-11-26 for header-only grouping (doc-11).
-2. Add the grouping module, thread_inputs and thread_members schema, and input writes on every index path.
-3. Add refresh at command batch boundaries, rebuild --only threads backfill, and the membership lookup.
-4. Document the rules and command, self-review the full diff from 0c6bd26, run the pre-push gate, open a PR.
+2. Done: grouping module, thread_inputs and thread_members schema, input writes on every index path.
+3. Done: refresh at command batch boundaries, rebuild --threads-only backfill, membership lookup.
+4. Done: rules and command documented, full diff reviewed from 0c6bd26, pre-push gate, PR.
 Scope: storage and membership lookup for owned and Active messages. Out of scope: native provider thread IDs, list rendering, visibility rules, thread-level actions and cleanup policy.
 <!-- SECTION:PLAN:END -->
 
@@ -62,4 +62,21 @@ Pending decision, blocking implementation:
 Next action: record the maintainer's choice here, then implement on a branch and open a PR.
 
 2026-11-26: maintainer approved header-only grouping. Replaced AC #1 (native threadId capture) with a header-rules and rebuild criterion; doc-11 now records the approved design and why native IDs were dropped.
+
+Implementation on feat/thread-membership. Phases: thread_inputs and grouping (e86ef97, 8e2d471); refresh, rebuild --threads-only backfill, lookup, docs (a4cd087, f8ebdc8, d60a18e). The CLI has per-mode rebuild flags, so the backfill is --threads-only; the pre-existing docs naming a nonexistent --only option are TASK-157.
+
+Independent review (Opus 5.5 and gpt-6.2-sol) of the full diff. Fixed: 8-bit bytes in identifiers failed index writes and could stop the Active cache from opening (identifiers are printable ASCII now); refresh opened the Active cache, re-parsing every Active message and failing for a moved archive (it reads stored Active inputs now); Active copies counted twice when choosing a fallback target; fallback could merge two originals (fallback now applies only to a reply whose reference component holds no other message); two quadratic loops; forced backfill resume message; a later source's failure skipped the download refresh; a backfill test that could not fail; parser exceptions aborted the backfill.
+Dismissed: concurrent refreshes from overlapping commands can publish older membership (doc-11 accepts lag and the next refresh corrects it); tokens extracted from malformed text such as <<a@x>> (the extracted token is well-formed and in practice names the same message); --threads-only ignoring --file and --pattern (the backfill only reads files and is idempotent).
+
+Convergence review of the fix commits (both models). Fixed: a relative active_cache_dir broke the read-only URI (469cab7); copies of one unlinked reply in two accounts bridged two originals, and a damaged Active index raised ValueError out of refresh (686b216).
+Dismissed: refresh reading an Active index whose marker names another archive (the only triggers are a misconfigured shared cache dir, which ActiveCache already refuses on every download, or a moved archive whose cache still holds its own messages); a refresh failure in the download finally replacing an earlier source error (needs two coincident failures, the refresh error is real and reported, and the original stays chained).
+
+Focused check of 686b216 (gpt-6.2-sol). Dismissed: two messages sharing a Message-ID where only one carries References can skip an ambiguous candidate (they are not copies of one message, no originals are bridged, and the result predates the fix); an Active row whose references_json holds JSON null raises TypeError in grouping (the only writer stores a JSON list, and the Active index rebuilds from files when a download next opens it). Review converged.
+AC evidence: #1 reference-chain and subject-fallback tests in tests/test_threads.py, rules documented in doc-11 and docs/archive.md; #2 thread_members is stored and indexed, and test_lookup_reads_the_index_without_parsing reads it with parsing disabled; #3 every provider indexes through the same parse_file inputs, and test_backfill_from_files_reproduces_indexed_membership regroups from .eml files alone.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Thread grouping now derives from Message-ID, References and In-Reply-To headers for every provider, with a subject fallback limited to unlinked replies that find exactly one candidate thread. Each index database stores per-message inputs in thread_inputs; the archive database holds thread_members for owned and Active messages, refreshed once per download, import, scan and rebuild. rebuild --threads-only backfills inputs for older archives (Ctrl-C safe, resumable, --force re-derives all). ArchiveDatabase.get_thread_member_ids returns a message's thread from the index alone, and a database without the new tables yields the message alone. Native provider thread IDs are not stored (doc-11). Delivered through a PR because it adds tables.
+<!-- SECTION:FINAL_SUMMARY:END -->
