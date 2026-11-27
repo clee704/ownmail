@@ -482,12 +482,12 @@ def _backfill_thread_inputs(archive: EmailArchive, force: bool = False, debug: b
                 break
 
             try:
-                content = (archive.archive_dir / filename).read_bytes()
-            except OSError as e:
+                parsed = EmailParser.parse_file(content=(archive.archive_dir / filename).read_bytes())
+            except Exception as e:
+                # One unreadable or unparseable message must not stop the backfill.
                 skipped += 1
-                print(f"\n  Unreadable file: {filename} ({e.__class__.__name__})")
+                print(f"\n  Skipped {filename}: {e.__class__.__name__}")
             else:
-                parsed = EmailParser.parse_file(content=content)
                 set_thread_inputs(batch_conn, email_id, parsed["thread_inputs"])
                 success_count += 1
                 if debug:
@@ -515,7 +515,7 @@ def _backfill_thread_inputs(archive: EmailArchive, force: bool = False, debug: b
         print("Backfill Thread Inputs Complete!")
     print(f"  Updated: {success_count} emails in {elapsed_total:.1f}s")
     if skipped:
-        print(f"  Skipped (missing or unreadable file): {skipped}")
+        print(f"  Skipped (unreadable or unparseable file): {skipped}")
     print("-" * 50 + "\n")
 
 

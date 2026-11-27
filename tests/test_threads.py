@@ -429,9 +429,26 @@ def test_force_backfill_rederives_every_message_and_skips_missing_files(temp_dir
     assert archive.db.get_thread_member_ids("a") == ["a"]
     commands.cmd_rebuild(archive, force=True, only="threads")
     out = capsys.readouterr().out
-    assert "Unreadable file: gone.eml" in out and "Skipped (missing or unreadable file): 1" in out
+    assert "Skipped gone.eml: FileNotFoundError" in out and "Skipped (unreadable or unparseable file): 1" in out
     assert stored(archive.db.db_path, "b")[2] == json.dumps(["<a@x>"])
     assert archive.db.get_thread_member_ids("a") == ["a", "b"]
+
+
+def test_backfill_skips_a_message_the_parser_rejects(temp_dir, monkeypatch, capsys):
+    archive = EmailArchive(temp_dir, {})
+    owned(archive, "a", message("<a@x>"))
+    owned(archive, "b", message("<b@x>", ["<a@x>"]))
+    parse = EmailParser.parse_file
+
+    def reject_a(*args, content=None, **kwargs):
+        if b"<a@x>" in content and b"References" not in content:
+            raise ValueError("parser failure")
+        return parse(*args, content=content, **kwargs)
+
+    monkeypatch.setattr(EmailParser, "parse_file", staticmethod(reject_a))
+    commands.cmd_rebuild(archive, force=True, only="threads")
+    assert "Skipped a.eml: ValueError" in capsys.readouterr().out
+    assert stored(archive.db.db_path, "b")[2] == json.dumps(["<a@x>"])
 
 
 def test_lookup_reads_the_index_without_parsing(temp_dir, monkeypatch):
