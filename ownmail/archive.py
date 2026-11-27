@@ -28,6 +28,7 @@ from ownmail.download_progress import DownloadProgress
 from ownmail.keychain import KeychainStorage
 from ownmail.parser import EmailParser
 from ownmail.providers.base import EmailProvider
+from ownmail.threads import refresh_threads
 
 
 class EmailArchive:
@@ -71,6 +72,11 @@ class EmailArchive:
         if self._active_cache is None and (create or cache_dir.exists()):
             self._active_cache = ActiveCache(self.archive_dir, cache_dir, gmail_accounts=self.db.gmail_accounts)
         return self._active_cache
+
+    def refresh_threads(self) -> None:
+        """Recompute thread membership across owned and Active messages."""
+        cache = self.active_cache()
+        refresh_threads(self.db.db_path, cache.db.db_path if cache else None)
 
     def active_info(self, email_id: str) -> dict | None:
         """Describe the live server copy associated with a reading result."""

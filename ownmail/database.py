@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ownmail import roles
 from ownmail.query import parse_query
-from ownmail.threads import set_thread_inputs
+from ownmail.threads import set_thread_inputs, thread_member_ids
 
 
 def set_db_labels(conn: sqlite3.Connection, rowid: int, labels: list[str], email_date) -> None:
@@ -1295,6 +1295,11 @@ class ArchiveDatabase:
     # -------------------------------------------------------------------------
     # Statistics
     # -------------------------------------------------------------------------
+
+    def get_thread_member_ids(self, email_id: str) -> list[str]:
+        """Return the sorted IDs in a message's thread, always including email_id."""
+        with self._connect() as conn:
+            return thread_member_ids(conn, email_id)
 
     def get_email_count(self, account: str = None) -> int:
         """Get quick email count for an account.

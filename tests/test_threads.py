@@ -6,6 +6,7 @@ import json
 import sqlite3
 from contextlib import closing
 from email.policy import default as email_policy
+from unittest.mock import patch
 
 import pytest
 
@@ -14,7 +15,7 @@ from ownmail.active_cache import ActiveCache
 from ownmail.archive import EmailArchive
 from ownmail.database import ArchiveDatabase
 from ownmail.parser import EmailParser
-from ownmail.threads import derive_thread_inputs, group_threads
+from ownmail.threads import derive_thread_inputs, group_threads, refresh_threads, thread_member_ids
 
 ACCOUNT = "reader@example.test"
 RAW = (
@@ -286,3 +287,195 @@ def test_deleting_an_emails_row_removes_its_thread_rows(temp_dir):
         conn.execute("DELETE FROM emails WHERE email_id = 'e1'")
         assert conn.execute("SELECT email_id FROM thread_inputs").fetchall() == [("e2",)]
         assert conn.execute("SELECT email_id FROM thread_members").fetchall() == [("e2",)]
+
+
+# -- Refresh, backfill and lookup ----------------------------------------------
+
+
+def message(mid, refs=(), subject="Topic"):
+    headers = f"From: sender@example.test\r\nSubject: {subject}\r\nMessage-ID: {mid}\r\n"
+    if refs:
+        headers += f"References: {' '.join(refs)}\r\n"
+    return (headers + "\r\nBody\r\n").encode()
+
+
+def owned(archive, eid, raw):
+    """Download and index a message the way a normal capture does."""
+    path = archive.archive_dir / f"{eid}.eml"
+    path.write_bytes(raw)
+    archive.db.mark_downloaded(eid, eid, path.name, account=ACCOUNT)
+    archive._index_email(eid, path)
+
+
+def membership(db_path):
+    with closing(sqlite3.connect(db_path)) as conn:
+        return sorted(conn.execute("SELECT email_id, thread_id FROM thread_members").fetchall())
+
+
+def all_inputs(db_path):
+    with closing(sqlite3.connect(db_path)) as conn:
+        return sorted(conn.execute("SELECT * FROM thread_inputs").fetchall())
+
+
+def chain(archive):
+    """Owned a <- b <- c <- d, each referencing only its parent."""
+    owned(archive, "a", message("<a@x>"))
+    owned(archive, "b", message("<b@x>", ["<a@x>"]))
+    owned(archive, "c", message("<c@x>", ["<b@x>"]))
+    owned(archive, "d", message("<d@x>", ["<c@x>"]))
+
+
+def test_refresh_joins_active_copy_to_its_owned_capture(tmp_path):
+    root = tmp_path / "archive"
+    root.mkdir()
+    entry = ActiveCache(root).put(
+        source_name="mail",
+        account=ACCOUNT,
+        provider_id="42",
+        identity="epoch:42",
+        roles=["inbox"],
+        labels=["INBOX"],
+        raw=RAW,
+        checked_at="2024-01-01T12:00:00+00:00",
+    )
+    archive = EmailArchive(root, {})
+    owned(archive, "o1", RAW)
+    owned(archive, "o2", message("<other@x>"))
+    archive.refresh_threads()
+    assert archive.db.get_thread_member_ids("o1") == sorted(["o1", entry["id"]])
+    assert archive.db.get_thread_member_ids(entry["id"]) == sorted(["o1", entry["id"]])
+    assert archive.db.get_thread_member_ids("o2") == ["o2"]
+
+
+def test_refresh_after_removal_splits_the_bridged_component(temp_dir):
+    archive = EmailArchive(temp_dir, {})
+    chain(archive)
+    archive.refresh_threads()
+    assert archive.db.get_thread_member_ids("a") == ["a", "b", "c", "d"]
+    with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
+        conn.execute("DELETE FROM emails WHERE email_id = 'b'")
+    archive.refresh_threads()
+    assert archive.db.get_thread_member_ids("a") == ["a"]
+    assert archive.db.get_thread_member_ids("d") == ["c", "d"]
+
+
+def test_failed_refresh_keeps_previous_membership(temp_dir, monkeypatch):
+    archive = EmailArchive(temp_dir, {})
+    chain(archive)
+    archive.refresh_threads()
+    before = membership(archive.db.db_path)
+
+    class Failing(dict):
+        def items(self):
+            yield ("a", "zzz")
+            raise RuntimeError("interrupted mid-write")
+
+    monkeypatch.setattr("ownmail.threads.group_threads", lambda records: Failing())
+    with pytest.raises(RuntimeError):
+        refresh_threads(archive.db.db_path)
+    assert membership(archive.db.db_path) == before
+
+
+def test_backfill_from_files_reproduces_indexed_membership(temp_dir):
+    archive = EmailArchive(temp_dir, {})
+    chain(archive)
+    owned(archive, "e", message("<e@x>", subject="Re: Topic"))
+    archive.trash_email("d")
+    archive.refresh_threads()
+    inputs, members = all_inputs(archive.db.db_path), membership(archive.db.db_path)
+    assert len(inputs) == 5 and members
+    with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
+        conn.execute("DELETE FROM thread_inputs")
+        conn.execute("DELETE FROM thread_members")
+    commands.cmd_rebuild(archive, only="threads")
+    assert all_inputs(archive.db.db_path) == inputs
+    assert membership(archive.db.db_path) == members
+
+
+def test_interrupted_backfill_resumes_where_it_stopped(temp_dir, monkeypatch, capsys):
+    import signal
+
+    archive = EmailArchive(temp_dir, {})
+    chain(archive)
+    with closing(sqlite3.connect(archive.db.db_path)) as conn, conn:
+        conn.execute("DELETE FROM thread_inputs")
+    parse = EmailParser.parse_file
+    calls = []
+
+    def interrupt_on_second(**kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
+        return parse(**kwargs)
+
+    monkeypatch.setattr(commands.EmailParser, "parse_file", staticmethod(interrupt_on_second))
+    commands.cmd_rebuild(archive, only="threads")
+    assert "rebuild --only threads' again to resume" in capsys.readouterr().out
+    assert len(all_inputs(archive.db.db_path)) == 2
+    commands.cmd_rebuild(archive, only="threads")
+    assert len(calls) == 4
+    assert len(all_inputs(archive.db.db_path)) == 4
+    assert archive.db.get_thread_member_ids("a") == ["a", "b", "c", "d"]
+
+
+def test_force_backfill_rederives_every_message_and_skips_missing_files(temp_dir, capsys):
+    archive = EmailArchive(temp_dir, {})
+    owned(archive, "a", message("<a@x>"))
+    owned(archive, "b", message("<b@x>"))
+    owned(archive, "gone", message("<gone@x>"))
+    (temp_dir / "gone.eml").unlink()
+    (temp_dir / "b.eml").write_bytes(message("<b@x>", ["<a@x>"]))
+    commands.cmd_rebuild(archive, only="threads")
+    assert archive.db.get_thread_member_ids("a") == ["a"]
+    commands.cmd_rebuild(archive, force=True, only="threads")
+    out = capsys.readouterr().out
+    assert "Unreadable file: gone.eml" in out and "Skipped (missing or unreadable file): 1" in out
+    assert stored(archive.db.db_path, "b")[2] == json.dumps(["<a@x>"])
+    assert archive.db.get_thread_member_ids("a") == ["a", "b"]
+
+
+def test_lookup_reads_the_index_without_parsing(temp_dir, monkeypatch):
+    archive = EmailArchive(temp_dir, {})
+    chain(archive)
+    archive.refresh_threads()
+
+    def fail(*args, **kwargs):
+        raise AssertionError("lookup parsed a message")
+
+    monkeypatch.setattr(EmailParser, "parse_file", fail)
+    monkeypatch.setattr("ownmail.threads.group_threads", fail)
+    assert archive.db.get_thread_member_ids("c") == ["a", "b", "c", "d"]
+    assert archive.db.get_thread_member_ids("unknown") == ["unknown"]
+
+
+def test_lookup_on_database_without_thread_tables_is_singleton(tmp_path):
+    with closing(sqlite3.connect(tmp_path / "old.db")) as conn:
+        conn.execute("CREATE TABLE emails (email_id TEXT PRIMARY KEY)")
+        assert thread_member_ids(conn, "e1") == ["e1"]
+
+
+@pytest.mark.parametrize("only, refreshes", [(None, 1), ("index", 1), ("threads", 1), ("dates", 0), ("sidecars", 0)])
+def test_rebuild_refreshes_once_in_modes_that_index(temp_dir, monkeypatch, only, refreshes):
+    archive = EmailArchive(temp_dir, {})
+    owned(archive, "a", message("<a@x>"))
+    calls = []
+    monkeypatch.setattr(EmailArchive, "refresh_threads", lambda self: calls.append(self))
+    commands.cmd_rebuild(archive, force=True, only=only)
+    assert len(calls) == refreshes
+
+
+@pytest.mark.parametrize("command", ["import", "scan"])
+@pytest.mark.parametrize("dry_run, refreshes", [(False, 1), (True, 0)])
+def test_import_and_scan_refresh_once(temp_dir, command, dry_run, refreshes):
+    archive = EmailArchive(temp_dir, {})
+    source_dir = temp_dir.parent / f"{temp_dir.name}-incoming"
+    source_dir.mkdir()
+    (source_dir / "x.eml").write_bytes(message("<x@x>"))
+    (temp_dir / "y.eml").write_bytes(message("<y@x>", ["<x@x>"]))
+    calls = []
+    with patch.object(EmailArchive, "refresh_threads", lambda self: calls.append(self)):
+        if command == "import":
+            commands.cmd_import(archive, source_dir, account=ACCOUNT, dry_run=dry_run)
+        else:
+            commands.cmd_scan(archive, account=ACCOUNT, dry_run=dry_run)
+    assert len(calls) == refreshes

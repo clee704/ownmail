@@ -655,6 +655,8 @@ def cmd_download(
         if result["interrupted"]:
             break
 
+    archive.refresh_threads()
+
     print("\n" + "=" * 50)
     print("Overall Download Summary")
     print(f"  Downloaded: {total_downloaded:,} emails")

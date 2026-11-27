@@ -46,7 +46,8 @@ def cmd_rebuild(
         force: If True, rebuild all emails regardless of indexed_hash
         debug: If True, show timing info for each email
         only: If 'dates', only populate email_date; if 'index', only rebuild index;
-            if 'sidecars', reconcile label sidecar files with the DB (sidecar wins)
+            if 'sidecars', reconcile label sidecar files with the DB (sidecar wins);
+            if 'threads', backfill missing thread inputs (all with force)
     """
     # Dates-only mode: fast path that skips full reindexing
     if only == "dates":
@@ -59,6 +60,22 @@ def cmd_rebuild(
         _reconcile_label_sidecars(archive, pattern, debug)
         return
 
+    if only == "threads":
+        _backfill_thread_inputs(archive, force, debug)
+    else:
+        _rebuild_index(archive, file_path, pattern, force, debug)
+    # Once per run, including after a paused run: membership reflects what was committed.
+    archive.refresh_threads()
+
+
+def _rebuild_index(
+    archive: EmailArchive,
+    file_path: Path | None,
+    pattern: str | None,
+    force: bool,
+    debug: bool,
+) -> None:
+    """Index changed emails (or all with force); see cmd_rebuild."""
     print("\n" + "=" * 50)
     print("ownmail - Rebuild")
     print("=" * 50 + "\n")
@@ -406,6 +423,99 @@ def _populate_dates_only(
     print(f"  Updated: {success_count} emails in {elapsed_total:.1f}s")
     if skipped:
         print(f"  Skipped (no parseable date): {skipped}")
+    print("-" * 50 + "\n")
+
+
+def _backfill_thread_inputs(archive: EmailArchive, force: bool = False, debug: bool = False) -> None:
+    """Store thread inputs for owned emails that lack them.
+
+    Parses each .eml the way rebuild indexing does, so the inputs match what
+    indexing writes. Trashed emails are included, as rebuild indexes them too.
+
+    Args:
+        archive: EmailArchive instance
+        force: If True, re-derive inputs for every email
+        debug: If True, show per-email details
+    """
+    print("\n" + "=" * 50)
+    print("ownmail - Backfill Thread Inputs")
+    print("=" * 50 + "\n")
+
+    db_path = archive.db.db_path
+
+    t0 = time.time()
+    print("Finding emails...", end="", flush=True)
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        if force:
+            emails = conn.execute("SELECT email_id, filename FROM emails").fetchall()
+        else:
+            emails = conn.execute(
+                "SELECT email_id, filename FROM emails WHERE email_id NOT IN (SELECT email_id FROM thread_inputs)"
+            ).fetchall()
+        print(f" {len(emails)} emails ({time.time() - t0:.1f}s)")
+
+    if not emails:
+        print("\nAll emails already have thread inputs." + (" Use --force to re-derive." if not force else ""))
+        return
+
+    print(f"\nDeriving thread inputs for {len(emails)} emails...")
+
+    success_count = 0
+    skipped = 0
+    interrupted = False
+    start_time = time.time()
+
+    def signal_handler(signum, frame):
+        nonlocal interrupted
+        interrupted = True
+        print("\n\n⏸ Stopping after current email...")
+
+    original_handler = signal.signal(signal.SIGINT, signal_handler)
+
+    batch_conn = sqlite3.connect(db_path)
+    batch_conn.execute("PRAGMA journal_mode = WAL")
+    batch_conn.execute("PRAGMA synchronous = NORMAL")
+
+    try:
+        for i, (email_id, filename) in enumerate(emails, 1):
+            if interrupted:
+                break
+
+            try:
+                content = (archive.archive_dir / filename).read_bytes()
+            except OSError as e:
+                skipped += 1
+                print(f"\n  Unreadable file: {filename} ({e.__class__.__name__})")
+            else:
+                parsed = EmailParser.parse_file(content=content)
+                set_thread_inputs(batch_conn, email_id, parsed["thread_inputs"])
+                success_count += 1
+                if debug:
+                    print(f"\n  Derived: {filename}")
+
+            # Commit every 200 emails
+            if (success_count + skipped) % 200 == 0:
+                batch_conn.commit()
+
+            if i % 100 == 0 or i == len(emails):
+                elapsed = time.time() - start_time
+                rate = i / elapsed if elapsed > 0 else 0
+                print(f"\r\033[K  [{i}/{len(emails)}] {rate:.0f}/s", end="", flush=True)
+    finally:
+        batch_conn.commit()
+        batch_conn.close()
+        signal.signal(signal.SIGINT, original_handler)
+
+    elapsed_total = time.time() - start_time
+    print("\n" + "-" * 50)
+    if interrupted:
+        print("Backfill Thread Inputs Paused!")
+        print("\n  Run 'ownmail rebuild --only threads' again to resume.")
+    else:
+        print("Backfill Thread Inputs Complete!")
+    print(f"  Updated: {success_count} emails in {elapsed_total:.1f}s")
+    if skipped:
+        print(f"  Skipped (missing or unreadable file): {skipped}")
     print("-" * 50 + "\n")
 
 
@@ -1920,6 +2030,8 @@ def cmd_import(
         sys.exit(1)
 
     archive.import_path(path, account=account, move=move, dry_run=dry_run)
+    if not dry_run:
+        archive.refresh_threads()
 
 
 def cmd_scan(
@@ -1940,3 +2052,5 @@ def cmd_scan(
     print("=" * 50 + "\n")
 
     archive.scan_archive(account=account, dry_run=dry_run)
+    if not dry_run:
+        archive.refresh_threads()

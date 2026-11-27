@@ -72,6 +72,18 @@ def test_cumulative_progress_cannot_hide_an_incomplete_source(tmp_path, completi
     assert final["source"] == "Second"
 
 
+def test_paused_download_still_refreshes_threads_once(tmp_path):
+    archive = MagicMock()
+    archive.archive_dir = tmp_path / "archive"
+    archive.auto_expire_trash.return_value = 0
+    archive.db.get_email_count.return_value = 0
+    archive.backup.return_value = {"success_count": 1, "error_count": 0, "interrupted": True}
+    with patch("ownmail.providers.imap.ImapProvider"):
+        assert not cmd_download(archive, {"sources": [source(), source(name="Second")]})
+    archive.backup.assert_called_once()
+    archive.refresh_threads.assert_called_once_with()
+
+
 def test_scan_progress_is_throttled_until_phase_changes(tmp_path, monkeypatch):
     now = [0.0]
     monkeypatch.setattr("ownmail.download_progress.time.monotonic", lambda: now[0])

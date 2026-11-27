@@ -8,6 +8,7 @@ backlog/docs/doc-11.
 import json
 import re
 import sqlite3
+from contextlib import closing
 from email.message import Message
 
 IDENTIFIER_RE = re.compile(r"<[^<>\s]+>")
@@ -120,3 +121,50 @@ def group_threads(records) -> dict[str, str]:
     for email_id, *_ in records:
         members.setdefault(find(("email", email_id)), []).append(email_id)
     return {email_id: min(group) for group in members.values() if len(group) >= 2 for email_id in group}
+
+
+def _read_inputs(db_path) -> list[tuple]:
+    with closing(sqlite3.connect(db_path)) as conn:
+        rows = conn.execute(
+            """SELECT email_id, account, message_id, references_json, in_reply_to_json, subject_key, is_reply
+               FROM thread_inputs"""
+        ).fetchall()
+    return [
+        (email_id, account, message_id, json.loads(refs), json.loads(irt), key, bool(is_reply))
+        for email_id, account, message_id, refs, irt, key, is_reply in rows
+    ]
+
+
+def refresh_threads(db_path, active_db_path=None) -> None:
+    """Recompute thread membership from every stored input.
+
+    Reads inputs from the archive database and, when given, the Active cache
+    database, then replaces the archive's membership in one transaction so an
+    interrupted refresh keeps the previous membership.
+    """
+    records = _read_inputs(db_path)
+    if active_db_path is not None:
+        records += _read_inputs(active_db_path)
+    members = group_threads(records)
+    with closing(sqlite3.connect(db_path)) as conn, conn:
+        conn.execute("DELETE FROM thread_members")
+        conn.executemany("INSERT INTO thread_members (email_id, thread_id) VALUES (?, ?)", members.items())
+
+
+def thread_member_ids(conn: sqlite3.Connection, email_id: str) -> list[str]:
+    """Return the sorted IDs in a message's thread, read from stored membership only.
+
+    A message without a membership row, or a database that predates
+    thread_members, yields the message alone.
+    """
+    try:
+        rows = conn.execute(
+            """SELECT email_id FROM thread_members
+               WHERE thread_id = (SELECT thread_id FROM thread_members WHERE email_id = ?)""",
+            (email_id,),
+        ).fetchall()
+    except sqlite3.OperationalError as e:
+        if "no such table" not in str(e):
+            raise
+        return [email_id]
+    return sorted({email_id, *(row[0] for row in rows)})
