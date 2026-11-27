@@ -510,7 +510,11 @@ def _backfill_thread_inputs(archive: EmailArchive, force: bool = False, debug: b
     print("\n" + "-" * 50)
     if interrupted:
         print("Backfill Thread Inputs Paused!")
-        print("\n  Run 'ownmail rebuild --threads-only' again to resume.")
+        if force:
+            # A plain resume selects only rows lacking inputs and would skip the rest.
+            print("\n  Run 'ownmail rebuild --threads-only --force' again to finish.")
+        else:
+            print("\n  Run 'ownmail rebuild --threads-only' again to resume.")
     else:
         print("Backfill Thread Inputs Complete!")
     print(f"  Updated: {success_count} emails in {elapsed_total:.1f}s")

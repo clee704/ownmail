@@ -458,12 +458,30 @@ def test_interrupted_backfill_resumes_where_it_stopped(temp_dir, monkeypatch, ca
 
     monkeypatch.setattr(commands.EmailParser, "parse_file", staticmethod(interrupt_on_second))
     commands.cmd_rebuild(archive, only="threads")
-    assert "rebuild --threads-only' again to resume" in capsys.readouterr().out
+    assert "Run 'ownmail rebuild --threads-only' again to resume." in capsys.readouterr().out
     assert len(all_inputs(archive.db.db_path)) == 2
     commands.cmd_rebuild(archive, only="threads")
     assert len(calls) == 4
     assert len(all_inputs(archive.db.db_path)) == 4
     assert archive.db.get_thread_member_ids("a") == ["a", "b", "c", "d"]
+
+
+def test_interrupted_force_backfill_names_a_forced_resume(temp_dir, monkeypatch, capsys):
+    import signal
+
+    archive = EmailArchive(temp_dir, {})
+    chain(archive)
+    parse = EmailParser.parse_file
+
+    def interrupt(**kwargs):
+        signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
+        return parse(**kwargs)
+
+    monkeypatch.setattr(commands.EmailParser, "parse_file", staticmethod(interrupt))
+    commands.cmd_rebuild(archive, force=True, only="threads")
+    out = capsys.readouterr().out
+    assert "Run 'ownmail rebuild --threads-only --force' again to finish." in out
+    assert "again to resume" not in out
 
 
 def test_force_backfill_rederives_every_message_and_skips_missing_files(temp_dir, capsys):
