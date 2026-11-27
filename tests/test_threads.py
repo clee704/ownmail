@@ -169,6 +169,16 @@ def test_fallback_with_several_candidates_stays_put():
     assert group_threads(records) == {}
 
 
+def test_reply_whose_component_holds_another_message_stays_put():
+    records = [
+        rec("o1", "<o1@x>", subject="Topic"),
+        rec("o2", "<o2@x>", subject="Topic"),
+        rec("r", "<r@x>", subject="Re: Topic"),
+        rec("m", "<m@x>", ["<r@x>", "<o1@x>"], subject="Re: Topic"),
+    ]
+    assert group_threads(records) == dict.fromkeys(("o1", "r", "m"), "m")
+
+
 def test_reply_only_component_of_two_is_a_candidate():
     records = [
         rec("r1", "<r1@x>", ["<gone@x>"], subject="Re: Plan"),
@@ -201,8 +211,8 @@ def test_originals_sharing_a_subject_stay_apart():
 def test_result_does_not_depend_on_input_order():
     """Fallback is decided against reference components, never against earlier joins.
 
-    f's own component {f, g} also matches, so only o is another candidate; h sees
-    both components and stays a singleton even after f merges them.
+    f's own component {f, g} already holds another message, so f does not fall
+    back; h sees both o and {f, g} as candidates and stays a singleton.
     """
     records = [
         rec("o", "<o@x>", subject="Plan"),
@@ -213,7 +223,7 @@ def test_result_does_not_depend_on_input_order():
         rec("s2", "<s2@x>", ["<gone@x>"]),
         rec("q", subject="Re: Lone"),
     ]
-    expected = {"f": "f", "g": "f", "o": "f", "s1": "s1", "s2": "s1"}
+    expected = {"f": "f", "g": "f", "s1": "s1", "s2": "s1"}
     for order in itertools.permutations(records):
         assert group_threads(order) == expected
 

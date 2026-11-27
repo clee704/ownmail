@@ -115,18 +115,23 @@ def group_threads(records) -> dict[str, str]:
     # Decide every fallback against the reference components, then apply.
     joins = []
     for email_id, account, _mid, references, in_reply_to, key, is_reply in records:
-        if not is_reply or not key or references or in_reply_to:
+        root = roots[email_id]
+        if not is_reply or not key or references or in_reply_to or sizes[root] != 1:
             continue
-        others = candidates.get((account, key), set()) - {roots[email_id]}
-        if len(others) == 1:
-            joins.append((("email", email_id), next(iter(others))))
+        found = candidates.get((account, key), set())
+        if len(found) - (root in found) == 1:
+            joins.append((("email", email_id), next(other for other in found if other != root)))
     for node, root in joins:
         union(node, root)
 
     members: dict = {}
     for email_id, *_ in records:
         members.setdefault(find(("email", email_id)), []).append(email_id)
-    return {email_id: min(group) for group in members.values() if len(group) >= 2 for email_id in group}
+    thread_ids = {}
+    for group in members.values():
+        if len(group) >= 2:
+            thread_ids.update(dict.fromkeys(group, min(group)))
+    return thread_ids
 
 
 def _read_inputs(db_path, *, read_only=False) -> list[tuple]:
