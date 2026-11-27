@@ -1,11 +1,11 @@
 ---
 id: TASK-6.1
-title: 'Derive thread grouping: Gmail threadId + IMAP Message-ID/References chain'
+title: Derive thread grouping from Message-ID/References headers
 status: In Progress
 assignee:
   - codex
 created_date: '2026-07-24 04:59'
-updated_date: '2026-11-26 21:49'
+updated_date: '2026-11-27 04:07'
 labels: []
 milestone: m-3
 dependencies: []
@@ -26,20 +26,20 @@ Storage must respect invariant #1. A Gmail threadId is not in the .eml, so it be
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Gmail-sourced emails capture and store the native threadId
-- [ ] #2 IMAP-sourced emails are grouped into threads via References/In-Reply-To chain with a documented subject-based fallback
-- [ ] #3 Thread membership is queryable without recomputing the full reference graph on each request
+- [ ] #1 IMAP-sourced emails are grouped into threads via References/In-Reply-To chain with a documented subject-based fallback
+- [ ] #2 Thread membership is queryable without recomputing the full reference graph on each request
+- [ ] #3 Gmail and IMAP messages group by the same header rules, and rebuilding from .eml files reproduces membership without contacting a provider
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review base: 0c6bd26.
-1. Verify current capture, sidecar, Active cache and rebuild paths; prepare a concrete storage/grouping proposal.
-2. Obtain maintainer sign-off for the schema and sidecar changes before implementing behavior.
-3. After approval, implement durable thread metadata and rebuildable indexed membership, with reference-chain and subject-fallback tests.
-4. Self-review the full diff from the review base, run the required pre-push gate, and deliver through a PR.
-Scope: storage and membership lookup for archived and Active mail. Threaded list rendering, thread-level bulk actions and server cleanup policy are out of scope.
+Review base: 0c6bd26 (proposal); implementation branch feat/thread-membership from f2ed215.
+1. Done: proposal and maintainer sign-off on 2026-11-26 for header-only grouping (doc-11).
+2. Add the grouping module, thread_inputs and thread_members schema, and input writes on every index path.
+3. Add refresh at command batch boundaries, rebuild --only threads backfill, and the membership lookup.
+4. Document the rules and command, self-review the full diff from 0c6bd26, run the pre-push gate, open a PR.
+Scope: storage and membership lookup for owned and Active messages. Out of scope: native provider thread IDs, list rendering, visibility rules, thread-level actions and cleanup policy.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -60,4 +60,6 @@ Pending decision, blocking implementation:
 2. doc-11 as written: native Gmail IDs in sidecars and Active JSON plus header grouping. Groups new Gmail mail closer to Gmail's own threads, such as same-subject notifications without References. Only new captures benefit, and it touches both capture paths, the sidecar format and the Active cache.
 3. Close the TASK-6 tree and keep flat lists.
 Next action: record the maintainer's choice here, then implement on a branch and open a PR.
+
+2026-11-26: maintainer approved header-only grouping. Replaced AC #1 (native threadId capture) with a header-rules and rebuild criterion; doc-11 now records the approved design and why native IDs were dropped.
 <!-- SECTION:NOTES:END -->
