@@ -200,6 +200,17 @@ def test_copies_of_one_message_count_once_when_choosing_a_candidate():
     assert group_threads(records[:2] + records[3:]) == dict.fromkeys(("o", "r", "x"), "o")
 
 
+def test_copies_of_one_reply_in_two_accounts_never_bridge_their_originals():
+    records = [
+        rec("a-orig", "<a@x>", subject="Plan"),
+        rec("b-orig", "<b@x>", subject="Plan", account="other@x"),
+        rec("a-reply", "<r@x>", subject="Re: Plan"),
+        rec("b-reply", "<r@x>", subject="Re: Plan", account="other@x"),
+    ]
+    assert group_threads(records) == {"a-reply": "a-reply", "b-reply": "a-reply"}
+    assert group_threads(records[:1] + records[2:]) == dict.fromkeys(("a-orig", "a-reply", "b-reply"), "a-orig")
+
+
 def test_reply_with_references_never_falls_back():
     records = [rec("o", "<o@x>", subject="Plan"), rec("r", in_reply_to=["<elsewhere@x>"], subject="Re: Plan")]
     assert group_threads(records) == {}
@@ -400,10 +411,11 @@ def test_refresh_reads_active_inputs_without_opening_the_cache(tmp_path, monkeyp
     commands.cmd_rebuild(archive, file_path=root / "o1.eml")
     assert archive.db.get_thread_member_ids("o1") == sorted(["o1", entry["id"]])
 
-    with closing(sqlite3.connect(tmp_path / ".archive-active" / "ownmail.db")) as conn, conn:
-        conn.execute("DROP TABLE thread_inputs")
-    archive.refresh_threads()
-    assert archive.db.get_thread_member_ids("o1") == ["o1"]
+    for damage in ("UPDATE thread_inputs SET references_json = '['", "DROP TABLE thread_inputs"):
+        with closing(sqlite3.connect(tmp_path / ".archive-active" / "ownmail.db")) as conn, conn:
+            conn.execute(damage)
+        archive.refresh_threads()
+        assert archive.db.get_thread_member_ids("o1") == ["o1"]
 
 
 def test_refresh_reads_a_relative_active_cache_dir(tmp_path, monkeypatch):

@@ -112,17 +112,23 @@ def group_threads(records) -> dict[str, str]:
         if key and (sizes[root] >= 2 or not is_reply):
             candidates.setdefault((account, key), set()).add(root)
 
-    # Decide every fallback against the reference components, then apply.
-    joins = []
+    # Decide every fallback against the reference components, then apply. Copies
+    # of one reply in several accounts choose together, so they cannot bridge
+    # two candidates; two found are enough to rule the reply ambiguous.
+    targets: dict = {}
     for email_id, account, _mid, references, in_reply_to, key, is_reply in records:
         root = roots[email_id]
         if not is_reply or not key or references or in_reply_to or sizes[root] != 1:
             continue
-        found = candidates.get((account, key), set())
-        if len(found) - (root in found) == 1:
-            joins.append((("email", email_id), next(other for other in found if other != root)))
-    for node, root in joins:
-        union(node, root)
+        found = targets.setdefault(root, set())
+        for other in candidates.get((account, key), ()):
+            if len(found) > 1:
+                break
+            if other != root:
+                found.add(other)
+    for root, found in targets.items():
+        if len(found) == 1:
+            union(root, found.pop())
 
     members: dict = {}
     for email_id, *_ in records:
@@ -158,8 +164,8 @@ def refresh_threads(db_path, active_db_path=None) -> None:
     if active_db_path is not None:
         try:
             records += _read_inputs(active_db_path, read_only=True)
-        except sqlite3.Error:
-            pass  # No Active index yet, or one built before thread inputs existed
+        except (sqlite3.Error, ValueError):
+            pass  # No usable Active index: absent, older than thread inputs, or damaged
     members = group_threads(records)
     with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("DELETE FROM thread_members")

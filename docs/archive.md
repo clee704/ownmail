@@ -466,9 +466,10 @@ those commands.
   through a referenced message even before that message is archived.
 - A reply or forward without valid References or In-Reply-To joins by subject
   instead: after leading `Re:`, `Fw:` and `Fwd:` prefixes are stripped and
-  whitespace and case are normalized, it joins the one thread in the same
-  account with that subject. With no such thread or several, it stays where it
-  is. Original messages are never joined by subject alone.
+  whitespace and case are normalized, it joins the one thread with that subject
+  in the accounts that hold the reply or a copy of it. With no such thread or
+  several, it stays where it is. Original messages are never joined by subject
+  alone.
 
 Messages indexed before thread grouping existed have no grouping inputs and
 appear as single messages. `ownmail rebuild --threads-only` reads their headers
