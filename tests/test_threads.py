@@ -503,7 +503,8 @@ def test_force_backfill_rederives_every_message_and_skips_missing_files(temp_dir
 def test_backfill_skips_a_message_the_parser_rejects(temp_dir, monkeypatch, capsys):
     archive = EmailArchive(temp_dir, {})
     owned(archive, "a", message("<a@x>"))
-    owned(archive, "b", message("<b@x>", ["<a@x>"]))
+    owned(archive, "b", message("<b@x>"))
+    (temp_dir / "b.eml").write_bytes(message("<b@x>", ["<a@x>"]))
     parse = EmailParser.parse_file
 
     def reject_a(*args, content=None, **kwargs):
