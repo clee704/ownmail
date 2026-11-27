@@ -6,6 +6,7 @@ import json
 import sqlite3
 from contextlib import closing
 from email.policy import default as email_policy
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -403,6 +404,19 @@ def test_refresh_reads_active_inputs_without_opening_the_cache(tmp_path, monkeyp
         conn.execute("DROP TABLE thread_inputs")
     archive.refresh_threads()
     assert archive.db.get_thread_member_ids("o1") == ["o1"]
+
+
+def test_refresh_reads_a_relative_active_cache_dir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "archive"
+    root.mkdir()
+    entry = ActiveCache(root, Path("rel-active")).put(
+        source_name="mail", account=ACCOUNT, provider_id="42", identity="epoch:42", roles=[], labels=[], raw=RAW
+    )
+    archive = EmailArchive(root, {"active_cache_dir": "rel-active"})
+    owned(archive, "o1", RAW)
+    archive.refresh_threads()
+    assert archive.db.get_thread_member_ids("o1") == sorted(["o1", entry["id"]])
 
 
 def test_refresh_after_removal_splits_the_bridged_component(temp_dir):

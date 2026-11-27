@@ -135,7 +135,7 @@ def group_threads(records) -> dict[str, str]:
 
 
 def _read_inputs(db_path, *, read_only=False) -> list[tuple]:
-    target = Path(db_path).as_uri() + "?mode=ro" if read_only else db_path
+    target = Path(db_path).resolve().as_uri() + "?mode=ro" if read_only else db_path
     with closing(sqlite3.connect(target, uri=read_only)) as conn:
         rows = conn.execute(
             """SELECT email_id, account, message_id, references_json, in_reply_to_json, subject_key, is_reply
