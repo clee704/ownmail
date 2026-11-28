@@ -28,6 +28,7 @@ from ownmail.download_progress import DownloadProgress
 from ownmail.keychain import KeychainStorage
 from ownmail.parser import EmailParser
 from ownmail.providers.base import EmailProvider
+from ownmail.threads import refresh_threads
 
 
 class EmailArchive:
@@ -61,16 +62,30 @@ class EmailArchive:
         self._batch_conn: sqlite3.Connection | None = None
         self._active_cache = None
 
+    def _active_cache_dir(self) -> Path:
+        root = self.archive_dir.resolve()
+        configured = self.config.get("active_cache_dir")
+        return Path(configured) if configured else root.with_name(f".{root.name}-active")
+
     def active_cache(self, *, create: bool = False):
         """Open the disposable cache only when it exists or a download needs it."""
         from ownmail.active_cache import ActiveCache
 
-        root = self.archive_dir.resolve()
-        configured = self.config.get("active_cache_dir")
-        cache_dir = Path(configured) if configured else root.with_name(f".{root.name}-active")
+        cache_dir = self._active_cache_dir()
         if self._active_cache is None and (create or cache_dir.exists()):
             self._active_cache = ActiveCache(self.archive_dir, cache_dir, gmail_accounts=self.db.gmail_accounts)
         return self._active_cache
+
+    def refresh_threads(self) -> None:
+        """Recompute thread membership across owned and Active messages."""
+        from ownmail.active_cache import ActiveCache
+
+        # Opening the cache would re-parse every Active message, so a command that
+        # has not opened it reads the inputs its last index rebuild stored, once
+        # the cache's marker shows it belongs to this archive.
+        cache = self._active_cache
+        active_db = cache.db.db_path if cache else ActiveCache.stored_index(self.archive_dir, self._active_cache_dir())
+        refresh_threads(self.db.db_path, active_db)
 
     def active_info(self, email_id: str) -> dict | None:
         """Describe the live server copy associated with a reading result."""
@@ -731,6 +746,7 @@ class EmailArchive:
             conn=conn,
             skip_delete=True,
             email_date=email_date,
+            thread_inputs=parsed["thread_inputs"],
         )
         conn.execute(
             "UPDATE emails SET indexed_hash = ? WHERE email_id = ?",
@@ -1120,6 +1136,7 @@ class EmailArchive:
                 labels=sidecar.read_labels(filepath),
                 conn=conn,
                 skip_delete=skip_delete,
+                thread_inputs=parsed["thread_inputs"],
             )
 
             return True

@@ -355,6 +355,7 @@ def test_download_keeps_readonly_authentication(cleanup_cli):
         auto_expire_trash=Mock(return_value=0),
         db=SimpleNamespace(get_email_count=Mock(return_value=0)),
         backup=Mock(return_value={"success_count": 0, "error_count": 0, "interrupted": False}),
+        refresh_threads=Mock(),
     )
 
     assert cli.cmd_download(archive, case.config, source_name="mail")

@@ -453,6 +453,46 @@ Downloads preserve completed saves. Press Ctrl-C to stop, then run
 `ownmail download` again to retry unfinished work. An interrupted Active refresh
 retains prior copies and remains incomplete.
 
+## Thread grouping
+
+ownmail groups messages into threads from their headers alone. Download, import,
+scan and rebuild recompute the grouping once each run finishes or pauses, so a
+message indexed since then, or removed since then, is reflected at the next of
+those commands.
+
+- Messages that share any `<...>` identifier in Message-ID, References or
+  In-Reply-To join one thread, across accounts and including Active copies.
+  Identifiers compare exactly; malformed tokens and text inside `(...)`
+  comments are ignored. Replies group through a referenced message even
+  before that message is archived.
+- A reply or forward without valid References or In-Reply-To joins by subject
+  instead: after leading `Re:`, `Fw:` and `Fwd:` prefixes are stripped and
+  whitespace and case are normalized, it joins the one thread with that subject
+  in the accounts that hold the reply or a copy of it. With no such thread or
+  several, it stays where it is. Original messages are never joined by subject
+  alone.
+
+Messages indexed before thread grouping existed have no grouping inputs and
+appear as single messages. For owned mail, `ownmail rebuild --threads-only`
+reads their headers from the `.eml` files and regroups. It stops cleanly on
+Ctrl-C and resumes when run again; `--force` re-derives the inputs of every
+owned message.
+
+Active copies get their inputs when ownmail next opens the Active cache, which
+rebuilds the cache's index from its own files. `rebuild --threads-only` does not
+open the cache. It groups Active copies by the inputs the cache last stored, so
+an Active message cached before the upgrade still appears alone afterwards. To
+finish upgrading an archive that has Active mail:
+
+1. Run `ownmail rebuild --threads-only`.
+2. Run `ownmail download`. For sources with `active_downloads: true`, it opens
+   the cache and regroups when it finishes.
+
+If Active downloads are off but the cache remains, load any page in
+`ownmail serve` to open the cache instead, then run
+`ownmail rebuild --threads-only` again. The upgrade is complete when the last
+of these commands finishes.
+
 ## Integrity verification
 
 ```bash

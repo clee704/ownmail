@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ownmail import roles
 from ownmail.query import parse_query
+from ownmail.threads import set_thread_inputs, thread_member_ids
 
 
 def set_db_labels(conn: sqlite3.Connection, rowid: int, labels: list[str], email_date) -> None:
@@ -228,6 +229,34 @@ class ArchiveDatabase:
                 BEGIN
                     DELETE FROM email_recipients WHERE email_rowid = OLD.rowid;
                     DELETE FROM email_labels WHERE email_rowid = OLD.rowid;
+                END
+            """)
+
+            # Thread grouping inputs and membership (doc-11), derived from headers
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS thread_inputs (
+                    email_id TEXT PRIMARY KEY,
+                    account TEXT,
+                    message_id TEXT,
+                    references_json TEXT NOT NULL,
+                    in_reply_to_json TEXT NOT NULL,
+                    subject_key TEXT NOT NULL,
+                    is_reply INTEGER NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS thread_members (
+                    email_id TEXT PRIMARY KEY,
+                    thread_id TEXT NOT NULL
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_thread_members_thread ON thread_members(thread_id, email_id)")
+            # Separate from trg_emails_delete, which IF NOT EXISTS cannot update in place
+            conn.execute("""CREATE TRIGGER IF NOT EXISTS trg_emails_delete_threads
+                AFTER DELETE ON emails
+                BEGIN
+                    DELETE FROM thread_inputs WHERE email_id = OLD.email_id;
+                    DELETE FROM thread_members WHERE email_id = OLD.email_id;
                 END
             """)
 
@@ -900,6 +929,7 @@ class ArchiveDatabase:
         labels: list[str] | None = None,
         skip_delete: bool = False,
         email_date: str = None,
+        thread_inputs: dict | None = None,
     ) -> None:
         """Add email to search index by updating emails table metadata and FTS.
 
@@ -910,6 +940,7 @@ class ArchiveDatabase:
             conn: Optional existing connection (for batching)
             skip_delete: Ignored (kept for API compatibility)
             email_date: ISO-formatted UTC date string (populates email_date if NULL)
+            thread_inputs: Grouping inputs from the same parse; None drops stale inputs
         """
         if isinstance(labels, str):
             raise TypeError("labels must be a list of strings, not a comma-separated string")
@@ -980,6 +1011,11 @@ class ArchiveDatabase:
                 ]
             label_date = email_date or existing_email_date
             set_db_labels(conn, rowid, labels, label_date)
+
+            if thread_inputs is None:
+                conn.execute("DELETE FROM thread_inputs WHERE email_id = ?", (email_id,))
+            else:
+                set_thread_inputs(conn, email_id, thread_inputs)
 
             # Update FTS (contentless mode - we manage manually)
             if was_indexed:
@@ -1259,6 +1295,11 @@ class ArchiveDatabase:
     # -------------------------------------------------------------------------
     # Statistics
     # -------------------------------------------------------------------------
+
+    def get_thread_member_ids(self, email_id: str) -> list[str]:
+        """Return the sorted IDs in a message's thread, always including email_id."""
+        with self._connect() as conn:
+            return thread_member_ids(conn, email_id)
 
     def get_email_count(self, account: str = None) -> int:
         """Get quick email count for an account.

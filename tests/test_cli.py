@@ -1185,6 +1185,20 @@ class TestMainEdgeCases:
         captured = capsys.readouterr()
         assert "(force)" in captured.out
 
+    def test_main_rebuild_threads_only(self, temp_dir, capsys, monkeypatch):
+        """Test rebuild --threads-only runs the thread input backfill."""
+        from ownmail.cli import main
+
+        config_path = temp_dir / "config.yaml"
+        config_path.write_text(f"archive_root: {temp_dir}\n")
+        monkeypatch.chdir(temp_dir)
+
+        with patch.object(sys, "argv", ["ownmail", "rebuild", "--threads-only"]):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Backfill Thread Inputs" in captured.out
+
     def test_main_rebuild_pattern(self, temp_dir, capsys, monkeypatch):
         """Test rebuild --pattern command."""
         from ownmail.cli import main

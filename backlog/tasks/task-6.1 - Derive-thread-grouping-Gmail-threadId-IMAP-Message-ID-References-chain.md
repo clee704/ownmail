@@ -1,11 +1,11 @@
 ---
 id: TASK-6.1
-title: 'Derive thread grouping: Gmail threadId + IMAP Message-ID/References chain'
-status: In Progress
+title: Derive thread grouping from Message-ID/References headers
+status: Done
 assignee:
   - codex
 created_date: '2026-07-24 04:59'
-updated_date: '2026-10-21 06:59'
+updated_date: '2026-11-28 06:10'
 labels: []
 milestone: m-3
 dependencies: []
@@ -26,20 +26,20 @@ Storage must respect invariant #1. A Gmail threadId is not in the .eml, so it be
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Gmail-sourced emails capture and store the native threadId
-- [ ] #2 IMAP-sourced emails are grouped into threads via References/In-Reply-To chain with a documented subject-based fallback
-- [ ] #3 Thread membership is queryable without recomputing the full reference graph on each request
+- [x] #1 IMAP-sourced emails are grouped into threads via References/In-Reply-To chain with a documented subject-based fallback
+- [x] #2 Thread membership is queryable without recomputing the full reference graph on each request
+- [x] #3 Gmail and IMAP messages group by the same header rules, and rebuilding from .eml files reproduces membership without contacting a provider
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review base: 0c6bd26.
-1. Verify current capture, sidecar, Active cache and rebuild paths; prepare a concrete storage/grouping proposal.
-2. Obtain maintainer sign-off for the schema and sidecar changes before implementing behavior.
-3. After approval, implement durable thread metadata and rebuildable indexed membership, with reference-chain and subject-fallback tests.
-4. Self-review the full diff from the review base, run the required pre-push gate, and deliver through a PR.
-Scope: storage and membership lookup for archived and Active mail. Threaded list rendering, thread-level bulk actions and server cleanup policy are out of scope.
+Review base: 0c6bd26 (proposal); implementation branch feat/thread-membership from f2ed215.
+1. Done: proposal and maintainer sign-off on 2026-11-26 for header-only grouping (doc-11).
+2. Done: grouping module, thread_inputs and thread_members schema, input writes on every index path.
+3. Done: refresh at command batch boundaries, rebuild --threads-only backfill, membership lookup.
+4. Done: rules and command documented, full diff reviewed from 0c6bd26, pre-push gate, PR.
+Scope: storage and membership lookup for owned and Active messages. Out of scope: native provider thread IDs, list rendering, visibility rules, thread-level actions and cleanup policy.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -52,4 +52,33 @@ Read-only survey confirmed the premise. Live providers already expose native IDs
 Approval remains required before schema, sidecar or behavior edits. Next action: obtain maintainer approval of doc-11, then implement on a branch and open a PR. No acceptance criterion has been met.
 
 Proposal self-review completed against 0c6bd26, including provider ID normalization, sidecar retention, offline backfill, Active transitions and read-only compatibility. The required pre-commit run -a --hook-stage pre-push passed with the unchanged production code. This checkpoint changes documentation only; implementation and all acceptance criteria remain pending approval.
+
+2026-11-26 resume. Re-verified doc-11 against ddfa91b. Code changed since 0c6bd26 does not touch thread storage: ActiveCache.put, live_sync capture and legacy downloads still discard thread_id, and write_labels still replaces the whole sidecar. Its callers (relabel, update-labels, sidecar reconcile) do not select live-captured files under current queries, so the provenance loss doc-11 flags is untriggerable today and needs no separate task.
+
+Pending decision, blocking implementation:
+1. Recommended: header-only grouping. A derived thread_members table built from .eml Message-ID/References/In-Reply-To plus doc-11's subject fallback. Drops native thread ID capture (AC #1 would be rewritten). Existing mail has no stored native IDs and cannot get them offline, so headers are the only signal for the archive as captured. This avoids the sidecar, Active JSON and capture-path changes. It still adds a table, which needs sign-off.
+2. doc-11 as written: native Gmail IDs in sidecars and Active JSON plus header grouping. Groups new Gmail mail closer to Gmail's own threads, such as same-subject notifications without References. Only new captures benefit, and it touches both capture paths, the sidecar format and the Active cache.
+3. Close the TASK-6 tree and keep flat lists.
+Next action: record the maintainer's choice here, then implement on a branch and open a PR.
+
+2026-11-26: maintainer approved header-only grouping. Replaced AC #1 (native threadId capture) with a header-rules and rebuild criterion; doc-11 now records the approved design and why native IDs were dropped.
+
+Implementation on feat/thread-membership. Phases: thread_inputs and grouping (e86ef97, 8e2d471); refresh, rebuild --threads-only backfill, lookup, docs (a4cd087, f8ebdc8, d60a18e). The CLI has per-mode rebuild flags, so the backfill is --threads-only; the pre-existing docs naming a nonexistent --only option are TASK-157.
+
+Independent review (Opus 5.5 and gpt-6.2-sol) of the full diff. Fixed: 8-bit bytes in identifiers failed index writes and could stop the Active cache from opening (identifiers are printable ASCII now); refresh opened the Active cache, re-parsing every Active message and failing for a moved archive (it reads stored Active inputs now); Active copies counted twice when choosing a fallback target; fallback could merge two originals (fallback now applies only to a reply whose reference component holds no other message); two quadratic loops; forced backfill resume message; a later source's failure skipped the download refresh; a backfill test that could not fail; parser exceptions aborted the backfill.
+Dismissed: concurrent refreshes from overlapping commands can publish older membership (doc-11 accepts lag and the next refresh corrects it); tokens extracted from malformed text such as <<a@x>> (the extracted token is well-formed and in practice names the same message); --threads-only ignoring --file and --pattern (the backfill only reads files and is idempotent).
+
+Convergence review of the fix commits (both models). Fixed: a relative active_cache_dir broke the read-only URI (469cab7); copies of one unlinked reply in two accounts bridged two originals, and a damaged Active index raised ValueError out of refresh (686b216).
+Dismissed: refresh reading an Active index whose marker names another archive (the only triggers are a misconfigured shared cache dir, which ActiveCache already refuses on every download, or a moved archive whose cache still holds its own messages); a refresh failure in the download finally replacing an earlier source error (needs two coincident failures, the refresh error is real and reported, and the original stays chained).
+
+Focused check of 686b216 (gpt-6.2-sol). Dismissed: two messages sharing a Message-ID where only one carries References can skip an ambiguous candidate (they are not copies of one message, no originals are bridged, and the result predates the fix); an Active row whose references_json holds JSON null raises TypeError in grouping (the only writer stores a JSON list, and the Active index rebuilds from files when a download next opens it). Review converged.
+AC evidence: #1 reference-chain and subject-fallback tests in tests/test_threads.py, rules documented in doc-11 and docs/archive.md; #2 thread_members is stored and indexed, and test_lookup_reads_the_index_without_parsing reads it with parsing disabled; #3 every provider indexes through the same parse_file inputs, and test_backfill_from_files_reproduces_indexed_membership regroups from .eml files alone.
+PR review of e037b20 (maintainer, each finding reproduced with synthetic mail). Fixed: identifiers inside header comments were recorded, so "Message-ID: (ticket <tag@x>) <parent@x>" stored <tag@x> and its reply stayed apart; comments and quoted strings are skipped now (761904c). A reply-prefixed copy of an original passed the per-message fallback check and pulled the original into another same-subject thread; eligibility now covers the whole component (2f06bde). Refresh read stored Active inputs from a cache whose marker names another archive; the maintainer reproduced a false join with --archive-root pointing at a second archive, which overturns the earlier dismissal, and ActiveCache.stored_index now makes the opener's directory and marker checks first (8d0cde8). docs/archive.md now gives the upgrade order for Active mail, whose inputs appear only once the cache is next opened (ef8f73c).
+CI on the PR failed for reasons outside this task: postcss 8.5.33 reads URL( and url( followed by whitespace as browsers do, so four sanitizer inputs stopped exercising the divergence check, and ubuntu-latest moved to Ubuntu 26.04, where Playwright 1.58 cannot install Chromium. The full suite run locally also found the same postcss dependence in three required browser tests, which the 3.12 job never reached. The test inputs are fixed for master on fix/ci-runner-postcss (efd9e09, 30d95c2) and merged here. The 3.12 job also needs the test job pinned to ubuntu-24.04, a workflow change for the maintainer to apply; TASK-158 (af5917d) moves to a Playwright release that supports 26.04 and drops the pin. The TASK-154 to TASK-156 commits under this branch belong on master before the squash, so the PR diff holds only this task.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Thread grouping now derives from Message-ID, References and In-Reply-To headers for every provider, ignoring identifiers inside comments, with a subject fallback limited to components of unlinked replies that find exactly one candidate thread. Each index database stores per-message inputs in thread_inputs; the archive database holds thread_members for owned and Active messages, refreshed once per download, import, scan and rebuild. rebuild --threads-only backfills inputs for older archives (Ctrl-C safe, resumable, --force re-derives all). ArchiveDatabase.get_thread_member_ids returns a message's thread from the index alone, and a database without the new tables yields the message alone. Native provider thread IDs are not stored (doc-11). Delivered through a PR because it adds tables.
+<!-- SECTION:FINAL_SUMMARY:END -->

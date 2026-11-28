@@ -486,174 +486,177 @@ def cmd_download(
     skipped_source = False
     progress_options = {"progress": progress} if progress else {}
 
-    for source in sources:
-        name = source["name"]
-        source_type = source["type"]
-        account = source["account"]
-        if progress:
-            progress.set_phase("starting", name)
+    try:
+        for source in sources:
+            name = source["name"]
+            source_type = source["type"]
+            account = source["account"]
+            if progress:
+                progress.set_phase("starting", name)
 
-        print(f"Source: {name} ({account})")
+            print(f"Source: {name} ({account})")
 
-        if source_type == "gmail_api":
-            # Parse auth
-            auth = source.get("auth", {})
-            secret_ref = auth.get("secret_ref", "")
+            if source_type == "gmail_api":
+                # Parse auth
+                auth = source.get("auth", {})
+                secret_ref = auth.get("secret_ref", "")
 
-            if not secret_ref:
-                print(f"❌ Error: Source '{name}' missing auth.secret_ref")
+                if not secret_ref:
+                    print(f"❌ Error: Source '{name}' missing auth.secret_ref")
+                    skipped_source = True
+                    if progress:
+                        progress.fail("setup")
+                    continue
+
+                try:
+                    parse_secret_ref(secret_ref)  # Validate format
+                except ValueError as e:
+                    print(f"❌ Error: {e}")
+                    skipped_source = True
+                    if progress:
+                        progress.fail("setup")
+                    continue
+
+                # Create provider
+                if verbose:
+                    print("[verbose] Creating Gmail provider...", flush=True)
+                provider = GmailProvider(
+                    account=account,
+                    keychain=keychain,
+                    include_labels=source.get("include_labels", True),
+                    source_name=name,
+                    exclude_roles=source.get("exclude_roles"),
+                    active_exclude_labels=source.get("active_exclude_labels"),
+                )
+
+                # Authenticate
+                if verbose:
+                    print("[verbose] Authenticating...", flush=True)
+                if progress:
+                    progress.set_phase("authenticating")
+                provider.authenticate()
+
+                # Get email count (fast query)
+                if verbose:
+                    print("[verbose] Getting email count...", flush=True)
+                email_count = archive.db.get_email_count(account)
+                print(f"Archive location: {archive.archive_dir}", flush=True)
+                print(f"Previously downloaded: {email_count:,} emails", flush=True)
+
+                # Show date filter if specified
+                if since or until:
+                    date_range = []
+                    if since:
+                        date_range.append(f"from {since}")
+                    if until:
+                        date_range.append(f"until {until}")
+                    print(f"Date filter: {' '.join(date_range)}", flush=True)
+
+                # Run download
+                if verbose:
+                    print("[verbose] Starting download...", flush=True)
+                result = archive.backup(
+                    provider,
+                    since=since,
+                    until=until,
+                    verbose=verbose,
+                    active_downloads=source.get("active_downloads", False),
+                    **progress_options,
+                )
+
+                # Print summary
+                total = archive.db.get_email_count(account)
+                print("\n" + "-" * 50)
+                if result["interrupted"]:
+                    print("Download Paused!")
+                    print(f"  Downloaded: {result['success_count']} emails")
+                    print("\n  Run 'download' again to resume.")
+                else:
+                    print("Download Complete!")
+                    print(f"  Downloaded: {result['success_count']} emails")
+                if result["error_count"] > 0:
+                    print(f"  Errors: {result['error_count']}")
+                print(f"  Total archived: {total:,} emails")
+                print("-" * 50 + "\n")
+
+            elif source_type == "imap":
+                from ownmail.providers.imap import ImapProvider
+
+                host = source.get("host", "imap.gmail.com")
+                port = source.get("port", 993)
+                exclude_folders = source.get("exclude_folders")
+
+                provider = ImapProvider(
+                    account=account,
+                    keychain=keychain,
+                    host=host,
+                    port=port,
+                    exclude_folders=exclude_folders,
+                    source_name=name,
+                    exclude_roles=source.get("exclude_roles"),
+                    active_exclude_folders=source.get("active_exclude_folders"),
+                )
+
+                if progress:
+                    progress.set_phase("authenticating")
+                provider.authenticate()
+
+                email_count = archive.db.get_email_count(account)
+                print(f"Archive location: {archive.archive_dir}", flush=True)
+                print(f"Previously downloaded: {email_count:,} emails", flush=True)
+
+                if since or until:
+                    date_range = []
+                    if since:
+                        date_range.append(f"from {since}")
+                    if until:
+                        date_range.append(f"until {until}")
+                    print(f"Date filter: {' '.join(date_range)}", flush=True)
+
+                result = archive.backup(
+                    provider,
+                    since=since,
+                    until=until,
+                    verbose=verbose,
+                    active_downloads=source.get("active_downloads", False),
+                    **progress_options,
+                )
+
+                total = archive.db.get_email_count(account)
+                print("\n" + "-" * 50)
+                if result["interrupted"]:
+                    print("Download Paused!")
+                    print(f"  Downloaded: {result['success_count']} emails")
+                    print("\n  Run 'download' again to resume.")
+                else:
+                    print("Download Complete!")
+                    print(f"  Downloaded: {result['success_count']} emails")
+                if result["error_count"] > 0:
+                    print(f"  Errors: {result['error_count']}")
+                print(f"  Total archived: {total:,} emails")
+                print("-" * 50 + "\n")
+
+                # Close IMAP connection
+                provider.close()
+
+            else:
+                print(f"  Unknown source type: {source_type}")
                 skipped_source = True
                 if progress:
                     progress.fail("setup")
                 continue
 
-            try:
-                parse_secret_ref(secret_ref)  # Validate format
-            except ValueError as e:
-                print(f"❌ Error: {e}")
-                skipped_source = True
-                if progress:
-                    progress.fail("setup")
-                continue
-
-            # Create provider
-            if verbose:
-                print("[verbose] Creating Gmail provider...", flush=True)
-            provider = GmailProvider(
-                account=account,
-                keychain=keychain,
-                include_labels=source.get("include_labels", True),
-                source_name=name,
-                exclude_roles=source.get("exclude_roles"),
-                active_exclude_labels=source.get("active_exclude_labels"),
-            )
-
-            # Authenticate
-            if verbose:
-                print("[verbose] Authenticating...", flush=True)
+            total_downloaded += result["success_count"]
+            total_errors += result["error_count"]
+            interrupted = interrupted or result["interrupted"]
             if progress:
-                progress.set_phase("authenticating")
-            provider.authenticate()
-
-            # Get email count (fast query)
-            if verbose:
-                print("[verbose] Getting email count...", flush=True)
-            email_count = archive.db.get_email_count(account)
-            print(f"Archive location: {archive.archive_dir}", flush=True)
-            print(f"Previously downloaded: {email_count:,} emails", flush=True)
-
-            # Show date filter if specified
-            if since or until:
-                date_range = []
-                if since:
-                    date_range.append(f"from {since}")
-                if until:
-                    date_range.append(f"until {until}")
-                print(f"Date filter: {' '.join(date_range)}", flush=True)
-
-            # Run download
-            if verbose:
-                print("[verbose] Starting download...", flush=True)
-            result = archive.backup(
-                provider,
-                since=since,
-                until=until,
-                verbose=verbose,
-                active_downloads=source.get("active_downloads", False),
-                **progress_options,
-            )
-
-            # Print summary
-            total = archive.db.get_email_count(account)
-            print("\n" + "-" * 50)
+                if result["interrupted"]:
+                    progress.fail("interrupted")
+                progress.flush()
             if result["interrupted"]:
-                print("Download Paused!")
-                print(f"  Downloaded: {result['success_count']} emails")
-                print("\n  Run 'download' again to resume.")
-            else:
-                print("Download Complete!")
-                print(f"  Downloaded: {result['success_count']} emails")
-            if result["error_count"] > 0:
-                print(f"  Errors: {result['error_count']}")
-            print(f"  Total archived: {total:,} emails")
-            print("-" * 50 + "\n")
-
-        elif source_type == "imap":
-            from ownmail.providers.imap import ImapProvider
-
-            host = source.get("host", "imap.gmail.com")
-            port = source.get("port", 993)
-            exclude_folders = source.get("exclude_folders")
-
-            provider = ImapProvider(
-                account=account,
-                keychain=keychain,
-                host=host,
-                port=port,
-                exclude_folders=exclude_folders,
-                source_name=name,
-                exclude_roles=source.get("exclude_roles"),
-                active_exclude_folders=source.get("active_exclude_folders"),
-            )
-
-            if progress:
-                progress.set_phase("authenticating")
-            provider.authenticate()
-
-            email_count = archive.db.get_email_count(account)
-            print(f"Archive location: {archive.archive_dir}", flush=True)
-            print(f"Previously downloaded: {email_count:,} emails", flush=True)
-
-            if since or until:
-                date_range = []
-                if since:
-                    date_range.append(f"from {since}")
-                if until:
-                    date_range.append(f"until {until}")
-                print(f"Date filter: {' '.join(date_range)}", flush=True)
-
-            result = archive.backup(
-                provider,
-                since=since,
-                until=until,
-                verbose=verbose,
-                active_downloads=source.get("active_downloads", False),
-                **progress_options,
-            )
-
-            total = archive.db.get_email_count(account)
-            print("\n" + "-" * 50)
-            if result["interrupted"]:
-                print("Download Paused!")
-                print(f"  Downloaded: {result['success_count']} emails")
-                print("\n  Run 'download' again to resume.")
-            else:
-                print("Download Complete!")
-                print(f"  Downloaded: {result['success_count']} emails")
-            if result["error_count"] > 0:
-                print(f"  Errors: {result['error_count']}")
-            print(f"  Total archived: {total:,} emails")
-            print("-" * 50 + "\n")
-
-            # Close IMAP connection
-            provider.close()
-
-        else:
-            print(f"  Unknown source type: {source_type}")
-            skipped_source = True
-            if progress:
-                progress.fail("setup")
-            continue
-
-        total_downloaded += result["success_count"]
-        total_errors += result["error_count"]
-        interrupted = interrupted or result["interrupted"]
-        if progress:
-            if result["interrupted"]:
-                progress.fail("interrupted")
-            progress.flush()
-        if result["interrupted"]:
-            break
+                break
+    finally:
+        archive.refresh_threads()
 
     print("\n" + "=" * 50)
     print("Overall Download Summary")
@@ -1236,6 +1239,11 @@ Examples:
         action="store_true",
         help="Only reconcile label sidecar files with the DB (sidecar wins on divergence)",
     )
+    rebuild_parser.add_argument(
+        "--threads-only",
+        action="store_true",
+        help="Only backfill thread grouping inputs from email files and regroup",
+    )
     _add_global_opts(rebuild_parser)
 
     # verify command
@@ -1534,6 +1542,8 @@ Examples:
                     only = "index"
                 elif args.sidecars_only:
                     only = "sidecars"
+                elif args.threads_only:
+                    only = "threads"
                 cmd_rebuild(archive, args.file, args.pattern, args.force, args.debug, only)
             elif args.command == "verify":
                 from ownmail.commands import cmd_verify

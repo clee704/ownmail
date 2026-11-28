@@ -6,10 +6,13 @@ import email
 import email.utils
 import html
 import re
+from email.message import Message
 from email.policy import default as email_policy
 from pathlib import Path
 
 from lxml import html as lxml_html
+
+from ownmail.threads import derive_thread_inputs
 
 # Regex to extract charset from HTML meta tag
 HTML_CHARSET_RE = re.compile(
@@ -652,7 +655,8 @@ class EmailParser:
 
         Returns:
             Decoded subject, sender, recipients, date_str and body. Indexing returns
-            a joined attachments string; reading returns an attachment_names list.
+            a joined attachments string and thread_inputs; reading returns an
+            attachment_names list.
         """
         try:
             raw_content = None
@@ -676,6 +680,7 @@ class EmailParser:
                 "date_str": "",
                 "body": f"[Parse error: {e}]",
                 "attachments": "",
+                "thread_inputs": derive_thread_inputs(Message(), ""),
             }
 
         # Extract headers safely
@@ -798,6 +803,7 @@ class EmailParser:
             "date_str": date_str,
             "body": "\n".join(body_parts),
             "attachments": ", ".join(attachments),
+            "thread_inputs": derive_thread_inputs(msg, subject),
         }
 
 

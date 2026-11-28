@@ -6,7 +6,6 @@ tables stay in memory; source database contents cannot be written through these
 handles. Active files must agree with their existing index, or search is unavailable.
 """
 
-import json
 import os
 import sqlite3
 from contextlib import ExitStack, closing, contextmanager, nullcontext
@@ -53,9 +52,7 @@ class _SearchCache(ActiveCache):
         self.cache_dir = cache_dir.resolve()
         self.gmail_accounts = accounts
         self._check_root()
-        marker = json.loads(self._read_file(self.cache_dir / "active-cache.json"))
-        if marker != {"version": 1, "archive": str(self.archive_dir)}:
-            raise ValueError("Active cache belongs to a different archive or version")
+        self._check_marker()
         for name in ("entries", "messages", "sources"):
             self._check_directory(self.cache_dir / name)
         self._check_database_paths()
