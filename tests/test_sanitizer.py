@@ -907,15 +907,17 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
             # A newline ends a CSS string; postcss continues it to the next quote.
             f'.probe {{ content: "x\n}} {shell} .probe {{ content: "; }}',
             # Browsers read every spelling of unquoted url( to ")"; postcss sees a comment.
-            f".probe {{ background: URL(/*) }} {shell} .probe {{ color: red/**/) }}",
+            # Since 8.5.33 postcss reads URL( and url( after a delimiter as browsers
+            # do, so these follow a name or an escape that it still misreads.
+            f".probe {{ background: x.URL(/*) }} {shell} .probe {{ color: red/**/) }}",
             f".probe {{ background: x.url(/*) }} {shell} .probe {{ color: red /**/ ) }}",
-            f".probe {{ background: url( /*) }} {shell} .probe {{ color: red /**/ ) }}",
+            f".probe {{ background: x.url( /*) }} {shell} .probe {{ color: red /**/ ) }}",
             f".probe {{ background: u\\rl(/*) }} {shell} .probe {{ color: red /**/ ) }}",
             # Postcss keeps these rules inside @scope; browsers read its closing brace first.
             f'@scope (.card) {{ .probe {{ content: "x\n}} }} {shell} .probe {{ content: "; }} }}',
-            f"@scope (.card) {{ .probe {{ background: URL(/*) }} }} {shell} .probe {{ color: red /**/ ) }} }}",
+            f"@scope (.card) {{ .probe {{ background: x.URL(/*) }} }} {shell} .probe {{ color: red /**/ ) }} }}",
             # A browser sees this unconfined scope where postcss sees comment text.
-            ".probe { background: URL(/*) } @scope (#ownmail-email-content, .shell) "
+            ".probe { background: x.URL(/*) } @scope (#ownmail-email-content, .shell) "
             "{ .probe { color: red; } } .probe { color: red /**/ ) }",
         ):
             with self.subTest(css=css):
@@ -944,7 +946,7 @@ class TestHtmlSanitizerIntegration(unittest.TestCase):
             with self.subTest(css=css):
                 assert " ".join(self._stylesheet(css).split()) == expected
         # postcss reads this @page as comment text; browsers read a rule, so the stylesheet is discarded.
-        assert self._stylesheet(".probe { background: URL(/*) } @page { margin: 0; size: A5 /**/ ) }") == (
+        assert self._stylesheet(".probe { background: x.URL(/*) } @page { margin: 0; size: A5 /**/ ) }") == (
             "/* CSS parse error */"
         )
         result, *_ = self.sanitizer.sanitize('<div style="page: x; page-break-after: always; color: red">Text</div>')
