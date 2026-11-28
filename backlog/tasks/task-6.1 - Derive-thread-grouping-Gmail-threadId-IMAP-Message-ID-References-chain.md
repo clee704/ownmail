@@ -5,7 +5,7 @@ status: Done
 assignee:
   - codex
 created_date: '2026-07-24 04:59'
-updated_date: '2026-11-27 17:44'
+updated_date: '2026-11-28 06:10'
 labels: []
 milestone: m-3
 dependencies: []
@@ -73,10 +73,12 @@ Dismissed: refresh reading an Active index whose marker names another archive (t
 
 Focused check of 686b216 (gpt-6.2-sol). Dismissed: two messages sharing a Message-ID where only one carries References can skip an ambiguous candidate (they are not copies of one message, no originals are bridged, and the result predates the fix); an Active row whose references_json holds JSON null raises TypeError in grouping (the only writer stores a JSON list, and the Active index rebuilds from files when a download next opens it). Review converged.
 AC evidence: #1 reference-chain and subject-fallback tests in tests/test_threads.py, rules documented in doc-11 and docs/archive.md; #2 thread_members is stored and indexed, and test_lookup_reads_the_index_without_parsing reads it with parsing disabled; #3 every provider indexes through the same parse_file inputs, and test_backfill_from_files_reproduces_indexed_membership regroups from .eml files alone.
+PR review of e037b20 (maintainer, each finding reproduced with synthetic mail). Fixed: identifiers inside header comments were recorded, so "Message-ID: (ticket <tag@x>) <parent@x>" stored <tag@x> and its reply stayed apart; comments and quoted strings are skipped now (761904c). A reply-prefixed copy of an original passed the per-message fallback check and pulled the original into another same-subject thread; eligibility now covers the whole component (2f06bde). Refresh read stored Active inputs from a cache whose marker names another archive; the maintainer reproduced a false join with --archive-root pointing at a second archive, which overturns the earlier dismissal, and ActiveCache.stored_index now makes the opener's directory and marker checks first (8d0cde8). docs/archive.md now gives the upgrade order for Active mail, whose inputs appear only once the cache is next opened (ef8f73c).
+CI on the PR failed for reasons outside this task: postcss 8.5.33 reads URL( and url( followed by whitespace as browsers do, so four sanitizer inputs stopped exercising the divergence check, and ubuntu-latest moved to Ubuntu 26.04, where Playwright 1.58 cannot install Chromium. The full suite run locally also found the same postcss dependence in three required browser tests, which the 3.12 job never reached. The test inputs are fixed for master on fix/ci-runner-postcss (efd9e09, 30d95c2) and merged here. The 3.12 job also needs the test job pinned to ubuntu-24.04, a workflow change for the maintainer to apply; TASK-158 (af5917d) moves to a Playwright release that supports 26.04 and drops the pin. The TASK-154 to TASK-156 commits under this branch belong on master before the squash, so the PR diff holds only this task.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Thread grouping now derives from Message-ID, References and In-Reply-To headers for every provider, with a subject fallback limited to unlinked replies that find exactly one candidate thread. Each index database stores per-message inputs in thread_inputs; the archive database holds thread_members for owned and Active messages, refreshed once per download, import, scan and rebuild. rebuild --threads-only backfills inputs for older archives (Ctrl-C safe, resumable, --force re-derives all). ArchiveDatabase.get_thread_member_ids returns a message's thread from the index alone, and a database without the new tables yields the message alone. Native provider thread IDs are not stored (doc-11). Delivered through a PR because it adds tables.
+Thread grouping now derives from Message-ID, References and In-Reply-To headers for every provider, ignoring identifiers inside comments, with a subject fallback limited to components of unlinked replies that find exactly one candidate thread. Each index database stores per-message inputs in thread_inputs; the archive database holds thread_members for owned and Active messages, refreshed once per download, import, scan and rebuild. rebuild --threads-only backfills inputs for older archives (Ctrl-C safe, resumable, --force re-derives all). ArchiveDatabase.get_thread_member_ids returns a message's thread from the index alone, and a database without the new tables yields the message alone. Native provider thread IDs are not stored (doc-11). Delivered through a PR because it adds tables.
 <!-- SECTION:FINAL_SUMMARY:END -->
