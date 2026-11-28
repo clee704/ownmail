@@ -90,8 +90,9 @@ recompute components.
 ## Grouping rules
 
 1. Identifiers are `<...>` tokens of printable ASCII in Message-ID, References
-   and In-Reply-To, as RFC 5322 requires, compared exactly with case preserved. Malformed tokens are
-   ignored, and a message without a valid Message-ID still links through its
+   and In-Reply-To, as RFC 5322 requires, compared exactly with case preserved. Malformed tokens,
+   and tokens inside comments or quoted strings, are ignored, and a message
+   without a valid Message-ID still links through its
    own reference headers. Messages sharing any identifier, as their own
    Message-ID or as a referenced one, join one component. Referenced
    identifiers that no indexed message carries still join their referrers, so

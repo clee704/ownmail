@@ -462,8 +462,9 @@ those commands.
 
 - Messages that share any `<...>` identifier in Message-ID, References or
   In-Reply-To join one thread, across accounts and including Active copies.
-  Identifiers compare exactly; malformed tokens are ignored. Replies group
-  through a referenced message even before that message is archived.
+  Identifiers compare exactly; malformed tokens and text inside `(...)`
+  comments are ignored. Replies group through a referenced message even
+  before that message is archived.
 - A reply or forward without valid References or In-Reply-To joins by subject
   instead: after leading `Re:`, `Fw:` and `Fwd:` prefixes are stripped and
   whitespace and case are normalized, it joins the one thread with that subject

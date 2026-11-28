@@ -18,12 +18,46 @@ IDENTIFIER_RE = re.compile(r"<[\x21-\x3b\x3d\x3f-\x7e]+>")
 REPLY_PREFIX_RE = re.compile(r"^(?:\s*(?:re|fwd?):)+", re.IGNORECASE)
 
 
+def _without_comments(value: str) -> str:
+    """Drop RFC 5322 comments and quoted strings from a header value.
+
+    Comments nest, and both escape characters with a backslash. A <...> token
+    is kept verbatim up to ">" or whitespace, which a valid identifier never
+    holds, so its own characters never open a comment or a quoted string.
+    """
+    kept = []
+    depth = 0
+    quoted = token = escaped = False
+    for char in value:
+        if escaped:
+            escaped = False
+        elif token:
+            kept.append(char)
+            token = char != ">" and not char.isspace()
+        elif char == "\\" and (depth or quoted):
+            escaped = True
+        elif quoted:
+            quoted = char != '"'
+        elif char == "(":
+            depth += 1
+        elif char == ")" and depth:
+            depth -= 1
+        elif depth:
+            continue
+        elif char == '"':
+            quoted = True
+        else:
+            kept.append(char)
+            token = char == "<"
+    return "".join(kept)
+
+
 def _identifiers(msg: Message, name: str) -> list[str]:
     """Return valid <...> identifiers from every raw `name` header, in order."""
     found = []
     for key, value in msg.raw_items():
         if key.lower() == name.lower():
-            found.extend(IDENTIFIER_RE.findall(str(value)))
+            found.extend(IDENTIFIER_RE.findall(_without_comments(str(value))))
     return found
 
 

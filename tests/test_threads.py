@@ -105,6 +105,29 @@ def test_eight_bit_identifiers_are_ignored_and_indexing_succeeds(tmp_path):
     assert stored(ActiveCache(root).db.db_path, entry["id"])[2] == json.dumps(["<ok@x>"])
 
 
+@pytest.mark.parametrize(
+    ("value", "identifiers"),
+    [
+        ("(ticket <tag@x>) <parent@x>", ["<parent@x>"]),
+        ("<a@x> (see (nested <n@x>) too) <b@x>", ["<a@x>", "<b@x>"]),
+        (r"(escaped \) <e@x>) <a@x>", ["<a@x>"]),
+        ('"quoted (paren" <a@x> "<q@x>"', ["<a@x>"]),
+        (r'"escaped \" quote <q@x>" <a@x>', ["<a@x>"]),
+        ('<"x(y)"@x> <a@x>(c)<b@x>', ['<"x(y)"@x>', "<a@x>", "<b@x>"]),
+        ("<broken (comment <c@x>) <a@x>", ["<a@x>"]),
+        ("<a@x> (unterminated <u@x>", ["<a@x>"]),
+    ],
+)
+def test_identifiers_outside_comments_and_quoted_strings(value, identifiers):
+    raw = f"Message-ID: {value}\r\nReferences: {value}\r\nIn-Reply-To: {value}\r\n\r\nx".encode()
+    inputs = EmailParser.parse_file(content=raw)["thread_inputs"]
+    assert (inputs["message_id"], inputs["references"], inputs["in_reply_to"]) == (
+        identifiers[0],
+        identifiers,
+        identifiers,
+    )
+
+
 def test_unparseable_message_still_yields_empty_inputs(monkeypatch):
     monkeypatch.setattr(email, "message_from_bytes", lambda *a, **k: 1 / 0)
     inputs = EmailParser.parse_file(content=b"x")["thread_inputs"]
@@ -402,6 +425,14 @@ def test_refresh_joins_active_copy_to_its_owned_capture(tmp_path):
     assert archive.db.get_thread_member_ids("o1") == sorted(["o1", entry["id"]])
     assert archive.db.get_thread_member_ids(entry["id"]) == sorted(["o1", entry["id"]])
     assert archive.db.get_thread_member_ids("o2") == ["o2"]
+
+
+def test_refresh_joins_a_reply_to_a_parent_whose_message_id_has_a_comment(temp_dir):
+    archive = EmailArchive(temp_dir, {})
+    owned(archive, "parent", message("(ticket <tag@x>) <parent@x>"))
+    owned(archive, "reply", message("<reply@x>", ["<parent@x>"]))
+    archive.refresh_threads()
+    assert archive.db.get_thread_member_ids("reply") == ["parent", "reply"]
 
 
 def test_refresh_reads_active_inputs_without_opening_the_cache(tmp_path, monkeypatch):
