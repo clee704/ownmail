@@ -430,7 +430,7 @@ def test_markup_like_styles_preserve_rendered_css_and_cannot_escape(
             id="string-ended-by-newline",
         ),
         pytest.param(
-            ".probe {background:URL(/*)} .ownmail-reader-actions {display:none !important} .probe {color:red/**/)}",
+            ".probe {background:x.URL(/*)} .ownmail-reader-actions {display:none !important} .probe {color:red/**/)}",
             False,
             id="comment-inside-url",
         ),
@@ -469,12 +469,12 @@ def test_sender_css_cannot_restyle_the_reader_toolbar(shell_app, browser_node, s
     ("css", "remote"),
     [
         pytest.param(
-            "@import url( https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            r"@import \75rl( https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
             [],
             id="comment-inside-url",
         ),
         pytest.param(
-            "@import URL(https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
+            r"@import \55RL(https://fonts.googleapis.com/a/*);@import url(https://untrusted.invalid/b.css);/*)*/;",
             [],
             id="uppercase-url",
         ),
