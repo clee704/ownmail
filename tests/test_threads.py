@@ -211,6 +211,15 @@ def test_copies_of_one_reply_in_two_accounts_never_bridge_their_originals():
     assert group_threads(records[:1] + records[2:]) == dict.fromkeys(("a-orig", "a-reply", "b-reply"), "a-orig")
 
 
+def test_reply_prefixed_copy_of_an_original_never_falls_back():
+    records = [
+        rec("o1", "<o1@x>", subject="Plan"),
+        rec("o2", "<o2@x>", subject="Plan"),
+        rec("copy", "<o1@x>", subject="Re: Plan"),
+    ]
+    assert group_threads(records) == {"copy": "copy", "o1": "copy"}
+
+
 def test_reply_with_references_never_falls_back():
     records = [rec("o", "<o@x>", subject="Plan"), rec("r", in_reply_to=["<elsewhere@x>"], subject="Re: Plan")]
     assert group_threads(records) == {}

@@ -102,7 +102,8 @@ recompute components.
    strips repeated leading `Re:`, `Fw:` and `Fwd:` prefixes from the decoded
    subject, collapses whitespace and case-folds. A reply or forward with a
    non-empty subject key and no valid References or In-Reply-To identifiers,
-   whose reference component holds no other message, joins a candidate component
+   whose reference component holds no other message and no copy of it that
+   fails these conditions, joins a candidate component
    other than its own with the same subject key, when exactly one exists in the
    accounts that hold the reply or a copy of it. A candidate component has two or
    more distinct messages, or contains a matching message without a reply

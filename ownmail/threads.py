@@ -112,13 +112,20 @@ def group_threads(records) -> dict[str, str]:
         if key and (sizes[root] >= 2 or not is_reply):
             candidates.setdefault((account, key), set()).add(root)
 
+    # A component falls back only when every member is a reply without reference
+    # identifiers, so a reply-prefixed copy cannot pull its original elsewhere.
+    unlinked: dict = {}
+    for email_id, _account, _mid, references, in_reply_to, key, is_reply in records:
+        root = roots[email_id]
+        unlinked[root] = unlinked.get(root, True) and bool(is_reply and key and not references and not in_reply_to)
+
     # Decide every fallback against the reference components, then apply. Copies
     # of one reply in several accounts choose together, so they cannot bridge
     # two candidates; two found are enough to rule the reply ambiguous.
     targets: dict = {}
-    for email_id, account, _mid, references, in_reply_to, key, is_reply in records:
+    for email_id, account, _mid, _refs, _irt, key, _is_reply in records:
         root = roots[email_id]
-        if not is_reply or not key or references or in_reply_to or sizes[root] != 1:
+        if not unlinked[root] or sizes[root] != 1:
             continue
         found = targets.setdefault(root, set())
         for other in candidates.get((account, key), ()):
