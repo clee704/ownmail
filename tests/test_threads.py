@@ -458,6 +458,30 @@ def test_refresh_reads_active_inputs_without_opening_the_cache(tmp_path, monkeyp
         assert archive.db.get_thread_member_ids("o1") == ["o1"]
 
 
+def test_refresh_ignores_stored_inputs_of_a_cache_for_another_archive(tmp_path):
+    other = tmp_path / "other"
+    other.mkdir()
+    ActiveCache(other).put(
+        source_name="mail",
+        account=ACCOUNT,
+        provider_id="42",
+        identity="epoch:42",
+        roles=[],
+        labels=[],
+        raw=message("<bridge@x>", ["<o1@x>", "<o2@x>"]),
+    )
+    root = tmp_path / "archive"
+    root.mkdir()
+    archive = EmailArchive(root, {"active_cache_dir": str(tmp_path / ".other-active")})
+    owned(archive, "o1", message("<o1@x>"))
+    owned(archive, "o2", message("<o2@x>"))
+    for marker in (None, b"{"):
+        if marker:
+            (tmp_path / ".other-active" / "active-cache.json").write_bytes(marker)
+        archive.refresh_threads()
+        assert membership(archive.db.db_path) == []
+
+
 def test_refresh_reads_a_relative_active_cache_dir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "archive"

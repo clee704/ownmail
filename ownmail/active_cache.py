@@ -52,9 +52,7 @@ class ActiveCache:
         marker = self.cache_dir / "active-cache.json"
         self._check_file(marker)
         if marker.exists():
-            data = json.loads(self._read_file(marker))
-            if data != {"version": 1, "archive": str(self.archive_dir)}:
-                raise ValueError("Active cache belongs to a different archive or version")
+            self._check_marker()
         else:
             if any(self.cache_dir.iterdir()):
                 raise ValueError("Active cache directory must be empty or an existing ownmail Active cache")
@@ -68,6 +66,29 @@ class ActiveCache:
         self._db = None
         self._verified_payloads = {}
         self.rebuild_index()
+
+    @classmethod
+    def stored_index(cls, archive_dir: Path, cache_dir: Path) -> Path | None:
+        """Return the index path of an existing cache for archive_dir without opening it, or None.
+
+        Checks the directory and its marker as opening does but skips the index
+        rebuild, so the index holds what the cache's last rebuild stored.
+        """
+        cache = cls.__new__(cls)
+        cache.archive_dir = Path(archive_dir).resolve()
+        cache.cache_dir = Path(cache_dir).resolve()
+        try:
+            cache._check_root()
+            cache._check_marker()
+            cache._check_database_paths()
+        except (OSError, ValueError):
+            return None
+        return cache.cache_dir / "ownmail.db"
+
+    def _check_marker(self) -> None:
+        marker = json.loads(self._read_file(self.cache_dir / "active-cache.json"))
+        if marker != {"version": 1, "archive": str(self.archive_dir)}:
+            raise ValueError("Active cache belongs to a different archive or version")
 
     def _check_root(self) -> None:
         if self.cache_dir.is_symlink() or self.cache_dir.resolve() != self.cache_dir or not self.cache_dir.is_dir():

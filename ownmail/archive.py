@@ -78,10 +78,14 @@ class EmailArchive:
 
     def refresh_threads(self) -> None:
         """Recompute thread membership across owned and Active messages."""
+        from ownmail.active_cache import ActiveCache
+
         # Opening the cache would re-parse every Active message, so a command that
-        # has not opened it reads the inputs its last index rebuild stored.
+        # has not opened it reads the inputs its last index rebuild stored, once
+        # the cache's marker shows it belongs to this archive.
         cache = self._active_cache
-        refresh_threads(self.db.db_path, cache.db.db_path if cache else self._active_cache_dir() / "ownmail.db")
+        active_db = cache.db.db_path if cache else ActiveCache.stored_index(self.archive_dir, self._active_cache_dir())
+        refresh_threads(self.db.db_path, active_db)
 
     def active_info(self, email_id: str) -> dict | None:
         """Describe the live server copy associated with a reading result."""

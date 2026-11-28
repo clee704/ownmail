@@ -62,7 +62,8 @@ A message without a row is a singleton.
 A refresh reads `thread_inputs` from the archive database and, when it exists
 and is readable, the Active cache database. A command that has not opened the
 Active cache reads the inputs its last index rebuild stored, since opening it
-re-parses every Active message. It computes components with the grouping rules and
+re-parses every Active message, once the cache's marker shows it belongs to
+this archive. It computes components with the grouping rules and
 replaces `thread_members` in one transaction. Refresh scans every input once,
 so callers run it at batch boundaries and never per message. An interrupted
 refresh leaves the previous membership intact.
